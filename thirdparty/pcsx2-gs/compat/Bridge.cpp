@@ -24,16 +24,16 @@ namespace
     bool g_open = false;
     WindowInfo g_window;
 
-    // Urban Reign's entry in PCSX2's GameIndex.yaml (SLUS-21209): alignSprite 1, textureInsideRT 1,
-    // halfPixelOffset 4, nativeScaling 2, getSkipCount GSC_UrbanReign. PCSX2 applies them through its game database;
-    // here they are fixed.
+    // God Hand's entry in PCSX2's GameIndex.yaml (SLUS-21503, same for SLES-54320, SLPM-66399, SCKA-20084):
+    //   gsHWFixes: halfPixelOffset: 2  # Depth of field effect aligned properly + Shifts buildings correctly.
+    //              nativeScaling: 2    # Fixes post effects.
+    // PCSX2's GameDatabase casts the numbers straight to the enums: 2 = GSHalfPixelOffset::Special,
+    // 2 = GSNativeScaling::Aggressive. No other God Hand fixes exist upstream (PCSX2 2954ebe); everything else keeps
+    // PCSX2's defaults. PCSX2 applies these through its game database; here they are fixed.
     void ApplyGameFixes(Pcsx2Config::GSOptions &options)
     {
-        options.UserHacks_AlignSpriteX = true;
-        options.UserHacks_TextureInsideRt = GSTextureInRtMode::InsideTargets;
-        options.UserHacks_HalfPixelOffset = GSHalfPixelOffset::Native;
+        options.UserHacks_HalfPixelOffset = GSHalfPixelOffset::Special;
         options.UserHacks_NativeScaling = GSNativeScaling::Aggressive;
-        options.GetSkipCountFunctionId = GSLookupGetSkipCountFunctionId("GSC_UrbanReign");
     }
 
     // Pcsx2GsOpenParams::options: "key=value;key=value".

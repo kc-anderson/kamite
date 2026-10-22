@@ -362,21 +362,21 @@ bool GSPcsx2Backend::EnsureOpen()
             options += std::string(option.key) + "=" + value + ";";
     }
     // HD textures (PS2X_PCSX2_TEXTURES=0 turns them off): PCSX2's replacement packs, from PS2X_PCSX2_TEXTURE_DIR (the
-    // folder holding replacements/) or textures/SLUS-21209 next to urban.exe or up to three folders above it (the
-    // repository's textures/ when urban.exe runs from build/port/bin, as with game/).
+    // folder holding replacements/) or textures/SLUS-21503 next to godhand.exe or up to three folders above it (the
+    // repository's textures/ when godhand.exe runs from build/port/bin, as with game/).
     if (envInt("PS2X_PCSX2_TEXTURES", 1) != 0)
     {
         const char *textureDir = std::getenv("PS2X_PCSX2_TEXTURE_DIR");
         std::filesystem::path folder = (textureDir && *textureDir) ? std::filesystem::path(textureDir)
-                                                                 : dir / "textures" / "SLUS-21209";
+                                                                 : dir / "textures" / "SLUS-21503";
         if (!(textureDir && *textureDir))
         {
             std::filesystem::path base = dir;
             for (int up = 0; up < 4; ++up, base = base.parent_path())
             {
-                if (std::filesystem::is_directory(base / "textures" / "SLUS-21209" / "replacements", ec))
+                if (std::filesystem::is_directory(base / "textures" / "SLUS-21503" / "replacements", ec))
                 {
-                    folder = base / "textures" / "SLUS-21209";
+                    folder = base / "textures" / "SLUS-21503";
                     break;
                 }
             }

@@ -389,12 +389,12 @@ bool VMManager::HasValidVM()
 // the name of the folder given (a pack folder named anything, e.g. kept beside PCSX2's own).
 std::string VMManager::GetDiscSerial()
 {
-    return g_textureSerial.empty() ? std::string("SLUS-21209") : g_textureSerial;
+    return g_textureSerial.empty() ? std::string("SLUS-21503") : g_textureSerial;
 }
 
 std::string VMManager::GetTitle(bool prefer_en)
 {
-    return "Urban Reign";
+    return "God Hand";
 }
 
 u32 VMManager::GetDiscCRC()

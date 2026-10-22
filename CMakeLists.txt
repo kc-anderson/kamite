@@ -34,10 +34,11 @@ set(PS2X_ENABLE_SCCACHE OFF CACHE BOOL "" FORCE)
 add_subdirectory(runtime EXCLUDE_FROM_ALL)
 add_subdirectory(src)
 
-# PCSX2's GS as pcsx2gs.dll (DX11), loaded at run time when [Video] Renderer=pcsx2. Optional and OFF: its wrapper still
-# carries Urban Reign's GameIndex fixes and serial (thirdparty/pcsx2-gs/compat/Bridge.cpp, HostStubs.cpp), and the
-# runtime falls back to its own GS when the DLL is missing (gs_pcsx2_backend.cpp, GSPcsx2Backend::Requested).
-option(GODHAND_PCSX2_GS "Build PCSX2's GS (pcsx2gs.dll)" OFF)
+# PCSX2's GS (hardware renderer) as pcsx2gs.dll (DX11), loaded at run time when [Video] Renderer=pcsx2 (the default).
+# ON by default: its wrapper carries God Hand's GameIndex fixes and serial (thirdparty/pcsx2-gs/compat/Bridge.cpp,
+# HostStubs.cpp). The runtime falls back to its own GS when the DLL is missing (gs_pcsx2_backend.cpp,
+# GSPcsx2Backend::Requested), and -DGODHAND_PCSX2_GS=OFF builds without it.
+option(GODHAND_PCSX2_GS "Build PCSX2's GS (pcsx2gs.dll)" ON)
 if(GODHAND_PCSX2_GS AND WIN32)
     if(NOT EXISTS "${CMAKE_SOURCE_DIR}/thirdparty/pcsx2-gs/CMakeLists.txt")
         message(FATAL_ERROR "GODHAND_PCSX2_GS=ON needs thirdparty/pcsx2-gs (copy it from the Urban Reign port)")
