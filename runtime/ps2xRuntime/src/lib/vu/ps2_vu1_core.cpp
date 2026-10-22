@@ -173,19 +173,42 @@ namespace
         }
         auto assembled = std::make_unique<Vu1AssembledTable>();
         uint32_t blocks = 0u;
+        // PS2X_VU1_ASSEMBLE_ONLY=uploads: only the blocks of uploads (tests the code compiled from the disc's uploads).
+        static const bool uploadsOnly = []
+        { const char *v = std::getenv("PS2X_VU1_ASSEMBLE_ONLY"); return v && std::strcmp(v, "uploads") == 0; }();
         for (const Vu1CompiledUnit &unit : registry.units)
         {
+            if (uploadsOnly && unit.image)
+                continue;
             for (uint32_t b = 0; b < unit.blockCount; ++b)
             {
                 const Vu1CompiledUnitBlock &block = unit.blocks[b];
                 if (block.noSticky && readsStatus)
                     continue;
-                if (block.checkStart < unit.start || block.checkEnd > unit.end || block.checkEnd > kPairs ||
-                    std::memcmp(vuCode + block.checkStart * 8u, unit.bytes + (block.checkStart - unit.start) * 8u,
-                                (block.checkEnd - block.checkStart) * 8u) != 0)
+                if (block.checkStart < unit.start || block.checkEnd > unit.end || block.checkEnd > kPairs)
                     continue;
+                // The last pair in [checkStart, checkEnd) that differs from the unit (none: the whole block serves).
+                uint32_t from = block.first;
+                for (uint32_t index = block.checkEnd; index-- > block.checkStart;)
+                    if (std::memcmp(vuCode + index * 8u, unit.bytes + (index - unit.start) * 8u, 8u) != 0)
+                    {
+                        // A later upload replaced code before this pair: a block compiled from its own pairs may still
+                        // serve from the first safe entry after the difference.
+                        from = block.last;
+                        if (index >= block.first && index + 1u < block.last)
+                            for (uint32_t p = index + 1u; p < block.last; ++p)
+                            {
+                                const uint32_t k = p - block.first;
+                                if (k < 128u && (block.suffixSafe[k / 64u] >> (k % 64u)) & 1u)
+                                {
+                                    from = p;
+                                    break;
+                                }
+                            }
+                        break;
+                    }
                 bool used = false;
-                for (uint32_t index = block.first; index < block.last && index < kPairs; ++index)
+                for (uint32_t index = from; index < block.last && index < kPairs; ++index)
                     if (!assembled->table[index])
                     {
                         assembled->table[index] = block.fn;
@@ -238,9 +261,10 @@ namespace
         entry.image.assign(vuCode, vuCode + codeSize);
         entry.program = it == registry.programs.end() ? nullptr : it->second;
         // PS2X_VU1_ASSEMBLE_ONLY=1: images compiled whole are assembled from blocks too (tests the assembly, e.g. with
-        // PS2X_VU1_VERIFY=1).
+        // PS2X_VU1_VERIFY=obs, which ignores the stall bookkeeping the compiled code leaves out); =uploads: from the
+        // blocks of uploads only.
         static const bool assembleOnly = []
-        { const char *v = std::getenv("PS2X_VU1_ASSEMBLE_ONLY"); return v && *v == '1'; }();
+        { const char *v = std::getenv("PS2X_VU1_ASSEMBLE_ONLY"); return v && (*v == '1' || std::strcmp(v, "uploads") == 0); }();
         if (assembleOnly && !registry.units.empty())
             entry.program = nullptr;
         if (!entry.program && !registry.units.empty())

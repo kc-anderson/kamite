@@ -4161,6 +4161,7 @@ struct Vu1CompiledUnitBlock
     uint32_t last;
     uint32_t checkStart; // pairs its code was compiled from (itself, delay slot, flag analysis)
     uint32_t checkEnd;
+    uint64_t suffixSafe[2]; // bit k: pairs [first + k, last) may be used alone when [first + k, checkEnd) match
     bool noSticky;
     VU1InterpreterAccess::FastBlock fn;
 };
@@ -4171,6 +4172,7 @@ struct Vu1CompiledUnit
     const uint8_t *bytes;
     const Vu1CompiledUnitBlock *blocks;
     uint32_t blockCount;
+    bool image; // a captured image (false: an upload)
 };
 void registerVu1CompiledUnit(const Vu1CompiledUnit &unit);
 VU1InterpreterAccess::CompiledProgram findCompiledVu1ProgramByHash(uint64_t imageHash);

@@ -71,7 +71,8 @@ namespace ps2_host_gamepads
             auto has = [&](const char *part) { return lower.find(part) != std::string::npos; };
             if (has("playstation") || has("dualshock") || has("dualsense") || has("sony") || has("ps3") || has("ps4") || has("ps5"))
                 return Style::PlayStation;
-            if (has("xbox") || has("x-box") || has("xinput"))
+            // Steam Input's virtual pad ("Steam Virtual Gamepad") and Steam Controllers have Xbox-style A/B/X/Y.
+            if (has("xbox") || has("x-box") || has("xinput") || has("steam"))
                 return Style::Xbox;
             return Style::Unknown;
         }
@@ -115,8 +116,26 @@ namespace ps2_host_gamepads
             device.id = id;
             const char *name = SDL_GetGamepadName(gamepad);
             device.name = name ? name : "Controller";
-            device.style = styleFromName(device.name);
-            std::cerr << "[input] SDL-" << slot << ": " << device.name << std::endl;
+            // SDL knows the controller family (an XInput pad is an Xbox 360 controller whatever its name); the name
+            // decides for the rest.
+            switch (SDL_GetGamepadType(gamepad))
+            {
+            case SDL_GAMEPAD_TYPE_XBOX360:
+            case SDL_GAMEPAD_TYPE_XBOXONE:
+                device.style = Style::Xbox;
+                break;
+            case SDL_GAMEPAD_TYPE_PS3:
+            case SDL_GAMEPAD_TYPE_PS4:
+            case SDL_GAMEPAD_TYPE_PS5:
+                device.style = Style::PlayStation;
+                break;
+            default:
+                device.style = styleFromName(device.name);
+                break;
+            }
+            std::cerr << "[input] SDL-" << slot << ": " << device.name << " ("
+                      << (device.style == Style::Xbox ? "Xbox" : device.style == Style::PlayStation ? "PlayStation" : "other")
+                      << " buttons)" << std::endl;
         }
 
         void removeGamepad(SDL_JoystickID id)

@@ -28,6 +28,7 @@ namespace
 
     constexpr uint32_t kCodeSize = 16u * 1024u;
     constexpr uint32_t kDefaultBlockPairs = 128u;
+    constexpr uint32_t kUploadGridPairs = 32u; // block grid for uploads (compileUnit)
     constexpr uint32_t kMaxVfLatency = 4u;
     constexpr uint32_t kMaxViLatency = 4u;
     constexpr uint32_t kMaxAccLatency = 1u;
@@ -1494,6 +1495,9 @@ namespace
         uint32_t checkEnd = 0;   // and the pair after it, and those its dead-flag analysis looked through
         bool noSticky = false;  // compiled for code memory without status flag readers
         uint64_t key = 0;       // fastBlock<key, 0u>
+        // Bit k: the block may also be entered for pairs [first + k, last) alone, when only [first + k, checkEnd)
+        // match (no branch from there back before first + k; set for blocks whose code needs nothing outside).
+        uint64_t suffixSafe[2] = {0u, 0u};
     };
     struct UnitOut
     {
@@ -1502,6 +1506,7 @@ namespace
         uint32_t end = 0;
         std::vector<uint8_t> bytes; // the known pairs
         std::vector<UnitBlock> blocks;
+        bool image = false;
     };
     struct EmitState
     {
@@ -1723,31 +1728,45 @@ namespace
         std::vector<std::pair<uint32_t, uint32_t>> blocks;
         for (uint32_t start = knownStart; start < count;)
         {
-            uint32_t end = std::min(count, start + maxBlockPairs);
-            uint32_t cut = end;
-            while (cut < count && cut > start + maxBlockPairs / 4u && spanned[cut])
-                --cut;
-            if (cut < count && spanned[cut])
+            uint32_t cut;
+            if (isImage)
+            {
+                const uint32_t end = std::min(count, start + maxBlockPairs);
                 cut = end;
+                while (cut < count && cut > start + maxBlockPairs / 4u && spanned[cut])
+                    --cut;
+                if (cut < count && spanned[cut])
+                    cut = end;
+            }
+            else
+            {
+                // Uploads: blocks end on a fixed grid of micro memory addresses. When a later upload overwrites the
+                // start of this one, the blocks past its end still match, so only the pairs up to the next grid line
+                // are left to the interpreter. A loop that spans a grid line keeps its block going (up to
+                // maxBlockPairs).
+                cut = std::min(count, (start / kUploadGridPairs + 1u) * kUploadGridPairs);
+                while (cut < count && spanned[cut] && cut - start < maxBlockPairs)
+                    cut = std::min(count, cut + kUploadGridPairs);
+            }
             blocks.emplace_back(start, cut);
             start = cut;
         }
 
+        unit.image = isImage;
         unit.start = knownStart;
         // An image's blocks were compiled seeing the zero pairs after its code: those are part of what they depend on.
         unit.end = isImage ? std::min(total, count + 2u) : knownEnd;
         unit.bytes.assign(code.begin() + unit.start * 8u, code.begin() + unit.end * 8u);
-        for (uint32_t block = 0; block < blocks.size(); ++block)
+        // One block: emitted with the given flag liveness, checked at run time against pairs [checkStart, checkEnd).
+        const auto emitBlock = [&](uint32_t start, uint32_t end, const std::vector<bool> &live, uint32_t checkStart,
+                                   uint32_t checkEnd, bool suffixes) -> bool
         {
-            const auto [start, end] = blocks[block];
             emitter.first = start;
             emitter.last = end;
             emitter.usesTk = false;
             emitter.usesJt = false;
             emitter.exits.clear();
-            for (uint32_t index = start; index < end; ++index)
-                if (!emitter.flagLive[index])
-                    ++stats["pairs with dead MAC/status flags"];
+            emitter.flagLive = live;
             emitter.planSegments();
             std::string body;
             for (uint32_t index = start; index < end; ++index)
@@ -1785,26 +1804,84 @@ namespace
             }
             const uint64_t key = fnv1a64(reinterpret_cast<const uint8_t *>(text.data()), text.size());
             UnitBlock unitBlock;
-            const auto [reachLow, reachHigh] = blockReach(start, end);
             unitBlock.first = start;
             unitBlock.last = end;
-            unitBlock.checkStart = std::max(unit.start, std::min(start, reachLow));
-            unitBlock.checkEnd = std::min(std::max(end + 2u, reachHigh), unit.end);
+            unitBlock.checkStart = checkStart;
+            unitBlock.checkEnd = checkEnd;
             unitBlock.noSticky = emitter.noSticky;
             unitBlock.key = key;
+            if (suffixes && end - start <= 128u)
+            {
+                // Entering at p runs per-pair code from p on and jumps only to pairs at or after p, unless some branch
+                // at or after p goes back before it.
+                for (uint32_t p = start + 1u; p < end; ++p)
+                {
+                    bool safe = true;
+                    for (uint32_t index = p; index < end && safe; ++index)
+                    {
+                        const Pair &pair = emitter.pairs[index];
+                        if (pair.branch && !pair.dynamic && pair.target / 8u >= start && pair.target / 8u < p)
+                            safe = false;
+                    }
+                    if (safe)
+                        unitBlock.suffixSafe[(p - start) / 64u] |= 1ull << ((p - start) % 64u);
+                }
+            }
             unit.blocks.push_back(unitBlock);
             ++stats["blocks"];
             if (!state.emitted.insert(key).second)
             {
                 ++stats["blocks shared with an earlier unit"];
-                continue;
+                return true;
             }
             std::string full = "template <>\nVU1InterpreterAccess::StepResult VU1InterpreterAccess::fastBlock<" + hex64(key) +
                                ", 0u>(VU1Interpreter &vu, Vu1FastCtx &ctx)\n{\n" + text;
             state.pendingBytes += full.size();
             state.pending.push_back(std::move(full));
-            if (!flushParts(outDir, state, false))
+            return flushParts(outDir, state, false);
+        };
+        for (const auto &[start, end] : blocks)
+        {
+            for (uint32_t index = start; index < end; ++index)
+                if (!emitter.flagLive[index])
+                    ++stats["pairs with dead MAC/status flags"];
+            const auto [reachLow, reachHigh] = blockReach(start, end);
+            const uint32_t localEnd = std::min(end + 2u, unit.end);
+            const uint32_t checkStart = std::max(unit.start, std::min(start, reachLow));
+            const uint32_t checkEnd = std::min(std::max(end + 2u, reachHigh), unit.end);
+            const std::vector<bool> unitLive = emitter.flagLive;
+            if (!emitBlock(start, end, unitLive, checkStart, checkEnd, false))
                 return false;
+            emitter.flagLive = unitLive;
+            // An upload's block whose dead-flag analysis looked outside it also gets a variant that assumes a flag
+            // reader past every exit: it needs only its own pairs, so it still serves when a later upload has replaced
+            // the code around it. The assembly tries the precise one first.
+            if (!isImage && (checkStart != start || checkEnd != localEnd))
+            {
+                std::vector<bool> local(total, true);
+                for (uint32_t index = start; index < end; ++index)
+                    local[index] = seed[index];
+                for (bool changed = true; changed;)
+                {
+                    changed = false;
+                    for (uint32_t index = end; index-- > start;)
+                    {
+                        if (local[index])
+                            continue;
+                        for (const uint32_t next : successors[index])
+                            if (next < start || next >= end || local[next])
+                            {
+                                local[index] = true;
+                                changed = true;
+                                break;
+                            }
+                    }
+                }
+                ++stats["upload blocks with a local variant"];
+                if (!emitBlock(start, end, local, start, localEnd, true))
+                    return false;
+                emitter.flagLive = unitLive;
+            }
         }
         std::cout << unit.name << ": pairs " << hx(unit.start * 8u) << ".." << hx(unit.end * 8u) << ", " << blocks.size() << " blocks\n";
         return true;
@@ -1943,7 +2020,8 @@ int main(int argc, char **argv)
             reg << (at % 32u == 0u ? "\n    " : "") << static_cast<unsigned>(unit.bytes[at]) << ",";
         reg << "\n};\nstatic const Vu1CompiledUnitBlock kUnitBlocks" << index << "[] = {\n";
         for (const UnitBlock &block : unit.blocks)
-            reg << "    {" << block.first << "u, " << block.last << "u, " << block.checkStart << "u, " << block.checkEnd << "u, " << (block.noSticky ? "true" : "false")
+            reg << "    {" << block.first << "u, " << block.last << "u, " << block.checkStart << "u, " << block.checkEnd << "u, {"
+                << hex64(block.suffixSafe[0]) << ", " << hex64(block.suffixSafe[1]) << "}, " << (block.noSticky ? "true" : "false")
                 << ", &VU1InterpreterAccess::fastBlock<" << hex64(block.key) << ", 0u>},\n";
         reg << "};\n\n";
     }
@@ -1952,7 +2030,8 @@ int main(int argc, char **argv)
         reg << "    registerVu1CompiledProgram(" << hex64(hash) << ", &VU1InterpreterAccess::runImage<" << hex64(hash) << ">);\n";
     for (size_t index = 0; index < units.size(); ++index)
         reg << "    registerVu1CompiledUnit(Vu1CompiledUnit{" << units[index].start << "u, " << units[index].end << "u, kUnitBytes" << index
-            << ", kUnitBlocks" << index << ", " << units[index].blocks.size() << "u});\n";
+            << ", kUnitBlocks" << index << ", " << units[index].blocks.size() << "u, " << (units[index].image ? "true" : "false")
+            << "});\n";
     reg << "}\n";
     std::ofstream file(outDir / "vu1_programs.cpp", std::ios::binary);
     file << reg.str();

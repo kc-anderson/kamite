@@ -24,8 +24,9 @@ set(PS2X_ENABLE_DEBUG_UI ${GODHAND_DEBUG_UI} CACHE BOOL "" FORCE)
 # (runtime/ps2xRuntime/CMakeLists.txt, ExternalProject ffmpeg_external).
 option(GODHAND_FFMPEG "Decode MPEG video with FFmpeg (downloads a prebuilt FFmpeg)" OFF)
 set(PS2X_ENABLE_FFMPEG ${GODHAND_FFMPEG} CACHE BOOL "" FORCE)
-# Controllers through SDL3 (downloads the SDL3 source at configure time). OFF: GLFW's gamepads (raylib) still work.
-option(GODHAND_SDL_INPUT "Read controllers through SDL3" OFF)
+# Controllers through SDL3 (downloads the SDL3 source at configure time; SDL3.dll goes next to godhand.exe): XInput,
+# PlayStation, Switch and Steam controllers, vibration. OFF (or PS2X_SDL_INPUT=0 at run time): GLFW's gamepads.
+option(GODHAND_SDL_INPUT "Read controllers through SDL3" ON)
 set(PS2X_ENABLE_SDL_INPUT ${GODHAND_SDL_INPUT} CACHE BOOL "" FORCE)
 # Runtime logs: the normal ones stay, the very verbose ones (per-call function log tracker) are off.
 set(PS2X_ENABLE_AGRESSIVE_LOGS OFF CACHE BOOL "" FORCE)

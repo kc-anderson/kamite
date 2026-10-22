@@ -375,7 +375,9 @@ namespace
             for (const IniSetting &setting : kIniSettings)
                 if (section == setting.section && lowerText(key) == setting.key)
                     variable = setting.variable;
-            if (variable.empty() && (key.rfind("PS2X_", 0) == 0 || key.rfind("GODHAND_", 0) == 0))
+            // PS2X_* / GODHAND_* switches, and SDL_* hints (SDL3 reads them from the environment, e.g.
+            // SDL_JOYSTICK_HIDAPI_STEAM=1).
+            if (variable.empty() && (key.rfind("PS2X_", 0) == 0 || key.rfind("GODHAND_", 0) == 0 || key.rfind("SDL_", 0) == 0))
                 variable = key;
             if (variable.empty())
             {
