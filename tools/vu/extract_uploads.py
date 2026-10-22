@@ -69,7 +69,7 @@ def main(argv):
     out = argv[1]
     os.makedirs(out, exist_ok=True)
     for name in os.listdir(out):
-        if name.startswith("vup_") and name.endswith(".bin"):
+        if name.startswith("vup_") and name.endswith(".bin") and "_cap_" not in name:  # keep captured uploads
             os.remove(os.path.join(out, name))
     written = pairs = 0
     seen = set()

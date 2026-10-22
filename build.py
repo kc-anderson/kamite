@@ -776,7 +776,8 @@ VU1_RECOMP = BUILD / "runtime" / "ps2xTest" / "vu1_recomp.exe"
 def vu(args=()):
     """Compiles the game's VU1 microcode into generated/vu1 (README "Faster 3D"). Inputs, collected in build/vu1_images:
     every microcode upload (VIF MPG) found in the boot ELF and the SNR2 DLLs (tools/vu/extract_uploads.py), and the
-    vu1_*.bin images captured while playing (PS2X_VU1_CAPTURE, logs/vu1_missing) from the folders given here or in
+    vu1_*.bin images and vup_*_cap_*.bin uploads captured while playing (PS2X_VU1_CAPTURE, logs/vu1_missing) from the
+    folders given here or in
     GODHAND_VU_CAPTURE (separated by ';'). Captured images are kept in build/vu1_images across runs. At run time the
     compiled blocks are assembled for whatever combination of programs is in VU1's micro memory."""
     elf = ROOT / "build" / BOOT_ELF
@@ -790,12 +791,14 @@ def vu(args=()):
     folders = list(args) + [f for f in os.environ.get("GODHAND_VU_CAPTURE", "").split(";") if f]
     copied = 0
     for folder in folders:
-        for image in sorted(Path(folder).glob("vu1_*.bin")):
-            if image.stat().st_size == 16384 and not (VU_IMAGES / image.name).exists():
+        for image in sorted(Path(folder).glob("vu1_*.bin")) + sorted(Path(folder).glob("vup_*_cap_*.bin")):
+            size = image.stat().st_size
+            if (size == 16384 or image.name.startswith("vup_")) and size % 8 == 0 and not (VU_IMAGES / image.name).exists():
                 shutil.copy2(image, VU_IMAGES / image.name)
                 copied += 1
     images = len(list(VU_IMAGES.glob("vu1_*.bin")))
-    print(f"captured images: {images} ({copied} new)")
+    uploads = len(list(VU_IMAGES.glob("vup_*_cap_*.bin")))
+    print(f"captured: {images} images, {uploads} uploads ({copied} new)")
     if not (BUILD / "build.ninja").exists() or "GODHAND_BUILD_TOOLS:BOOL=ON" not in \
             (BUILD / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace"):
         if configure(["-DGODHAND_BUILD_TOOLS=ON"]):
