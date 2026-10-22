@@ -168,12 +168,15 @@ Open an issue and attach the log of your last session: `build\port\bin\logs\play
 
 ### Faster 3D (for developers)
 
-Some 3D effects run on the PS2's VU1 coprocessor. For full speed they are compiled ahead of time:
+Some 3D effects run on the PS2's VU1 coprocessor. For full speed its microcode is compiled ahead of time:
 
-1. Play with `PS2X_VU1_CAPTURE=<folder>` set. Programs that are still missing are also saved to
-   `build\port\bin\logs\vu1_missing\`: copy those `vu1_*.bin` files into the same folder.
-2. Build the tool: `python -I build.py configure -DGODHAND_BUILD_TOOLS=ON`, then `python -I build.py build vu1_recomp`.
-3. Run `build\port\runtime\ps2xTest\vu1_recomp.exe <folder> generated\vu1`, then `python -I build.py build`.
+1. `python -I build.py vu` finds every microcode upload in the game's program files (after `generate` and the SNR2
+   steps), compiles it with `vu1_recomp` into `generated\vu1`, and `python -I build.py build` links it in. While the
+   game runs, the compiled pieces are put together for whatever combination of programs is loaded.
+2. A few uploads are placed by the game itself, so they are not found on the disc. Play with
+   `PS2X_VU1_CAPTURE=<folder>` set: every upload is saved there. Images that are still not fully compiled are saved to
+   `build\port\bin\logs\vu1_missing\` (the log says how much of each was compiled). Then run
+   `python -I build.py vu <folder> <logs\vu1_missing>` and build again.
 
 ### How it works
 

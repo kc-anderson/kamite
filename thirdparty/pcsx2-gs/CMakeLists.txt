@@ -112,9 +112,9 @@ target_link_libraries(pcsx2gs PRIVATE pcsx2_flags pcsx2gs_api pcsx2_gs pcsx2_gs_
 if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set_target_properties(pcsx2gs PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 endif()
-# resources/ (shaders, OSD font; see resources/README.md) next to the DLL, and the shader cache made from the game's
-# menus and fights (shadercache/) when the player has none yet: the first fights then compile almost nothing.
+# resources/ (shaders, OSD font; see resources/README.md) next to the DLL. No shader cache is shipped: the Urban Reign
+# one came without its blob (.gitignore drops *.bin), and its orphan index, copied over a player's own cache, made PCSX2
+# read wrong bytecode from that player's blob (black screen, then a failed swap chain resize). PCSX2 builds the cache
+# (shadercache_pcsx2 next to godhand.exe) as the game runs.
 add_custom_command(TARGET pcsx2gs POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/resources" "$<TARGET_FILE_DIR:pcsx2gs>/resources"
-    COMMAND ${CMAKE_COMMAND} -DSRC="${CMAKE_CURRENT_SOURCE_DIR}/shadercache" -DDST="$<TARGET_FILE_DIR:pcsx2gs>/shadercache_pcsx2"
-            -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/copy_if_missing.cmake")
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/resources" "$<TARGET_FILE_DIR:pcsx2gs>/resources")

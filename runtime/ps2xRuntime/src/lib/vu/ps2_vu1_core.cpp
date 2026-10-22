@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -71,23 +72,44 @@ namespace
     {
         std::vector<uint8_t> image;
         VU1InterpreterAccess::CompiledProgram program = nullptr;
+        const VU1InterpreterAccess::FastBlock *table = nullptr; // runAssembledVu1's table (program == runAssembledVu1)
+    };
+
+    // A table of compiled blocks assembled for one micro memory image from the registered units (vu1_recomp: blocks of
+    // captured images and of the microcode uploads found on the disc, each checked against the memory it would run).
+    struct Vu1AssembledTable
+    {
+        std::array<VU1InterpreterAccess::FastBlock, VU1InterpreterAccess::kFastCodeSize / 8u> table{};
     };
 
     struct Vu1CompiledRegistry
     {
         std::unordered_map<uint64_t, VU1InterpreterAccess::CompiledProgram> programs;
+        std::vector<Vu1CompiledUnit> units;
+        std::unordered_map<uint64_t, std::unique_ptr<Vu1AssembledTable>> assembled; // by image hash; never evicted
         std::vector<Vu1ImageCacheEntry> recent;
         const PS2Memory *memory = nullptr;
         const uint8_t *code = nullptr;
         uint64_t generation = ~0ull;
         VU1InterpreterAccess::CompiledProgram current = nullptr;
+        const VU1InterpreterAccess::FastBlock *currentTable = nullptr;
         bool enabled = true;
     };
+
+    // The table runAssembledVu1 runs: set by lookupCompiledVu1Program on the thread that then runs the program.
+    thread_local const VU1InterpreterAccess::FastBlock *t_vu1AssembledTable = nullptr;
+
+    VU1InterpreterAccess::StepResult runAssembledVu1(VU1Interpreter &vu, const Vu1RunArgs &args)
+    {
+        if (!t_vu1AssembledTable)
+            return VU1InterpreterAccess::StepResult::Fallback;
+        return VU1InterpreterAccess::runFast(vu, args, t_vu1AssembledTable, VU1InterpreterAccess::kFastCodeSize / 8u);
+    }
 
     // Log only (sweep R1): a VU1 micro memory image with no compiled (AOT) code runs every call in the interpreter, far
     // slower, with nothing in the log. Once per image: one line, and the image as vu1_<hash>.bin (the capture format
     // vu1_recomp reads) in PS2X_VU1_MISS_DIR (default logs/vu1_missing next to the exe's working folder; "0" = no file).
-    void reportUncompiledVu1Image(uint64_t hash, const uint8_t *vuCode, uint32_t codeSize)
+    void reportUncompiledVu1Image(uint64_t hash, const uint8_t *vuCode, uint32_t codeSize, const char *what = nullptr)
     {
         static std::unordered_map<uint64_t, bool> reported;
         if (reported.size() >= 256u || !reported.emplace(hash, true).second)
@@ -114,8 +136,87 @@ namespace
                 std::fclose(file);
             }
         }
-        std::fprintf(stderr, "[vu1-aot] image %016llx has no compiled code: VU1 runs it in the interpreter (slower); %s\n",
-                     static_cast<unsigned long long>(hash), saved.c_str());
+        if (what)
+            std::fprintf(stderr, "[vu1-aot] image %016llx: %s; %s\n", static_cast<unsigned long long>(hash), what, saved.c_str());
+        else
+            std::fprintf(stderr, "[vu1-aot] image %016llx has no compiled code: VU1 runs it in the interpreter (slower); %s\n",
+                         static_cast<unsigned long long>(hash), saved.c_str());
+    }
+
+    // Assembles a table for this micro memory from the registered units: every block whose pairs [checkStart,
+    // checkEnd) equal the memory serves its pairs (the first block found for a pair wins). Blocks compiled without
+    // sticky status accumulation are only used when no instruction in the memory reads the status flags. Pairs no
+    // block covers stay with the interpreter. Logs the coverage once per image; an image not fully covered is saved
+    // to vu1_missing like an uncompiled one, so a later vu1_recomp run can compile it whole.
+    const VU1InterpreterAccess::FastBlock *assembleVu1Image(Vu1CompiledRegistry &registry, uint64_t hash, const uint8_t *vuCode,
+                                                            uint32_t codeSize)
+    {
+        constexpr uint32_t kPairs = VU1InterpreterAccess::kFastCodeSize / 8u;
+        if (registry.units.empty() || codeSize != VU1InterpreterAccess::kFastCodeSize)
+            return nullptr;
+        if (const auto it = registry.assembled.find(hash); it != registry.assembled.end())
+            return it->second ? it->second->table.data() : nullptr;
+        if (registry.assembled.size() >= 4096u)
+            return nullptr; // a game that keeps making new images: stop assembling (each table is 16 KB)
+        bool readsStatus = false;
+        uint32_t codePairs = 0u;
+        for (uint32_t index = 0; index < kPairs; ++index)
+        {
+            uint32_t lower, upper;
+            std::memcpy(&lower, vuCode + index * 8u, 4u);
+            std::memcpy(&upper, vuCode + index * 8u + 4u, 4u);
+            if (lower != 0u || upper != 0u)
+                ++codePairs;
+            const uint32_t opHi = (lower >> 25) & 0x7Fu;
+            if (!(upper & 0x80000000u) && opHi >= 0x14u && opHi <= 0x17u)
+                readsStatus = true;
+        }
+        auto assembled = std::make_unique<Vu1AssembledTable>();
+        uint32_t blocks = 0u;
+        for (const Vu1CompiledUnit &unit : registry.units)
+        {
+            for (uint32_t b = 0; b < unit.blockCount; ++b)
+            {
+                const Vu1CompiledUnitBlock &block = unit.blocks[b];
+                if (block.noSticky && readsStatus)
+                    continue;
+                if (block.checkStart < unit.start || block.checkEnd > unit.end || block.checkEnd > kPairs ||
+                    std::memcmp(vuCode + block.checkStart * 8u, unit.bytes + (block.checkStart - unit.start) * 8u,
+                                (block.checkEnd - block.checkStart) * 8u) != 0)
+                    continue;
+                bool used = false;
+                for (uint32_t index = block.first; index < block.last && index < kPairs; ++index)
+                    if (!assembled->table[index])
+                    {
+                        assembled->table[index] = block.fn;
+                        used = true;
+                    }
+                blocks += used ? 1u : 0u;
+            }
+        }
+        uint32_t compiledPairs = 0u;
+        for (uint32_t index = 0; index < kPairs; ++index)
+        {
+            uint32_t pair[2];
+            std::memcpy(pair, vuCode + index * 8u, 8u);
+            if (assembled->table[index] && (pair[0] != 0u || pair[1] != 0u))
+                ++compiledPairs;
+        }
+        if (compiledPairs < codePairs)
+        {
+            char what[160];
+            std::snprintf(what, sizeof(what), "%u of %u code pairs compiled (assembled from %u blocks), the rest interpreted",
+                          compiledPairs, codePairs, blocks);
+            reportUncompiledVu1Image(hash, vuCode, codeSize, what);
+        }
+        else
+            std::fprintf(stderr, "[vu1-aot] image %016llx: all %u code pairs compiled (assembled from %u blocks)\n",
+                         static_cast<unsigned long long>(hash), codePairs, blocks);
+        if (blocks == 0u)
+            assembled.reset();
+        const VU1InterpreterAccess::FastBlock *table = assembled ? assembled->table.data() : nullptr;
+        registry.assembled.emplace(hash, std::move(assembled));
+        return table;
     }
 
     VU1InterpreterAccess::CompiledProgram findCompiledVu1Image(Vu1CompiledRegistry &registry, const uint8_t *vuCode, uint32_t codeSize)
@@ -127,6 +228,7 @@ namespace
             {
                 if (index != 0u)
                     std::swap(registry.recent[index], registry.recent[0]);
+                registry.currentTable = registry.recent[0].table;
                 return registry.recent[0].program;
             }
         }
@@ -135,8 +237,23 @@ namespace
         Vu1ImageCacheEntry entry;
         entry.image.assign(vuCode, vuCode + codeSize);
         entry.program = it == registry.programs.end() ? nullptr : it->second;
-        if (!entry.program)
+        // PS2X_VU1_ASSEMBLE_ONLY=1: images compiled whole are assembled from blocks too (tests the assembly, e.g. with
+        // PS2X_VU1_VERIFY=1).
+        static const bool assembleOnly = []
+        { const char *v = std::getenv("PS2X_VU1_ASSEMBLE_ONLY"); return v && *v == '1'; }();
+        if (assembleOnly && !registry.units.empty())
+            entry.program = nullptr;
+        if (!entry.program && !registry.units.empty())
+        {
+            entry.table = assembleVu1Image(registry, hash, vuCode, codeSize);
+            if (entry.table)
+                entry.program = &runAssembledVu1;
+            else if (registry.assembled.size() >= 4096u)
+                reportUncompiledVu1Image(hash, vuCode, codeSize);
+        }
+        else if (!entry.program)
             reportUncompiledVu1Image(hash, vuCode, codeSize);
+        registry.currentTable = entry.table;
         constexpr size_t kRecentImages = 8u;
         if (registry.recent.size() < kRecentImages)
             registry.recent.push_back(std::move(entry));
@@ -513,7 +630,7 @@ namespace
     VU1InterpreterAccess::CompiledProgram lookupCompiledVu1Program(const uint8_t *vuCode, uint32_t codeSize, const PS2Memory *memory)
     {
         Vu1CompiledRegistry &registry = vu1CompiledRegistry();
-        if (!registry.enabled || registry.programs.empty() || !memory)
+        if (!registry.enabled || (registry.programs.empty() && registry.units.empty()) || !memory)
             return nullptr;
         const uint64_t generation = memory->getVU1CodeGeneration();
         if (registry.memory != memory || registry.code != vuCode || registry.generation != generation)
@@ -523,6 +640,7 @@ namespace
             registry.generation = generation;
             registry.current = findCompiledVu1Image(registry, vuCode, codeSize);
         }
+        t_vu1AssembledTable = registry.currentTable;
         return registry.current;
     }
 
@@ -616,11 +734,51 @@ namespace
         }
     }
 
+    // Microcode uploads (VIF1 MPG) while PS2X_VU1_CAPTURE is set: consecutive MPGs that continue each other are merged
+    // into one upload, which is written as vup_<pair address>_cap_<hash>.bin (the format of tools/vu/extract_uploads.py)
+    // when the next one starts somewhere else or VU1 runs. vu1_recomp compiles each upload once, whatever else is in
+    // micro memory next to it; uploads the game places itself (not where the disc's MPG says) are found this way.
+    struct Vu1UploadCapture
+    {
+        std::vector<uint8_t> bytes;
+        uint32_t address = 0; // bytes
+        std::unordered_map<uint64_t, bool> written;
+        std::mutex mutex; // the VIF1 upload and the VU1 run can be on different threads (MTVU)
+    };
+    Vu1UploadCapture g_vu1Uploads;
+
+    // Caller holds g_vu1Uploads.mutex.
+    void flushVu1UploadCaptureLocked(const Vu1ProgramCapture &capture)
+    {
+        Vu1UploadCapture &up = g_vu1Uploads;
+        if (up.bytes.empty())
+            return;
+        const uint64_t hash = fnv1a64(up.bytes.data(), up.bytes.size()) ^ (static_cast<uint64_t>(up.address) << 48);
+        if (up.written.size() < 65536u && up.written.emplace(hash, true).second)
+        {
+            char name[80];
+            std::snprintf(name, sizeof(name), "vup_%03x_cap_%016llx.bin", up.address / 8u, static_cast<unsigned long long>(hash));
+            const std::filesystem::path path = capture.directory / name;
+            std::error_code error;
+            if (!std::filesystem::exists(path, error))
+                if (FILE *file = std::fopen(path.string().c_str(), "wb"))
+                {
+                    std::fwrite(up.bytes.data(), 1, up.bytes.size(), file);
+                    std::fclose(file);
+                }
+        }
+        up.bytes.clear();
+    }
+
     void captureVu1Program(const uint8_t *vuCode, uint32_t codeSize, const PS2Memory *memory, uint32_t pc)
     {
         Vu1ProgramCapture *capture = vu1ProgramCapture();
         if (!capture || !memory)
             return;
+        {
+            std::lock_guard<std::mutex> lock(g_vu1Uploads.mutex);
+            flushVu1UploadCaptureLocked(*capture);
+        }
         const uint64_t generation = memory->getVU1CodeGeneration();
         if (capture->memory != memory || capture->generation != generation)
         {
@@ -1820,6 +1978,25 @@ VU1InterpreterAccess::CompiledProgram findCompiledVu1ProgramByHash(uint64_t imag
 void registerVu1CompiledProgram(uint64_t imageHash, VU1InterpreterAccess::CompiledProgram program)
 {
     vu1CompiledRegistry().programs[imageHash] = program;
+}
+
+void ps2xNoteVu1Upload(uint32_t byteAddress, const uint8_t *data, uint32_t size)
+{
+    const Vu1ProgramCapture *capture = vu1ProgramCapture();
+    if (!capture || !data || size == 0u || (byteAddress & 7u) != 0u || (size & 7u) != 0u)
+        return;
+    Vu1UploadCapture &up = g_vu1Uploads;
+    std::lock_guard<std::mutex> lock(up.mutex);
+    if (!up.bytes.empty() && (up.address + up.bytes.size() != byteAddress || up.bytes.size() + size > 0x4000u))
+        flushVu1UploadCaptureLocked(*capture);
+    if (up.bytes.empty())
+        up.address = byteAddress;
+    up.bytes.insert(up.bytes.end(), data, data + size);
+}
+
+void registerVu1CompiledUnit(const Vu1CompiledUnit &unit)
+{
+    vu1CompiledRegistry().units.push_back(unit);
 }
 
 void saveVuState(VU1Interpreter &vu, ps2x::state::Writer &out)

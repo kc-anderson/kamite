@@ -1482,26 +1482,83 @@ namespace
         return !p.reserved && !p.branch && !p.d.eBit && !p.d.dBit && !p.d.tBit;
     }
 
-    // hash: the name the image is emitted and registered under. exactVu0: an image that may be a VU0 program keeps the
-    // exact FMACs (the PS2X_VU0_FAST=0 variant). mayBeVu0Out: whether it fits in VU0's micro memory.
-    bool writeImage(const std::filesystem::path &outDir, uint64_t hash, const std::vector<uint8_t> &code, uint32_t maxBlockPairs,
-                    std::map<std::string, uint32_t> &stats, bool exactVu0, bool *mayBeVu0Out)
+    // One compile unit: a whole captured image (vu1_<hash>.bin, 16 KB, every pair known) or a microcode upload found on
+    // the disc (vup_<pair address>_<tag>.bin: the bytes of one MPG upload, or a chain of them, at that address; every
+    // other pair is unknown). Units are cut into blocks as before; each block is emitted once under the hash of its
+    // generated code (fastBlock<code hash, 0>), so a block shared by several images or uploads is compiled once.
+    struct UnitBlock
+    {
+        uint32_t first = 0;     // pair range the block runs
+        uint32_t last = 0;
+        uint32_t checkStart = 0; // the block's code depends on pairs [checkStart, checkEnd): its own, the delay slot
+        uint32_t checkEnd = 0;   // and the pair after it, and those its dead-flag analysis looked through
+        bool noSticky = false;  // compiled for code memory without status flag readers
+        uint64_t key = 0;       // fastBlock<key, 0u>
+    };
+    struct UnitOut
+    {
+        std::string name;
+        uint32_t start = 0;     // known pairs [start, end)
+        uint32_t end = 0;
+        std::vector<uint8_t> bytes; // the known pairs
+        std::vector<UnitBlock> blocks;
+    };
+    struct EmitState
+    {
+        std::set<uint64_t> emitted;                 // block keys written to a part file
+        std::vector<std::string> pending;           // block texts not yet written
+        size_t pendingBytes = 0;
+        uint32_t part = 0;
+    };
+
+    bool flushParts(const std::filesystem::path &outDir, EmitState &state, bool force)
+    {
+        while (!state.pending.empty() && (force || state.pendingBytes >= kPartBytes))
+        {
+            std::string text = "#include \"ps2_vu1_impl.inl\"\n\n";
+            size_t size = 0u;
+            size_t taken = 0u;
+            while (taken < state.pending.size() && (size == 0u || size + state.pending[taken].size() <= kPartBytes))
+            {
+                size += state.pending[taken].size();
+                text += state.pending[taken++];
+            }
+            state.pending.erase(state.pending.begin(), state.pending.begin() + static_cast<std::ptrdiff_t>(taken));
+            state.pendingBytes -= size;
+            char partName[64];
+            std::snprintf(partName, sizeof(partName), "vu1_part_%04u.cpp", state.part++);
+            std::ofstream partFile(outDir / partName, std::ios::binary);
+            partFile << text;
+            if (!partFile)
+                return false;
+        }
+        return true;
+    }
+
+    // code: the 16 KB micro memory as this unit knows it. Pairs outside [knownStart, knownEnd) are unknown: they are
+    // treated as reserved (never compiled, never looked through), so no block depends on them.
+    // exactVu0: an image that may be a VU0 program keeps the exact FMACs (the PS2X_VU0_FAST=0 variant).
+    // mayBeVu0Out: whether it fits in VU0's micro memory (images only; uploads are compiled for VU1).
+    bool compileUnit(EmitState &state, const std::filesystem::path &outDir, const std::vector<uint8_t> &code,
+                     uint32_t knownStart, uint32_t knownEnd, bool isImage, uint32_t maxBlockPairs,
+                     std::map<std::string, uint32_t> &stats, bool exactVu0, bool *mayBeVu0Out, UnitOut &unit)
     {
         VU1Interpreter vu(VU1Interpreter::Unit::VU1);
+        const uint32_t total = kCodeSize / 8u;
         uint32_t used = 0u;
-        for (uint32_t pc = 0; pc + 8u <= code.size(); pc += 8u)
+        for (uint32_t pc = knownStart * 8u; pc + 8u <= knownEnd * 8u; pc += 8u)
             if (std::any_of(code.begin() + pc, code.begin() + pc + 8u, [](uint8_t b) { return b != 0u; }))
                 used = pc / 8u + 1u;
-        const uint32_t total = kCodeSize / 8u;
-        const uint32_t count = std::min(total, used + 2u);
+        const uint32_t count = isImage ? std::min(total, used + 2u) : knownEnd;
+        const auto known = [&](uint32_t index) { return index >= knownStart && index < knownEnd; };
 
         Emitter emitter;
-        const bool mayBeVu0 = used * 8u <= 4096u;
+        const bool mayBeVu0 = isImage && used * 8u <= 4096u;
         if (mayBeVu0Out)
             *mayBeVu0Out = mayBeVu0;
         emitter.fastFmac = gFastFmac && (!mayBeVu0 || (gVu0Fast && !exactVu0));
         bool readsStatus = false;
-        for (uint32_t pc = 0; pc + 8u <= code.size(); pc += 8u)
+        for (uint32_t pc = knownStart * 8u; pc + 8u <= knownEnd * 8u; pc += 8u)
         {
             uint32_t lower, upper;
             std::memcpy(&lower, code.data() + pc, 4u);
@@ -1511,14 +1568,22 @@ namespace
                 readsStatus = true;
         }
         emitter.noSticky = emitter.fastFmac && !readsStatus && !gSticky;
-        stats[emitter.noSticky ? "images without sticky accumulation" : "images keeping sticky accumulation"] += 1u;
+        stats[emitter.noSticky ? "units without sticky accumulation" : "units keeping sticky accumulation"] += 1u;
         emitter.pairs.resize(total);
+        uint32_t reserved = 0u;
         for (uint32_t index = 0; index < total; ++index)
         {
             Pair &p = emitter.pairs[index];
             p.pc = index * 8u;
+            if (!known(index))
+            {
+                p.reserved = true; // unknown: the interpreter runs it, nothing is compiled across it
+                continue;
+            }
             p.d = A::decodePair(vu, code.data(), p.pc);
             p.reserved = p.d.upperUsage.reserved || p.d.lowerUsage.reserved;
+            if (p.reserved)
+                ++reserved;
             p.branch = !p.d.iBit && A::pipeline(p.d.lowerUsage) == A::kPipeBranch;
             if (p.branch)
             {
@@ -1528,7 +1593,13 @@ namespace
                 p.target = (p.pc + 8u + static_cast<uint32_t>(fImm11(p.d.lower) * 8)) & 0x3FFFu;
             }
         }
-        for (uint32_t index = 0; index < count; ++index)
+        // An upload whose bytes do not decode as VU code (a false MPG match in the scanned files) is skipped.
+        if (!isImage && reserved * 16u > knownEnd - knownStart)
+        {
+            ++stats["uploads skipped (not VU code)"];
+            return true;
+        }
+        for (uint32_t index = knownStart; index < count; ++index)
         {
             Pair &p = emitter.pairs[index];
             const Pair &next = emitter.pairs[nextPc(p.pc) / 8u];
@@ -1543,72 +1614,95 @@ namespace
                 p.fallback = true;
             if (p.fallback)
                 ++stats["fallback pairs"];
-            if (!p.d.iBit && lowerEmit(p.pc, p.d.lower, p.d.upper).generic)
+            if (!p.d.iBit && !p.reserved && lowerEmit(p.pc, p.d.lower, p.d.upper).generic)
                 ++stats["generic lower"];
-            if (upperEmit(p.d.upper).generic)
+            if (!p.reserved && upperEmit(p.d.upper).generic)
                 ++stats["generic upper"];
         }
 
-        // Flag readers reachable from each pair (see Emitter::flagLive): backwards fixed point over the static
-        // control flow (fall-through, branch targets, delay slots; an E bit ends the program after its delay slot).
+        // Flag readers reachable from each pair (see Emitter::flagLive): backwards fixed point over the static control
+        // flow of this unit (fall-through, branch targets, delay slots; an E bit ends the program after its delay slot).
+        // Unknown pairs count as readers. A block's dead-flag decisions depend on every pair the search went through
+        // from it, so those pairs are part of what the block is checked against at run time (blockReach below).
+        const auto readsFlags = [](const Pair &p)
         {
-            const auto readsFlags = [](const Pair &p)
+            if (p.d.iBit || p.reserved)
+                return false;
+            const uint32_t opHi = (p.d.lower >> 25) & 0x7Fu;
+            return (opHi >= 0x14u && opHi <= 0x18u) || opHi == 0x1Au || opHi == 0x1Bu;
+        };
+        std::vector<bool> target(total, false);
+        for (uint32_t index = 0; index < total; ++index)
+            if (emitter.pairs[index].branch && !emitter.pairs[index].dynamic)
+                target[emitter.pairs[index].target / 8u] = true;
+        std::vector<std::vector<uint32_t>> successors(total);
+        std::vector<bool> seed(total, false);
+        for (uint32_t index = 0; index < total; ++index)
+        {
+            const Pair &p = emitter.pairs[index];
+            const uint32_t slot = nextPc(p.pc) / 8u;
+            if (readsFlags(p) || (p.branch && p.dynamic) || p.fallback || p.reserved)
+                seed[index] = true; // an actual reader, or a continuation this analysis cannot follow
+            const bool slotOfEnd = index > 0u && emitter.pairs[index - 1u].d.eBit;
+            if (p.branch)
             {
-                if (p.d.iBit)
-                    return false;
-                const uint32_t opHi = (p.d.lower >> 25) & 0x7Fu;
-                return (opHi >= 0x14u && opHi <= 0x18u) || opHi == 0x1Au || opHi == 0x1Bu;
-            };
-            std::vector<bool> target(total, false);
-            for (uint32_t index = 0; index < total; ++index)
-                if (emitter.pairs[index].branch && !emitter.pairs[index].dynamic)
-                    target[emitter.pairs[index].target / 8u] = true;
-            std::vector<std::vector<uint32_t>> successors(total);
-            std::vector<bool> live(total, false);
-            for (uint32_t index = 0; index < total; ++index)
-            {
-                const Pair &p = emitter.pairs[index];
-                const uint32_t slot = nextPc(p.pc) / 8u;
-                if (readsFlags(p) || (p.branch && p.dynamic) || p.fallback || p.reserved)
-                    live[index] = true; // an actual reader, or a continuation this analysis cannot follow
-                const bool slotOfBranch = index > 0u && emitter.pairs[index - 1u].branch;
-                const bool slotOfEnd = index > 0u && emitter.pairs[index - 1u].d.eBit;
-                if (p.branch)
-                {
-                    successors[index].push_back(slot);
-                    if (!p.dynamic)
-                        successors[slot].push_back(p.target / 8u);
-                }
-                // Fall-through: always, except after an E-bit delay slot that nothing jumps to (the program ends).
-                // A branch delay slot also keeps it (conditional branches, or the slot entered by a jump).
-                if (!(slotOfEnd && !target[index]))
-                    successors[index].push_back(slot);
-                (void)slotOfBranch;
+                successors[index].push_back(slot);
+                if (!p.dynamic)
+                    successors[slot].push_back(p.target / 8u);
             }
-            for (bool changed = true; changed;)
-            {
-                changed = false;
-                for (uint32_t index = total; index-- > 0u;)
-                {
-                    if (live[index])
-                        continue;
-                    for (const uint32_t next : successors[index])
-                        if (next < total && live[next])
-                        {
-                            live[index] = true;
-                            changed = true;
-                            break;
-                        }
-                }
-            }
-            emitter.flagLive = live;
-            for (uint32_t index = 0; index < count; ++index)
-                if (!live[index])
-                    ++stats["pairs with dead MAC/status flags"];
+            // Fall-through: always, except after an E-bit delay slot that nothing jumps to (the program ends).
+            if (!(slotOfEnd && !target[index]))
+                successors[index].push_back(slot);
         }
+        std::vector<bool> live = seed;
+        for (bool changed = true; changed;)
+        {
+            changed = false;
+            for (uint32_t index = total; index-- > 0u;)
+            {
+                if (live[index])
+                    continue;
+                for (const uint32_t next : successors[index])
+                    if (next < total && live[next])
+                    {
+                        live[index] = true;
+                        changed = true;
+                        break;
+                    }
+            }
+        }
+        emitter.flagLive = live;
+        // The pairs the liveness of [first, last) was decided from: forward from the block, not past a reader.
+        const auto blockReach = [&](uint32_t first, uint32_t last)
+        {
+            uint32_t low = first, high = last;
+            std::vector<bool> seen(total, false);
+            std::vector<uint32_t> work;
+            for (uint32_t index = first; index < last; ++index)
+            {
+                seen[index] = true;
+                work.push_back(index);
+            }
+            while (!work.empty())
+            {
+                const uint32_t index = work.back();
+                work.pop_back();
+                low = std::min(low, index);
+                high = std::max(high, index + 1u);
+                if (seed[index])
+                    continue;
+                for (const uint32_t next : successors[index])
+                    if (next < total && !seen[next])
+                    {
+                        seen[next] = true;
+                        work.push_back(next);
+                    }
+            }
+            return std::make_pair(low, high);
+        };
 
         emitter.isTarget.assign(total + 1u, false);
-        for (uint32_t index = 0; index < count; ++index)
+        for (uint32_t index = knownStart; index < count; ++index)
         {
             const Pair &p = emitter.pairs[index];
             if (p.branch && !p.dynamic)
@@ -1616,18 +1710,18 @@ namespace
         }
 
         std::vector<bool> spanned(count + 1u, false);
-        for (uint32_t index = 0; index < count; ++index)
+        for (uint32_t index = knownStart; index < count; ++index)
         {
             const Pair &p = emitter.pairs[index];
             if (!p.branch || p.dynamic)
                 continue;
             const uint32_t target = p.target / 8u;
-            if (target <= index)
+            if (target <= index && target >= knownStart)
                 for (uint32_t cut = target + 1u; cut <= std::min(count, index + 1u); ++cut)
                     spanned[cut] = true;
         }
         std::vector<std::pair<uint32_t, uint32_t>> blocks;
-        for (uint32_t start = 0; start < count;)
+        for (uint32_t start = knownStart; start < count;)
         {
             uint32_t end = std::min(count, start + maxBlockPairs);
             uint32_t cut = end;
@@ -1639,31 +1733,31 @@ namespace
             start = cut;
         }
 
-        std::vector<std::string> blockTexts;
-        std::vector<uint32_t> blockOf(count, 0u);
+        unit.start = knownStart;
+        // An image's blocks were compiled seeing the zero pairs after its code: those are part of what they depend on.
+        unit.end = isImage ? std::min(total, count + 2u) : knownEnd;
+        unit.bytes.assign(code.begin() + unit.start * 8u, code.begin() + unit.end * 8u);
         for (uint32_t block = 0; block < blocks.size(); ++block)
         {
-            std::ostringstream out;
             const auto [start, end] = blocks[block];
             emitter.first = start;
             emitter.last = end;
             emitter.usesTk = false;
             emitter.usesJt = false;
             emitter.exits.clear();
-            emitter.planSegments();
-            std::string code;
             for (uint32_t index = start; index < end; ++index)
-            {
-                blockOf[index] = block;
-                code += emitter.emitPair(index);
-            }
+                if (!emitter.flagLive[index])
+                    ++stats["pairs with dead MAC/status flags"];
+            emitter.planSegments();
+            std::string body;
+            for (uint32_t index = start; index < end; ++index)
+                body += emitter.emitPair(index);
             emitter.selfLoops = 0u;
             for (const uint32_t segment : emitter.segs)
-                code += emitter.emitSegment(segment);
+                body += emitter.emitSegment(segment);
             stats["known segments"] += static_cast<uint32_t>(emitter.segs.size());
             stats["self-looping segments"] += emitter.selfLoops;
-            out << "template <>\nVU1InterpreterAccess::StepResult VU1InterpreterAccess::fastBlock<" << hex64(hash) << ", "
-                << block << "u>(VU1Interpreter &vu, Vu1FastCtx &ctx)\n{\n";
+            std::ostringstream out;
             out << "    uint64_t cyc = ctx.cycle;\n    const uint64_t budget = ctx.budget;\n    const uint8_t *const mem = ctx.mem;\n";
             out << "    uint32_t epc = 0u;\n";
             if (emitter.usesTk)
@@ -1675,7 +1769,7 @@ namespace
             for (uint32_t index = start; index < end; ++index)
                 out << "    case " << hx(index * 8u) << ": goto " << (emitter.segs.count(index) ? segLabel(index * 8u) : label(index * 8u)) << ";\n";
             out << "    default: return StepResult::Fallback;\n    }\n";
-            out << code;
+            out << body;
             const std::pair<const char *, const char *> exitKinds[] = {
                 {"exit_budget", "Budget"}, {"exit_continue", "Continue"}, {"exit_ended", "Ended"}, {"exit_fallback", "Fallback"}};
             for (const auto &[name, result] : exitKinds)
@@ -1689,45 +1783,31 @@ namespace
                 for (size_t at = 0; (at = text.find("qaddr(", at)) != std::string::npos; at += 8u)
                     text.replace(at, 6u, "qaddrV0(");
             }
-            blockTexts.push_back(text);
-        }
-
-        uint32_t part = 0u;
-        for (size_t block = 0; block < blockTexts.size();)
-        {
-            std::string text = "#include \"ps2_vu1_impl.inl\"\n\n";
-            size_t size = 0u;
-            while (block < blockTexts.size() && (size == 0u || size + blockTexts[block].size() <= kPartBytes))
+            const uint64_t key = fnv1a64(reinterpret_cast<const uint8_t *>(text.data()), text.size());
+            UnitBlock unitBlock;
+            const auto [reachLow, reachHigh] = blockReach(start, end);
+            unitBlock.first = start;
+            unitBlock.last = end;
+            unitBlock.checkStart = std::max(unit.start, std::min(start, reachLow));
+            unitBlock.checkEnd = std::min(std::max(end + 2u, reachHigh), unit.end);
+            unitBlock.noSticky = emitter.noSticky;
+            unitBlock.key = key;
+            unit.blocks.push_back(unitBlock);
+            ++stats["blocks"];
+            if (!state.emitted.insert(key).second)
             {
-                size += blockTexts[block].size();
-                text += blockTexts[block++];
+                ++stats["blocks shared with an earlier unit"];
+                continue;
             }
-            char partName[64];
-            std::snprintf(partName, sizeof(partName), "vu1_%016" PRIx64 "_%u.cpp", hash, part++);
-            std::ofstream partFile(outDir / partName, std::ios::binary);
-            partFile << text;
-            if (!partFile)
+            std::string full = "template <>\nVU1InterpreterAccess::StepResult VU1InterpreterAccess::fastBlock<" + hex64(key) +
+                               ", 0u>(VU1Interpreter &vu, Vu1FastCtx &ctx)\n{\n" + text;
+            state.pendingBytes += full.size();
+            state.pending.push_back(std::move(full));
+            if (!flushParts(outDir, state, false))
                 return false;
         }
-
-        std::ostringstream out;
-        out << "#include \"ps2_vu1_impl.inl\"\n\n";
-        for (uint32_t block = 0; block < blocks.size(); ++block)
-            out << "template <>\nVU1InterpreterAccess::StepResult VU1InterpreterAccess::fastBlock<" << hex64(hash) << ", " << block
-                << "u>(VU1Interpreter &vu, Vu1FastCtx &ctx);\n";
-        out << "\n";
-        out << "template <>\nVU1InterpreterAccess::StepResult VU1InterpreterAccess::runImage<" << hex64(hash)
-            << ">(VU1Interpreter &vu, const Vu1RunArgs &args)\n{\n    static constexpr FastBlock table[] = {\n";
-        for (uint32_t index = 0; index < count; ++index)
-            out << "        &fastBlock<" << hex64(hash) << ", " << blockOf[index] << "u>,\n";
-        out << "    };\n    return runFast(vu, args, table, " << count << "u);\n}\n";
-
-        char name[64];
-        std::snprintf(name, sizeof(name), "vu1_%016" PRIx64 ".cpp", hash);
-        std::ofstream file(outDir / name, std::ios::binary);
-        file << out.str();
-        std::cout << name << ": " << count << " pairs, " << blocks.size() << " blocks, " << part << " parts\n";
-        return static_cast<bool>(file);
+        std::cout << unit.name << ": pairs " << hx(unit.start * 8u) << ".." << hx(unit.end * 8u) << ", " << blocks.size() << " blocks\n";
+        return true;
     }
 }
 
@@ -1735,7 +1815,9 @@ int main(int argc, char **argv)
 {
     if (argc < 3)
     {
-        std::cerr << "usage: vu1_recomp <capture-dir> <out-dir> [max-pairs-per-block]\n";
+        std::cerr << "usage: vu1_recomp <capture-dir> <out-dir> [max-pairs-per-block]\n"
+                     "  capture-dir: vu1_<hash>.bin (16 KB micro memory images, as captured) and vup_<pair address hex>_<tag>.bin\n"
+                     "  (microcode uploads found on the disc: the bytes an MPG chain writes at that pair address)\n";
         return 2;
     }
     const std::filesystem::path captureDir = argv[1];
@@ -1750,20 +1832,34 @@ int main(int argc, char **argv)
     }
 
     std::vector<std::filesystem::path> images;
+    std::vector<std::filesystem::path> uploads;
     for (const auto &entry : std::filesystem::directory_iterator(captureDir))
     {
         const std::string name = entry.path().filename().string();
-        if (name.rfind("vu1_", 0) == 0 && entry.path().extension() == ".bin")
+        if (entry.path().extension() != ".bin")
+            continue;
+        if (name.rfind("vu1_", 0) == 0)
             images.push_back(entry.path());
+        else if (name.rfind("vup_", 0) == 0)
+            uploads.push_back(entry.path());
     }
     std::sort(images.begin(), images.end());
+    std::sort(uploads.begin(), uploads.end());
 
-    std::vector<uint64_t> hashes;
+    EmitState state;
     std::map<std::string, uint32_t> stats;
-    for (const auto &path : images)
+    std::vector<uint64_t> imageHashes;           // runImage<hash>: exact-image fast path, as before
+    std::map<uint64_t, std::vector<UnitBlock>> imageBlocks;
+    std::vector<UnitOut> units;                  // assembled at run time for any micro memory contents
+    std::set<std::string> unitBytesSeen;
+    const auto readFile = [](const std::filesystem::path &path)
     {
         std::ifstream file(path, std::ios::binary);
-        std::vector<uint8_t> code((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        return std::vector<uint8_t>((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    };
+    for (const auto &path : images)
+    {
+        std::vector<uint8_t> code = readFile(path);
         if (code.size() != kCodeSize)
         {
             std::cerr << path << ": expected " << kCodeSize << " bytes\n";
@@ -1771,27 +1867,92 @@ int main(int argc, char **argv)
         }
         const uint64_t hash = fnv1a64(code.data(), code.size());
         bool mayBeVu0 = false;
-        if (!writeImage(outDir, hash, code, blockPairs, stats, !gVu0Fast, &mayBeVu0))
+        UnitOut unit;
+        char imageName[32];
+        std::snprintf(imageName, sizeof(imageName), "vu1_%016" PRIx64, hash);
+        unit.name = imageName;
+        if (!compileUnit(state, outDir, code, 0u, kCodeSize / 8u, true, blockPairs, stats, !gVu0Fast, &mayBeVu0, unit))
             return 1;
-        hashes.push_back(hash);
+        imageHashes.push_back(hash);
+        imageBlocks[hash] = unit.blocks;
+        if (!mayBeVu0)
+            units.push_back(std::move(unit)); // VU1 code: its blocks also serve other memory contents
         if (mayBeVu0 && gVu0Fast)
         {
-            if (!writeImage(outDir, hash ^ kVu0ExactTag, code, blockPairs, stats, true, nullptr))
+            UnitOut exact;
+            exact.name = unit.name + " (VU0 exact)";
+            if (!compileUnit(state, outDir, code, 0u, kCodeSize / 8u, true, blockPairs, stats, true, nullptr, exact))
                 return 1;
-            hashes.push_back(hash ^ kVu0ExactTag);
+            imageHashes.push_back(hash ^ kVu0ExactTag);
+            imageBlocks[hash ^ kVu0ExactTag] = exact.blocks;
         }
     }
+    for (const auto &path : uploads)
+    {
+        const std::string name = path.stem().string();
+        const size_t underscore = name.find('_', 4u);
+        const uint32_t address = static_cast<uint32_t>(std::stoul(name.substr(4u, underscore - 4u), nullptr, 16));
+        const std::vector<uint8_t> bytes = readFile(path);
+        if (bytes.empty() || bytes.size() % 8u != 0u || address * 8u + bytes.size() > kCodeSize)
+        {
+            std::cerr << path << ": bad upload (address " << address << ", " << bytes.size() << " bytes)\n";
+            return 1;
+        }
+        const std::string identity = std::to_string(address) + ":" + std::string(bytes.begin(), bytes.end());
+        if (!unitBytesSeen.insert(identity).second)
+            continue; // the same upload found twice
+        std::vector<uint8_t> code(kCodeSize, 0u);
+        std::copy(bytes.begin(), bytes.end(), code.begin() + address * 8u);
+        UnitOut unit;
+        unit.name = name;
+        const size_t before = stats["uploads skipped (not VU code)"];
+        if (!compileUnit(state, outDir, code, address, address + static_cast<uint32_t>(bytes.size() / 8u), false, blockPairs, stats,
+                         false, nullptr, unit))
+            return 1;
+        if (stats["uploads skipped (not VU code)"] == before)
+            units.push_back(std::move(unit));
+    }
+    if (!flushParts(outDir, state, true))
+        return 1;
+    stats["units for run-time assembly"] = static_cast<uint32_t>(units.size());
     for (const auto &[name, value] : stats)
         std::cout << name << ": " << value << "\n";
 
     std::ostringstream reg;
-    reg << "#include \"ps2_vu1_impl.inl\"\n\n";
-    for (const uint64_t hash : hashes)
+    reg << "// Generated by vu1_recomp. Do not edit.\n#include \"ps2_vu1_impl.inl\"\n\n";
+    for (const uint64_t key : state.emitted)
+        reg << "template <>\nVU1InterpreterAccess::StepResult VU1InterpreterAccess::fastBlock<" << hex64(key)
+            << ", 0u>(VU1Interpreter &, Vu1FastCtx &);\n";
+    reg << "\n";
+    for (const uint64_t hash : imageHashes)
+    {
+        const auto &blocks = imageBlocks[hash];
         reg << "template <>\nVU1InterpreterAccess::StepResult VU1InterpreterAccess::runImage<" << hex64(hash)
-            << ">(VU1Interpreter &, const Vu1RunArgs &);\n";
-    reg << "\nvoid registerGeneratedVu1Programs()\n{\n";
-    for (const uint64_t hash : hashes)
+            << ">(VU1Interpreter &vu, const Vu1RunArgs &args)\n{\n    static constexpr FastBlock table[] = {\n";
+        uint32_t entries = 0u;
+        for (const UnitBlock &block : blocks)
+            for (uint32_t index = block.first; index < block.last; ++index, ++entries)
+                reg << "        &fastBlock<" << hex64(block.key) << ", 0u>,\n";
+        reg << "    };\n    return runFast(vu, args, table, " << entries << "u);\n}\n\n";
+    }
+    for (size_t index = 0; index < units.size(); ++index)
+    {
+        const UnitOut &unit = units[index];
+        reg << "// " << unit.name << "\nstatic const uint8_t kUnitBytes" << index << "[] = {";
+        for (size_t at = 0; at < unit.bytes.size(); ++at)
+            reg << (at % 32u == 0u ? "\n    " : "") << static_cast<unsigned>(unit.bytes[at]) << ",";
+        reg << "\n};\nstatic const Vu1CompiledUnitBlock kUnitBlocks" << index << "[] = {\n";
+        for (const UnitBlock &block : unit.blocks)
+            reg << "    {" << block.first << "u, " << block.last << "u, " << block.checkStart << "u, " << block.checkEnd << "u, " << (block.noSticky ? "true" : "false")
+                << ", &VU1InterpreterAccess::fastBlock<" << hex64(block.key) << ", 0u>},\n";
+        reg << "};\n\n";
+    }
+    reg << "void registerGeneratedVu1Programs()\n{\n";
+    for (const uint64_t hash : imageHashes)
         reg << "    registerVu1CompiledProgram(" << hex64(hash) << ", &VU1InterpreterAccess::runImage<" << hex64(hash) << ">);\n";
+    for (size_t index = 0; index < units.size(); ++index)
+        reg << "    registerVu1CompiledUnit(Vu1CompiledUnit{" << units[index].start << "u, " << units[index].end << "u, kUnitBytes" << index
+            << ", kUnitBlocks" << index << ", " << units[index].blocks.size() << "u});\n";
     reg << "}\n";
     std::ofstream file(outDir / "vu1_programs.cpp", std::ios::binary);
     file << reg.str();

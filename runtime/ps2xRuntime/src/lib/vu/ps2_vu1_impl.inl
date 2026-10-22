@@ -4152,4 +4152,25 @@ struct VU1InterpreterAccess
 };
 
 void registerVu1CompiledProgram(uint64_t imageHash, VU1InterpreterAccess::CompiledProgram program);
+// Blocks compiled ahead of time for one piece of code (vu1_recomp: a captured image or a microcode upload found on the
+// disc). At run time the blocks whose pairs [first, checkEnd) equal the current micro memory are assembled into a
+// table for that memory, whatever else is loaded next to them (pairs [checkStart, checkEnd) are compared). noSticky: compiled for code without status flag readers.
+struct Vu1CompiledUnitBlock
+{
+    uint32_t first;      // pairs the block runs
+    uint32_t last;
+    uint32_t checkStart; // pairs its code was compiled from (itself, delay slot, flag analysis)
+    uint32_t checkEnd;
+    bool noSticky;
+    VU1InterpreterAccess::FastBlock fn;
+};
+struct Vu1CompiledUnit
+{
+    uint32_t start; // pairs [start, end) of micro memory, as bytes
+    uint32_t end;
+    const uint8_t *bytes;
+    const Vu1CompiledUnitBlock *blocks;
+    uint32_t blockCount;
+};
+void registerVu1CompiledUnit(const Vu1CompiledUnit &unit);
 VU1InterpreterAccess::CompiledProgram findCompiledVu1ProgramByHash(uint64_t imageHash);

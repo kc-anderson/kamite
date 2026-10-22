@@ -6,6 +6,9 @@
 #include <cstdlib>
 #include <smmintrin.h>
 
+// vu/ps2_vu1_core.cpp: with PS2X_VU1_CAPTURE set, every VU1 microcode upload is saved for vu1_recomp.
+void ps2xNoteVu1Upload(uint32_t byteAddress, const uint8_t *data, uint32_t size);
+
 enum VIFCmd : uint8_t
 {
     VIF_NOP = 0x00,
@@ -629,6 +632,7 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
                 {
                     std::memcpy(m_vu1Code + destAddr, data + pos, copyBytes);
                     markVU1CodeModified();
+                    ps2xNoteVu1Upload(destAddr, data + pos, copyBytes);
                 }
             }
             pos += mpgBytes;

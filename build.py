@@ -4,6 +4,8 @@
     python -I build.py modules [--force] [mod ...]    recompile SNR2 DLLs (recomp/modules/<mod>.toml, after
                                                       tools/snr2/gen_modules.py) into generated_modules/<mod>/;
                                                       unchanged modules are skipped (stamp)
+    python -I build.py vu [capture dir ...]           VU1 microcode ahead of time: the uploads found on your disc plus
+                                                      captured images (vu1_*.bin) into generated/vu1
     python -I build.py configure [-DOPTION=...]       CMake configure (Ninja, RelWithDebInfo, no LTCG)
     python -I build.py build [target]                 compile godhand.exe (configures first if needed)
     python -I build.py all [--iso X]                  generate -> configure -> build
@@ -754,6 +756,7 @@ def status(args=()):
         ("disc image", iso or ROOT / "game" / "<none>.iso"),
         ("boot ELF copy", ROOT / "build" / BOOT_ELF),
         ("generated code", GENERATED / "register_functions.cpp"),
+        ("VU1 microcode compiled", GENERATED / "vu1" / "vu1_programs.cpp"),
         ("CMake cache", BUILD / "CMakeCache.txt"),
         ("godhand.exe", EXE),
         ("tools/win/vsenv.cmd", VSENV),
@@ -764,8 +767,47 @@ def status(args=()):
     return 0
 
 
+# ---- VU microcode ahead of time ------------------------------------------------------------------------------------
+
+VU_IMAGES = ROOT / "build" / "vu1_images"
+VU1_RECOMP = BUILD / "runtime" / "ps2xTest" / "vu1_recomp.exe"
+
+
+def vu(args=()):
+    """Compiles the game's VU1 microcode into generated/vu1 (README "Faster 3D"). Inputs, collected in build/vu1_images:
+    every microcode upload (VIF MPG) found in the boot ELF and the SNR2 DLLs (tools/vu/extract_uploads.py), and the
+    vu1_*.bin images captured while playing (PS2X_VU1_CAPTURE, logs/vu1_missing) from the folders given here or in
+    GODHAND_VU_CAPTURE (separated by ';'). Captured images are kept in build/vu1_images across runs. At run time the
+    compiled blocks are assembled for whatever combination of programs is in VU1's micro memory."""
+    elf = ROOT / "build" / BOOT_ELF
+    if not elf.exists():
+        print(f"{elf} not found: run 'python -I build.py generate' first.")
+        return 1
+    VU_IMAGES.mkdir(parents=True, exist_ok=True)
+    rels = sorted((ROOT / "build" / "snr2" / "rel").glob("*.rel"))
+    if run([sys.executable, "-I", ROOT / "tools" / "vu" / "extract_uploads.py", VU_IMAGES, elf, *rels]):
+        return 1
+    folders = list(args) + [f for f in os.environ.get("GODHAND_VU_CAPTURE", "").split(";") if f]
+    copied = 0
+    for folder in folders:
+        for image in sorted(Path(folder).glob("vu1_*.bin")):
+            if image.stat().st_size == 16384 and not (VU_IMAGES / image.name).exists():
+                shutil.copy2(image, VU_IMAGES / image.name)
+                copied += 1
+    images = len(list(VU_IMAGES.glob("vu1_*.bin")))
+    print(f"captured images: {images} ({copied} new)")
+    if not (BUILD / "build.ninja").exists() or "GODHAND_BUILD_TOOLS:BOOL=ON" not in \
+            (BUILD / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace"):
+        if configure(["-DGODHAND_BUILD_TOOLS=ON"]):
+            return 1
+    if build("vu1_recomp"):
+        return 1
+    return run([VU1_RECOMP, VU_IMAGES, GENERATED / "vu1"])
+
+
 COMMANDS = {
     "generate": generate,
+    "vu": vu,
     "modules": modules,
     "configure": lambda a: configure(a),
     "build": lambda a: build(a[0] if a else "godhand"),
