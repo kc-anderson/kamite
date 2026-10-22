@@ -101,7 +101,7 @@ git clone https://github.com/LasVola/godhand-recomp.git
 cd godhand-recomp
 copy "D:\path\to\God Hand (USA).iso" game\
 python -I build.py generate
-python -I tools\snr2\snr2.py extract --iso "game\God Hand (USA).iso"
+python -I tools\snr2\snr2.py --iso "game\God Hand (USA).iso" extract
 python -I tools\snr2\gen_modules.py
 python -I build.py modules
 python -I build.py build
