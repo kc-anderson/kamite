@@ -61,6 +61,9 @@ namespace kamite::hud
         constexpr uint32_t kScreenWidth = 0x3C1180u;
         constexpr uint32_t kScreenYOffset = 0x586B80u;
         constexpr uint32_t kSubScrPointer = 0x3BD930u; // D_003BD930: the cSubScr (pause menu and its screens)
+        // The tutorial pop-up: cCockTutorial at the game object D_003BD6E8 + 0x1A20, its state byte at +0xB8 (1..4 while
+        // its panel is drawn, ForwardIfStateActive_147460); decomp src/cod/001bf8c8.c.
+        constexpr uint32_t kGameObject = 0x3BD6E8u, kTutorialState = 0x1A20u + 0xB8u;
         constexpr uint32_t kPlayerBar = 0xF0000001u, kRadar = 0xF0000002u, kRoulette = 0xF0000003u;
 
         Layout g_layout = Layout::Anchored;
@@ -98,6 +101,9 @@ namespace kamite::hud
             float x0, x1;
         };
         std::unordered_map<uint32_t, Extent> g_seen, g_last; // group -> x extent this frame / last frame
+        // The last extent each group had outside menus: a group drawn again after a menu or pop-up keeps its anchor
+        // (without it the first frame back fell back to the centre, the HUD's 4:3 place).
+        std::unordered_map<uint32_t, Extent> g_known;
 
         struct Context
         {
@@ -135,6 +141,17 @@ namespace kamite::hud
         void write32(uint8_t *rdram, uint32_t address, uint32_t value)
         {
             std::memcpy(rdram + (address & (PS2_RAM_SIZE - 1u)), &value, sizeof(value));
+        }
+
+        // The tutorial pop-up is up (and no sub screen is open over it).
+        bool g_subScreenOpen = false;
+        bool tutorialUp(const uint8_t *rdram)
+        {
+            const uint32_t game = read32(rdram, kGameObject);
+            if (game < 0x100000u || game >= PS2_RAM_SIZE - 0x2000u)
+                return false;
+            const int8_t state = static_cast<int8_t>(rdram[(game + kTutorialState) & (PS2_RAM_SIZE - 1u)]);
+            return state > 0 && state < 5;
         }
 
         float screenWidth(const uint8_t *rdram)
@@ -178,6 +195,9 @@ namespace kamite::hud
             auto seen = g_seen.find(key);
             if (seen != g_seen.end())
                 return anchorFromExtent(seen->second.x0, seen->second.x1, width);
+            auto known = g_known.find(key);
+            if (known != g_known.end())
+                return anchorFromExtent(known->second.x0, known->second.x1, width);
             return fallback;
         }
 
@@ -242,7 +262,8 @@ namespace kamite::hud
             {
                 // Full height too: letterbox bars in cutscenes are full width but thin.
                 const float height = 448.0f; // the game's 2D screen (0..448, NTSC)
-                if (g_inIdTrans && !g_ctx.active && !g_menuSeen && y1 - y0 >= 0.8f * height)
+                if (g_inIdTrans && !g_ctx.active && !g_menuSeen && y1 - y0 >= 0.8f * height &&
+                    (g_subScreenOpen || !tutorialUp(rdram)))
                 {
                     g_menuSeen = true; // a menu's background (fades are drawn outside any layout)
                     if (g_wide && g_menuMode == MenuMode::Pillarbox)
@@ -368,7 +389,7 @@ namespace kamite::hud
             const uint32_t layout = GPR_U32(ctx, 18) & 0x01FFFFFFu;
             const float width = screenWidth(rdram);
             float fallback = 0.5f * width;
-            if (g_last.find(layout) == g_last.end() && g_seen.find(layout) == g_seen.end())
+            if (g_last.find(layout) == g_last.end() && g_seen.find(layout) == g_seen.end() && g_known.find(layout) == g_known.end())
             {
                 const int32_t count = static_cast<int32_t>(read32(rdram, layout + 0xCu));
                 const uint32_t entries = read32(rdram, layout + 0x4u);
@@ -503,13 +524,19 @@ namespace kamite::hud
         // full-screen background: an open sub screen counts as a menu too (cSubScr D_003BD930, +0x48 the open screen's
         // kind, -1 when closed; decomp include/godhand/cSubScr.h). Narrowed, their layers came apart (the Techniques
         // screen's RETURN panel and its highlight, Oct 25).
-        bool subScreen = false;
+        bool subScreen = false, tutorial = false;
         if (rdram)
         {
             const uint32_t subScr = read32(rdram, kSubScrPointer);
             if (subScr >= 0x100000u && subScr < PS2_RAM_SIZE - 0x100u)
                 subScreen = static_cast<int32_t>(read32(rdram, subScr + 0x48u)) >= 0;
+            // A tutorial pop-up is drawn over the game with a full-screen backing: it is part of the game view, not a
+            // menu (counted as one, the picture went 4:3 and back and the health block landed in its 4:3 place, Oct 25).
+            tutorial = tutorialUp(rdram);
         }
+        g_subScreenOpen = subScreen;
+        if (tutorial && !subScreen)
+            g_menuSeen = false;
         g_menuHold = (g_menuSeen || subScreen) ? 8 : std::max(0, g_menuHold - 1);
         g_menuSeen = false;
         if (g_wide)
@@ -521,6 +548,9 @@ namespace kamite::hud
             g_inIdTrans = false;
             return;
         }
+        if (!menuNow())
+            for (const auto &[key, extent] : g_seen)
+                g_known[key] = extent;
         g_last.swap(g_seen);
         g_seen.clear();
         g_ctx = Context{};

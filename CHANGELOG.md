@@ -2,6 +2,13 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 25, 2026 (evening)
+
+- **Tutorial pop-ups are no longer menus:** with 4:3 menus in a 16:9 game, a tutorial pop-up's full-screen backing
+  made the picture go 4:3 and back, and the health block could land in its 4:3 place. While the pop-up is up (and no
+  pause menu is open over it) nothing counts as a menu. HUD pieces also keep their last place across any menu instead
+  of starting from the middle for a frame.
+
 ## October 25, 2026 (style presets, stage 1)
 
 - **Menu buttons moved to F2 > Controls** (a testing option until the whole game has been played with it) and **Modern
