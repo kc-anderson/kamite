@@ -962,7 +962,7 @@ int main(int argc, char *argv[])
         kamite::button_prompts::install(runtime); // the button prompts show the bound keys (KAMITE_PROMPTS=0: PS2 art)
         kamite::menu_buttons::install(runtime.memory().getRDRAM()); // [Game] MenuButtons: the menus' confirm/cancel buttons
         kamite::radar_glow::install(runtime.memory().getRDRAM()); // Modern: the radar glows while the original controls are in effect
-        kamite::style_presets::install(runtime.memory().getRDRAM()); // the Techniques screen's style presets (F2 > Styles for now)
+        kamite::style_presets::install(runtime); // style presets: d-pad swaps in play, the Techniques screen's list and Y + d-pad
         kamite::installMovieWatchdog(runtime); // sweep R3: ending/movie-list movie polls cannot spin forever
         // 60 FPS mode, L3 dash, and the game-frame count for the F3 overlay (a hook at the top of the main loop).
         kamite::installFramePatches(runtime);

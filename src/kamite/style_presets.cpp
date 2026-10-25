@@ -1,10 +1,13 @@
 // Style presets, stage 1. See style_presets.h.
 #include "kamite/style_presets.h"
 
+#include "kamite/function_hooks.h"
 #include "kamite/log.h"
 #include "kamite/menu_buttons.h"
 #include "runtime/ps2_game_menu.h"
 #include "runtime/ps2_pnach.h"
+#include "ps2_runtime.h"
+#include "ps2_runtime_macros.h"
 
 #include <array>
 #include <atomic>
@@ -16,6 +19,7 @@
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #if __has_include("pcsx2gs_api.h")
 #include "pcsx2gs_api.h"
@@ -486,6 +490,244 @@ namespace kamite::style_presets
             for (const ps2x::iop::PadPressure pressure : kDpadPressure)
                 state.pressure[static_cast<size_t>(pressure)] = 0u;
         }
+
+        // ---- the list on the Techniques screen ----
+        // The info panel's "Already Set" group (shown by the game only while the move picker is open, to say the
+        // highlighted move is in another slot) carries the list while the slots are browsed: parts[0x23] the text
+        // (align 3: the block centred on its draw position, scale 0.65), parts[0x24] its shadow (+1,+1, colour set 1:
+        // black, icons skipped), parts[0x25] the move name, [0x26] the "down+" art, [0x27] the slot's button and the
+        // name box (record #57, no id) hidden. Two lines, two styles each, labelled like the screen's own "down+"
+        // rows: [Y] then the game's "+arrow" art (system texture 20: "+down" top left, "+up" top right, "+ over left"
+        // bottom left, "+ over right" bottom right) then the letter. The text is message 0x30C4 (an unused "<7d>"
+        // placeholder) whose offset word points at a string of ours; the shadow is 0x30FE (no colour codes, which
+        // would colour the shadow too). The bottom bar's spare line (ids 57/58: "Release" on the chain's last rows,
+        // otherwise blank 0x30D0) says "[Y] Hold: Save Style" (0x30FF). Entry fields: +0x2C flags (0x08000000 = not
+        // drawn), +0x50/+0x54 draw position, +0x90 message id.
+        constexpr uint32_t kNoDraw = 0x08000000u;
+        constexpr uint32_t kMessageBankPointer = 0x3C23A4u; // *(*(u32 *)0x3C23A4 + 0xC) = the message bank
+        constexpr uint16_t kListMessage = 0x30C4u, kShadowMessage = 0x30FEu, kHintMessage = 0x30FFu, kBlankMessage = 0x30D0u;
+        constexpr uint32_t kListText = 0x1000u, kShadowText = 0x1100u, kHintText = 0x1200u; // in the save record's unused tail
+        constexpr float kListX = 395.0f, kListY = 399.0f; // under "Attack Str" (x 353..437, y 337..369)
+        // Icon codes the list never uses as buttons (L3, R3, Start, Select): drawn as the arrows while it is drawn.
+        constexpr uint16_t kArrowCode[kStyles] = {8u, 9u, 12u, 13u}; // up, right, down, left
+        constexpr float kArrowUv[kStyles][4] = {
+            {0.5f, 0.0f, 1.0f, 0.5f}, // "+up"
+            {0.5f, 0.5f, 1.0f, 1.0f}, // "+" over "right"
+            {0.0f, 0.0f, 0.5f, 0.5f}, // "+down"
+            {0.0f, 0.5f, 0.5f, 1.0f}, // "+" over "left"
+        };
+        constexpr uint16_t kTriangleIcon = 1u, kSpace = 0x10u, kNewLine = 0xA001u, kEnd = 0x8001u;
+        constexpr uint16_t kColour = 0xB203u, kColourRestore = 0xB301u; // 0xB203 hi lo: A B G R (0x80 = full)
+        constexpr uint32_t kGold = 0x80106880u, kDim = 0x80383838u;
+
+        std::atomic<int> g_holding{-1}; // the pad filter: the direction held with Y, before it saves
+        uint32_t g_listEntry = 0u;      // the entry the arrows are drawn for (EE thread)
+        uint32_t g_drawingEntry = 0u;   // the cIDBase entry being drawn (hud_layout's hook)
+        bool g_listShown = false;       // this frame's list is on (the screen's draw places it)
+        uint32_t g_hidName = 0u, g_hidBox = 0u; // entries hidden by us, shown again when the picker opens
+
+        uint16_t glyph(char c)
+        {
+            if (c >= 'A' && c <= 'Z')
+                return static_cast<uint16_t>(0x40 + (c - 'A'));
+            if (c >= 'a' && c <= 'z')
+                return static_cast<uint16_t>(0x5A + (c - 'a'));
+            if (c >= '0' && c <= '9')
+                return static_cast<uint16_t>(0x36 + (c - '0'));
+            if (c == ':')
+                return 0x31u;
+            return kSpace;
+        }
+
+        void wr16(uint32_t address, uint16_t value) { std::memcpy(g_ram + (address & 0x1FFFFFFu), &value, sizeof(value)); }
+        void wr32(uint32_t address, uint32_t value) { std::memcpy(g_ram + (address & 0x1FFFFFFu), &value, sizeof(value)); }
+        uint16_t rd16(uint32_t address)
+        {
+            uint16_t v;
+            std::memcpy(&v, g_ram + (address & 0x1FFFFFFu), sizeof(v));
+            return v;
+        }
+        void wrFloat(uint32_t address, float value) { std::memcpy(g_ram + (address & 0x1FFFFFFu), &value, sizeof(value)); }
+
+        void writeText(uint32_t address, const std::vector<uint16_t> &text)
+        {
+            std::memcpy(g_ram + (address & 0x1FFFFFFu), text.data(), text.size() * sizeof(uint16_t));
+        }
+
+        // Points a message id at a string of ours (the bank adds its offsets as u32, so a string below it is fine).
+        bool pointMessage(uint16_t id, uint32_t text)
+        {
+            const uint32_t holder = rd32(kMessageBankPointer);
+            if (!validPointer(holder))
+                return false;
+            const uint32_t bank = rd32(holder + 0xCu);
+            if (!validPointer(bank, 0x1000u))
+                return false;
+            const uint32_t word = bank + (static_cast<uint32_t>(id) - 0x3000u) * 8u + 4u;
+            if (rd32(word) != text - bank)
+                wr32(word, text - bank);
+            return true;
+        }
+
+        std::vector<uint16_t> listText(const Store &store, bool colours)
+        {
+            const int holding = g_holding.load(std::memory_order_relaxed);
+            const bool blinkOn = (g_vblanks / 8u) % 2u == 0u;
+            const bool flash = g_vblanks - g_lastAction.load(std::memory_order_relaxed) < 40u;
+            std::vector<uint16_t> out;
+            for (int slot = 0; slot < kStyles; ++slot)
+            {
+                if (slot == 2)
+                    out.push_back(kNewLine);
+                else if (slot == 1 || slot == 3)
+                    out.insert(out.end(), {kSpace, kSpace, kSpace});
+                out.push_back(kTriangleIcon);
+                out.push_back(kArrowCode[slot]);
+                out.push_back(kSpace);
+                const bool used = (store.used & (1u << slot)) != 0u;
+                uint32_t colour = 0u; // 0: the line's own colour
+                if (slot == holding)
+                    colour = blinkOn ? kGold : 0u; // held with Y: blinks until it saves
+                else if (used && store.active == slot)
+                    colour = (flash && !blinkOn) ? 0u : kGold; // the loaded style (a few blinks right after)
+                else if (!used)
+                    colour = kDim;
+                if (colours && colour)
+                    out.insert(out.end(), {kColour, static_cast<uint16_t>(colour >> 16), static_cast<uint16_t>(colour & 0xFFFFu)});
+                out.push_back(glyph(g_letters[slot]));
+                if (colours && colour)
+                    out.push_back(kColourRestore);
+            }
+            out.push_back(kEnd);
+            return out;
+        }
+
+        std::vector<uint16_t> hintText()
+        {
+            std::vector<uint16_t> out{kTriangleIcon, kSpace};
+            for (const char *c = "Hold: Save Style"; *c; ++c)
+                out.push_back(glyph(*c));
+            out.push_back(kEnd);
+            return out;
+        }
+
+        uint32_t part(uint32_t waza, int id) { return rd32(waza + 0x80u + 4u * static_cast<uint32_t>(id)); }
+        void setNoDraw(uint32_t entry, bool hidden)
+        {
+            if (!validPointer(entry, 0xACu))
+                return;
+            const uint32_t flags = rd32(entry + 0x2Cu);
+            wr32(entry + 0x2Cu, hidden ? (flags | kNoDraw) : (flags & ~kNoDraw));
+        }
+
+        // cIDBase_move entry (every layout, every frame; EE thread): for the Techniques screen's layout, after its
+        // update set this frame's entries and before they are placed, the list goes in (or the group is given back).
+        void onLayoutMove(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            if (!g_ram)
+                return;
+            const uint32_t subScr = rd32(kSubScrPointer);
+            if (!validPointer(subScr, 0x1000u) || GPR_U32(ctx, 4) != wazaScreen(subScr))
+                return;
+            const uint32_t waza = wazaScreen(subScr);
+            const uint32_t data = dataPointer();
+            const bool show = data && menu_buttons::modern() && static_cast<int32_t>(rd32(subScr + 0x48u)) == kTechniquesKind &&
+                              g_ram[waza + kWazaState] == 0u;
+            const uint32_t text = part(waza, 0x23), shadow = part(waza, 0x24), hintEntry = part(waza, 57),
+                           hintShadow = part(waza, 58);
+            g_listShown = false;
+            if (!show)
+            {
+                // The game's own use of the group (the picker's "Already Set"): what we hid comes back.
+                if (g_hidName)
+                    setNoDraw(g_hidName, false);
+                if (g_hidBox)
+                    setNoDraw(g_hidBox, false);
+                g_hidName = g_hidBox = 0u;
+                g_listEntry = 0u;
+                for (const uint32_t entry : {hintEntry, hintShadow})
+                    if (validPointer(entry, 0xACu) && rd16(entry + 0x90u) == kHintMessage)
+                        wr16(entry + 0x90u, kBlankMessage);
+                return;
+            }
+            if (!validPointer(text, 0xACu) || !validPointer(shadow, 0xACu))
+                return;
+            Store store{};
+            readStore(data, store);
+            writeText(data + kListText, listText(store, true));
+            writeText(data + kShadowText, listText(store, false));
+            writeText(data + kHintText, hintText());
+            if (!pointMessage(kListMessage, data + kListText) || !pointMessage(kShadowMessage, data + kShadowText) ||
+                !pointMessage(kHintMessage, data + kHintText))
+                return;
+            setNoDraw(text, false);
+            wr16(text + 0x90u, kListMessage);
+            wr16(shadow + 0x90u, kShadowMessage);
+            const uint32_t name = part(waza, 0x25), entries = rd32(waza + 0x4u);
+            const uint32_t box = validPointer(entries, 0x4000u) ? entries + 57u * 0xACu : 0u;
+            setNoDraw(name, true);
+            setNoDraw(box, true);
+            g_hidName = validPointer(name, 0xACu) ? name : 0u;
+            g_hidBox = validPointer(box, 0xACu) ? box : 0u;
+            setNoDraw(part(waza, 0x26), true);
+            setNoDraw(part(waza, 0x27), true);
+            for (const uint32_t entry : {hintEntry, hintShadow})
+                if (validPointer(entry, 0xACu) && rd16(entry + 0x90u) == kBlankMessage)
+                    wr16(entry + 0x90u, kHintMessage);
+            g_listEntry = text;
+            g_listShown = true;
+        }
+
+        // The Techniques screen's draw (0x16DC18, $a0 = the screen; after its layout was placed): the list's place.
+        void onWazaDraw(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            if (!g_ram || !g_listShown)
+                return;
+            const uint32_t waza = GPR_U32(ctx, 4);
+            const uint32_t text = part(waza, 0x23), shadow = part(waza, 0x24);
+            if (!validPointer(text, 0xACu) || !validPointer(shadow, 0xACu))
+                return;
+            wrFloat(text + 0x50u, kListX);
+            wrFloat(text + 0x54u, kListY);
+            wrFloat(shadow + 0x50u, kListX + 1.0f);
+            wrFloat(shadow + 0x54u, kListY + 1.0f);
+        }
+
+        // System texture 20 (the "+arrow" art): getTexAddr(*(u32 *)0x3C2388, 21) as func_002ACDC8 finds it.
+        uint32_t arrowTexture()
+        {
+            const uint32_t manager = rd32(0x3C2388u);
+            if (!validPointer(manager))
+                return 0u;
+            const uint32_t table = rd32(manager + 0xCu);
+            if (!validPointer(table, 0x100u) || rd32(table) < 21u)
+                return 0u;
+            const uint32_t offset = rd32(table + 21u * 4u);
+            return offset ? table + offset : 0u;
+        }
+
+        // The icon drawer func_002B1300 at 0x2B1584 (every icon's UVs stored at sp+0x14..0x20, $s0 -> the code, $a3 the
+        // icon sheet; Gp_draw_polyFT4 follows): inside the list, the four arrow codes become the arrow art.
+        void onIconDraw(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            if (!g_ram || !g_listEntry || g_drawingEntry != g_listEntry)
+                return;
+            const uint16_t code = rd16(GPR_U32(ctx, 16));
+            int arrow = -1;
+            for (int i = 0; i < kStyles; ++i)
+                if (code == kArrowCode[i])
+                    arrow = i;
+            if (arrow < 0)
+                return;
+            const uint32_t texture = arrowTexture();
+            if (!texture)
+                return;
+            SET_GPR_U32(ctx, 7, texture);
+            const uint32_t sp = GPR_U32(ctx, 29);
+            for (int i = 0; i < 4; ++i)
+                wrFloat(sp + 0x14u + 4u * static_cast<uint32_t>(i), kArrowUv[arrow][i]);
+        }
+
 #if defined(KAMITE_HAS_GS_MENU)
         void drawPanel(const Pcsx2GsUi *ui)
         {
@@ -576,6 +818,7 @@ namespace kamite::style_presets
                     g_heldSaved = false;
                 }
             }
+            g_holding.store(g_held >= 0 && !g_heldSaved ? g_held : -1, std::memory_order_relaxed);
             if (triangle && dpad != 0u)
                 g_swallow = true;
             if (triangle)
@@ -584,6 +827,7 @@ namespace kamite::style_presets
         else
         {
             g_held = -1;
+            g_holding.store(-1, std::memory_order_relaxed);
             // In play a tap loads at once (Gene's controls never read the d-pad; the next move of a chain already
             // comes from the new style).
             if (moment == Play)
@@ -603,15 +847,24 @@ namespace kamite::style_presets
         }
     }
 
-    void install(uint8_t *rdram)
+    void noteEntry(uint32_t entry)
     {
-        g_ram = rdram;
+        g_drawingEntry = entry & 0x1FFFFFFu;
+    }
+
+    void install(PS2Runtime &runtime)
+    {
+        g_ram = runtime.memory().getRDRAM();
         if (!g_ram)
             return;
         // Xavier's styles read LIFE down the list (Gene's read SEXY).
         if (const char *character = std::getenv("KAMITE_CHARACTER"); character && std::tolower(static_cast<unsigned char>(*character)) == 'x')
             std::memcpy(g_letters, "LIFE", kStyles + 1);
         ps2x::pnach::addFrameHook(&onVblank);
+        FunctionHooks::instance().observeEntry(0x2AAA40u, "cIDBase_move (style list)", &onLayoutMove);
+        FunctionHooks::instance().observeEntry(0x16DC18u, "cSubScrWaza draw (style list)", &onWazaDraw);
+        ps2xRegisterHostHook("km_styles_icon", &onIconDraw);
+        ps2xSetPatchFlag("styles", true);
 #if defined(KAMITE_HAS_GS_MENU)
         ps2x::menu::addPanel("Styles", &drawPanel);
 #endif

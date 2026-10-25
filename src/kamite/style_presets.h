@@ -6,6 +6,8 @@
 
 #include <cstdint>
 
+class PS2Runtime;
+
 // Style presets: four saved sets of Gene's equipped moves (Style S, E, X, Y; L, I, F, E as Xavier), kept in the save.
 //
 // The moves Gene has equipped are six "combo sets" in the save data (decomp include/godhand/cCoreSave.h, cCoreSaveData
@@ -19,11 +21,14 @@
 //   In play (Gene under the player's control, mid-fight and mid-combo included): a d-pad tap loads that style.
 //   On the Techniques screen with the Modern menu buttons (Y does nothing there): Y + d-pad, let go before 1.5 s,
 //   loads; held 1.5 s saves the equipped moves to it. The d-pad is hidden from the screen while Y is held.
+// The Techniques screen lists the four under "Attack Str" (Modern menu buttons), with the bottom bar's hint.
 // F2 > Styles shows the equipped moves and the styles and saves/loads them too.
 namespace kamite::style_presets
 {
     // Before the game starts, with the EE's RDRAM: the per-vblank work, the screen's list and the F2 tab.
-    void install(uint8_t *rdram);
+    void install(PS2Runtime &runtime);
+    // hud_layout's cIDBase_trans hooks (EE thread): the entry about to be drawn, 0 after the layout.
+    void noteEntry(uint32_t entry);
 
     // ps2_host_input's pad filter, player 1 (window thread): called by modern_controls' filter before its own work.
     void padFilter(uint32_t player, ps2x::iop::PadInputState &state);

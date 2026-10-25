@@ -24,6 +24,7 @@
 #include "kamite/hud_layout.h"
 #include "kamite/log.h"
 #include "kamite/roulette_bar.h"
+#include "kamite/style_presets.h"
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/gs/gs_aspect.h"
@@ -416,11 +417,13 @@ namespace kamite::hud
         void idEntry(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             g_entry = GPR_U32(ctx, 5) & 0x01FFFFFFu;
+            style_presets::noteEntry(g_entry); // the Techniques screen's style list draws arrows for its own entry
             roulette_bar::onEntry(rdram, g_curLayout, g_entry);
         }
 
         void idEnd(uint8_t *, R5900Context *, PS2Runtime *)
         {
+            style_presets::noteEntry(0u);
             g_inIdTrans = false;
             g_ctx = g_region == Region::Forced ? g_regionCtx : g_region == Region::Inherit ? g_lastEntry : Context{};
         }

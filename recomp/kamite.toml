@@ -477,3 +477,10 @@ flag = "hud2d"
 address = "0x00146704"
 hook = "km_hud_region_end"
 flag = "hud2d"
+
+# Style presets: the icon drawer func_002B1300 at the join after its UV cases ($s0 -> the code, UVs at sp+0x14..0x20,
+# $a3 the icon sheet): in the Techniques screen's style list four icon codes are drawn as the game's "+arrow" art.
+[[patches.hooks]]
+address = "0x002B1584"
+hook = "km_styles_icon"
+flag = "styles"
