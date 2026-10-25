@@ -45,6 +45,8 @@ set(KAMITE_HOST_SOURCES
     kamite/hd_textures.cpp
     kamite/prompt_hd.cpp
     kamite/style_presets.cpp
+    kamite/texture_slots.cpp
+    kamite/glow_probe.cpp
     kamite/widescreen.cpp
     kamite/camera.cpp
     kamite/menu_buttons.cpp

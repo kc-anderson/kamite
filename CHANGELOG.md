@@ -20,6 +20,10 @@ Newest first. Each change is commented in the code where it was made.
   - F2 > Styles shows which style is loaded and saves/loads them too.
 - **The shop's radio (jukebox) is no longer a menu:** its screen has an invisible backdrop bigger than the screen,
   which the 4:3-menu detection took for a menu background, so the picture went 4:3 while it was open.
+- **The shop window no longer gets garbage over it:** the game packs each frame's model textures into video memory
+  by their size in bytes, but a narrow, tall texture (the jukebox's) takes more room than that, so the next texture
+  (the window glass) was loaded partly inside it. On the PS2's 4:3 view the jukebox is off screen there; the wider
+  view shows both. The game's texture slots now reserve a texture's real footprint.
 - Fixed: digits in the port's rewritten menu hints used the wrong glyphs (none were in use).
 - **Tutorial pop-ups are no longer menus:** with 4:3 menus in a 16:9 game, a tutorial pop-up's full-screen backing
   made the picture go 4:3 and back, and the health block could land in its 4:3 place. While the pop-up is up (and no

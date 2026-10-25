@@ -21,6 +21,8 @@
 #include "kamite/menu_buttons.h"
 #include "kamite/radar_glow.h"
 #include "kamite/style_presets.h"
+#include "kamite/texture_slots.h"
+#include "kamite/glow_probe.h"
 #include "kamite/hd_textures.h"
 #include "kamite/call_trace.h"
 #include "kamite/default_ini.h" // generated from kamite.ini by src/CMakeLists.txt
@@ -967,6 +969,8 @@ int main(int argc, char *argv[])
         // 60 FPS mode, L3 dash, and the game-frame count for the F3 overlay (a hook at the top of the main loop).
         kamite::installFramePatches(runtime);
         kamite::installGameOptions(runtime); // [Game] UnlockHard, [Sound] MuteMusic
+        kamite::texture_slots::install(); // the per-frame texture slots reserve a texture's real VRAM footprint
+        kamite::glow_probe::install(runtime); // diagnostic: is the casino glow set up twice a frame (log lines)
         kamite::hangdump::setRuntime(&runtime);
         kamite::calltrace::installFromEnvironment(runtime);
         kamite::pcsampler::installFromEnvironment(runtime);

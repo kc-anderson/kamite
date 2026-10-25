@@ -498,3 +498,11 @@ flag = "styles"
 address = "0x002AB1E0"
 hook = "km_styles_text"
 flag = "styles"
+
+# The per-frame texture slots (texture_slots.h): the TIM2 loader func_00151990 moves its VRAM cursor on by the picture's
+# size (srl v1,v1,8 at 0x151C70; $v1 = ImageSize, the picture header at $s5 - 0x30); a narrow tall texture takes more
+# blocks than that, and the next texture was put inside it (the shop window under the jukebox, Oct 25).
+[[patches.hooks]]
+address = "0x00151C70"
+hook = "km_texture_slot_size"
+flag = "texture_slots"
