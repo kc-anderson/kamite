@@ -43,6 +43,10 @@ def mdb_read(b,o):
     assert b[o:o+3]==b'mdb'
     bone_off=o+u32(b,o+4); nb=u16(b,o+8); nv=u16(b,o+10)
     hdr=b[o+12:o+32]
+    # Room geometry (header flag 0, chihuahua roomviewer): positions are int16 * 0.01 with a u16 strip flag, 8 bytes a
+    # vertex; character and object models store f32 x/y/z + an i32 flag. The flags mean the same: 0x8000 restart,
+    # else bit 0 = winding.
+    room=u16(b,o+30)==0
     vbs=[]
     for i in range(nv):
         vo=o+u32(b,o+32+4*i)
@@ -51,7 +55,10 @@ def mdb_read(b,o):
         extra=b[vo+24:vo+32]
         pos=[];flags=[]
         for k in range(cnt):
-            x,y,z,fl=struct.unpack_from('<3fi',b,vo+po+16*k)
+            if room:
+                x,y,z,fl=struct.unpack_from('<3hH',b,vo+po+8*k); x,y,z=x*0.01,y*0.01,z*0.01
+            else:
+                x,y,z,fl=struct.unpack_from('<3fi',b,vo+po+16*k)
             pos.append((x,y,z)); flags.append(fl)
         nrm=[tuple(struct.unpack_from('<3b',b,vo+no_+4*k)) for k in range(cnt)] if no_ else None
         uv=[struct.unpack_from('<2h',b,vo+uo+4*k) for k in range(cnt)]
@@ -62,7 +69,7 @@ def mdb_read(b,o):
     for i in range(nb):
         x,y,z,mir,par=struct.unpack_from('<3fHh',b,bone_off+16*i)
         bones.append(dict(t=(x,y,z),mirror=mir,parent=par))
-    return dict(bones=bones,vbs=vbs,hdr=hdr,bone_off=bone_off)
+    return dict(bones=bones,vbs=vbs,hdr=hdr,bone_off=bone_off,room=room)
 
 def tm3_read(b):
     assert b[:3]==b'TM3', b[:4]
