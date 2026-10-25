@@ -65,6 +65,10 @@ namespace kamite::hud
         // The tutorial pop-up: cCockTutorial at the game object D_003BD6E8 + 0x1A20, its state byte at +0xB8 (1..4 while
         // its panel is drawn, ForwardIfStateActive_147460); decomp src/cod/001bf8c8.c.
         constexpr uint32_t kGameObject = 0x3BD6E8u, kTutorialState = 0x1A20u + 0xB8u;
+        // The jukebox (the shop's radio): its layout is drawn by Entry_runHookAndDraw (cIDBase_trans returning to
+        // 0x1F5EE4) over the live scene with an invisible backdrop bigger than the screen (texture 0x3800, alpha 0):
+        // an in-world screen like the tutorial pop-up, not a menu (counted as one, the picture went 4:3, Oct 25).
+        constexpr uint32_t kJukeBoxTransReturn = 0x001F5EE4u;
         constexpr uint32_t kPlayerBar = 0xF0000001u, kRadar = 0xF0000002u, kRoulette = 0xF0000003u;
 
         Layout g_layout = Layout::Anchored;
@@ -123,6 +127,7 @@ namespace kamite::hud
         Region g_region = Region::None;
         Context g_regionCtx, g_lastEntry;
         bool g_inIdTrans = false;
+        uint32_t g_idCaller = 0u; // the return address of the cIDBase_trans being drawn
         uint32_t g_curLayout = 0u; // the cIDBase being drawn (every caller)
 
         struct Loose
@@ -264,7 +269,7 @@ namespace kamite::hud
                 // Full height too: letterbox bars in cutscenes are full width but thin.
                 const float height = 448.0f; // the game's 2D screen (0..448, NTSC)
                 if (g_inIdTrans && !g_ctx.active && !g_menuSeen && y1 - y0 >= 0.8f * height &&
-                    (g_subScreenOpen || !tutorialUp(rdram)))
+                    g_idCaller != kJukeBoxTransReturn && (g_subScreenOpen || !tutorialUp(rdram)))
                 {
                     g_menuSeen = true; // a menu's background (fades are drawn outside any layout)
                     if (g_wide && g_menuMode == MenuMode::Pillarbox)
@@ -377,6 +382,7 @@ namespace kamite::hud
         {
             g_inIdTrans = true;
             g_curLayout = GPR_U32(ctx, 18) & 0x01FFFFFFu;
+            g_idCaller = read32(rdram, GPR_U32(ctx, 29) + 0x40u);
             if (g_region == Region::Forced)
                 return; // g_ctx is the region's
             // Only the in-game HUD widgets (by who called cIDBase_trans) keep to the screen edges; every other layout
@@ -424,6 +430,7 @@ namespace kamite::hud
         void idEnd(uint8_t *, R5900Context *, PS2Runtime *)
         {
             style_presets::noteEntry(0u);
+            g_idCaller = 0u;
             g_inIdTrans = false;
             g_ctx = g_region == Region::Forced ? g_regionCtx : g_region == Region::Inherit ? g_lastEntry : Context{};
         }

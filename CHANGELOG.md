@@ -18,6 +18,8 @@ Newest first. Each change is commented in the code where it was made.
     blinks while Y + its direction is held and again right after it loads or saves. The bottom bar's spare line says
     "[Y] Hold D-Pad: Save Style". The list steps aside while a move is being picked.
   - F2 > Styles shows which style is loaded and saves/loads them too.
+- **The shop's radio (jukebox) is no longer a menu:** its screen has an invisible backdrop bigger than the screen,
+  which the 4:3-menu detection took for a menu background, so the picture went 4:3 while it was open.
 - Fixed: digits in the port's rewritten menu hints used the wrong glyphs (none were in use).
 - **Tutorial pop-ups are no longer menus:** with 4:3 menus in a 16:9 game, a tutorial pop-up's full-screen backing
   made the picture go 4:3 and back, and the health block could land in its 4:3 place. While the pop-up is up (and no
