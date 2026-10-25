@@ -237,7 +237,10 @@ namespace kamite::menu_buttons
             size_t foundAll = 0;
             const auto &rewrites = textRewrites();
             std::vector<bool> found(rewrites.size(), false);
-            for (const char *path : {"id/local/us/idsavecore_us.idd"})
+            for (const char *path : {"id/local/us/idsavecore_us.idd", "id/local/us/idsubscrmenu_us.idd", "id/local/us/idsubscrmap_us.idd",
+                                     "id/local/us/idsubscrwaza_us.idd", "id/local/us/idsubscroption_us.idd",
+                                     "id/local/us/idsubscroptiont_us.idd", "id/local/us/idsubscrbonus_us.idd",
+                                     "id/local/us/idsubscrgodreel_us.idd", "id/local/us/idtitlecore_us.idd"})
             {
                 const auto menu = disc_files::find(path);
                 if (!menu || !disc_files::read(*menu, file))
@@ -320,9 +323,10 @@ namespace kamite::menu_buttons
             // back to white): exiting is the menus' Cancel, now the circle, in the circle's own colour (1, as the
             // "[circle] Default" hint has it).
             {0x59224u, {0xB602u, 2u, kTriangle, 0xB301u}, {0xB602u, 1u, kCircle, 0xB301u}},
-            // "[cross][circle]Change" and "[cross][circle]Select": the circle becomes a space.
-            {0x591F8u, text({kCross, kCircle}, "Change"), text({kCross, kSpace}, "Change")},
-            {0x59238u, text({kCross, kCircle}, "Select"), text({kCross, kSpace}, "Select")},
+            // "[cross][circle]Change" and "[cross][circle]Select": the circle becomes a colour-restore code (no width:
+            // the word follows the cross as closely as "Exit" follows its circle).
+            {0x591F8u, text({kCross, kCircle}, "Change"), text({kCross, 0xB301u}, "Change")},
+            {0x59238u, text({kCross, kCircle}, "Select"), text({kCross, 0xB301u}, "Select")},
             // The dialog choices "[circle] Of course / Yes" and "[triangle] Leave me alone / No": cross and circle.
             {0x577A8u, {kCircle, 0xFFFFu, 0xFFFFu}, {kCross, 0xFFFFu, 0xFFFFu}},
             {0x577C8u, {kTriangle, 0xFFFFu, 0xFFFFu}, {kCircle, 0xFFFFu, 0xFFFFu}},
@@ -336,15 +340,18 @@ namespace kamite::menu_buttons
 
     const std::vector<TextRewrite> &textRewrites()
     {
-        // id/local/us/idsavecore_us.idd (the save and load menus): "[cross] [circle] : Confirm" and
-        // "[triangle] : Cancel" (0x35 is that font's space, 0x31 its colon).
+        // id/local/us/idsavecore_us.idd (the save and load menus; the idsubscr*_us.idd files carry the same bank):
+        // "[cross] [circle] : Confirm" and "     [triangle] : Cancel" (0x35 is that font's space, 0x31 its colon; the
+        // five spaces put the triangle under the circle, both lines start at the same x). Now "[cross]Confirm" and
+        // "[circle]Cancel", the buttons one above the other and the words right after them (K, Oct 25); the
+        // lengths are kept with spaces at the end.
         static const std::vector<TextRewrite> rewrites = {
             {"save menu Confirm",
              cat({{kCross, kSpace2, kCircle, kSpace2, kColon, kSpace2, kSpace2}, text({}, "Confirm")}),
-             cat({{kCross, kSpace2, kSpace2, kSpace2, kColon, kSpace2, kSpace2}, text({}, "Confirm")})},
+             cat({{kCross}, text({}, "Confirm"), {kSpace2, kSpace2, kSpace2, kSpace2, kSpace2, kSpace2}})},
             {"save menu Cancel",
-             cat({{kSpace2, kTriangle, kSpace2, kColon, kSpace2, kSpace2}, text({}, "Cancel")}),
-             cat({{kSpace2, kCircle, kSpace2, kColon, kSpace2, kSpace2}, text({}, "Cancel")})},
+             cat({{kSpace2, kSpace2, kSpace2, kSpace2, kSpace2, kTriangle, kSpace2, kColon, kSpace2, kSpace2}, text({}, "Cancel")}),
+             cat({{kCircle}, text({}, "Cancel"), {kSpace2, kSpace2, kSpace2, kSpace2, kSpace2, kSpace2, kSpace2, kSpace2, kSpace2}})},
         };
         return rewrites;
     }

@@ -514,12 +514,13 @@ namespace kamite::style_presets
         constexpr uint32_t kMessageBankPointer = 0x3C23A4u; // *(*(u32 *)0x3C23A4 + 0xC) = the message bank
         constexpr uint16_t kListMessage = 0x30C4u, kShadowMessage = 0x30FEu, kHintMessage = 0x30FFu, kBlankMessage = 0x30D0u;
         constexpr uint32_t kListText = 0x1000u, kShadowText = 0x1100u, kHintText = 0x1200u; // in the save record's unused tail
-        constexpr float kListX = 295.0f, kListY = 61.0f;
-        constexpr float kLinePitch = 19.0f; // the game's own pitch at this scale (~15) lets the icons touch the next line
+        constexpr float kListX = 295.0f, kListY = 56.5f; // the block is centred here (align 3): the top line stays put as the pitch changes
+        constexpr float kLinePitch = 16.0f; // the game's own pitch at this scale (~15) lets the icons touch the next line
         constexpr uint16_t kArrowCode[kStyles] = {4u, 5u, 6u, 7u}; // up, right, down, left
         constexpr uint16_t kPlusCode = 8u;                         // the plus before the arrow
         constexpr int kPlusPiece = kStyles;                        // g_pendingArrow: the plus
         constexpr uint32_t kFontState = 0x5E7510u;                 // the font's draw state (D_005E7510)
+        constexpr float kArrowTextGap = 5.0f;                      // texels between the arrow and the style's name
         constexpr uint16_t kTriangleIcon = 1u, kPlus = 0x0Eu, kSpace = 0x10u, kNewLine = 0xA001u, kEnd = 0x8001u;
         constexpr uint16_t kColour = 0xB203u, kColourRestore = 0xB301u; // 0xB203 hi lo: A B G R (0x80 = full)
         constexpr uint32_t kGold = 0x80106880u, kDim = 0x80484848u;
@@ -631,7 +632,6 @@ namespace kamite::style_presets
                 out.push_back(kTriangleIcon);
                 out.push_back(kPlusCode);
                 out.push_back(kArrowCode[slot]);
-                out.push_back(kSpace);
                 const bool used = (store.used & (1u << slot)) != 0u;
                 uint32_t colour = 0u; // 0: the line's own colour
                 if (slot == holding)
@@ -653,7 +653,7 @@ namespace kamite::style_presets
 
         std::vector<uint16_t> hintText()
         {
-            std::vector<uint16_t> out{kTriangleIcon, kSpace};
+            std::vector<uint16_t> out{kTriangleIcon};
             append(out, "Hold D-Pad: Save Style");
             out.push_back(kEnd);
             return out;
@@ -792,12 +792,36 @@ namespace kamite::style_presets
             g_pendingArrow = arrow;
         }
 
+        // A piece's width in the text, in the units cMessDrawFont_measureCode gets from func_002B12D8 for an icon (32 =
+        // a cell, drawn as a 26-unit square; a piece is drawn at side / 28 a texel, so w texels = w x 26 / 28 units).
+        float pieceAdvance(int piece)
+        {
+            const prompt_sheets::ArrowRect r = pieceRect(piece);
+            const float texels = (r.x1 - r.x0) + (piece == kPlusPiece ? 0.0f : kArrowTextGap);
+            return texels * (26.0f / 28.0f);
+        }
+
+        // cMessDrawFont_measureCode at 0x2B0A24, right after func_002B12D8 gave an icon's width in $f0 (32; before
+        // lwc1 f1,($s2)): inside the list, the plus and the arrows are as wide as they are drawn, so the arrow sits
+        // against the plus and the style's name close after the arrow ($s1 -> the code).
+        void onIconWidth(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            if (!g_ram || !g_listEntry || g_drawingEntry != g_listEntry)
+                return;
+            const uint16_t code = rd16(GPR_U32(ctx, 17));
+            int piece = code == kPlusCode ? kPlusPiece : -1;
+            for (int i = 0; i < kStyles; ++i)
+                if (code == kArrowCode[i])
+                    piece = i;
+            if (piece >= 0)
+                ctx->f[0] = pieceAdvance(piece);
+        }
+
         // The same function at 0x2B16C4, its quad's corners at sp+0x60/0x70/0x80/0x90 (x, y each; a square of 26 x
         // scale): a piece's quad gets the piece's own shape at the texel size the game gives its "+down" art next to a
-        // button (a 32-texel cell over about 28 of the square), centred on the square's middle line. Across, the plus
-        // and the arrow meet halfway between their squares (the text advances 32 x scale per icon plus the letter
-        // spacing, state+0x2C x state+0x44, so the squares are that far apart), the plus ending there, the arrow
-        // starting there: one piece, as in the game's art.
+        // button (a 32-texel cell over about 28 of the square), centred on the square's middle line, starting at the
+        // left of its square (the plus two texels nearer the button). With the widths above the arrow's square starts
+        // where the plus ends, so the two touch as in the game's art, and the name follows the arrow by kArrowTextGap.
         void onIconQuad(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
             if (g_pendingArrow < 0)
@@ -813,11 +837,7 @@ namespace kamite::style_presets
             const float k = side / 28.0f;
             const float w = (r.x1 - r.x0) * k, h = (r.y1 - r.y0) * k;
             const float cy = 0.5f * (y0 + y1);
-            float spacing = rdFloat(kFontState + 0x2Cu) * rdFloat(kFontState + 0x44u);
-            if (!(spacing >= 0.0f && spacing < side))
-                spacing = 0.0f;
-            const float halfGap = 0.5f * (side * (6.0f / 26.0f) + spacing);
-            const float left = arrow == kPlusPiece ? x1 + halfGap - w : x0 - halfGap;
+            const float left = x0 - (arrow == kPlusPiece ? 2.0f * k : 0.0f);
             const float right = left + w, top = cy - 0.5f * h, bottom = cy + 0.5f * h;
             wrFloat(sp + 0x60u, left);
             wrFloat(sp + 0x64u, top);
@@ -966,6 +986,7 @@ namespace kamite::style_presets
         FunctionHooks::instance().observeEntry(0x16DC18u, "cSubScrWaza draw (style list)", &onWazaDraw);
         ps2xRegisterHostHook("km_styles_icon", &onIconDraw);
         ps2xRegisterHostHook("km_styles_icon_quad", &onIconQuad);
+        ps2xRegisterHostHook("km_styles_icon_width", &onIconWidth);
         ps2xRegisterHostHook("km_styles_text", &onTextSetup);
         ps2xSetPatchFlag("styles", true);
 #if defined(KAMITE_HAS_GS_MENU)

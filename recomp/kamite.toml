@@ -520,6 +520,13 @@ address = "0x002B16C4"
 hook = "km_styles_icon_quad"
 flag = "styles"
 
+# cMessDrawFont_measureCode right after func_002B12D8 gave an icon's width in $f0 (before lwc1 f1,($s2) at 0x2B0A24;
+# $s1 -> the code): the style list's plus and arrows advance by their own width.
+[[patches.hooks]]
+address = "0x002B0A24"
+hook = "km_styles_icon_width"
+flag = "styles"
+
 # cIDBase_transText after its line spacing is set (lwc1 f12,0x50(s1) at 0x2AB1E0; $s1 the entry, $s0 the font's
 # draw state): the style list's lines further apart.
 [[patches.hooks]]
