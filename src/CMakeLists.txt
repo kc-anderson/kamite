@@ -46,6 +46,7 @@ set(KAMITE_HOST_SOURCES
     kamite/prompt_hd.cpp
     kamite/style_presets.cpp
     kamite/texture_slots.cpp
+    kamite/jukebox.cpp
     kamite/glow_probe.cpp
     kamite/widescreen.cpp
     kamite/camera.cpp

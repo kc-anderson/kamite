@@ -2,11 +2,13 @@
 
 class PS2Runtime;
 
-// Diagnostic (Oct 25): in the casino the glow ("esp05": bright-part extract, 2 x 25-tap blur, additive composite) was
-// built twice every frame in K's GIF dump, about 12 times as bright as one pass, and some additive flare sprites
-// were sent twice. Not known yet whether the PS2 does the same or the port spawns or draws the effect twice (the 60 FPS
-// patch?). This logs the effect's setup (Panel_setupOnce 0x2E8318, $a0 the effect object) per frame: how often, and
-// whether by one object twice or by two objects. Observation only.
+// Diagnostic (Oct 25, round 2): at 60 FPS two esp05 glow objects (the screen glow: bright-part extract, blur, additive
+// composite) live side by side (pool slots 0 and 56), at 30 FPS one; the picture is twice as bright and grainy. The
+// effect code itself counts game frames everywhere (emitter intervals, children's lifetimes; an esp05's own lifetime
+// is -1, it lives until its emitter ends it), so the doubling comes from whatever spawns or ends the emitter. This logs
+// "[glow]" lines: each esp05's birth (its slot, the game frame, the emitter that pulled it and that emitter's
+// parameters: count, interval, mode, start/end frames) and its death (age in frames, setups seen), so a 30 FPS run
+// and a 60 FPS run of the same room can be compared. Observation only; strip with the fix (claude/strip-list.md).
 namespace kamite::glow_probe
 {
     void install(PS2Runtime &runtime);

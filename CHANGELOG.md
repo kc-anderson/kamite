@@ -2,6 +2,27 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 25, 2026 (night)
+
+- **60 FPS: effects keep the PS2's timing.** The effect system counts frames; the 60 FPS patch had halved only an
+  emitter's own frame, so an emitter lived twice as long in game frames and emitted twice as many children while it
+  did. The screen glows (the casino lights, the God Hand's arm) are such children that live until their emitter ends,
+  so two stood on top of each other: far too bright, and grainy. Now the emitters' frames, their emission countdown
+  and the children's frames all step by half a frame at 60 FPS, so every effect lasts and repeats as on the PS2. A
+  log probe ("[glow]" lines) still watches the glow's births and deaths for one more round.
+- **60 FPS: the Techniques screen's move demo plays at full speed again.** The 60 FPS patch halved the demo's motion
+  step on top of the halving every motion already gets at 60 FPS, so Gene demonstrated in slow motion.
+- **The shop's radio:** while its song list is open the camera stands still on the radio as on the PS2 (the Modern
+  free camera turned with the stick), and Gene stays in the picture instead of vanishing (his update runs with the
+  "player off" bits lifted for its duration; his controls are still off, so he stands and idles).
+- **Style list polish:** the lines are closer together (19 px instead of 23); the "+" is the game's own plus from its
+  "+arrow" art, drawn against the arrow as one piece (a third piece in the icon sheet's free cells, PS2 and full
+  resolution) instead of the font's oversized plus; the drop shadow follows the same line pitch instead of drifting
+  down line by line.
+- **Launcher title:** the KAMITE wordmark stands still; only the painted kana (and the speed lines behind them)
+  shift with the mouse, and nothing drifts on its own. `resources/images/kana.png` is the kana layer;
+  `tools/logo/build_logo.py --layers logo.psd` rebuilds both images from the layered PSD.
+
 ## October 25, 2026 (evening)
 
 - **Style presets, stage 2: swapping in play and on the Techniques screen, kept in the save.**

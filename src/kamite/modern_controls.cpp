@@ -24,6 +24,8 @@
 // Directions: the camera's yaw is in Gene's convention (the original camera's yaw is his + the offset at +0x414),
 // "right" on the stick is the direction a camera turned right by the stick would face (yaw decreasing).
 #include "kamite/modern_controls.h"
+
+#include "kamite/jukebox.h"
 #include "kamite/camera.h"
 #include "kamite/ini_file.h"
 #include "kamite/log.h"
@@ -472,7 +474,8 @@ namespace kamite::modern
         const bool fight = battle || (g_battle.load(std::memory_order_relaxed) && now - g_lastNearMs <= kFightLingerMs);
         g_battleCamera.store(battle, std::memory_order_relaxed);
         g_battle.store(fight, std::memory_order_relaxed);
-        g_gameCamera.store(gameCamera, std::memory_order_relaxed);
+        // The shop's jukebox: the game's camera stands still on the radio, as on the PS2 (jukebox.h).
+        g_gameCamera.store(gameCamera || jukebox::open(rdram), std::memory_order_relaxed);
         g_lastCameraMs.store(now, std::memory_order_relaxed);
     }
 

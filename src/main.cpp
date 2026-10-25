@@ -22,6 +22,7 @@
 #include "kamite/radar_glow.h"
 #include "kamite/style_presets.h"
 #include "kamite/texture_slots.h"
+#include "kamite/jukebox.h"
 #include "kamite/glow_probe.h"
 #include "kamite/hd_textures.h"
 #include "kamite/call_trace.h"
@@ -970,7 +971,8 @@ int main(int argc, char *argv[])
         kamite::installFramePatches(runtime);
         kamite::installGameOptions(runtime); // [Game] UnlockHard, [Sound] MuteMusic
         kamite::texture_slots::install(); // the per-frame texture slots reserve a texture's real VRAM footprint
-        kamite::glow_probe::install(runtime); // diagnostic: is the casino glow set up twice a frame (log lines)
+        kamite::jukebox::install(runtime); // the shop's radio: Gene stays in the picture while it plays
+        kamite::glow_probe::install(runtime); // diagnostic: who spawns the second esp05 glow at 60 FPS ([glow] log lines)
         kamite::hangdump::setRuntime(&runtime);
         kamite::calltrace::installFromEnvironment(runtime);
         kamite::pcsampler::installFromEnvironment(runtime);

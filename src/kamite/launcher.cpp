@@ -221,12 +221,13 @@ namespace kamite::launcher
             Result result = Result::Quit;
             ImFont *font = nullptr;
             float unit = 1.0f; // UI scale: window height / 720
-            Texture2D logo{};  // resources/images/logo.png when present (the project's own logo)
+            Texture2D logo{};  // resources/images/logo.png when present (the KAMITE wordmark; it stays still)
+            Texture2D kana{};  // resources/images/kana.png: the painted kana over the wordmark's top right
             Texture2D burst{}; // resources/images/burst.png: the speed lines behind the logo
-            // The title's motion: the cursor (eased, plus a slow drift of its own) shifts the burst layers and the
-            // logo by different amounts, the bursts turn slowly and pulse.
+            // The title's motion: the cursor (eased) shifts the burst layers and the kana by different amounts,
+            // the bursts turn slowly and pulse; the wordmark does not move.
             float time = 0.0f;
-            ImVec2 parallax{0.0f, 0.0f}; // -1..1 each way
+            ImVec2 parallax{0.0f, 0.0f}; // -1..1 each way; 0 while the cursor is away
             float burstShown = 0.0f;     // fades the burst in on the screens with the logo, out on the others
             bool logoPlaced = false;     // logoMin/logoMax hold last frame's logo rectangle (without the parallax shift)
             ImVec2 logoMin{}, logoMax{};
@@ -234,6 +235,9 @@ namespace kamite::launcher
 
         // The wordmark's centre inside logo.png (tools/logo/build_logo.py prints it); the burst is centred there.
         constexpr float kLogoCentreX = 0.480f, kLogoCentreY = 0.737f;
+        // Where kana.png sits over logo.png: left, top, right, bottom as fractions of logo.png (printed by the same
+        // script).
+        constexpr float kKanaRect[4] = {0.3655f, 0.0159f, 0.9936f, 0.7332f};
 
         void updateMotion(State &state, Screen screen)
         {
@@ -247,8 +251,6 @@ namespace kamite::launcher
                 target.x = std::clamp((mouse.x - width * 0.5f) / (width * 0.5f), -1.0f, 1.0f);
                 target.y = std::clamp((mouse.y - height * 0.5f) / (height * 0.5f), -1.0f, 1.0f);
             }
-            target.x += 0.15f * std::sin(state.time * 0.23f);
-            target.y += 0.15f * std::cos(state.time * 0.31f);
             const float ease = 1.0f - std::exp(-dt * 3.0f);
             state.parallax.x += (target.x - state.parallax.x) * ease;
             state.parallax.y += (target.y - state.parallax.y) * ease;
@@ -330,14 +332,21 @@ namespace kamite::launcher
                                               ImGui::GetWindowHeight() * 0.44f / aspect});
                 const float height = width * aspect;
                 const ImVec2 start((ImGui::GetWindowWidth() - width) * 0.5f, ImGui::GetCursorPosY());
-                const ImVec2 shift(state.parallax.x * fontSize(state, 8.0f), state.parallax.y * fontSize(state, 8.0f));
                 ImGui::SetCursorPos(start);
                 const ImVec2 screenStart = ImGui::GetCursorScreenPos();
-                ImGui::SetCursorPos(ImVec2(start.x + shift.x, start.y + shift.y));
                 rlImGuiImageSize(&state.logo, static_cast<int>(width), static_cast<int>(height));
                 state.logoMin = screenStart;
                 state.logoMax = ImVec2(screenStart.x + width, screenStart.y + height);
                 state.logoPlaced = true;
+                if (state.kana.id != 0u)
+                {
+                    // The kana over the wordmark, moved a little with the cursor (the wordmark stays put).
+                    const ImVec2 shift(state.parallax.x * fontSize(state, 10.0f), state.parallax.y * fontSize(state, 7.0f));
+                    ImGui::SetCursorPos(ImVec2(start.x + width * kKanaRect[0] + shift.x,
+                                               start.y + height * kKanaRect[1] + shift.y));
+                    rlImGuiImageSize(&state.kana, static_cast<int>(std::round(width * (kKanaRect[2] - kKanaRect[0]))),
+                                     static_cast<int>(std::round(height * (kKanaRect[3] - kKanaRect[1]))));
+                }
                 ImGui::SetCursorPos(ImVec2(0.0f, start.y + height));
                 ImGui::Dummy(ImVec2(0.0f, fontSize(state, 6.0f)));
             }
@@ -1292,6 +1301,16 @@ namespace kamite::launcher
                 SetTextureFilter(state.logo, TEXTURE_FILTER_TRILINEAR);
             }
         }
+        const fs::path kanaPath = context.exeDir / "resources" / "images" / "kana.png";
+        if (fs::is_regular_file(kanaPath, error))
+        {
+            state.kana = LoadTexture(utf8(kanaPath).c_str());
+            if (state.kana.id != 0u)
+            {
+                GenTextureMipmaps(&state.kana);
+                SetTextureFilter(state.kana, TEXTURE_FILTER_TRILINEAR);
+            }
+        }
         const fs::path burstPath = context.exeDir / "resources" / "images" / "burst.png";
         if (fs::is_regular_file(burstPath, error))
         {
@@ -1345,6 +1364,8 @@ namespace kamite::launcher
         saveControls();
         if (state.logo.id != 0u)
             UnloadTexture(state.logo);
+        if (state.kana.id != 0u)
+            UnloadTexture(state.kana);
         if (state.burst.id != 0u)
             UnloadTexture(state.burst);
         rlImGuiShutdown(); // the F12 debugger sets ImGui up again later

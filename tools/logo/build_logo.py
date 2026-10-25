@@ -4,15 +4,21 @@
   kana:     the brush hiragana "kamite" (black or any colour on transparent; only alpha is used)
 
 Writes into resources/images/:
-  logo.png   the wordmark with the painted turquoise kana and splatter over its top right
+  logo.png   the KAMITE wordmark alone, on the whole canvas (room above it where the kana go); the launcher
+             keeps it still
+  kana.png   the painted turquoise kana with their shadow and splatter, cropped; the launcher draws it over
+             logo.png at the rectangle this script prints (kKanaRect in src/kamite/launcher.cpp) and
+             shifts it with the mouse
   burst.png  the speed-line burst the launcher draws behind it (turquoise, transparent; the launcher
              rotates, pulses and parallax-shifts it)
 and, with --psd, a layered PSD of the logo (wordmark, kana shadow, kana paint, splatter) for hand edits.
 
 The source images are not in the repo; pass their paths:
   python tools/logo/build_logo.py --wordmark KAMITE.png --kana kamite_kana.png [--psd logo.psd]
+or rebuild the PNGs from a layered PSD written earlier (hand-edited or not):
+  python tools/logo/build_logo.py --layers logo.psd
 
-Needs numpy, scipy, pillow (and psd-tools for --psd).
+Needs numpy, scipy, pillow (and psd-tools for --psd / --layers).
 """
 import argparse
 import os
@@ -212,6 +218,40 @@ def build_burst(size=2048, seed=3):
     return Image.fromarray(out, "RGBA")
 
 
+LAYER_NAMES = ("wordmark", "kana shadow", "kana paint", "splatter")
+
+
+def load_psd(path):
+    """The logo's layers from a PSD this script wrote (the four layers by name, any extra ones ignored)."""
+    from psd_tools import PSDImage
+    psd = PSDImage.open(path)
+    size = psd.size
+    layers = {}
+    for layer in psd.descendants():
+        if layer.name in LAYER_NAMES and layer.name not in layers:
+            canvas = Image.new("RGBA", size, (0, 0, 0, 0))
+            im = layer.topil()
+            if im is not None:
+                canvas.alpha_composite(im.convert("RGBA"), (max(0, layer.left), max(0, layer.top)))
+            layers[layer.name] = canvas
+    missing = [n for n in LAYER_NAMES if n not in layers]
+    if missing:
+        raise SystemExit(f"{path}: layers missing: {', '.join(missing)}")
+    return layers
+
+
+def split_layers(layers):
+    """logo.png (the wordmark on the whole canvas), kana.png (shadow + paint + splatter, cropped) and the
+    kana's rectangle as fractions of logo.png (left, top, right, bottom; top is negative when they stick out)."""
+    size = layers["wordmark"].size
+    kana = Image.new("RGBA", size, (0, 0, 0, 0))
+    for name in ("kana shadow", "kana paint", "splatter"):
+        kana.alpha_composite(layers[name])
+    box = kana.getbbox()
+    rect = (box[0] / size[0], box[1] / size[1], box[2] / size[0], box[3] / size[1])
+    return layers["wordmark"], kana.crop(box), rect
+
+
 def save_psd(layers, path):
     from psd_tools import PSDImage
     from psd_tools.api.layers import PixelLayer
@@ -225,19 +265,31 @@ def save_psd(layers, path):
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--wordmark", required=True)
-    ap.add_argument("--kana", required=True)
+    ap.add_argument("--wordmark", help="the wordmark render (transparent PNG)")
+    ap.add_argument("--kana", help="the brush kana (only its alpha is used)")
+    ap.add_argument("--layers", help="rebuild logo.png and kana.png from this layered PSD instead")
     ap.add_argument("--out", default=os.path.join(here, "..", "..", "resources", "images"))
     ap.add_argument("--psd", help="also write the logo's layers as a PSD here")
     ap.add_argument("--seed", type=int, default=1, help="splatter/paint randomness")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
-    flat, layers, centre = build_logo(args.wordmark, args.kana, args.seed)
-    bleed(flat).save(os.path.join(args.out, "logo.png"), optimize=True)
+    if args.layers:
+        layers = load_psd(args.layers)
+        centre = None
+    elif args.wordmark and args.kana:
+        _, layers, centre = build_logo(args.wordmark, args.kana, args.seed)
+    else:
+        ap.error("pass --wordmark and --kana, or --layers")
+    word, kana, rect = split_layers(layers)
+    bleed(word).save(os.path.join(args.out, "logo.png"), optimize=True)
+    bleed(kana).save(os.path.join(args.out, "kana.png"), optimize=True)
     build_burst().save(os.path.join(args.out, "burst.png"), optimize=True)
     if args.psd:
         save_psd(layers, args.psd)
-    print(f"logo.png {flat.width}x{flat.height}; wordmark centre at {centre[0]:.3f}, {centre[1]:.3f} of the image")
+    print(f"logo.png {word.width}x{word.height}; kana.png {kana.width}x{kana.height}")
+    if centre is not None:
+        print(f"wordmark centre at {centre[0]:.3f}, {centre[1]:.3f} of logo.png (kLogoCentreX/Y)")
+    print("kana rectangle (kKanaRect): " + ", ".join(f"{v:.4f}" for v in rect))
 
 
 if __name__ == "__main__":

@@ -781,15 +781,18 @@ namespace kamite::prompt_sheets
         return true;
     }
 
-    // ---- the style list's arrows ----
+    // ---- the style list's arrows and plus ----
     namespace
     {
         // The down arrow's core as the game draws it (system texture 20, its "+down" piece: 14 x 19 texels): a shaft 4
         // texels wide down to row 12, then a head 14 wide narrowing to a point at row 19. The right arrow is the same
-        // turned a quarter. Each piece sits in its cell with two texels of outline round the core.
+        // turned a quarter. The plus is the same art's: two bars 3 texels thick and 15 long crossing at their middles.
+        // Each piece sits in the free area with two texels of outline round the core (the plus's outline touches both
+        // arrows' in the sheet, which never shows: each piece is drawn by its own rectangle).
         constexpr ArrowRect kRects[ArrowPieceCount] = {
-            {71.0f, 100.0f, 89.0f, 123.0f},  // down: core 73..87 x 102..121
-            {100.0f, 103.0f, 123.0f, 121.0f}, // right: core 102..121 x 105..119
+            {64.0f, 100.0f, 82.0f, 123.0f},   // down: core 66..80 x 102..121
+            {83.0f, 102.0f, 102.0f, 121.0f},  // plus: core 85..100 x 104..119
+            {103.0f, 103.0f, 126.0f, 121.0f}, // right: core 105..124 x 105..119
         };
 
         // Distance from a point (core units: x across 0..14, y along 0..19, the point of the arrow at y = 19) to the
@@ -818,7 +821,16 @@ namespace kamite::prompt_sheets
             return std::min(shaft, head);
         }
 
-        // The piece at a sheet point: -1 outside both, else its distance to the core.
+        // Distance from a point (core units: 0..15 each way) to the plus; 0 inside. The bars: x 6..9 and y 6..9 across,
+        // 0..15 along.
+        float plusDistance(float x, float y)
+        {
+            const float ax = std::max({6.0f - x, 0.0f, x - 9.0f}), ay = std::max({0.0f - y, 0.0f, y - 15.0f});
+            const float bx = std::max({0.0f - x, 0.0f, x - 15.0f}), by = std::max({6.0f - y, 0.0f, y - 9.0f});
+            return std::min(std::sqrt(ax * ax + ay * ay), std::sqrt(bx * bx + by * by));
+        }
+
+        // The piece at a sheet point: -1 outside all, else its distance to the core.
         int pieceAt(float x, float y, float &distance)
         {
             for (int piece = 0; piece < ArrowPieceCount; ++piece)
@@ -828,21 +840,27 @@ namespace kamite::prompt_sheets
                     continue;
                 const float cx = r.x0 + 2.0f, cy = r.y0 + 2.0f;
                 // Down: across = x, along = y. Right: across = y, along = x (the point at the right).
-                distance = piece == ArrowDown ? coreDistance(x - cx, y - cy) : coreDistance(y - cy, x - cx);
+                distance = piece == ArrowDown    ? coreDistance(x - cx, y - cy)
+                           : piece == ArrowPlus ? plusDistance(x - cx, y - cy)
+                                                : coreDistance(y - cy, x - cx);
                 return piece;
             }
             return -1;
         }
 
         // The game art's colours (texture 20's palette): the cream fill, the dark ring next to it, the softer one out.
+        // The plus's two rings are both the solid dark (its palette entries 5 and 6).
         constexpr float kFill[4] = {224.0f, 216.0f, 191.0f, 128.0f};
         constexpr float kDark[4] = {42.0f, 40.0f, 36.0f, 128.0f};
         constexpr float kSoft[4] = {53.0f, 50.0f, 49.0f, 108.0f};
+        constexpr float kPlusDark[4] = {54.0f, 51.0f, 47.0f, 128.0f};
 
-        const float *shade(float distance)
+        const float *shade(int piece, float distance)
         {
             if (distance <= 0.0f)
                 return kFill;
+            if (piece == ArrowPlus)
+                return distance <= 2.0f ? kPlusDark : nullptr;
             if (distance <= 1.0f)
                 return kDark;
             if (distance <= 2.0f)
@@ -895,16 +913,18 @@ namespace kamite::prompt_sheets
             }
             return static_cast<uint8_t>(best);
         };
-        const uint8_t fill = nearest(kFill), dark = nearest(kDark), soft = nearest(kSoft);
+        const uint8_t fill = nearest(kFill), dark = nearest(kDark), soft = nearest(kSoft), plusDark = nearest(kPlusDark);
         for (int y = 96; y < 128; ++y)
             for (int x = 64; x < 128; ++x)
             {
                 float distance = 0.0f;
-                if (pieceAt(x + 0.5f, y + 0.5f, distance) < 0)
+                const int piece = pieceAt(x + 0.5f, y + 0.5f, distance);
+                if (piece < 0)
                     continue;
-                const float *c = shade(distance);
+                const float *c = shade(piece, distance);
                 if (c)
-                    indices[static_cast<size_t>(y) * kSheetSize + x] = c == kFill ? fill : c == kDark ? dark : soft;
+                    indices[static_cast<size_t>(y) * kSheetSize + x] =
+                        c == kFill ? fill : c == kDark ? dark : c == kPlusDark ? plusDark : soft;
             }
         swizzle(indices.data(), payload);
         return true;
@@ -914,9 +934,10 @@ namespace kamite::prompt_sheets
     {
         out[0] = out[1] = out[2] = out[3] = 0.0f;
         float distance = 0.0f;
-        if (pieceAt(x, y, distance) < 0)
+        const int piece = pieceAt(x, y, distance);
+        if (piece < 0)
             return;
-        const float *c = shade(distance);
+        const float *c = shade(piece, distance);
         if (!c)
             return;
         const float a = c[3] / 128.0f;
