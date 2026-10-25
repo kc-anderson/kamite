@@ -496,6 +496,9 @@ namespace kamite::button_prompts
                         if (!images->patched[i])
                             images->clut[i] = g_origClut[i];
                 }
+                // The style list's arrows in the icon sheet's empty cells (every set, PlayStation's too).
+                if (images->patched[0] && !sheets::addStyleArrows(images->payload[0].data(), images->clut[0].data()))
+                    summary += " (style arrows not added: the icon sheet's empty cells are not empty)";
                 // The set's mark: the red of the first CLUT entry with alpha 0 (nothing draws it) gets the set's number,
                 // so each set's sheets have their own texture names, then the full-resolution images for them.
                 bool added = false;

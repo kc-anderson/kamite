@@ -780,4 +780,148 @@ namespace kamite::prompt_sheets
         swizzle(sheet.data(), outPayload);
         return true;
     }
+
+    // ---- the style list's arrows ----
+    namespace
+    {
+        // The down arrow's core as the game draws it (system texture 20, its "+down" piece: 14 x 19 texels): a shaft 4
+        // texels wide down to row 12, then a head 14 wide narrowing to a point at row 19. The right arrow is the same
+        // turned a quarter. Each piece sits in its cell with two texels of outline round the core.
+        constexpr ArrowRect kRects[ArrowPieceCount] = {
+            {71.0f, 100.0f, 89.0f, 123.0f},  // down: core 73..87 x 102..121
+            {100.0f, 103.0f, 123.0f, 121.0f}, // right: core 102..121 x 105..119
+        };
+
+        // Distance from a point (core units: x across 0..14, y along 0..19, the point of the arrow at y = 19) to the
+        // arrow; 0 inside.
+        float coreDistance(float x, float y)
+        {
+            // The shaft: x 5..9, y 0..12.
+            const float sx = std::max({5.0f - x, 0.0f, x - 9.0f}), sy = std::max({0.0f - y, 0.0f, y - 12.0f});
+            const float shaft = std::sqrt(sx * sx + sy * sy);
+            // The head: the triangle (0,12) (14,12) (7,19).
+            const float ax[3] = {0.0f, 14.0f, 7.0f}, ay[3] = {12.0f, 12.0f, 19.0f};
+            bool inside = true;
+            float edge = 1e9f;
+            for (int i = 0; i < 3; ++i)
+            {
+                const int j = (i + 1) % 3;
+                const float ex = ax[j] - ax[i], ey = ay[j] - ay[i];
+                const float cross = ex * (y - ay[i]) - ey * (x - ax[i]);
+                if (cross < 0.0f) // the triangle is clockwise in screen space (y down): inside is cross >= 0
+                    inside = false;
+                const float t = std::clamp(((x - ax[i]) * ex + (y - ay[i]) * ey) / (ex * ex + ey * ey), 0.0f, 1.0f);
+                const float dx = x - (ax[i] + t * ex), dy = y - (ay[i] + t * ey);
+                edge = std::min(edge, std::sqrt(dx * dx + dy * dy));
+            }
+            const float head = inside ? 0.0f : edge;
+            return std::min(shaft, head);
+        }
+
+        // The piece at a sheet point: -1 outside both, else its distance to the core.
+        int pieceAt(float x, float y, float &distance)
+        {
+            for (int piece = 0; piece < ArrowPieceCount; ++piece)
+            {
+                const ArrowRect &r = kRects[piece];
+                if (x < r.x0 || x >= r.x1 || y < r.y0 || y >= r.y1)
+                    continue;
+                const float cx = r.x0 + 2.0f, cy = r.y0 + 2.0f;
+                // Down: across = x, along = y. Right: across = y, along = x (the point at the right).
+                distance = piece == ArrowDown ? coreDistance(x - cx, y - cy) : coreDistance(y - cy, x - cx);
+                return piece;
+            }
+            return -1;
+        }
+
+        // The game art's colours (texture 20's palette): the cream fill, the dark ring next to it, the softer one out.
+        constexpr float kFill[4] = {224.0f, 216.0f, 191.0f, 128.0f};
+        constexpr float kDark[4] = {42.0f, 40.0f, 36.0f, 128.0f};
+        constexpr float kSoft[4] = {53.0f, 50.0f, 49.0f, 108.0f};
+
+        const float *shade(float distance)
+        {
+            if (distance <= 0.0f)
+                return kFill;
+            if (distance <= 1.0f)
+                return kDark;
+            if (distance <= 2.0f)
+                return kSoft;
+            return nullptr;
+        }
+    }
+
+    ArrowRect arrowRect(int piece)
+    {
+        return kRects[std::clamp(piece, 0, ArrowPieceCount - 1)];
+    }
+
+    bool addStyleArrows(uint8_t *payload, const uint8_t *clut)
+    {
+        if (!payload || !clut)
+            return false;
+        std::vector<uint8_t> indices(static_cast<size_t>(kSheetSize) * kSheetSize);
+        unswizzle(payload, indices.data());
+        std::array<uint8_t, 1024> pal{};
+        paletteRgba(clut, pal.data());
+        // The cells must be empty (index 0 or a fully transparent entry) in the sheet we were given.
+        for (int y = 96; y < 128; ++y)
+            for (int x = 64; x < 128; ++x)
+                if (pal[static_cast<size_t>(indices[static_cast<size_t>(y) * kSheetSize + x]) * 4u + 3u] != 0u)
+                    return false;
+        // Nearest palette entry (premultiplied RGBA) for each of the three colours.
+        auto nearest = [&](const float *c) {
+            int best = 0;
+            float bestD = 1e30f;
+            for (int i = 0; i < 256; ++i)
+            {
+                const uint8_t *e = &pal[static_cast<size_t>(i) * 4u];
+                if (e[3] == 0u)
+                    continue;
+                const float a = e[3] / 128.0f, ca = c[3] / 128.0f;
+                float d = 0.0f;
+                for (int k = 0; k < 3; ++k)
+                {
+                    const float diff = e[k] * a - c[k] * ca;
+                    d += diff * diff;
+                }
+                const float da = (e[3] - c[3]) * 2.0f;
+                d += da * da;
+                if (d < bestD)
+                {
+                    bestD = d;
+                    best = i;
+                }
+            }
+            return static_cast<uint8_t>(best);
+        };
+        const uint8_t fill = nearest(kFill), dark = nearest(kDark), soft = nearest(kSoft);
+        for (int y = 96; y < 128; ++y)
+            for (int x = 64; x < 128; ++x)
+            {
+                float distance = 0.0f;
+                if (pieceAt(x + 0.5f, y + 0.5f, distance) < 0)
+                    continue;
+                const float *c = shade(distance);
+                if (c)
+                    indices[static_cast<size_t>(y) * kSheetSize + x] = c == kFill ? fill : c == kDark ? dark : soft;
+            }
+        swizzle(indices.data(), payload);
+        return true;
+    }
+
+    void arrowColour(float x, float y, float out[4])
+    {
+        out[0] = out[1] = out[2] = out[3] = 0.0f;
+        float distance = 0.0f;
+        if (pieceAt(x, y, distance) < 0)
+            return;
+        const float *c = shade(distance);
+        if (!c)
+            return;
+        const float a = c[3] / 128.0f;
+        for (int k = 0; k < 3; ++k)
+            out[k] = c[k] / 255.0f * a;
+        out[3] = a;
+    }
 }

@@ -105,4 +105,28 @@ namespace kamite::prompt_sheets
     void unswizzle(const uint8_t *payload, uint8_t *indices);
     void swizzle(const uint8_t *indices, uint8_t *payload);
     void paletteRgba(const uint8_t *clut, uint8_t *rgba);
+
+    // ---- the style list's arrows (style_presets.cpp) ----
+    // The Techniques screen's style list labels each style "[Y] + arrow". The game's own "+arrow" art (system texture
+    // 20) has the plus and the arrow fused, and its left/right pieces stack the plus over the arrow, so the list draws
+    // arrows of its own, shaped exactly like the game's (its arrow cores, its two-texel dark outline), in the icon
+    // sheet's two empty cells (64,96) and (96,96): a down arrow (flipped vertically: up) and a right arrow (flipped
+    // horizontally: left). The text drawer draws them in place of four icon codes while the list is drawn.
+    enum ArrowPiece : int
+    {
+        ArrowDown,
+        ArrowRight,
+        ArrowPieceCount
+    };
+    struct ArrowRect
+    {
+        float x0, y0, x1, y1; // texels of the 128x128 sheet, the outline included
+    };
+    ArrowRect arrowRect(int piece);
+    // Draws both arrows into the icon sheet's payload (PS2 resolution, nearest palette entries of `clut`, which is not
+    // changed). False when the cells are not empty (not the sheet we know).
+    bool addStyleArrows(uint8_t *payload, const uint8_t *clut);
+    // The arrows' colour at a point of the sheet (texel units, continuous), premultiplied RGBA 0..1: for drawing them
+    // at full resolution. All zero outside the arrows.
+    void arrowColour(float x, float y, float out[4]);
 }

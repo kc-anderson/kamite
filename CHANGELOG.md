@@ -12,11 +12,11 @@ Newest first. Each change is commented in the code where it was made.
     **held 1.5 s saves** the equipped moves to it. The d-pad doesn't move the cursor while Y is held.
   - The styles are **stored in the save** (in a part of the save data the game never uses), so they go to the memory
     card with it, each save file has its own, and a new game starts with none. A Continue keeps them.
-  - The Techniques screen **lists the four styles under "Attack Str"** (where the game says a move is already set,
-    which it only does while you pick a move, so the list steps aside then), two per line, labelled like the screen's
-    own down+button rows with the game's own arrow art: [Y]+↑ S, [Y]+→ E, [Y]+↓ X, [Y]+← Y. The loaded style is gold,
-    empty ones are dim, a style blinks while Y + its direction is held and again right after it loads or saves. The
-    bottom bar's spare line says "[Y] Hold: Save Style".
+  - The Techniques screen **lists the four styles** in the empty space right of the big TECHNIQUES title, one per
+    line: [Y] + ↑ Style S, [Y] + → Style E, [Y] + ↓ Style X, [Y] + ← Style Y (reads SEXY; LIFE as Xavier). The arrows
+    are drawn like the game's own "↓+" art, at the same size; the loaded style is gold, empty ones are dim, a style
+    blinks while Y + its direction is held and again right after it loads or saves. The bottom bar's spare line says
+    "[Y] Hold D-Pad: Save Style". The list steps aside while a move is being picked.
   - F2 > Styles shows which style is loaded and saves/loads them too.
 - Fixed: digits in the port's rewritten menu hints used the wrong glyphs (none were in use).
 - **Tutorial pop-ups are no longer menus:** with 4:3 menus in a 16:9 game, a tutorial pop-up's full-screen backing

@@ -1,6 +1,7 @@
 // Style presets, stage 1. See style_presets.h.
 #include "kamite/style_presets.h"
 
+#include "kamite/button_prompt_sheets.h"
 #include "kamite/function_hooks.h"
 #include "kamite/log.h"
 #include "kamite/menu_buttons.h"
@@ -492,39 +493,39 @@ namespace kamite::style_presets
         }
 
         // ---- the list on the Techniques screen ----
-        // The info panel's "Already Set" group (shown by the game only while the move picker is open, to say the
-        // highlighted move is in another slot) carries the list while the slots are browsed: parts[0x23] the text
+        // The info panel's "Already Set" text (shown by the game only while the move picker is open, to say the
+        // highlighted move is in another slot) carries the list while the slots are browsed, moved to the empty space
+        // right of the big TECHNIQUES title (x ~225..365, y ~10..110 of the 512 x 448 menu screen; K's pick, Oct 25):
+        // four lines, "[Y] + arrow  Style S" down to "Style Y" (reads SEXY; LIFE as Xavier). parts[0x23] is the text
         // (align 3: the block centred on its draw position, scale 0.65), parts[0x24] its shadow (+1,+1, colour set 1:
-        // black, icons skipped), parts[0x25] the move name, [0x26] the "down+" art, [0x27] the slot's button and the
-        // name box (record #57, no id) hidden. Two lines, two styles each, labelled like the screen's own "down+"
-        // rows: [Y] then the game's "+arrow" art (system texture 20: "+down" top left, "+up" top right, "+ over left"
-        // bottom left, "+ over right" bottom right) then the letter. The text is message 0x30C4 (an unused "<7d>"
+        // black, icons skipped); the rest of its group (parts[0x25] the move name, [0x26] the "down+" art, [0x27] the
+        // slot's button, the name box: record #57, no id) is hidden. The text is message 0x30C4 (an unused "<7d>"
         // placeholder) whose offset word points at a string of ours; the shadow is 0x30FE (no colour codes, which
         // would colour the shadow too). The bottom bar's spare line (ids 57/58: "Release" on the chain's last rows,
-        // otherwise blank 0x30D0) says "[Y] Hold: Save Style" (0x30FF). Entry fields: +0x2C flags (0x08000000 = not
-        // drawn), +0x50/+0x54 draw position, +0x90 message id.
+        // otherwise blank 0x30D0) says "[Y] Hold D-Pad: Save Style" (0x30FF). Entry fields: +0x2C flags (0x08000000 =
+        // not drawn), +0x50/+0x54 draw position, +0x90 message id.
+        //
+        // The arrows are the icon sheet's style arrows (button_prompt_sheets.h: a down and a right arrow shaped like the
+        // game's "down+" art, in the sheet's empty cells; up and left are them flipped), drawn in place of icon codes
+        // 4..7 (L1 R1 L2 R2, never in this text) while the list's entry is drawn, at the size the game draws its own
+        // "down+" art next to a button. The "+" is the font's.
         constexpr uint32_t kNoDraw = 0x08000000u;
         constexpr uint32_t kMessageBankPointer = 0x3C23A4u; // *(*(u32 *)0x3C23A4 + 0xC) = the message bank
         constexpr uint16_t kListMessage = 0x30C4u, kShadowMessage = 0x30FEu, kHintMessage = 0x30FFu, kBlankMessage = 0x30D0u;
         constexpr uint32_t kListText = 0x1000u, kShadowText = 0x1100u, kHintText = 0x1200u; // in the save record's unused tail
-        constexpr float kListX = 395.0f, kListY = 399.0f; // under "Attack Str" (x 353..437, y 337..369)
-        // Icon codes the list never uses as buttons (L3, R3, Start, Select): drawn as the arrows while it is drawn.
-        constexpr uint16_t kArrowCode[kStyles] = {8u, 9u, 12u, 13u}; // up, right, down, left
-        constexpr float kArrowUv[kStyles][4] = {
-            {0.5f, 0.0f, 1.0f, 0.5f}, // "+up"
-            {0.5f, 0.5f, 1.0f, 1.0f}, // "+" over "right"
-            {0.0f, 0.0f, 0.5f, 0.5f}, // "+down"
-            {0.0f, 0.5f, 0.5f, 1.0f}, // "+" over "left"
-        };
-        constexpr uint16_t kTriangleIcon = 1u, kSpace = 0x10u, kNewLine = 0xA001u, kEnd = 0x8001u;
+        constexpr float kListX = 295.0f, kListY = 61.0f;
+        constexpr float kLinePitch = 23.0f; // the game's own pitch at this scale (~15) lets the icons touch the next line
+        constexpr uint16_t kArrowCode[kStyles] = {4u, 5u, 6u, 7u}; // up, right, down, left
+        constexpr uint16_t kTriangleIcon = 1u, kPlus = 0x0Eu, kSpace = 0x10u, kNewLine = 0xA001u, kEnd = 0x8001u;
         constexpr uint16_t kColour = 0xB203u, kColourRestore = 0xB301u; // 0xB203 hi lo: A B G R (0x80 = full)
-        constexpr uint32_t kGold = 0x80106880u, kDim = 0x80383838u;
+        constexpr uint32_t kGold = 0x80106880u, kDim = 0x80484848u;
 
         std::atomic<int> g_holding{-1}; // the pad filter: the direction held with Y, before it saves
         uint32_t g_listEntry = 0u;      // the entry the arrows are drawn for (EE thread)
         uint32_t g_drawingEntry = 0u;   // the cIDBase entry being drawn (hud_layout's hook)
         bool g_listShown = false;       // this frame's list is on (the screen's draw places it)
         uint32_t g_hidName = 0u, g_hidBox = 0u; // entries hidden by us, shown again when the picker opens
+        int g_pendingArrow = -1;        // the icon drawer is drawing this arrow (its quad is shaped next)
 
         uint16_t glyph(char c)
         {
@@ -536,7 +537,17 @@ namespace kamite::style_presets
                 return static_cast<uint16_t>(0x36 + (c - '0'));
             if (c == ':')
                 return 0x31u;
+            if (c == '-')
+                return 0x1Fu;
+            if (c == '+')
+                return kPlus;
             return kSpace;
+        }
+
+        void append(std::vector<uint16_t> &out, const char *text)
+        {
+            for (const char *c = text; *c; ++c)
+                out.push_back(glyph(*c));
         }
 
         void wr16(uint32_t address, uint16_t value) { std::memcpy(g_ram + (address & 0x1FFFFFFu), &value, sizeof(value)); }
@@ -544,6 +555,12 @@ namespace kamite::style_presets
         uint16_t rd16(uint32_t address)
         {
             uint16_t v;
+            std::memcpy(&v, g_ram + (address & 0x1FFFFFFu), sizeof(v));
+            return v;
+        }
+        float rdFloat(uint32_t address)
+        {
+            float v;
             std::memcpy(&v, g_ram + (address & 0x1FFFFFFu), sizeof(v));
             return v;
         }
@@ -594,6 +611,8 @@ namespace kamite::style_presets
             return true;
         }
 
+        // Four lines: [Y] + arrow  Style S. The style's words take its colour: gold when loaded (blinking for a
+        // moment after a load or a save), blinking gold while Y + its direction is held, dim when empty.
         std::vector<uint16_t> listText(uint32_t data, const Store &store, bool colours)
         {
             const int holding = g_holding.load(std::memory_order_relaxed);
@@ -602,11 +621,10 @@ namespace kamite::style_presets
             std::vector<uint16_t> out;
             for (int slot = 0; slot < kStyles; ++slot)
             {
-                if (slot == 2)
+                if (slot > 0)
                     out.push_back(kNewLine);
-                else if (slot == 1 || slot == 3)
-                    out.insert(out.end(), {kSpace, kSpace, kSpace});
                 out.push_back(kTriangleIcon);
+                out.push_back(kPlus);
                 out.push_back(kArrowCode[slot]);
                 out.push_back(kSpace);
                 const bool used = (store.used & (1u << slot)) != 0u;
@@ -619,6 +637,7 @@ namespace kamite::style_presets
                     colour = kDim;
                 if (colours && colour)
                     out.insert(out.end(), {kColour, static_cast<uint16_t>(colour >> 16), static_cast<uint16_t>(colour & 0xFFFFu)});
+                append(out, "Style ");
                 out.push_back(glyph(g_letters[slot]));
                 if (colours && colour)
                     out.push_back(kColourRestore);
@@ -630,8 +649,7 @@ namespace kamite::style_presets
         std::vector<uint16_t> hintText()
         {
             std::vector<uint16_t> out{kTriangleIcon, kSpace};
-            for (const char *c = "Hold: Save Style"; *c; ++c)
-                out.push_back(glyph(*c));
+            append(out, "Hold D-Pad: Save Style");
             out.push_back(kEnd);
             return out;
         }
@@ -699,7 +717,7 @@ namespace kamite::style_presets
             for (const uint32_t entry : {hintEntry, hintShadow})
                 if (validPointer(entry, 0xACu) && rd16(entry + 0x90u) == kBlankMessage)
                     wr16(entry + 0x90u, kHintMessage);
-            g_listEntry = text;
+            g_listEntry = text & 0x1FFFFFFu;
             g_listShown = true;
         }
 
@@ -718,23 +736,24 @@ namespace kamite::style_presets
             wrFloat(shadow + 0x54u, kListY + 1.0f);
         }
 
-        // System texture 20 (the "+arrow" art): getTexAddr(*(u32 *)0x3C2388, 21) as func_002ACDC8 finds it.
-        uint32_t arrowTexture()
+        // cIDBase_transText at 0x2AB1E0 ($s1 the entry, $s0 the font's draw state D_005E7510, its line spacing just
+        // set): the list's lines kLinePitch apart. A new line moves down by the line's height (the tallest code on it:
+        // 32 x scale for an icon) + state+0x30 x state+0x48 (the vertical scale).
+        void onTextSetup(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
-            const uint32_t manager = rd32(0x3C2388u);
-            if (!validPointer(manager))
-                return 0u;
-            const uint32_t table = rd32(manager + 0xCu);
-            if (!validPointer(table, 0x100u) || rd32(table) < 21u)
-                return 0u;
-            const uint32_t offset = rd32(table + 21u * 4u);
-            return offset ? table + offset : 0u;
+            if (!g_ram || !g_listEntry || (GPR_U32(ctx, 17) & 0x1FFFFFFu) != g_listEntry)
+                return;
+            const uint32_t state = GPR_U32(ctx, 16);
+            const float zoom = rdFloat(state + 0x48u);
+            if (zoom > 0.05f && zoom < 4.0f)
+                wrFloat(state + 0x30u, (kLinePitch - 32.0f * zoom) / zoom);
         }
 
         // The icon drawer func_002B1300 at 0x2B1584 (every icon's UVs stored at sp+0x14..0x20, $s0 -> the code, $a3 the
-        // icon sheet; Gp_draw_polyFT4 follows): inside the list, the four arrow codes become the arrow art.
+        // icon sheet; Gp_draw_polyFT4 follows): inside the list, the four arrow codes take the style arrows' UVs.
         void onIconDraw(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
+            g_pendingArrow = -1;
             if (!g_ram || !g_listEntry || g_drawingEntry != g_listEntry)
                 return;
             const uint16_t code = rd16(GPR_U32(ctx, 16));
@@ -744,13 +763,45 @@ namespace kamite::style_presets
                     arrow = i;
             if (arrow < 0)
                 return;
-            const uint32_t texture = arrowTexture();
-            if (!texture)
-                return;
-            SET_GPR_U32(ctx, 7, texture);
+            // Up = the down arrow flipped vertically, left = the right arrow flipped horizontally.
+            const prompt_sheets::ArrowRect r =
+                prompt_sheets::arrowRect(arrow == 0 || arrow == 2 ? prompt_sheets::ArrowDown : prompt_sheets::ArrowRight);
+            const float u0 = r.x0 / 128.0f, v0 = r.y0 / 128.0f, u1 = r.x1 / 128.0f, v1 = r.y1 / 128.0f;
+            const float uv[4] = {arrow == 3 ? u1 : u0, arrow == 0 ? v1 : v0, arrow == 3 ? u0 : u1, arrow == 0 ? v0 : v1};
             const uint32_t sp = GPR_U32(ctx, 29);
             for (int i = 0; i < 4; ++i)
-                wrFloat(sp + 0x14u + 4u * static_cast<uint32_t>(i), kArrowUv[arrow][i]);
+                wrFloat(sp + 0x14u + 4u * static_cast<uint32_t>(i), uv[i]);
+            g_pendingArrow = arrow;
+        }
+
+        // The same function at 0x2B16C4, its quad's corners at sp+0x60/0x70/0x80/0x90 (x, y each; a square of 26 x
+        // scale): an arrow's quad gets the arrow's own shape, centred in that square, at the texel size the game gives
+        // its "down+" art next to a button (a 32-texel cell over about 28 of the square).
+        void onIconQuad(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            if (g_pendingArrow < 0)
+                return;
+            const int arrow = g_pendingArrow;
+            g_pendingArrow = -1;
+            const uint32_t sp = GPR_U32(ctx, 29);
+            const float x0 = rdFloat(sp + 0x60u), y0 = rdFloat(sp + 0x64u), x1 = rdFloat(sp + 0x70u), y1 = rdFloat(sp + 0x84u);
+            const float side = x1 - x0;
+            if (!(side > 0.0f && side < 200.0f))
+                return;
+            const prompt_sheets::ArrowRect r =
+                prompt_sheets::arrowRect(arrow == 0 || arrow == 2 ? prompt_sheets::ArrowDown : prompt_sheets::ArrowRight);
+            const float k = side / 28.0f;
+            const float w = (r.x1 - r.x0) * k, h = (r.y1 - r.y0) * k;
+            const float cx = 0.5f * (x0 + x1), cy = 0.5f * (y0 + y1);
+            const float left = cx - 0.5f * w, right = cx + 0.5f * w, top = cy - 0.5f * h, bottom = cy + 0.5f * h;
+            wrFloat(sp + 0x60u, left);
+            wrFloat(sp + 0x64u, top);
+            wrFloat(sp + 0x70u, right);
+            wrFloat(sp + 0x74u, top);
+            wrFloat(sp + 0x80u, left);
+            wrFloat(sp + 0x84u, bottom);
+            wrFloat(sp + 0x90u, right);
+            wrFloat(sp + 0x94u, bottom);
         }
 
 #if defined(KAMITE_HAS_GS_MENU)
@@ -889,6 +940,8 @@ namespace kamite::style_presets
         FunctionHooks::instance().observeEntry(0x2AAA40u, "cIDBase_move (style list)", &onLayoutMove);
         FunctionHooks::instance().observeEntry(0x16DC18u, "cSubScrWaza draw (style list)", &onWazaDraw);
         ps2xRegisterHostHook("km_styles_icon", &onIconDraw);
+        ps2xRegisterHostHook("km_styles_icon_quad", &onIconQuad);
+        ps2xRegisterHostHook("km_styles_text", &onTextSetup);
         ps2xSetPatchFlag("styles", true);
 #if defined(KAMITE_HAS_GS_MENU)
         ps2x::menu::addPanel("Styles", &drawPanel);

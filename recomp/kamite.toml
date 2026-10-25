@@ -479,8 +479,22 @@ hook = "km_hud_region_end"
 flag = "hud2d"
 
 # Style presets: the icon drawer func_002B1300 at the join after its UV cases ($s0 -> the code, UVs at sp+0x14..0x20,
-# $a3 the icon sheet): in the Techniques screen's style list four icon codes are drawn as the game's "+arrow" art.
+# $a3 the icon sheet): in the Techniques screen's style list four icon codes are drawn as the style arrows.
 [[patches.hooks]]
 address = "0x002B1584"
 hook = "km_styles_icon"
+flag = "styles"
+
+# ... and before Gp_draw_polyFT4 (swc1 f4,8(s0) at 0x2B16C4; the quad's corners at sp+0x60..0x94): an arrow's quad
+# gets the arrow's shape.
+[[patches.hooks]]
+address = "0x002B16C4"
+hook = "km_styles_icon_quad"
+flag = "styles"
+
+# cIDBase_transText after its line spacing is set (lwc1 f12,0x50(s1) at 0x2AB1E0; $s1 the entry, $s0 the font's
+# draw state): the style list's lines further apart.
+[[patches.hooks]]
+address = "0x002AB1E0"
+hook = "km_styles_text"
 flag = "styles"

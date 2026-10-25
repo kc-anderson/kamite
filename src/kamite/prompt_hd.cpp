@@ -398,6 +398,29 @@ namespace kamite::prompt_hd
                 }
                 drawn += drawCell(canvas, set, fileFor(set, labels.icon[icon]), cellRect, box) ? 1 : 0;
             }
+            // The style list's arrows (button_prompt_sheets.h) at full resolution: the same shapes, smooth edges
+            // (4 x 4 samples a pixel) instead of the PS2 sheet's texels scaled up.
+            for (int piece = 0; piece < sheets::ArrowPieceCount; ++piece)
+            {
+                const sheets::ArrowRect r = sheets::arrowRect(piece);
+                const Rect area = scaled(Rect{r.x0, r.y0, r.x1, r.y1});
+                for (int y = static_cast<int>(area.y0); y < static_cast<int>(area.y1) && y < canvas.h; ++y)
+                    for (int x = static_cast<int>(area.x0); x < static_cast<int>(area.x1) && x < canvas.w; ++x)
+                    {
+                        float sum[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+                        for (int sy = 0; sy < 4; ++sy)
+                            for (int sx = 0; sx < 4; ++sx)
+                            {
+                                float c[4];
+                                sheets::arrowColour((x + (sx + 0.5f) / 4.0f) / kScale, (y + (sy + 0.5f) / 4.0f) / kScale, c);
+                                for (int k = 0; k < 4; ++k)
+                                    sum[k] += c[k];
+                            }
+                        float *d = canvas.at(x, y);
+                        for (int k = 0; k < 4; ++k)
+                            d[k] = sum[k] / 16.0f;
+                    }
+            }
         }
         else
         {
