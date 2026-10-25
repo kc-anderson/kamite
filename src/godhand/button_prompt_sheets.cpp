@@ -8,6 +8,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 namespace godhand::prompt_sheets
@@ -131,13 +132,116 @@ namespace godhand::prompt_sheets
             return pal;
         }
 
+        using IndexSet = std::array<bool, 256>;
+
+        // ---- the colour ramps (Tint) ----
+        void rgbToHsv(float r, float g, float b, float &h, float &sat, float &v)
+        {
+            const float mx = std::max({r, g, b}), mn = std::min({r, g, b}), d = mx - mn;
+            v = mx;
+            sat = mx > 0.0f ? d / mx : 0.0f;
+            if (d <= 0.0f)
+                h = 0.0f;
+            else if (mx == r)
+                h = 60.0f * std::fmod((g - b) / d + 6.0f, 6.0f);
+            else if (mx == g)
+                h = 60.0f * ((b - r) / d + 2.0f);
+            else
+                h = 60.0f * ((r - g) / d + 4.0f);
+        }
+
+        void hsvToRgb(float h, float sat, float v, float &r, float &g, float &b)
+        {
+            const float c = v * sat, hh = std::fmod(h, 360.0f) / 60.0f, x = c * (1.0f - std::fabs(std::fmod(hh, 2.0f) - 1.0f));
+            float rr = 0, gg = 0, bb = 0;
+            if (hh < 1) { rr = c; gg = x; }
+            else if (hh < 2) { rr = x; gg = c; }
+            else if (hh < 3) { gg = c; bb = x; }
+            else if (hh < 4) { gg = x; bb = c; }
+            else if (hh < 5) { rr = x; bb = c; }
+            else { rr = c; bb = x; }
+            const float m = v - c;
+            r = rr + m; g = gg + m; b = bb + m;
+        }
+
+        enum class Hue : uint8_t { None, Red, Yellow, Green, Blue, Pink };
+
+        Hue hueOf(const uint8_t *e) // raw RGBA
+        {
+            if (e[3] < 0x80u)
+                return Hue::None;
+            float h, sat, v;
+            rgbToHsv(e[0] / 255.0f, e[1] / 255.0f, e[2] / 255.0f, h, sat, v);
+            if (sat < 0.25f)
+                return Hue::None;
+            if (h < 35.0f) return Hue::Red;
+            if (h < 75.0f) return Hue::Yellow;
+            if (h < 180.0f) return Hue::Green;
+            if (h < 275.0f) return Hue::Blue;
+            return Hue::Pink;
+        }
+
+        Hue hueOf(Tint tint)
+        {
+            switch (tint)
+            {
+            case Tint::Red: return Hue::Red;
+            case Tint::Green: return Hue::Green;
+            case Tint::Blue: return Hue::Blue;
+            case Tint::Yellow: return Hue::Yellow;
+            default: return Hue::None;
+            }
+        }
+
+        // The CLUT to draw with: the original, or with its pink entries (the square's ramp, used by nothing else on
+        // either sheet) turned a saturated yellow of the same brightness, for a yellow Y.
+        // keep: entries (by index) that other art of the sheet uses too, left as they are.
+        void makeClut(const uint8_t *clut, bool yellow, const IndexSet &keep, uint8_t *outClut)
+        {
+            std::memcpy(outClut, clut, 1024u);
+            if (!yellow)
+                return;
+            for (int c = 0; c < 256; ++c)
+            {
+                if (keep[static_cast<size_t>(c)])
+                    continue;
+                const int j = (c & 0xE7) | ((c & 0x08) << 1) | ((c & 0x10) >> 1); // CSM1 storage order (paletteRgba)
+                uint8_t *e = outClut + j * 4;
+                if (hueOf(e) != Hue::Pink)
+                    continue;
+                float h, sat, v, r, g, b;
+                rgbToHsv(e[0] / 255.0f, e[1] / 255.0f, e[2] / 255.0f, h, sat, v);
+                hsvToRgb(50.0f, std::clamp(sat * 1.8f, 0.6f, 0.95f), v, r, g, b);
+                e[0] = static_cast<uint8_t>(std::lround(r * 255.0f));
+                e[1] = static_cast<uint8_t>(std::lround(g * 255.0f));
+                e[2] = static_cast<uint8_t>(std::lround(b * 255.0f));
+            }
+        }
+
+        // The palette entries of one hue, and the brightest of them as the ink to draw with.
+        void addHue(IndexSet &allowed, const uint8_t *rawPal, Hue hue, art::Rgb &ink)
+        {
+            float best = -1.0f;
+            for (int i = 0; i < 256; ++i)
+            {
+                const uint8_t *e = rawPal + i * 4;
+                if (hueOf(e) != hue)
+                    continue;
+                allowed[static_cast<size_t>(i)] = true;
+                const float v = static_cast<float>(std::max({e[0], e[1], e[2]}));
+                if (v > best)
+                {
+                    best = v;
+                    ink = {e[0] / 255.0f, e[1] / 255.0f, e[2] / 255.0f};
+                }
+            }
+        }
+
         int chroma(const uint8_t *rgbaRaw, int index)
         {
             const uint8_t *e = rgbaRaw + index * 4;
             return std::max({e[0], e[1], e[2]}) - std::min({e[0], e[1], e[2]});
         }
-
-        using IndexSet = std::array<bool, 256>;
 
         int nearest(const std::array<Rgba, 256> &pal, const IndexSet &allowed, const float *px)
         {
@@ -289,7 +393,7 @@ namespace godhand::prompt_sheets
 
         // White label with a dark halo over the cap face; marks the touched texels dirty. False when nothing could be
         // drawn (GDI failure, no usable font).
-        bool drawLabel(CellWork &w, const std::string &text, const LabelBox (&boxes)[3])
+        bool drawLabel(CellWork &w, const std::string &text, const LabelBox (&boxes)[3], art::Rgb ink = {1.0f, 1.0f, 1.0f})
         {
             const LabelBox &b = boxes[std::clamp<size_t>(glyphCount(text), 1u, 3u) - 1u];
             art::TextBox box;
@@ -321,7 +425,7 @@ namespace godhand::prompt_sheets
                 }
             }
             art::composite(w.img, halo.data(), {0.0f, 0.0f, 0.0f}, kHaloAlpha);
-            art::composite(w.img, cov.data(), {1.0f, 1.0f, 1.0f}, 1.0f);
+            art::composite(w.img, cov.data(), ink, 1.0f);
             for (int i = 0; i < kCellTexels; ++i)
                 if (halo[static_cast<size_t>(i)] > 0.0f || cov[static_cast<size_t>(i)] > 0.0f)
                     w.dirty[static_cast<size_t>(i)] = true;
@@ -442,17 +546,27 @@ namespace godhand::prompt_sheets
         }
     }
 
-    bool buildIconSheet(const uint8_t *origPayload, const uint8_t *clut, const PromptLabels &labels, uint8_t *outPayload)
+    bool buildIconSheet(const uint8_t *origPayload, const uint8_t *clut, const PromptLabels &labels, uint8_t *outPayload,
+                        uint8_t *outClut)
     {
-        if (!origPayload || !clut || !outPayload)
+        if (!origPayload || !clut || !outPayload || !outClut)
             return false;
         std::vector<uint8_t> sheet(kPayloadBytes);
         unswizzle(origPayload, sheet.data());
         if (!looksLikeIconSheet(sheet.data()))
             return false;
+        bool yellow = false;
+        for (int icon = 0; icon < IconCount; ++icon)
+            yellow = yellow || (labels.tint[icon] == Tint::Yellow && !labels.icon[icon].empty());
+        IndexSet keep{};
+        for (int y = 0; y < kSheetSize; ++y)
+            for (int x = 0; x < kSheetSize; ++x)
+                if (x / kCellSize != kCells[Square].x / kCellSize || y / kCellSize != kCells[Square].y / kCellSize)
+                    keep[sheet[y * kSheetSize + x]] = true;
+        makeClut(clut, yellow, keep, outClut);
         std::array<uint8_t, 1024> rawPal{};
-        paletteRgba(clut, rawPal.data());
-        const std::array<Rgba, 256> pal = premultiplied(clut);
+        paletteRgba(outClut, rawPal.data());
+        const std::array<Rgba, 256> pal = premultiplied(outClut);
         const std::vector<uint8_t> original = sheet;
 
         IndexSet ink{};
@@ -475,13 +589,17 @@ namespace godhand::prompt_sheets
                 if (labels.icon[icon].empty())
                     continue;
                 loadCell(w, original.data(), cell.x, cell.y, pal);
-                for (int i = 0; i < 256; ++i)
-                    w.allowed[static_cast<size_t>(i)] = w.allowed[static_cast<size_t>(i)] || ink[static_cast<size_t>(i)];
+                art::Rgb inkColour{1.0f, 1.0f, 1.0f};
+                if (labels.tint[icon] != Tint::White)
+                    addHue(w.allowed, rawPal.data(), hueOf(labels.tint[icon]), inkColour); // a coloured letter: its ramp
+                else
+                    for (int i = 0; i < 256; ++i)
+                        w.allowed[static_cast<size_t>(i)] = w.allowed[static_cast<size_t>(i)] || ink[static_cast<size_t>(i)];
                 if (cell.kind == CellKind::RoundCap)
                     clearRoundCap(w, rawPal.data());
                 else
                     clearRoundedCap(w);
-                if (!drawLabel(w, labels.icon[icon], cell.kind == CellKind::RoundCap ? kRoundBoxes : kRoundedBoxes))
+                if (!drawLabel(w, labels.icon[icon], cell.kind == CellKind::RoundCap ? kRoundBoxes : kRoundedBoxes, inkColour))
                     return false;
                 break;
             }
@@ -524,15 +642,26 @@ namespace godhand::prompt_sheets
         return true;
     }
 
-    bool buildActionSheet(const uint8_t *origPayload, const uint8_t *clut, const PromptLabels &labels, uint8_t *outPayload)
+    bool buildActionSheet(const uint8_t *origPayload, const uint8_t *clut, const PromptLabels &labels, uint8_t *outPayload,
+                          uint8_t *outClut)
     {
-        if (!origPayload || !clut || !outPayload)
+        if (!origPayload || !clut || !outPayload || !outClut)
             return false;
         std::vector<uint8_t> sheet(kPayloadBytes);
         unswizzle(origPayload, sheet.data());
+        bool yellow = false;
+        for (const Shape &sh : kShapes)
+            yellow = yellow || (labels.tint[sh.icon] == Tint::Yellow && !labels.icon[sh.icon].empty());
+        IndexSet keep{};
+        const Shape &square = kShapes[2];
+        for (int y = 0; y < kSheetSize; ++y)
+            for (int x = 0; x < kSheetSize; ++x)
+                if (!(x >= square.cx0 && x < square.cx1 && y >= square.cy0 && y < square.cy1))
+                    keep[sheet[y * kSheetSize + x]] = true;
+        makeClut(clut, yellow, keep, outClut);
         std::array<uint8_t, 1024> rawPal{};
-        paletteRgba(clut, rawPal.data());
-        const std::array<Rgba, 256> pal = premultiplied(clut);
+        paletteRgba(outClut, rawPal.data());
+        const std::array<Rgba, 256> pal = premultiplied(outClut);
         // Sanity: each clear rect holds its shape (>= 60 opaque, saturated texels; the US sheet has 136-276).
         for (const Shape &s : kShapes)
         {
@@ -572,8 +701,10 @@ namespace godhand::prompt_sheets
             }
             if (!count)
                 continue;
-            const art::Rgb inkColour{static_cast<float>(sum[0] / count / 255.0), static_cast<float>(sum[1] / count / 255.0),
-                                     static_cast<float>(sum[2] / count / 255.0)};
+            art::Rgb inkColour{static_cast<float>(sum[0] / count / 255.0), static_cast<float>(sum[1] / count / 255.0),
+                               static_cast<float>(sum[2] / count / 255.0)};
+            if (labels.tint[s.icon] != Tint::White)
+                addHue(allowed, rawPal.data(), hueOf(labels.tint[s.icon]), inkColour); // an Xbox colour: that ramp instead
             art::TextBox box;
             box.cx = 0.5f * (s.u0 + s.u1) - static_cast<float>(s.cx0);
             box.cy = 0.5f * (s.v0 + s.v1) - static_cast<float>(s.cy0);
@@ -593,6 +724,22 @@ namespace godhand::prompt_sheets
                         static_cast<uint8_t>(nearest(pal, allowed, &img.px[static_cast<size_t>(y * w + x) * 4u]));
         }
 
+        swizzle(sheet.data(), outPayload);
+        return true;
+    }
+
+    bool swapIconCells(const uint8_t *origPayload, Icon a, Icon b, uint8_t *outPayload)
+    {
+        if (!origPayload || !outPayload || a < 0 || b < 0 || a >= IconCount || b >= IconCount)
+            return false;
+        std::vector<uint8_t> sheet(kPayloadBytes);
+        unswizzle(origPayload, sheet.data());
+        if (!looksLikeIconSheet(sheet.data()))
+            return false;
+        const Cell &ca = kCells[a], &cb = kCells[b];
+        for (int y = 0; y < kCellSize; ++y)
+            for (int x = 0; x < kCellSize; ++x)
+                std::swap(sheet[(ca.y + y) * kSheetSize + ca.x + x], sheet[(cb.y + y) * kSheetSize + cb.x + x]);
         swizzle(sheet.data(), outPayload);
         return true;
     }

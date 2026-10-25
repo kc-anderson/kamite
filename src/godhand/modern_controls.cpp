@@ -24,6 +24,7 @@
 // Directions: the camera's yaw is in Gene's convention (the original camera's yaw is his + the offset at +0x414),
 // "right" on the stick is the direction a camera turned right by the stick would face (yaw decreasing).
 #include "godhand/modern_controls.h"
+#include "godhand/menu_buttons.h"
 #include "godhand/camera.h"
 #include "godhand/ini_file.h"
 #include "godhand/log.h"
@@ -140,7 +141,10 @@ namespace godhand::modern
         // ps2_host_input's pad filter (window thread), player 1 only.
         void padFilter(uint32_t player, ps2x::iop::PadInputState &state)
         {
-            if (player != 0u || !g_modern.load(std::memory_order_relaxed))
+            if (player != 0u)
+                return;
+            menu_buttons::swapPad(state); // [Game] MenuButtons=modern: circle <-> triangle, before anything else
+            if (!g_modern.load(std::memory_order_relaxed))
                 return;
             const int64_t now = nowMs();
             if (gameHasCamera())
@@ -565,6 +569,7 @@ namespace godhand::modern
         g_mouseCamera = envBool("GODHAND_MOUSE_CAMERA", true);
         g_mouseSensitivity = envFloat("GODHAND_MOUSE_SENSITIVITY", 0.1f, 0.01f, 1.0f);
         g_iniPath = cameraIniPath();
+        menu_buttons::install();
         ps2_host_input::setPadFilter(&padFilter);
         GH_INFO(Game, "control style: " << (g_modern.load() ? "modern" : "classic")
                                         << (g_modern.load() ? (g_toggleStyle.load() ? " (L1 toggles" : " (L1 held") : "")

@@ -3,6 +3,7 @@
 #include "godhand/button_prompt_sheets.h"
 #include "godhand/crate_prompts.h"
 #include "godhand/log.h"
+#include "godhand/menu_buttons.h"
 #include "godhand/prompt_art.h"
 #include "godhand/sha256.h"
 #include "ps2_host_input.h"
@@ -67,6 +68,7 @@ namespace godhand::button_prompts
             uint64_t version = 0u;
             bool patched[kSheetCount] = {}; // false: this sheet shows the original art
             Payload payload[kSheetCount];
+            Clut clut[kSheetCount];         // with it: the original CLUT, or one with its pink ramp made yellow
             uint64_t hash[kSheetCount] = {};
             bool cratePatched = false;
             CratePayload crate;
@@ -189,6 +191,35 @@ namespace godhand::button_prompts
         // Every vblank (EE thread, ps2x::pnach frame hook): copy the newest built image over the sheets when it changed,
         // and every 30 vblanks check that the sheets still hold what was put there (a savestate load or a reload of
         // core_usa.bin brings other bytes back). Bytes this code does not know are never overwritten.
+        // [Game] MenuButtons=modern: the hint strings in the core block (menu_buttons::textPatches), checked against
+        // the disc's words first (another language's core or a changed one is left alone, once with a warning).
+        void applyText(uint32_t core)
+        {
+            if (!menu_buttons::modern())
+                return;
+            static bool warned = false;
+            for (const menu_buttons::TextPatch &patch : menu_buttons::textPatches())
+            {
+                uint8_t *guest = g_ram + core + patch.offset;
+                const size_t bytes = patch.original.size() * 2u;
+                if (core + patch.offset + bytes > 0x2000000u)
+                    continue;
+                if (std::memcmp(guest, patch.modern.data(), bytes) == 0)
+                    continue;
+                if (std::memcmp(guest, patch.original.data(), bytes) != 0)
+                {
+                    if (!warned)
+                    {
+                        warned = true;
+                        GH_WARN(Game, "menu buttons: the hint text at core+0x" << std::hex << patch.offset << std::dec
+                                                                               << " is not the US disc's; its wording is left alone");
+                    }
+                    continue;
+                }
+                std::memcpy(guest, patch.modern.data(), bytes);
+            }
+        }
+
         void onVblank()
         {
             ++g_vblanks;
@@ -230,7 +261,22 @@ namespace godhand::button_prompts
                 }
                 std::memcpy(guest, want, sheets::kPayloadBytes);
             }
+            for (int i = 0; i < kSheetCount; ++i)
+            {
+                // The CLUT follows its sheet: ours while patched (the yellow ramp), the disc's otherwise. Only a CLUT
+                // that is the disc's or one of ours is replaced.
+                uint8_t *guest = g_ram + core + kPlaces[i].clut;
+                const uint8_t *want = images->patched[i] ? images->clut[i].data() : g_origClut[i].data();
+                if (std::memcmp(guest, want, sheets::kClutBytes) == 0)
+                    continue;
+                const bool ours = std::memcmp(guest, g_origClut[i].data(), sheets::kClutBytes) == 0 ||
+                                  (g_applied && std::memcmp(guest, g_applied->clut[i].data(), sheets::kClutBytes) == 0) ||
+                                  std::memcmp(guest, images->clut[i].data(), sheets::kClutBytes) == 0;
+                if (ours)
+                    std::memcpy(guest, want, sheets::kClutBytes);
+            }
             applyCrate(*images, fresh);
+            applyText(core);
             g_applied = images;
         }
 
@@ -259,8 +305,10 @@ namespace godhand::button_prompts
             const auto &set = pad ? snapshot.controller : snapshot.keys;
             sheets::PromptLabels labels;
             const auto put = [&](sheets::Icon icon, bindings::Input input) { labels.icon[icon] = labelOf(set[input]); };
-            put(sheets::Circle, bindings::Circle);
-            put(sheets::Triangle, bindings::Triangle);
+            // Modern menu buttons: the game's circle is the triangle binding and the other way round (menu_buttons.h).
+            const bool traded = menu_buttons::modern();
+            put(sheets::Circle, traded ? bindings::Triangle : bindings::Circle);
+            put(sheets::Triangle, traded ? bindings::Circle : bindings::Triangle);
             put(sheets::Square, bindings::Square);
             put(sheets::Cross, bindings::Cross);
             put(sheets::L1, bindings::L1);
@@ -271,6 +319,20 @@ namespace godhand::button_prompts
             put(sheets::R3, bindings::R3);
             put(sheets::Start, bindings::Start);
             put(sheets::Select, bindings::Select);
+            // A controller's A/B/X/Y in an Xbox pad's colours (the PS2 art is coloured symbols on grey caps; white
+            // letters read as a Switch pad). Keys stay white.
+            if (pad)
+            {
+                for (const sheets::Icon icon : {sheets::Circle, sheets::Triangle, sheets::Square, sheets::Cross})
+                {
+                    const std::string &l = labels.icon[icon];
+                    labels.tint[icon] = l == "A"   ? sheets::Tint::Green
+                                        : l == "B" ? sheets::Tint::Red
+                                        : l == "X" ? sheets::Tint::Blue
+                                        : l == "Y" ? sheets::Tint::Yellow
+                                                   : sheets::Tint::White;
+                }
+            }
             // Sticks: on keys an inverted T of the four direction keys (Up Right Down Left); a controller's stick keeps
             // the original stick art (all four empty).
             if (!pad)
@@ -374,12 +436,23 @@ namespace godhand::button_prompts
                 auto images = std::make_shared<Images>();
                 images->version = ++version;
                 const bool playStation = device == bindings::Device::Controller && style == bindings::PadStyle::PlayStation;
+                for (int i = 0; i < kSheetCount; ++i)
+                    images->clut[i] = g_origClut[i];
                 std::string summary = playStation ? "PlayStation controller: original art" : "";
+                if (playStation && menu_buttons::modern())
+                {
+                    // Modern menu buttons on a PlayStation pad: the circle cell shows the triangle and the other way
+                    // round (the floating action prompt keeps its shapes: their rects differ in size).
+                    images->patched[0] = sheets::swapIconCells(g_origPayload[0].data(), sheets::Circle, sheets::Triangle, images->payload[0].data());
+                    summary += images->patched[0] ? ", circle and triangle traded" : " (trade failed: text icons kept)";
+                }
                 if (!playStation)
                 {
                     const sheets::PromptLabels labels = labelsFor(bindings::snapshot(), device);
-                    images->patched[0] = sheets::buildIconSheet(g_origPayload[0].data(), g_origClut[0].data(), labels, images->payload[0].data());
-                    images->patched[1] = sheets::buildActionSheet(g_origPayload[1].data(), g_origClut[1].data(), labels, images->payload[1].data());
+                    images->patched[0] = sheets::buildIconSheet(g_origPayload[0].data(), g_origClut[0].data(), labels, images->payload[0].data(),
+                                                                images->clut[0].data());
+                    images->patched[1] = sheets::buildActionSheet(g_origPayload[1].data(), g_origClut[1].data(), labels, images->payload[1].data(),
+                                                                  images->clut[1].data());
                     summary = std::string(device == bindings::Device::Controller ? "controller" : "keys") + ": circle " +
                               labels.icon[sheets::Circle] + ", triangle " + labels.icon[sheets::Triangle] + ", square " +
                               labels.icon[sheets::Square] + ", cross " + labels.icon[sheets::Cross] + ", start " +

@@ -385,6 +385,7 @@ namespace
         {"video", "cameratilt", "GODHAND_CAMERA_TILT"},
         {"game", "enemiesfollowview", "GODHAND_ENEMY_VIEW"},
         {"game", "controlstyle", "GODHAND_CONTROL_STYLE"},
+        {"game", "menubuttons", "GODHAND_MENU_BUTTONS"},
         {"game", "modernauto", "GODHAND_MODERN_AUTO"},
         {"game", "modernl1", "GODHAND_MODERN_L1"},
         {"game", "cameraspeed", "GODHAND_CAMERA_SPEED"},

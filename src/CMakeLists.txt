@@ -43,6 +43,7 @@ set(GODHAND_HOST_SOURCES
     godhand/character_mods.cpp
     godhand/widescreen.cpp
     godhand/camera.cpp
+    godhand/menu_buttons.cpp
     godhand/modern_controls.cpp
     godhand/near_geometry.cpp
     godhand/crash_history.cpp

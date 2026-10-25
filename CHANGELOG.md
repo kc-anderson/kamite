@@ -4,6 +4,31 @@ Newest first. Each change is commented in the code where it was made.
 
 ## October 25, 2026
 
+- **Menu buttons** (`[Game] MenuButtons=classic|modern`, launcher Gameplay > Menu buttons). Classic is the PS2's:
+  circle and cross confirm, triangle cancels (the Japanese layout the US release kept: B/A confirm and Y cancels on an
+  Xbox pad). Modern: the bottom button confirms and the right one cancels (A/B; cross/circle on a PlayStation pad).
+  The game is given circle and triangle traded at the pad, so menus, dialogs, the roulette, the title screen and the
+  two attack slots all follow, and every prompt the game draws for circle shows the triangle button and the other way
+  round. The roulette's bar reads "RB Cycle / A OK / B Cancel" instead of the squeezed "Select / A B OK / Y Cancel"
+  (its text in the core block is reworded in place); "[A][B] Change/Select" and the dialogs' "[B] Yes" become A. A
+  PlayStation pad keeps the original symbols, with the circle and triangle cells exchanged.
+- **Controller prompts in Xbox colours:** A green, B red, X blue, Y yellow, on the grey caps, as the PS2 art has coloured
+  symbols on them (white letters read as a Switch pad). The letters are drawn from the sheets' own colour ramps; the
+  pink square ramp, used by nothing else, is turned yellow in the CLUT for the Y. Keyboard caps stay white.
+- **See-through oval: characters are never dissolved.** The VU1 filter tells the GS what each packet draws (a NOP
+  register write carrying the class; nothing to the PS2): the skinned renderers (Gene, enemies, coats) are class 0 and
+  the oval leaves them alone; only the stage dissolves. The first version keyed on the wrong renderers and dissolved
+  nothing.
+- **Near geometry: the behind-the-camera "vertex explosion".** A renderer's vertex loop has two exits (the plain one
+  and the path that marks a stitched or clipped last vertex), each with its own XGKICK and [E]; the filter took the
+  second one for another, unpatched program, and everything kicked there went to the GS uncut. A program is now the
+  stretches between [E] bits united by the branches between them. The same renderer's stride instruction sat outside
+  the window the layout search used, so it never matched its stitch flags either.
+- **Window hang diagnostics:** when Windows reports the game window hung, the log now also shows whether the main loop
+  is alive (iterations, time since its last message pump), whether the window's thread answers a message, whether
+  user32's PeekMessage/GetMessage are hooked by another module, and the modules loaded from outside Windows and the
+  game folder; a second look 15 s later. Windows no longer replaces the window with its "Not Responding" copy
+  (`PS2X_WINDOW_GHOSTING=1` restores that).
 - **Near geometry: no more streaked walls.** The previous build told the filter which program sent a packet by where
   the VU1 run started; the scenery renderers end with [E] and a branch back to their top, and the game continues them
   with MSCNT from there, so their packets counted as another program's and went to the GS uncut: triangles reaching

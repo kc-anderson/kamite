@@ -60,11 +60,24 @@ namespace godhand::prompt_sheets
         IconCount
     };
 
+    // The colour of a cell's label. White: the port's key caps. The others: an Xbox pad's lettering (A green, B red,
+    // X blue, Y yellow), drawn from the sheet's own colour ramps (the red circle's, the green triangle's, the blue
+    // cross's, and the pink square's ramp recoloured to yellow in the CLUT: nothing else uses it).
+    enum class Tint : uint8_t
+    {
+        White,
+        Red,
+        Green,
+        Blue,
+        Yellow
+    };
+
     struct PromptLabels
     {
         // What each icon cell shows: prompt_art::Label::compact of the bound key or button ("F", "Spc", "Ctrl", "LB").
         // Empty = keep the original art of that cell. LeftStick/RightStick are not used here (see the sticks below).
         std::string icon[IconCount];
+        Tint tint[IconCount] = {};
         // The stick cells: the four directions as an inverted T, in controls.ini's LUp LRight LDown LLeft order
         // (keyboard: W D S A). All four empty = keep the original stick art (right for a controller's stick).
         std::string leftStick[4];
@@ -75,13 +88,21 @@ namespace godhand::prompt_sheets
     // replaced by the label on the cell's own key cap (the circle or rounded-rectangle rim is kept; START/SELECT get
     // the R1 cap). origPayload must be the unpatched sheet (the hook keeps its own copy of it). False (outPayload
     // untouched) when an argument is null, the payload does not look like the sheet, or a label could not be drawn.
-    // outPayload may equal origPayload. Takes a few milliseconds (GDI): build on a worker thread.
-    bool buildIconSheet(const uint8_t *origPayload, const uint8_t *clut, const PromptLabels &labels, uint8_t *outPayload);
+    // outPayload may equal origPayload. outClut (1 KB) gets the CLUT to use with it: the original, with the pink ramp
+    // turned yellow when a label asks for yellow. Takes a few milliseconds (GDI): build on a worker thread.
+    bool buildIconSheet(const uint8_t *origPayload, const uint8_t *clut, const PromptLabels &labels, uint8_t *outPayload,
+                        uint8_t *outClut);
 
     // Texture 0x0F. Its bottom row holds the four outline shapes the action prompt puts on its grey button
     // (func_001F7680 kinds 0-3); each is replaced by icon[Circle/Triangle/Square/Cross] drawn in that shape's own
     // colour, so the red circle becomes a red "F". Same contract as buildIconSheet.
-    bool buildActionSheet(const uint8_t *origPayload, const uint8_t *clut, const PromptLabels &labels, uint8_t *outPayload);
+    bool buildActionSheet(const uint8_t *origPayload, const uint8_t *clut, const PromptLabels &labels, uint8_t *outPayload,
+                          uint8_t *outClut);
+
+    // The original art with two of the face-button cells exchanged (a PlayStation pad with Modern menu buttons: the
+    // circle cell shows the triangle and the other way round). Texture 0x18 only; the action prompt's shapes have
+    // rects of different sizes and are left as they are.
+    bool swapIconCells(const uint8_t *origPayload, Icon a, Icon b, uint8_t *outPayload);
 
     // Sheet <-> 128x128 palette indices (row-major), and the CLUT as 256 RGBA entries in index order (alpha as
     // stored, 0x80 = opaque). For the hook's checks and offline tools.

@@ -48,6 +48,7 @@ namespace godhand::launcher
                                                {"Comes in: Gene keeps his size", "100"}};
         constexpr Choice kControlStyles[] = {{"Classic", "classic"}, {"Modern", "modern"}};
         constexpr Choice kModernL1[] = {{"Hold", "hold"}, {"Toggle", "toggle"}};
+        constexpr Choice kMenuButtons[] = {{"Classic", "classic"}, {"Modern", "modern"}};
         constexpr Choice kCameraTilts[] = {{"None", "0"}, {"5 degrees", "5"}, {"10 degrees", "10"}, {"15 degrees", "15"}};
         constexpr Choice kWindowSizes[] = {{"Automatic (3/4 of the screen)", "auto"}, {"PS2 size", "native"}};
         constexpr Choice kResolutions[] = {{"1x  native (512x448)", "1"}, {"2x  1024x896", "2"}, {"3x  1536x1344", "3"},
@@ -666,6 +667,13 @@ namespace godhand::launcher
                                                                  "the sensitivity.");
                             iniCheckbox(state, "On##mousecamera", "Game", "MouseCamera", true);
                         }
+                        settingLabel("Menu buttons", "Classic: as on the PS2, circle and cross confirm and triangle "
+                                                     "cancels (B/A confirm, Y cancels on an Xbox pad). Modern: the "
+                                                     "bottom button confirms and the right one cancels (A/B, or "
+                                                     "cross/circle on a PlayStation pad). The two buttons trade places "
+                                                     "everywhere, moves and prompts included.");
+                        iniCombo(state, "##menubuttons", "Game", "MenuButtons", "classic",
+                                 [](const char *id, std::string &value) { return choiceCombo(id, kMenuButtons, value); });
                         settingLabel("Mute music", "Stage, boss, menu and minigame music plays silent. Cutscenes keep "
                                                    "their sound (their music and voices are one track).");
                         iniCheckbox(state, "On##music", "Sound", "MuteMusic", false);
