@@ -2,6 +2,26 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 25, 2026 (evening)
+
+- **Menu buttons fixed.** Modern did nothing in the menus: the command table was read with the pad's two button bytes
+  the wrong way round, so the trade went to two d-pad entries (up and right) instead of the buttons. Modern now sets
+  the menus' own OK and Cancel entries (command bits 28 and 29, the ones the decomp's matched menus test with the
+  confirm and cancel sounds): cross/A confirms, circle/B cancels. The roulette is part of play and keeps the game's
+  buttons and its own hint text in both modes (its bar is no longer reworded or re-laid out).
+- **Texture packs and the port's own art.** PCSX2 finds a pack's image by the texture's content, so the textures the
+  port changes lost the pack's images and showed the PS2's art at the PS2's resolution. The port now knows the pack's
+  names (`hd_textures`, the same hash PCSX2 uses, checked against a pack's radar and prompt sheets):
+  - a controller keeps the pack's own prompt sheets when the pack has them (full-resolution Xbox prompts in the
+    common packs); the drawn letters are only used for keys, or with no pack;
+  - the radar's glow is drawn at full resolution on the pack's radar (an image written into `cache/hd-textures` next
+    to the exe at start, which PCSX2 searches too): yellower, brighter, centred on the disc, and without the PS2
+    art's rope rings or the cone's shift. Without a pack the PS2-resolution glow got the same colour and centring.
+- **Hang watch:** Windows flags the game window as not responding now and then while the game loop is pumping
+  messages every frame. The watch took a full stack dump each time (138 in one session; the first also loads the
+  symbols), which is what slowed the start. It now dumps only when the loop itself has stopped; the flag alone is
+  one log line per session.
+
 ## October 25, 2026 (later)
 
 - **The project is now Kamite.** The exe is `kamite.exe`, the settings file `kamite.ini`, the start script

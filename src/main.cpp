@@ -20,6 +20,7 @@
 #include "kamite/button_prompts.h"
 #include "kamite/menu_buttons.h"
 #include "kamite/radar_glow.h"
+#include "kamite/hd_textures.h"
 #include "kamite/call_trace.h"
 #include "kamite/default_ini.h" // generated from kamite.ini by src/CMakeLists.txt
 #include "kamite/function_hooks.h"
@@ -938,6 +939,7 @@ int main(int argc, char *argv[])
             ps2x::pnach::applyOnce(runtime.memory().getRDRAM());
         PS2Runtime::setIoPaths(paths);
         kamite::characters::install(exeDir); // [Mods] Character: a replacement model for Gene
+        kamite::hd_textures::install(exeDir); // the texture pack's names, and the port's own full-resolution images
 
         runtime.setMissingFunctionPolicy(missingFunctionPolicy());
         KM_INFO(Boot, "missing-function policy: " << (std::getenv("KAMITE_MISSING_FUNCTION") ? std::getenv("KAMITE_MISSING_FUNCTION") : "stop")

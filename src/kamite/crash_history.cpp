@@ -373,17 +373,42 @@ namespace kamite
                             {
                                 if (seconds >= 2)
                                     KM_WARN(Boot, "hang: the game window answers again after ~" << seconds + 5 << " s");
+                                // (seconds < 0: a flag without a hang, already noted)
                                 seconds = 0;
                                 continue;
                             }
+                            // Windows flags the window as hung now and then while the loop is pumping messages
+                            // every frame (Oct 25: 138 dumps in one run, the loop's last pump 0-17 ms before, WM_NULL
+                            // answered at once, nothing visible to the player). A dump stops every thread to walk its
+                            // stack (the first one also loads the symbols), which is the stutter that came with it.
+                            // So: a dump only when the loop itself has stopped pumping (more than 2 s since its last
+                            // pump) or the window's thread does not answer; a flag alone is one log line per session.
                             if (++seconds == 2)
                             {
+                                uint64_t iterations = 0, lastPump = 0;
+                                ps2_host_display::hostLoopHeartbeat(iterations, lastPump);
+                                const uint64_t sincePump = lastPump ? ps2_host_display::hostSteadyMs() - lastPump : 0;
+                                const std::string probe = probePump(find.hung);
+                                const bool answered = probe.rfind("answered", 0) == 0;
+                                iterationsAtDump = iterations;
+                                if (sincePump < 2000u && answered)
+                                {
+                                    static bool noted = false;
+                                    if (!noted)
+                                    {
+                                        noted = true;
+                                        KM_INFO(Boot, "window watch: Windows flags the game window as not responding while its loop runs (last pump "
+                                                          << sincePump << " ms ago, " << probe << "); not a hang, no dump (noted once)");
+                                    }
+                                    seconds = -1000000; // until the flag clears
+                                    continue;
+                                }
                                 const DWORD thread = GetWindowThreadProcessId(find.hung, nullptr);
                                 KM_WARN(Boot, "hang: the game window (thread " << thread << ", " << windowName(find.hung)
-                                                                               << ") has not taken messages for ~7 s; " << heartbeat(iterationsAtDump)
-                                                                               << "; " << probePump(find.hung) << "; " << hookOf("PeekMessageW") << "; "
-                                                                               << hookOf("GetMessageW") << "; foreign modules: " << foreignModules()
-                                                                               << "; every thread's stack follows");
+                                                                               << ") has not taken messages for ~7 s; host loop: " << iterations
+                                                                               << " iterations, last message pump " << sincePump << " ms ago; " << probe << "; "
+                                                                               << hookOf("PeekMessageW") << "; " << hookOf("GetMessageW") << "; foreign modules: "
+                                                                               << foreignModules() << "; every thread's stack follows");
                                 kamite::hangdump::dumpNow(true);
                             }
                             else if (seconds == 17)
@@ -392,7 +417,7 @@ namespace kamite
                                 const std::string beat = heartbeat(iterations);
                                 KM_WARN(Boot, "hang: still hung 15 s after the dump; " << beat << " (" << iterations - iterationsAtDump
                                                                                          << " since the dump); " << probePump(find.hung)
-                                                                                         << (iterations == iterationsAtDump ? "; the loop did not move: every thread's stack follows" : "; the loop runs: Windows is not seeing its message pump"));
+                                                                                         << (iterations == iterationsAtDump ? "; the loop did not move: every thread's stack follows" : "; the loop runs"));
                                 if (iterations == iterationsAtDump)
                                     kamite::hangdump::dumpNow(true);
                             }

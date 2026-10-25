@@ -1,4 +1,5 @@
 #include "kamite/button_prompts.h"
+#include "kamite/hd_textures.h"
 
 #include "kamite/button_prompt_sheets.h"
 #include "kamite/crate_prompts.h"
@@ -405,12 +406,27 @@ namespace kamite::button_prompts
                 auto images = std::make_shared<Images>();
                 images->version = ++version;
                 const bool playStation = device == bindings::Device::Controller && style == bindings::PadStyle::PlayStation;
+                // A texture pack that replaces both sheets (Xbox prompts drawn at full resolution, as the common packs
+                // for this game do) is kept for a controller: the sheets drawn here are 32-texel cells at the PS2's
+                // resolution, and any change to them loses the pack's images (they are found by the sheets' content).
+                static const bool packSheets = [] {
+                    if (!hd_textures::enabled())
+                        return false;
+                    bool all = true;
+                    for (int i = 0; i < kSheetCount; ++i)
+                        all = all && !hd_textures::packFile(hd_textures::name8(g_origPayload[i].data(), 64, 64, g_origClut[i].data(),
+                                                                              sheets::kSheetSize, sheets::kSheetSize)).empty();
+                    if (all)
+                        KM_INFO(Game, "button prompts: the texture pack has its own controller prompts; they are kept for a controller");
+                    return all;
+                }();
+                const bool keepSheets = playStation || (packSheets && device == bindings::Device::Controller);
                 for (int i = 0; i < kSheetCount; ++i)
                     images->clut[i] = g_origClut[i];
-                std::string summary = playStation ? "PlayStation controller: original art" : "";
-                if (!playStation)
+                std::string summary = playStation ? "PlayStation controller: original art" : keepSheets ? "controller: the texture pack's prompts" : "";
+                const sheets::PromptLabels labels = labelsFor(bindings::snapshot(), device);
+                if (!keepSheets)
                 {
-                    const sheets::PromptLabels labels = labelsFor(bindings::snapshot(), device);
                     images->patched[0] = sheets::buildIconSheet(g_origPayload[0].data(), g_origClut[0].data(), labels, images->payload[0].data(),
                                                                 images->clut[0].data());
                     images->patched[1] = sheets::buildActionSheet(g_origPayload[1].data(), g_origClut[1].data(), labels, images->payload[1].data(),
@@ -420,6 +436,9 @@ namespace kamite::button_prompts
                               labels.icon[sheets::Square] + ", cross " + labels.icon[sheets::Cross] + ", start " +
                               labels.icon[sheets::Start] + (images->patched[0] ? "" : " (text icons kept: build failed)") +
                               (images->patched[1] ? "" : " (action prompt kept: build failed)");
+                }
+                if (!playStation)
+                {
                     if (g_crateCaptured.load(std::memory_order_acquire))
                     {
                         const std::array<std::string, 4> crateLabels{labels.icon[sheets::Triangle], labels.icon[sheets::Circle],

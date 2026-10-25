@@ -28,16 +28,23 @@ namespace kamite::menu_buttons
         // run-time rewrites below are then not needed (no RAM scan thread, no core check every 30 vblanks).
         bool g_coreOnDisc = false, g_menuFilesOnDisc = false;
 
-        // The command tables (SLUS_215.03 .data): 64 raw masks, entry i = the raw bits that set command bit i.
+        // The command tables (SLUS_215.03 .data): 64 raw masks, entry i = the raw bits that set command bit i. The raw
+        // word is the pad's two button bytes high-to-low: 0x1000 up, 0x2000 right, 0x4000 down, 0x8000 left (+ select
+        // 0x100, L3, R3, start 0x800), 0x01 L2, 0x02 R2, 0x04 L1, 0x08 R1, 0x10 triangle, 0x20 circle, 0x40 cross,
+        // 0x80 square. Command bit 28 is the menus' "OK", bit 29 their "Cancel" (the decomp's matched menus test
+        // +0x1A0 & 0x10000000 with the confirm sound 0x15E and & 0x20000000 with the cancel sound 0x161). The table the
+        // game uses is 0x3C3E50 when the language word 0x747A0C is not 0 (the US release: OK = circle|cross, Cancel =
+        // triangle), 0x3C3D50 otherwise (OK = circle, Cancel = cross, the Japanese way).
         constexpr uint32_t kTables[2] = {0x3C3D50u, 0x3C3E50u};
-        constexpr uint32_t kTriangleEntry = 24u, kCircleEntry = 26u;
-        constexpr uint32_t kRawTriangle = 0x1000u, kRawCircle = 0x2000u;
+        constexpr uint32_t kOkEntry = 28u, kCancelEntry = 29u;
+        constexpr uint32_t kDiscOk[2] = {0x20u, 0x60u}, kDiscCancel[2] = {0x40u, 0x10u};
+        constexpr uint32_t kRawCircle = 0x20u, kRawCross = 0x40u;
         constexpr uint32_t kCorePointer = 0x7479F8u; // *(u32*) = where core_usa.bin was loaded
         constexpr uint32_t kRamBytes = 0x2000000u;
 
         // Glyph codes of the game's text (core_usa.bin, 16-bit).
         constexpr uint16_t kSpace = 0x10u, kSpace2 = 0x35u, kColon = 0x31u;
-        constexpr uint16_t kCircle = 0u, kTriangle = 1u, kCross = 3u, kR1 = 5u;
+        constexpr uint16_t kCircle = 0u, kTriangle = 1u, kCross = 3u;
         uint16_t glyph(char c)
         {
             if (c >= 'A' && c <= 'Z')
@@ -74,22 +81,23 @@ namespace kamite::menu_buttons
             std::memcpy(g_ram + (address & 0x1FFFFFFu), &value, sizeof(value));
         }
 
-        // EE thread, every vblank: the two table entries. Only the disc's pair or ours is touched (a mod that remaps
+        // EE thread, every vblank: the OK and Cancel entries. Only the disc's pair or ours is touched (a mod that remaps
         // the buttons keeps its table).
         void applyTables()
         {
-            const uint32_t wantTriangle = g_modern.load(std::memory_order_relaxed) ? kRawCircle : kRawTriangle;
-            const uint32_t wantCircle = g_modern.load(std::memory_order_relaxed) ? kRawTriangle : kRawCircle;
-            for (uint32_t table : kTables)
+            const bool modern = g_modern.load(std::memory_order_relaxed);
+            for (size_t i = 0; i < 2u; ++i)
             {
-                const uint32_t t = rd32(table + kTriangleEntry * 4u), c = rd32(table + kCircleEntry * 4u);
-                if (t == wantTriangle && c == wantCircle)
+                const uint32_t table = kTables[i];
+                const uint32_t wantOk = modern ? kRawCross : kDiscOk[i], wantCancel = modern ? kRawCircle : kDiscCancel[i];
+                const uint32_t ok = rd32(table + kOkEntry * 4u), cancel = rd32(table + kCancelEntry * 4u);
+                if (ok == wantOk && cancel == wantCancel)
                     continue;
-                const bool disc = t == kRawTriangle && c == kRawCircle, ours = t == kRawCircle && c == kRawTriangle;
+                const bool disc = ok == kDiscOk[i] && cancel == kDiscCancel[i], ours = ok == kRawCross && cancel == kRawCircle;
                 if (!disc && !ours)
                     continue;
-                wr32(table + kTriangleEntry * 4u, wantTriangle);
-                wr32(table + kCircleEntry * 4u, wantCircle);
+                wr32(table + kOkEntry * 4u, wantOk);
+                wr32(table + kCancelEntry * 4u, wantCancel);
             }
         }
 
@@ -293,11 +301,9 @@ namespace kamite::menu_buttons
         // name the buttons that work the menu: the game's "triangle" (cancel) is now the circle, its two confirms the
         // cross alone.
         static const std::vector<TextPatch> patches = {
-            // The roulette's bar: "[R1]Select [cross][circle]OK [triangle]Cancel" (20 codes) ->
-            // "[R1]Cycle  [cross]OK  [circle]Cancel": one button per action, the gaps where the second icon was.
-            {0x591CCu,
-             cat({text({kR1}, "Select"), text({kSpace, kCross, kCircle}, "OK"), text({kSpace, kTriangle}, "Cancel")}),
-             cat({text({kR1}, "Cycle"), text({kSpace, kSpace, kCross}, "OK"), text({kSpace, kSpace, kCircle}, "Cancel")})},
+            // The roulette's bar ("[R1]Select [cross][circle]OK [triangle]Cancel", 0x591CC) is left as it is: the roulette
+            // is part of play (its OK reads the cross and circle bits 33/35 directly, func_00145810 at 0x145CE8, and its
+            // cancel comes from the player side), so it keeps the game's buttons in both modes.
             // "[cross][circle]Change" and "[cross][circle]Select": the circle becomes a space.
             {0x591F8u, text({kCross, kCircle}, "Change"), text({kCross, kSpace}, "Change")},
             {0x59238u, text({kCross, kCircle}, "Select"), text({kCross, kSpace}, "Select")},

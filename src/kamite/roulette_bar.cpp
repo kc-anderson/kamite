@@ -54,7 +54,9 @@ namespace kamite::roulette_bar
 
     void onEntry(uint8_t *rdram, uint32_t layout, uint32_t entry)
     {
-        if (!menu_buttons::modern() || !rdram || entry == 0u)
+        // Off: the roulette's bar keeps the game's own wording now (menu_buttons: the roulette keeps its buttons).
+        constexpr bool kRelayout = false;
+        if (!kRelayout || !menu_buttons::modern() || !rdram || entry == 0u)
             return;
         if (rdram[(entry + kEntryKind) & 0x1FFFFFFu] != kKindText || rd16(rdram, entry + kEntryMsg) != kBarMessage)
             return;

@@ -670,8 +670,8 @@ namespace kamite::launcher
                         settingLabel("Menu buttons", "Classic: as on the PS2, circle and cross confirm and triangle "
                                                      "cancels (B/A confirm, Y cancels on an Xbox pad). Modern: the "
                                                      "bottom button confirms and the right one cancels (A/B, or "
-                                                     "cross/circle on a PlayStation pad). Menus, dialogs and the "
-                                                     "roulette only; the moves keep their buttons.");
+                                                     "cross/circle on a PlayStation pad). Menus and dialogs only; "
+                                                     "the moves and the roulette keep their buttons.");
                         iniCombo(state, "##menubuttons", "Game", "MenuButtons", "classic",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kMenuButtons, value); });
                         settingLabel("Mute music", "Stage, boss, menu and minigame music plays silent. Cutscenes keep "

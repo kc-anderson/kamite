@@ -7,15 +7,14 @@
 // layout the US release kept), or Modern (the south button confirms, the east one cancels: A/B on an Xbox pad,
 // cross/circle on a PlayStation pad). Modern changes the menus only; play is untouched.
 //
-// How: the game keeps two readings of the pad. Play reads the raw button word (the game work block at 0x7474A0: +0
-// held, +8 pressed, PS2 bits: 0x1000 triangle, 0x2000 circle, 0x4000 cross, 0x8000 square), and it is read by the
-// player code alone. The menus, the dialogs' choices, the roulette and the title screen read a 64-bit "command"
-// word (+0x1A0 held, +0x1B0 repeated) that func_0031AFE0 builds from the raw word through a 64-entry table of raw
-// masks (0x3C3D50; 0x3C3E50 is the same with the d-pad turned, for the slot machine): command bit 24 = triangle,
-// 25 = cross, 26 = circle, 27 = square. Modern exchanges the masks of entries 24 and 26 in both tables, so a menu
-// sees the circle as its "triangle" (cancel) and the triangle as its "circle" (confirm) while a move assigned to
-// the triangle is still thrown with the triangle. The prompt sheets keep showing each cell's own button; the few
-// hint strings that name the menu buttons are reworded to the buttons that now work them.
+// How: the game keeps two readings of the pad (game work block 0x7474A0). Play reads the raw button word (+0 held,
+// +8 pressed; the pad's two button bytes high-to-low, so 0x10 triangle, 0x20 circle, 0x40 cross, 0x80 square and the
+// d-pad at 0x1000..0x8000), in the player code alone. The menus, the dialogs and the title screen read a 64-bit
+// "command" word (+0x1A0 pressed, +0x1B0 repeated) that func_0031AFE0 builds from the raw word through a 64-entry table
+// of raw masks (0x3C3D50, or 0x3C3E50 for the US release): command bit 28 is the menus' OK, bit 29 their Cancel
+// (entries 24-27 are the d-pad, 32-35 the four face buttons one by one). Modern sets OK = cross and Cancel = circle
+// in both tables. Menus that ask for one face button by name (the shop's orb tiers, the casino's bets) and the roulette
+// (part of play) keep the game's buttons. The hint strings that name the menu buttons are reworded to match.
 namespace kamite::menu_buttons
 {
     // [Game] MenuButtons=classic|modern (KAMITE_MENU_BUTTONS), read here; registers the per-vblank patch (tables and

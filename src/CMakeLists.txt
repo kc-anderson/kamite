@@ -42,6 +42,7 @@ set(KAMITE_HOST_SOURCES
     kamite/game_options.cpp
     kamite/character_mods.cpp
     kamite/disc_files.cpp
+    kamite/hd_textures.cpp
     kamite/widescreen.cpp
     kamite/camera.cpp
     kamite/menu_buttons.cpp
