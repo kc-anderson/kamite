@@ -401,8 +401,17 @@ namespace kamite::prompt_hd
         }
         else
         {
+            // The game draws the shape's quad about one screen pixel left of and above the grey button under it
+            // (gif_31864, the tutorial's prompt: shape quad centre 214.75,331, button 215.5,332; the PS2 symbols sit off
+            // centre too, a thin ring hides it, a whole button shows it). One texel right and down puts the pack's
+            // button on the game's.
+            constexpr float kShift = 1.0f;
             for (const Shape &shape : kShapes)
-                drawn += drawCell(canvas, set, fileFor(set, labels.icon[shape.icon]), shape.clear, shape.sprite) ? 1 : 0;
+            {
+                const Rect box{shape.sprite.x0 + kShift, shape.sprite.y0 + kShift, std::min(shape.sprite.x1 + kShift, 128.0f),
+                               std::min(shape.sprite.y1 + kShift, 128.0f)};
+                drawn += drawCell(canvas, set, fileFor(set, labels.icon[shape.icon]), shape.clear, box) ? 1 : 0;
+            }
         }
         if (drawn == 0)
             return false;

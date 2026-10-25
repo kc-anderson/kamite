@@ -266,7 +266,7 @@ namespace kamite::launcher
                 ImGui::PopFont();
             }
             pushSize(state, 22.0f);
-            centeredText("A native PC port", kTextDim);
+            centeredText("God Hand for PS2 Recompiled, Refined, Rearmed.", kTextDim);
             ImGui::PopFont();
             ImGui::Dummy(ImVec2(0.0f, fontSize(state, 40.0f)));
         }
