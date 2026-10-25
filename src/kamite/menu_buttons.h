@@ -17,10 +17,13 @@
 // (part of play) keep the game's buttons. The hint strings that name the menu buttons are reworded to match.
 namespace kamite::menu_buttons
 {
-    // [Game] MenuButtons=classic|modern (KAMITE_MENU_BUTTONS), read here; registers the per-vblank patch (tables and
+    // [Game] MenuButtons=classic|modern (KAMITE_MENU_BUTTONS; modern when not set), read here; registers the per-vblank patch (tables and
     // text) on the EE thread. Call before the game starts with the EE's RDRAM.
     void install(uint8_t *rdram);
     bool modern();
+    // F2 > Controls (any thread): the tables and the core hint text follow at once; the save menu's text (written
+    // over its file on the disc at start) at the next start.
+    void setModern(bool modern);
 
     // Text patches (16-bit glyph codes: A=0x40.., a=0x5A.., space 0x10 or 0x35, the button icons 0..13, end 0x8001).
     // `original` must be there before `modern` is written; both the same length, so the tables around them hold.

@@ -101,13 +101,15 @@ namespace kamite::menu_buttons
             }
         }
 
-        // EE thread, every 30 vblanks: the hint strings in the core block, checked against the disc's words first
-        // (another language's core or a changed one is left alone, once with a warning).
+        // EE thread, every 30 vblanks: the hint strings in the core block follow the setting both ways (it can change
+        // while playing, F2 > Controls), checked against the disc's words or ours first (another language's core or a
+        // changed one is left alone, once with a warning).
         void applyCoreText()
         {
             const uint32_t core = rd32(kCorePointer);
             if (core < 0x100000u || core >= kRamBytes - 0x100000u || (core & 0xFu) != 0u)
                 return;
+            const bool modern = g_modern.load(std::memory_order_relaxed);
             static bool warned = false;
             for (const TextPatch &patch : textPatches())
             {
@@ -115,9 +117,11 @@ namespace kamite::menu_buttons
                 const size_t bytes = patch.original.size() * 2u;
                 if (core + patch.offset + bytes > kRamBytes)
                     continue;
-                if (std::memcmp(guest, patch.modern.data(), bytes) == 0)
+                const std::vector<uint16_t> &want = modern ? patch.modern : patch.original;
+                const std::vector<uint16_t> &other = modern ? patch.original : patch.modern;
+                if (std::memcmp(guest, want.data(), bytes) == 0)
                     continue;
-                if (std::memcmp(guest, patch.original.data(), bytes) != 0)
+                if (std::memcmp(guest, other.data(), bytes) != 0)
                 {
                     if (!warned)
                     {
@@ -127,7 +131,7 @@ namespace kamite::menu_buttons
                     }
                     continue;
                 }
-                std::memcpy(guest, patch.modern.data(), bytes);
+                std::memcpy(guest, want.data(), bytes);
             }
         }
 
@@ -262,10 +266,10 @@ namespace kamite::menu_buttons
             static uint32_t vblanks = 0u;
             ++vblanks;
             applyTables();
+            if (vblanks % 30u == 0u)
+                applyCoreText();
             if (!g_modern.load(std::memory_order_relaxed))
                 return;
-            if (!g_coreOnDisc && vblanks % 30u == 0u)
-                applyCoreText();
             if (!g_menuFilesOnDisc)
                 applyFoundText();
         }
@@ -273,11 +277,13 @@ namespace kamite::menu_buttons
 
     void install(uint8_t *rdram)
     {
+        // Modern unless [Game] MenuButtons says classic (a testing option in F2 > Controls; it becomes the only way once
+        // the whole game has been played with it).
         const char *value = std::getenv("KAMITE_MENU_BUTTONS");
-        std::string text = value ? value : "classic";
+        std::string text = value && *value ? value : "modern";
         for (char &c : text)
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        g_modern.store(text == "modern" || text == "1", std::memory_order_relaxed);
+        g_modern.store(!(text == "classic" || text == "0"), std::memory_order_relaxed);
         g_ram = rdram;
         KM_INFO(Game, "menu buttons: " << (g_modern.load() ? "modern (in menus the south button confirms and the east one cancels; play unchanged)"
                                                             : "classic (circle and cross confirm, triangle cancels, as on the PS2)"));
@@ -293,6 +299,12 @@ namespace kamite::menu_buttons
     bool modern()
     {
         return g_modern.load(std::memory_order_relaxed);
+    }
+
+    void setModern(bool modern)
+    {
+        if (g_modern.exchange(modern) != modern)
+            KM_INFO(Game, "menu buttons: " << (modern ? "modern" : "classic") << " (F2); the save menu's own wording follows at the next start");
     }
 
     const std::vector<TextPatch> &textPatches()

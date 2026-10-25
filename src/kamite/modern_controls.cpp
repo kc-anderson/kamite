@@ -27,6 +27,7 @@
 #include "kamite/camera.h"
 #include "kamite/ini_file.h"
 #include "kamite/log.h"
+#include "kamite/menu_buttons.h"
 #include "ps2_host_input.h"
 #include "runtime/ps2_game_menu.h"
 #include "runtime/ps2_input_options.h"
@@ -340,6 +341,7 @@ namespace kamite::modern
             ini.setBool("Game", "CameraInvertY", g_invertY.load());
             ini.setBool("Game", "MouseCamera", g_mouseCamera.load());
             ini.set("Game", "MouseSensitivity", number2(g_mouseSensitivity.load()));
+            ini.set("Game", "MenuButtons", menu_buttons::modern() ? "modern" : "classic");
             setStatus(ini.save() ? "Saved to kamite.ini." : "Could not write kamite.ini.");
         }
 
@@ -408,6 +410,16 @@ namespace kamite::modern
             else
                 std::snprintf(line, sizeof(line), "No enemy around");
             ui->text_disabled(line);
+
+            ui->separator_text("Menu buttons (testing)");
+            static const char *const kMenuButtons[] = {"Classic: circle and cross confirm, triangle cancels",
+                                                       "Modern: the bottom button confirms, the right one cancels"};
+            int menus = menu_buttons::modern() ? 1 : 0;
+            ui->set_next_width(340.0f);
+            if (ui->combo("##menubuttons", &menus, kMenuButtons, 2))
+                menu_buttons::setModern(menus == 1);
+            ui->text_disabled("Menus and dialogs only; the moves and the roulette keep their buttons. Modern also gives the "
+                              "Techniques screen its style presets. The save menu's own wording follows at the next start.");
 
             ui->separator_text("kamite.ini");
             if (ui->button("Save##controls"))

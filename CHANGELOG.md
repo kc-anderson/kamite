@@ -2,6 +2,15 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 25, 2026 (style presets, stage 1)
+
+- **Menu buttons moved to F2 > Controls** (a testing option until the whole game has been played with it) and **Modern
+  by default**. It switches live both ways (the save menu's own wording follows at the next start); the launcher no
+  longer has it.
+- **Style presets, stage 1:** F2 > Styles shows the moves Gene has equipped (the six combo sets of the save data) and
+  saves them to four styles (S, E, X, Y; L, I, F, E as Xavier) and loads them back, moves the save does not own left
+  out. Kept in memory until the game closes; the Techniques screen's own controls and list come next.
+
 ## October 25, 2026 (title art)
 
 - **The launcher has its logo:** K's cracked KAMITE wordmark with かみて painted in turquoise over its top right

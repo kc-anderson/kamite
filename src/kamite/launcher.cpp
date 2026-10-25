@@ -52,7 +52,6 @@ namespace kamite::launcher
                                                {"Comes in: Gene keeps his size", "100"}};
         constexpr Choice kControlStyles[] = {{"Classic", "classic"}, {"Modern", "modern"}};
         constexpr Choice kModernL1[] = {{"Hold", "hold"}, {"Toggle", "toggle"}};
-        constexpr Choice kMenuButtons[] = {{"Classic", "classic"}, {"Modern", "modern"}};
         constexpr Choice kButtonPrompts[] = {{"Automatic (follows your controller)", "auto"}, {"Xbox", "xbox"},
                                              {"PlayStation (the game's own)", "playstation"}, {"Nintendo Switch", "nintendo"},
                                              {"Steam Deck / Steam Controller", "steam"}};
@@ -1168,13 +1167,6 @@ namespace kamite::launcher
                                        "F2 > Controls sets the sensitivity.");
                             iniCheckbox(state, "On##mousecamera", "Game", "MouseCamera", true);
                         }
-                        settingLabel("Menu buttons", "Classic: as on the PS2, circle and cross confirm and triangle "
-                                                     "cancels (B/A confirm, Y cancels on an Xbox pad). Modern: the "
-                                                     "bottom button confirms and the right one cancels (A/B, or "
-                                                     "cross/circle on a PlayStation pad). Menus and dialogs only; "
-                                                     "the moves and the roulette keep their buttons.");
-                        iniCombo(state, "##menubuttons", "Game", "MenuButtons", "classic",
-                                 [](const char *id, std::string &value) { return choiceCombo(id, kMenuButtons, value); });
                         settingLabel("Mute music", "Stage, boss, menu and minigame music plays silent. Cutscenes keep "
                                                    "their sound (their music and voices are one track).");
                         iniCheckbox(state, "On##music", "Sound", "MuteMusic", false);
