@@ -31,6 +31,8 @@ public:
     bool ensureOpenFromIoPaths();
 
     bool find(std::string_view ps2Path, Entry &out) const;
+    // Names of the files (not directories) in the image's root directory, upper case.
+    std::vector<std::string> rootFileNames() const;
     bool read(uint64_t offset, void *destination, size_t size) const;
     bool readSectors(uint32_t lba, uint32_t count, void *destination) const;
     uint64_t sizeBytes() const;
@@ -60,6 +62,8 @@ public:
     using Patch = std::pair<uint64_t, std::vector<uint8_t>>; // image byte offset, bytes
 
     static void set(std::vector<Patch> patches);
+    // Adds patches to the ones already set (several sources: file replacements, text patches). Before the game runs.
+    static void add(std::vector<Patch> patches);
     static bool active();
     // Overlays the patches on [offset, offset + size) of the image, already read into destination.
     static void apply(uint64_t offset, void *destination, size_t size);

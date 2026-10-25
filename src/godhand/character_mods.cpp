@@ -6,6 +6,7 @@
 // replacement no larger than the original is written over the original's bytes, zero-padded to its size; no size or
 // offset on the disc changes.
 #include "godhand/character_mods.h"
+#include "godhand/disc_files.h"
 #include "godhand/ini_file.h"
 #include "godhand/log.h"
 #include "runtime/ps2_cd_image.h"
@@ -28,12 +29,6 @@ namespace godhand::characters
 {
     namespace
     {
-        uint32_t le32(const std::vector<uint8_t> &b, size_t o)
-        {
-            return o + 4 > b.size() ? 0u : static_cast<uint32_t>(b[o]) | (static_cast<uint32_t>(b[o + 1]) << 8) |
-                                               (static_cast<uint32_t>(b[o + 2]) << 16) | (static_cast<uint32_t>(b[o + 3]) << 24);
-        }
-
         std::string lower(std::string s)
         {
             for (char &c : s)
@@ -45,52 +40,6 @@ namespace godhand::characters
         {
             const std::u8string s = p.generic_u8string();
             return std::string(s.begin(), s.end());
-        }
-
-        bool readImage(uint64_t offset, std::vector<uint8_t> &out, size_t size)
-        {
-            out.assign(size, 0u);
-            return PS2CdImage::instance().read(offset, out.data(), size);
-        }
-
-        // GODHAND.FST: lower-case path -> AFS index.
-        std::map<std::string, uint32_t> readFst(const std::vector<uint8_t> &buf)
-        {
-            std::map<std::string, uint32_t> out;
-            if (buf.size() < 16 || std::memcmp(buf.data(), "FST", 3) != 0)
-                return out;
-            const uint32_t stringsOff = le32(buf, 8), entriesOff = le32(buf, 12);
-            if (stringsOff > buf.size() || entriesOff > buf.size() || stringsOff > entriesOff)
-                return out;
-            auto nameAt = [&](uint32_t o) {
-                std::string s;
-                for (size_t i = stringsOff + o; i < entriesOff && buf[i] != 0; ++i)
-                    s.push_back(static_cast<char>(buf[i]));
-                return s;
-            };
-            std::function<void(uint32_t, const std::string &, int)> walk = [&](uint32_t o, const std::string &prefix, int depth) {
-                if (depth > 16)
-                    return;
-                for (;; o += 12u)
-                {
-                    const size_t at = entriesOff + o;
-                    if (at + 12 > buf.size())
-                        return;
-                    const uint8_t type = buf[at];
-                    const uint32_t name = le32(buf, at + 4), value = le32(buf, at + 8);
-                    if (type == 3)
-                        return;
-                    const std::string path = prefix.empty() ? nameAt(name) : prefix + "/" + nameAt(name);
-                    if (type == 1)
-                        walk(value, path, depth + 1);
-                    else if (type == 2)
-                        out[lower(path)] = value;
-                    else
-                        return;
-                }
-            };
-            walk(0, {}, 0);
-            return out;
         }
 
         Character describe(const fs::path &folder)
@@ -138,23 +87,11 @@ namespace godhand::characters
             GH_WARN(Boot, "character '" << id << "': no folder " << utf8(folder) << "; playing as Gene");
             return;
         }
-        PS2CdImage &image = PS2CdImage::instance();
-        PS2CdImage::Entry afsEntry{}, fstEntry{};
-        if (!image.ensureOpenFromIoPaths() || !image.find("_DATA.AFS", afsEntry) || !image.find("GODHAND.FST", fstEntry))
+        if (!disc_files::open())
         {
-            GH_WARN(Boot, "character '" << id << "': the disc image has no _DATA.AFS / GODHAND.FST; playing as Gene");
+            GH_WARN(Boot, "character '" << id << "': the disc image has no file archive / path table; playing as Gene");
             return;
         }
-        const uint64_t afsBase = static_cast<uint64_t>(afsEntry.lba) * PS2CdImage::kSectorSize;
-        std::vector<uint8_t> head, fst;
-        if (!readImage(afsBase, head, 8) || std::memcmp(head.data(), "AFS", 3) != 0)
-            return;
-        const uint32_t count = le32(head, 4);
-        std::vector<uint8_t> toc;
-        if (count == 0 || count > 100000 || !readImage(afsBase, toc, 16 + 8u * count) ||
-            !readImage(static_cast<uint64_t>(fstEntry.lba) * PS2CdImage::kSectorSize, fst, static_cast<size_t>(fstEntry.size)))
-            return;
-        const auto fstIndex = readFst(fst);
 
         std::vector<PS2DiscOverlay::Patch> patches;
         int replaced = 0;
@@ -163,13 +100,13 @@ namespace godhand::characters
             if (!entry.is_regular_file(error))
                 continue;
             const std::string rel = lower(utf8(fs::relative(entry.path(), folder, error)));
-            const auto found = fstIndex.find(rel);
-            if (found == fstIndex.end())
+            const auto found = disc_files::paths().find(rel);
+            if (found == disc_files::paths().end())
                 continue; // character.ini and anything else that is not a disc file
-            const uint32_t index = found->second;
-            if (index >= count)
+            const auto file = disc_files::byIndex(found->second);
+            if (!file)
                 continue;
-            const uint32_t offset = le32(toc, 8 + 8u * index), size = le32(toc, 12 + 8u * index);
+            const uint32_t index = file->index, size = file->size;
             std::ifstream in(entry.path(), std::ios::binary);
             std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
             if (data.empty() || data.size() > size)
@@ -183,7 +120,7 @@ namespace godhand::characters
             // black screen after the logo). The replacement is padded with zeros to the original size instead.
             const uint32_t newSize = static_cast<uint32_t>(data.size());
             data.resize(size, 0u);
-            patches.emplace_back(afsBase + offset, std::move(data));
+            patches.emplace_back(file->imageOffset, std::move(data));
             GH_INFO(Boot, "character '" << id << "': " << rel << " (AFS " << index << ", " << size << " -> " << newSize << " bytes)");
             ++replaced;
         }
@@ -192,7 +129,7 @@ namespace godhand::characters
             GH_WARN(Boot, "character '" << id << "': no replacement files in " << utf8(folder) << "; playing as Gene");
             return;
         }
-        PS2DiscOverlay::set(std::move(patches));
+        PS2DiscOverlay::add(std::move(patches));
         GH_INFO(Boot, "playing as " << describe(folder).name << " (" << replaced << " files)");
         // Full-resolution textures: PCSX2 replacement images named after the character's in-game textures.
         const fs::path textures = folder / "textures";

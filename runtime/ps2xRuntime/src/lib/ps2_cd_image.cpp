@@ -206,6 +206,20 @@ bool PS2CdImage::ensureOpenFromIoPaths()
     return open(image);
 }
 
+std::vector<std::string> PS2CdImage::rootFileNames() const
+{
+    std::vector<std::string> names;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    for (const auto &[key, entry] : m_entries)
+    {
+        if (!entry.directory && key.find('/') == std::string::npos)
+        {
+            names.push_back(key);
+        }
+    }
+    return names;
+}
+
 bool PS2CdImage::find(std::string_view ps2Path, Entry &out) const
 {
     const std::string key = normalizeKey(ps2Path);
@@ -247,6 +261,20 @@ void PS2DiscOverlay::set(std::vector<Patch> patches)
 {
     g_overlayActive.store(false);
     g_overlay = std::move(patches);
+    g_overlayActive.store(!g_overlay.empty());
+}
+
+void PS2DiscOverlay::add(std::vector<Patch> patches)
+{
+    if (patches.empty())
+    {
+        return;
+    }
+    g_overlayActive.store(false);
+    for (Patch &patch : patches)
+    {
+        g_overlay.push_back(std::move(patch));
+    }
     g_overlayActive.store(!g_overlay.empty());
 }
 

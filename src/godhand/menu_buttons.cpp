@@ -3,7 +3,9 @@
 // The first version (aa44ccf) traded circle and triangle at the pad, which also traded two attack slots in play;
 // the game's own split between the raw word (play) and the command word (menus) is what keeps this one to the menus.
 #include "godhand/menu_buttons.h"
+#include "godhand/disc_files.h"
 #include "godhand/log.h"
+#include "runtime/ps2_cd_image.h"
 #include "runtime/ps2_pnach.h"
 
 #include <algorithm>
@@ -22,6 +24,9 @@ namespace godhand::menu_buttons
     {
         std::atomic<bool> g_modern{false};
         uint8_t *g_ram = nullptr;
+        // Set at start when every patch of the kind went onto the disc image (the file as the game reads it): the
+        // run-time rewrites below are then not needed (no RAM scan thread, no core check every 30 vblanks).
+        bool g_coreOnDisc = false, g_menuFilesOnDisc = false;
 
         // The command tables (SLUS_215.03 .data): 64 raw masks, entry i = the raw bits that set command bit i.
         constexpr uint32_t kTables[2] = {0x3C3D50u, 0x3C3E50u};
@@ -175,6 +180,75 @@ namespace godhand::menu_buttons
             }
         }
 
+        // The text patches as disc patches: the files are plain files in the archive, loaded as they are, and every
+        // patch keeps its length, so writing them over the file in the image is the same as writing them over the
+        // file in RAM once it is loaded, without watching RAM for it. Each original is checked in the disc's file
+        // first; anything not found as expected is left to the run-time path.
+        void installDiscText()
+        {
+            if (!disc_files::open())
+            {
+                GH_INFO(Game, "menu buttons: no file archive on the disc image; the hint text is reworded in RAM");
+                return;
+            }
+            std::vector<PS2DiscOverlay::Patch> patches;
+            auto bytesOf = [](const std::vector<uint16_t> &codes) {
+                std::vector<uint8_t> out(codes.size() * 2u);
+                for (size_t i = 0; i < codes.size(); ++i)
+                {
+                    out[2 * i] = static_cast<uint8_t>(codes[i] & 0xFFu);
+                    out[2 * i + 1] = static_cast<uint8_t>(codes[i] >> 8);
+                }
+                return out;
+            };
+
+            // core_usa.bin: the patches sit at fixed offsets (the core block in RAM is the file).
+            std::vector<uint8_t> file;
+            if (const auto core = disc_files::find("core_usa.bin"); core && disc_files::read(*core, file))
+            {
+                size_t matched = 0;
+                for (const TextPatch &patch : textPatches())
+                {
+                    const std::vector<uint8_t> original = bytesOf(patch.original);
+                    if (patch.offset + original.size() > file.size() ||
+                        std::memcmp(file.data() + patch.offset, original.data(), original.size()) != 0)
+                        continue;
+                    patches.emplace_back(core->imageOffset + patch.offset, bytesOf(patch.modern));
+                    ++matched;
+                }
+                g_coreOnDisc = matched == textPatches().size();
+                GH_INFO(Game, "menu buttons: " << matched << " of " << textPatches().size() << " hint texts reworded in core_usa.bin on the disc"
+                                               << (g_coreOnDisc ? "" : "; the rest is reworded in RAM"));
+            }
+
+            // The menu files: each original found by searching the file (every place it occurs).
+            size_t foundAll = 0;
+            const auto &rewrites = textRewrites();
+            std::vector<bool> found(rewrites.size(), false);
+            for (const char *path : {"id/local/us/idsavecore_us.idd"})
+            {
+                const auto menu = disc_files::find(path);
+                if (!menu || !disc_files::read(*menu, file))
+                    continue;
+                for (size_t i = 0; i < rewrites.size(); ++i)
+                {
+                    const std::vector<uint8_t> original = bytesOf(rewrites[i].original);
+                    for (size_t at = 0; at + original.size() <= file.size(); ++at)
+                    {
+                        if (std::memcmp(file.data() + at, original.data(), original.size()) != 0)
+                            continue;
+                        patches.emplace_back(menu->imageOffset + at, bytesOf(rewrites[i].modern));
+                        GH_INFO(Game, "menu buttons: " << rewrites[i].where << " reworded in " << path << " at 0x" << std::hex << at << std::dec);
+                        found[i] = true;
+                    }
+                }
+            }
+            for (bool f : found)
+                foundAll += f ? 1u : 0u;
+            g_menuFilesOnDisc = foundAll == rewrites.size();
+            PS2DiscOverlay::add(std::move(patches));
+        }
+
         void onVblank()
         {
             static uint32_t vblanks = 0u;
@@ -182,9 +256,10 @@ namespace godhand::menu_buttons
             applyTables();
             if (!g_modern.load(std::memory_order_relaxed))
                 return;
-            if (vblanks % 30u == 0u)
+            if (!g_coreOnDisc && vblanks % 30u == 0u)
                 applyCoreText();
-            applyFoundText();
+            if (!g_menuFilesOnDisc)
+                applyFoundText();
         }
     }
 
@@ -200,8 +275,10 @@ namespace godhand::menu_buttons
                                                             : "classic (circle and cross confirm, triangle cancels, as on the PS2)"));
         if (!g_ram)
             return;
-        ps2x::pnach::addFrameHook(&onVblank);
         if (g_modern.load())
+            installDiscText();
+        ps2x::pnach::addFrameHook(&onVblank);
+        if (g_modern.load() && !g_menuFilesOnDisc)
             std::thread(scanLoop).detach();
     }
 

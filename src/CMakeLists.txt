@@ -41,6 +41,7 @@ set(GODHAND_HOST_SOURCES
     godhand/frame_patches.cpp
     godhand/game_options.cpp
     godhand/character_mods.cpp
+    godhand/disc_files.cpp
     godhand/widescreen.cpp
     godhand/camera.cpp
     godhand/menu_buttons.cpp

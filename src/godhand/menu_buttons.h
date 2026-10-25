@@ -33,8 +33,10 @@ namespace godhand::menu_buttons
     };
     const std::vector<TextPatch> &textPatches();
 
-    // The same for strings in the menu files (id/local/us/*.idd), which the game loads where it likes: found by
-    // scanning RAM for `original` (a thread, about once a second), rewritten on the EE thread.
+    // The same for strings in the menu files (id/local/us/*.idd), which the game loads where it likes. Both kinds are
+    // written over the files on the disc image at start (PS2DiscOverlay, checked against the disc's bytes); only when
+    // that is not possible (no image, another language, a changed file) are they rewritten in RAM: the core text every
+    // 30 vblanks, the menu files found by a thread scanning RAM for `original` twice a second.
     struct TextRewrite
     {
         const char *where;
