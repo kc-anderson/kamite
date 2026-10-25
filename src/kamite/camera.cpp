@@ -711,7 +711,7 @@ namespace kamite
                 nearGeometryStats(patched, cut, cutNear, noStitch);
                 char line[256];
                 std::snprintf(line, sizeof(line),
-                              "Near geometry (launcher / kamite.ini NearGeometry, at start): %llu renderer tests patched; "
+                              "Near geometry (on with See-through, at start): %llu renderer tests patched; "
                               "%llu triangles cut at the screen's edges, %llu at the camera, %llu behind it left out "
                               "(no stitch information).",
                               static_cast<unsigned long long>(patched), static_cast<unsigned long long>(cut),

@@ -402,7 +402,8 @@ namespace
         {"video", "posteffects", "PS2X_PCSX2_NATIVE_SCALING"},
         {"video", "depthoffield", "PS2X_PCSX2_DOF"},
         {"video", "precisedepth", "PS2X_PCSX2_PRECISE_DEPTH"},
-        {"video", "neargeometry", "KAMITE_NEAR_GEOMETRY"},
+        // Near geometry (the cut triangles next to the camera) only serves the see-through: on with it, off without.
+        {"video", "seethrough", "KAMITE_NEAR_GEOMETRY"},
         {"launcher", "show", "KAMITE_LAUNCHER"},
     };
 

@@ -7,9 +7,11 @@
 #include "kamite/launcher_platform.h"
 #include "kamite/log.h"
 #include "ps2_host_gamepads.h"
+#include "ps2_host_input.h"
 #include "runtime/ps2_display_options.h"
 
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "raylib.h"
 #include "rlImGui.h"
 
@@ -53,7 +55,7 @@ namespace kamite::launcher
                                              {"PlayStation (the game's own)", "playstation"}, {"Nintendo Switch", "nintendo"},
                                              {"Steam Deck / Steam Controller", "steam"}};
         constexpr Choice kCameraTilts[] = {{"None", "0"}, {"5 degrees", "5"}, {"10 degrees", "10"}, {"15 degrees", "15"}};
-        constexpr Choice kWindowSizes[] = {{"Automatic (3/4 of the screen)", "auto"}, {"PS2 size", "native"}};
+        constexpr Choice kWindowSizes[] = {{"Automatic (follows internal resolution)", "auto"}, {"PS2 size", "native"}};
         constexpr Choice kResolutions[] = {{"1x  native (512x448)", "1"}, {"2x  1024x896", "2"}, {"3x  1536x1344", "3"},
                                            {"4x  2048x1792", "4"},        {"5x  2560x2240", "5"}, {"6x  3072x2688", "6"},
                                            {"8x  4096x3584", "8"}};
@@ -417,18 +419,52 @@ namespace kamite::launcher
             state.focusFirst = false;
         }
 
-        // A setting: name and help on the left, the control on the right.
-        void settingLabel(const char *name, const char *help)
+        // ---- settings tables --------------------------------------------------------------------------------------
+        // Every setting is a row (name and help on the left, the control on the right) with a line above it; a
+        // setting's own sub-options (subSetting) share its section, with no line between them.
+        int g_settingRows = 0;
+
+        void dividerLine()
+        {
+            ImGuiWindow *window = ImGui::GetCurrentWindow();
+            const float y = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y * 0.5f - 1.0f;
+            const float x0 = window->InnerRect.Min.x + ImGui::GetStyle().WindowPadding.x;
+            const float x1 = window->InnerRect.Max.x - ImGui::GetStyle().WindowPadding.x;
+            ImGui::PushClipRect(window->InnerRect.Min, window->InnerRect.Max, false);
+            window->DrawList->AddLine(ImVec2(x0, y), ImVec2(x1, y), ImGui::GetColorU32(ImVec4(0.35f, 0.22f, 0.15f, 0.55f)), 1.0f);
+            ImGui::PopClipRect();
+        }
+
+        void describe(const char *name, const char *help, const char *note)
+        {
+            ImGui::TextUnformatted(name);
+            ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
+            if (help && *help)
+                ImGui::TextWrapped("%s", help);
+            if (note && *note)
+                ImGui::TextWrapped("NOTE: %s", note);
+            ImGui::PopStyleColor();
+        }
+
+        // A setting in a section of its own. `note`: a line of its own at the bottom of the help ("NOTE: ...").
+        void settingLabel(const char *name, const char *help, const char *note = nullptr)
         {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            ImGui::TextUnformatted(name);
-            if (help && *help)
-            {
-                ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
-                ImGui::TextWrapped("%s", help);
-                ImGui::PopStyleColor();
-            }
+            if (g_settingRows++ > 0)
+                dividerLine();
+            describe(name, help, note);
+            ImGui::TableSetColumnIndex(1);
+        }
+
+        // A sub-option in the section of the setting above it.
+        void subSetting(const char *name, const char *help, const char *note = nullptr)
+        {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::Indent(ImGui::GetFontSize());
+            describe(name, help, note);
+            ImGui::Unindent(ImGui::GetFontSize());
             ImGui::TableSetColumnIndex(1);
         }
 
@@ -436,6 +472,7 @@ namespace kamite::launcher
         {
             if (!ImGui::BeginTable(id, 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX))
                 return false;
+            g_settingRows = 0;
             ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch, 0.58f);
             ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 0.42f);
             return true;
@@ -501,8 +538,370 @@ namespace kamite::launcher
             }
         }
 
+        // ---- Controls: player 1's bindings (controls.ini through ps2_host_input's model, as the F1 screen) ----------
+        namespace pc = ps2_host_input::controls;
+        namespace gp = ps2_host_gamepads;
+
+        struct ControlRow
+        {
+            const char *key;    // controls.ini [Pad1] key
+            const char *action; // what it does in the game ("" = nothing known)
+            const char *button; // the PS2 button
+        };
+        // The F1 screen's rows (ps2_controls_screen.cpp kRows).
+        constexpr ControlRow kControlRows[] = {
+            {"Cross", "Attack / OK", "Cross"},
+            {"Circle", "Action / prompt", "Circle"},
+            {"Square", "Combo", "Square"},
+            {"Triangle", "Attack / cancel", "Triangle"},
+            {"L1", "Turn around", "L1"},
+            {"R1", "God Reel", "R1"},
+            {"L2", "Taunt", "L2"},
+            {"R2", "Unleash", "R2"},
+            {"L3", "", "L3 (left stick click)"},
+            {"R3", "", "R3 (right stick click)"},
+            {"Start", "Pause menu", "Start"},
+            {"Select", "", "Select"},
+            {"Up", "Menu up", "D-pad up"},
+            {"Down", "Menu down", "D-pad down"},
+            {"Left", "Menu left", "D-pad left"},
+            {"Right", "Menu right", "D-pad right"},
+            {"LUp", "Move forward", "Left stick up"},
+            {"LDown", "Step back", "Left stick down"},
+            {"LLeft", "Move left", "Left stick left"},
+            {"LRight", "Move right", "Left stick right"},
+            {"RUp", "Duck", "Right stick up"},
+            {"RDown", "Back flip", "Right stick down"},
+            {"RLeft", "Sidestep left", "Right stick left"},
+            {"RRight", "Sidestep right", "Right stick right"},
+        };
+        constexpr int kControlRowCount = static_cast<int>(std::size(kControlRows));
+        constexpr int kKeyColumns = 2; // Key 1, Key 2 (the F1 screen also has a third; it is kept as it is)
+        constexpr uint32_t kPlayer = 0u;
+
+        struct Capture
+        {
+            bool active = false;
+            bool controller = false; // false: keys and mouse
+            int row = 0;
+            int column = 0;          // keys: 0..kKeyColumns-1
+            bool waitRelease = true; // the click or button press that started it must end first
+            double started = 0.0;
+        };
+        Capture g_capture;
+        bool g_openCapture = false;   // open the popup at drawControls' ID level (cells push their own IDs)
+        bool g_captureFrame = false;  // a capture ran this frame: its Esc / B must not also leave Options
+        std::string g_controlsStatus;
+        bool g_resetArmed = false;
+
+        struct Split
+        {
+            std::vector<std::string> keys, pads, other;
+        };
+
+        Split splitRow(int row)
+        {
+            Split split;
+            for (std::string &binding : pc::bindings(kPlayer, kControlRows[row].key))
+            {
+                switch (pc::kindOf(binding))
+                {
+                case pc::Kind::Keys: split.keys.push_back(std::move(binding)); break;
+                case pc::Kind::Controller: split.pads.push_back(std::move(binding)); break;
+                default: split.other.push_back(std::move(binding)); break;
+                }
+            }
+            return split;
+        }
+
+        void storeRow(int row, const Split &split)
+        {
+            std::vector<std::string> list = split.keys;
+            list.insert(list.end(), split.pads.begin(), split.pads.end());
+            list.insert(list.end(), split.other.begin(), split.other.end());
+            pc::setBindings(kPlayer, kControlRows[row].key, std::move(list));
+        }
+
+        std::string rowName(int row)
+        {
+            const ControlRow &r = kControlRows[row];
+            return *r.action ? std::string(r.action) + " (" + r.button + ")" : std::string(r.button);
+        }
+
+        // As the F1 screen: the binding goes into the cell; within one action it appears once; another action may
+        // share it (the status line says so).
+        void bindCell(int row, bool controller, int column, const std::string &binding)
+        {
+            Split split = splitRow(row);
+            std::vector<std::string> &list = controller ? split.pads : split.keys;
+            size_t at = controller ? 0u : static_cast<size_t>(column);
+            if (at < list.size())
+                list[at] = binding;
+            else
+            {
+                list.push_back(binding);
+                at = list.size() - 1u;
+            }
+            for (size_t i = list.size(); i-- > 0u;)
+                if (i != at && pc::sameBinding(list[i], binding))
+                {
+                    list.erase(list.begin() + static_cast<std::ptrdiff_t>(i));
+                    if (i < at)
+                        --at;
+                }
+            storeRow(row, split);
+            g_controlsStatus = rowName(row) + ": " + pc::displayName(binding);
+            for (int other = 0; other < kControlRowCount; ++other)
+            {
+                if (other == row)
+                    continue;
+                bool shared = false;
+                for (const std::string &existing : pc::bindings(kPlayer, kControlRows[other].key))
+                    shared = shared || pc::sameBinding(existing, binding);
+                if (shared)
+                {
+                    g_controlsStatus += "   (also on " + rowName(other) + ")";
+                    break;
+                }
+            }
+            KM_INFO(Boot, "launcher: controls " << kControlRows[row].key << " = " << binding);
+        }
+
+        void clearCell(int row, bool controller, int column)
+        {
+            Split split = splitRow(row);
+            std::vector<std::string> &list = controller ? split.pads : split.keys;
+            const size_t at = controller ? 0u : static_cast<size_t>(column);
+            if (at >= list.size())
+                return;
+            const std::string removed = list[at];
+            list.erase(list.begin() + static_cast<std::ptrdiff_t>(at));
+            storeRow(row, split);
+            g_controlsStatus = rowName(row) + ": " + pc::displayName(removed) + " removed";
+        }
+
+        bool anyPadInput()
+        {
+            for (int device = 0; device < gp::kMaxDevices; ++device)
+            {
+                if (!gp::connected(device))
+                    continue;
+                for (int b = 0; b < gp::ButtonCount; ++b)
+                    if (gp::button(device, static_cast<gp::Button>(b)))
+                        return true;
+                for (int a = 0; a < gp::AxisCount; ++a)
+                    if (std::fabs(gp::axis(device, static_cast<gp::Axis>(a))) > 0.3f)
+                        return true;
+            }
+            return false;
+        }
+
+        // The capture in progress (every frame while its popup is open): true when it ended.
+        bool captureTick()
+        {
+            if (IsKeyPressed(KEY_ESCAPE) || GetTime() - g_capture.started > 10.0)
+            {
+                g_controlsStatus = IsKeyPressed(KEY_ESCAPE) ? "Cancelled." : "Nothing pressed for 10 s: cancelled.";
+                return true;
+            }
+            if (g_capture.waitRelease)
+            {
+                const bool held = g_capture.controller ? anyPadInput()
+                                                       : (IsMouseButtonDown(MOUSE_BUTTON_LEFT) || IsMouseButtonDown(MOUSE_BUTTON_RIGHT) ||
+                                                          IsMouseButtonDown(MOUSE_BUTTON_MIDDLE) || IsKeyDown(KEY_ENTER) || IsKeyDown(KEY_SPACE));
+                if (!held)
+                    g_capture.waitRelease = false;
+                return false;
+            }
+            if (!g_capture.controller)
+            {
+                for (int key : pc::bindableKeys())
+                    if (IsKeyPressed(key))
+                    {
+                        const std::string binding = pc::keyBinding(key);
+                        if (!binding.empty())
+                        {
+                            bindCell(g_capture.row, false, g_capture.column, binding);
+                            return true;
+                        }
+                    }
+                for (int mouse : {MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE})
+                    if (IsMouseButtonPressed(mouse))
+                    {
+                        bindCell(g_capture.row, false, g_capture.column, pc::mouseBinding(mouse));
+                        return true;
+                    }
+                return false;
+            }
+            for (int device = 0; device < gp::kMaxDevices; ++device)
+            {
+                if (!gp::connected(device))
+                    continue;
+                for (int b = 0; b < gp::ButtonCount; ++b)
+                    if (gp::button(device, static_cast<gp::Button>(b)))
+                    {
+                        bindCell(g_capture.row, true, 0, pc::padButtonBinding(device, b));
+                        return true;
+                    }
+                for (int a = 0; a < gp::AxisCount; ++a)
+                {
+                    const float v = gp::axis(device, static_cast<gp::Axis>(a));
+                    if (std::fabs(v) > 0.6f)
+                    {
+                        bindCell(g_capture.row, true, 0, pc::padAxisBinding(device, a, v < 0.0f));
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        void startCapture(int row, bool controller, int column)
+        {
+            g_capture = Capture{true, controller, row, column, true, GetTime()};
+            g_openCapture = true;
+        }
+
+        // One cell: click (or A/Enter) to bind, right-click (or X / Delete when focused) to clear.
+        void bindingCell(int row, bool controller, int column, const std::string &binding, float width)
+        {
+            ImGui::PushID(row * 8 + (controller ? 7 : column));
+            const std::string label = (binding.empty() ? std::string("-") : pc::displayName(binding)) + "##cell";
+            if (ImGui::Button(label.c_str(), ImVec2(width, 0.0f)))
+                startCapture(row, controller, column);
+            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+                clearCell(row, controller, column);
+            if (ImGui::IsItemFocused() && (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false) ||
+                                           ImGui::IsKeyPressed(ImGuiKey_GamepadFaceLeft, false)))
+                clearCell(row, controller, column);
+            ImGui::PopID();
+        }
+
+        void drawControls(State &state)
+        {
+            if (beginSettings("controls"))
+            {
+                settingLabel("Button prompts", "The buttons the game shows for a controller. Automatic picks them from the "
+                                               "controller you use; keys and mouse always show keys. Prompt art: Xelu's "
+                                               "free prompts (CC0).");
+                iniCombo(state, "##buttonprompts", "Game", "ButtonPrompts", "auto",
+                         [](const char *id, std::string &value) { return choiceCombo(id, kButtonPrompts, value); });
+                ImGui::EndTable();
+            }
+            ImGui::Spacing();
+            static int device = 0; // 0 keyboard & mouse, 1 controller
+            ImGui::TextUnformatted("Bindings for");
+            ImGui::SameLine();
+            ImGui::RadioButton("Keyboard & mouse", &device, 0);
+            ImGui::SameLine();
+            ImGui::RadioButton("Controller", &device, 1);
+            const bool controller = device == 1;
+            ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
+            ImGui::TextWrapped("%s", controller ? "Click a button, then press the controller button or move the stick or "
+                                                  "trigger it should be. Right-click (or X) clears it. Esc cancels."
+                                                : "Click a box, then press the key or click the mouse button it should be. "
+                                                  "Right-click (or Delete) clears it. Esc cancels; F-keys stay the port's "
+                                                  "shortcuts.");
+            if (pc::envOverride(kPlayer))
+                ImGui::TextWrapped("PS2X_PAD1 is set in the environment: it wins over these bindings while it is set.");
+            ImGui::PopStyleColor();
+            if (ImGui::BeginTable("bindings", controller ? 2 : 1 + kKeyColumns,
+                                  ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX | ImGuiTableFlags_RowBg))
+            {
+                ImGui::TableSetupColumn("PS2 button", ImGuiTableColumnFlags_WidthStretch, 0.46f);
+                if (controller)
+                    ImGui::TableSetupColumn("Controller", ImGuiTableColumnFlags_WidthStretch, 0.54f);
+                else
+                {
+                    ImGui::TableSetupColumn("Key 1", ImGuiTableColumnFlags_WidthStretch, 0.27f);
+                    ImGui::TableSetupColumn("Key 2", ImGuiTableColumnFlags_WidthStretch, 0.27f);
+                }
+                ImGui::TableHeadersRow();
+                for (int row = 0; row < kControlRowCount; ++row)
+                {
+                    const Split split = splitRow(row);
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::TextUnformatted(kControlRows[row].button);
+                    if (*kControlRows[row].action)
+                    {
+                        ImGui::SameLine();
+                        ImGui::TextColored(kTextDim, "%s", kControlRows[row].action);
+                    }
+                    if (controller)
+                    {
+                        ImGui::TableSetColumnIndex(1);
+                        bindingCell(row, true, 0, split.pads.empty() ? std::string() : split.pads[0], -1.0f);
+                    }
+                    else
+                    {
+                        for (int column = 0; column < kKeyColumns; ++column)
+                        {
+                            ImGui::TableSetColumnIndex(1 + column);
+                            bindingCell(row, false, column, column < static_cast<int>(split.keys.size()) ? split.keys[column] : std::string(),
+                                        -1.0f);
+                        }
+                    }
+                }
+                ImGui::EndTable();
+            }
+            if (!g_controlsStatus.empty())
+                ImGui::TextColored(kTextDim, "%s", g_controlsStatus.c_str());
+            if (ImGui::Button(g_resetArmed ? "Click again to reset every binding" : "Reset all bindings to the defaults"))
+            {
+                if (g_resetArmed)
+                {
+                    pc::resetDefaults(kPlayer);
+                    g_controlsStatus = "Default bindings restored.";
+                }
+                g_resetArmed = !g_resetArmed;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Open controls.ini"))
+            {
+                std::string message;
+                pc::save(message);
+                platform::open(state.context->exeDir / "controls.ini");
+            }
+
+            // The capture popup.
+            if (g_openCapture)
+            {
+                g_openCapture = false;
+                ImGui::OpenPopup("##capture");
+            }
+            ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+            if (ImGui::BeginPopupModal("##capture", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar))
+            {
+                g_captureFrame = true;
+                ImGui::Dummy(ImVec2(ImGui::GetFontSize() * 18.0f, ImGui::GetFontSize() * 0.5f));
+                ImGui::TextUnformatted(rowName(g_capture.row).c_str());
+                ImGui::TextColored(kTextDim, "%s", g_capture.controller ? "Press a controller button or move a stick or trigger..."
+                                                                       : "Press a key or click a mouse button...");
+                ImGui::TextColored(kTextDim, "Esc cancels (%d s)", std::max(0, 10 - static_cast<int>(GetTime() - g_capture.started)));
+                ImGui::Dummy(ImVec2(0.0f, ImGui::GetFontSize() * 0.5f));
+                if (captureTick())
+                {
+                    g_capture.active = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+        }
+
+        void saveControls()
+        {
+            if (!pc::dirty())
+                return;
+            std::string message;
+            if (!pc::save(message))
+                KM_WARN(Boot, "launcher: controls not saved: " << message);
+        }
+
         void drawOptions(State &state)
         {
+            g_captureFrame = false;
             ImGui::Dummy(ImVec2(0.0f, fontSize(state, 30.0f)));
             pushSize(state, 46.0f);
             centeredText("Options", ImVec4(1.0f, 0.62f, 0.30f, 1.0f));
@@ -516,62 +915,58 @@ namespace kamite::launcher
             const bool advanced = state.ini.getBool("Launcher", "ShowAdvanced", false);
             if (ImGui::BeginTabBar("tabs"))
             {
-                const std::string aspect = state.ini.get("Video", "AspectRatio", "4:3");
+                const std::string aspect = state.ini.get("Video", "AspectRatio", "16:9");
                 if (ImGui::BeginTabItem("Display"))
                 {
                     if (beginSettings("display"))
                     {
                         settingLabel("Aspect ratio", "The picture's shape. Wider than 4:3 shows more of the scene to the "
                                                      "sides; menus keep the PS2's proportions.");
-                        iniCombo(state, "##aspect", "Video", "AspectRatio", "4:3",
+                        iniCombo(state, "##aspect", "Video", "AspectRatio", "16:9",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kAspects, value); });
                         settingLabel("HUD layout", "Where the health bar, radar and the rest of the in-game HUD go on a "
-                                                   "wide screen. Wider than 16:9 keeps them at the edges of a 16:9 area.");
+                                                   "wide screen. Wider than 16:9 keeps them at the edges of a 16:9 area.",
+                                     "F7 switches it while playing.");
                         ImGui::BeginDisabled(lower(aspect) == "4:3");
                         iniCombo(state, "##hud", "Video", "HudLayout", "16:9",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kHudLayouts, value); });
                         ImGui::EndDisabled();
-                        settingLabel("Menus", "Menus and screens (pause, options, roulette setup) are drawn for 4:3: "
-                                              "shown 4:3 with side bars, or stretched to the screen.");
+                        settingLabel("Menu width", "Menus and screens (pause, options, roulette setup) are drawn for 4:3: "
+                                                   "shown 4:3 with side bars, or stretched to the screen.");
                         ImGui::BeginDisabled(lower(aspect) == "4:3");
                         iniCombo(state, "##menus", "Video", "MenuLayout", "4:3",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kMenuLayouts, value); });
                         ImGui::EndDisabled();
                         settingLabel("Camera", "How much the gameplay camera shows and how it frames Gene (widescreen "
-                                               "already widens it sideways). Cutscenes keep their framing. F2 while "
-                                               "playing tunes it live.");
+                                               "already widens it sideways). Cutscenes keep their framing.",
+                                     "F2 while playing tunes it live.");
                         cameraPresetCombo(state);
-                        settingLabel("See-through (experimental)", "Walls and pillars between the camera and Gene "
-                                                                   "dissolve in an oval round him, so he and the enemies "
-                                                                   "about him stay in view. Known: a banded blur where "
-                                                                   "hazy distance shows through (the depth of field "
-                                                                   "reads the dissolve). F2 > Camera sizes it while "
-                                                                   "playing.");
-                        iniCheckbox(state, "On##seethrough", "Video", "SeeThrough", true);
+                        ImGui::TableSetColumnIndex(0);
+                        iniCheckbox(state, "Show advanced settings##advanced", "Launcher", "ShowAdvanced", false);
                         if (advanced)
                         {
-                            settingLabel("Field of view", "How much the camera shows, both ways, outside fights.");
+                            subSetting("Field of view", "How much the camera shows, both ways, outside fights.");
                             iniCombo(state, "##fov", "Video", "FieldOfView", "100",
                                      [](const char *id, std::string &value) { return choiceCombo(id, kFovs, value); });
-                            settingLabel("Field of view in fights", "The same while the game's battle camera is on (Gene "
-                                                                    "has an enemy targeted). 100% frames fights as on the PS2.");
+                            subSetting("Field of view in fights", "The same while the game's battle camera is on (Gene "
+                                                                  "has an enemy targeted). 100% frames fights as on the PS2.");
                             iniCombo(state, "##fightfov", "Video", "FightFieldOfView", "100",
                                      [](const char *id, std::string &value) { return choiceCombo(id, kFovs, value); });
-                            settingLabel("Camera distance", "At a wider field of view, how far the camera comes in toward "
-                                                            "Gene. Coming all the way in keeps him the size he is at 100%.");
+                            subSetting("Camera distance", "At a wider field of view, how far the camera comes in toward "
+                                                          "Gene. Coming all the way in keeps him the size he is at 100%.");
                             iniCombo(state, "##camdist", "Video", "CameraDistance", "100",
                                      [](const char *id, std::string &value) { return choiceCombo(id, kCameraDistances, value); });
-                            settingLabel("Camera tilt", "At a wider field of view, the camera also rises and looks down at "
-                                                        "Gene by this much: more of the floor ahead, less sky.");
+                            subSetting("Camera tilt", "At a wider field of view, the camera also rises and looks down at "
+                                                      "Gene by this much: more of the floor ahead, less sky.");
                             iniCombo(state, "##camtilt", "Video", "CameraTilt", "0",
                                      [](const char *id, std::string &value) { return choiceCombo(id, kCameraTilts, value); });
-                            settingLabel("Enemies follow the view", "The angles round Gene in which enemies close in and "
-                                                                    "lunge widen with the picture, so the ones you can see "
-                                                                    "at the edges join in as on the PS2. Off: the original "
-                                                                    "angles.");
+                            subSetting("Enemies follow the view", "The angles round Gene in which enemies close in and "
+                                                                  "lunge widen with the picture, so the ones you can see at "
+                                                                  "the edges join in as on the PS2. Off: the original angles.");
                             iniCheckbox(state, "On##enemyview", "Game", "EnemiesFollowView", true);
                         }
-                        settingLabel("Window", "F11 switches between window and fullscreen while playing.");
+                        settingLabel("Window", "How the game opens.", "F11 switches between window and fullscreen while "
+                                                                      "playing.");
                         {
                             std::string mode = state.ini.getBool("Video", "StartFullscreen", false)  ? "fullscreen"
                                                : state.ini.getBool("Video", "StartMaximized", false) ? "maximized"
@@ -582,7 +977,7 @@ namespace kamite::launcher
                                 state.ini.setBool("Video", "StartMaximized", mode == "maximized");
                             }
                         }
-                        settingLabel("Window size", "The window's size when it opens (not maximized or fullscreen).");
+                        subSetting("Window size", "The window's size when it opens (not maximized or fullscreen).");
                         iniCombo(state, "##size", "Video", "WindowSize", "auto",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kWindowSizes, value); });
                         ImGui::EndTable();
@@ -603,17 +998,13 @@ namespace kamite::launcher
                         iniCombo(state, "##posteffects", "Video", "PostEffects", "ps2",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kPostEffects, value); });
                         settingLabel("Depth of field", "The game's blur of the distance. At high internal resolutions "
-                                                       "its edges can show dark, shimmering fringes. F2 switches it "
-                                                       "while playing.");
+                                                       "its edges can show dark, shimmering fringes.",
+                                     "F2 switches it while playing.");
                         iniCheckbox(state, "On##dof", "Video", "DepthOfField", true);
-                        settingLabel("Near geometry", "Walls, pillars and floors next to the camera are drawn. The PS2 "
-                                                      "drops them as the camera comes close (it cannot draw a triangle "
-                                                      "that reaches behind the camera).");
-                        iniCheckbox(state, "On##neargeometry", "Video", "NearGeometry", true);
-                        settingLabel("HD texture pack", "Replacement textures in PCSX2's format.");
+                        settingLabel("Replacement textures", "HD texture packs in PCSX2's format.");
                         iniCheckbox(state, "Use replacement textures##tex", "Runtime", "PS2X_PCSX2_TEXTURES", true);
-                        settingLabel("Texture pack folder", "The folder that holds replacements/. Empty: textures/SLUS-21503 "
-                                                            "next to the game.");
+                        subSetting("Texture pack folder", "The folder that holds replacements/. Empty: textures/SLUS-21503 "
+                                                          "next to the game.");
                         {
                             const std::string folder = state.ini.get("Runtime", "PS2X_PCSX2_TEXTURE_DIR");
                             ImGui::TextWrapped("%s", folder.empty() ? "(next to the game)" : folder.c_str());
@@ -652,22 +1043,22 @@ namespace kamite::launcher
                         iniCheckbox(state, "On##hard", "Game", "UnlockHard", false);
                         settingLabel("Control style", "Classic: as on the PS2. Modern: the right stick turns the camera "
                                                       "and Gene moves where you point; hold or toggle L1 for the "
-                                                      "original controls, double-tap L1 for the quick turn. F2 > Controls "
-                                                      "while playing.");
+                                                      "original controls, double-tap L1 for the quick turn.",
+                                     "F2 > Controls changes it while playing.");
                         iniCombo(state, "##controlstyle", "Game", "ControlStyle", "classic",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kControlStyles, value); });
                         if (lower(state.ini.get("Game", "ControlStyle", "classic")) == "modern")
                         {
-                            settingLabel("Modern: auto", "The original controls in fights: from the battle camera coming "
-                                                         "on until no enemy is near.");
+                            subSetting("Modern: auto", "The original controls in fights: from the battle camera coming on "
+                                                       "until no enemy is near.");
                             iniCheckbox(state, "On##modernauto", "Game", "ModernAuto", true);
-                            settingLabel("Modern: L1", "Hold L1 for the original controls, or press it to switch to them "
-                                                       "and back.");
+                            subSetting("Modern: L1", "Hold L1 for the original controls, or press it to switch to them "
+                                                     "and back.");
                             iniCombo(state, "##modernl1", "Game", "ModernL1", "hold",
                                      [](const char *id, std::string &value) { return choiceCombo(id, kModernL1, value); });
-                            settingLabel("Modern: mouse camera", "The mouse turns the free camera. Click in the game to "
-                                                                 "capture the mouse, Esc frees it. F2 > Controls sets "
-                                                                 "the sensitivity.");
+                            subSetting("Modern: mouse camera", "The mouse turns the free camera. Click in the game to "
+                                                               "capture the mouse, Esc frees it.",
+                                       "F2 > Controls sets the sensitivity.");
                             iniCheckbox(state, "On##mousecamera", "Game", "MouseCamera", true);
                         }
                         settingLabel("Menu buttons", "Classic: as on the PS2, circle and cross confirm and triangle "
@@ -688,7 +1079,7 @@ namespace kamite::launcher
                 {
                     if (beginSettings("mods"))
                     {
-                        settingLabel("Character", "Who you play as. Other characters use Gene's moves and his gauntlet arm "
+                        settingLabel("Character", "Who you play as. Other characters use Gene's moves and his gauntlet "
                                                   "arm.");
                         static std::vector<characters::Character> list;
                         if (list.empty())
@@ -713,44 +1104,41 @@ namespace kamite::launcher
                 }
                 if (ImGui::BeginTabItem("Controls"))
                 {
-                    ImGui::TextWrapped("Controllers (Xbox, PlayStation, Steam and others) work without setup, and the "
-                                       "button prompts in the game show your controller's buttons.");
-                    ImGui::Spacing();
-                    if (beginSettings("controls"))
+                    drawControls(state);
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Experimental"))
+                {
+                    if (beginSettings("experimental"))
                     {
-                        settingLabel("Button prompts", "The buttons the game shows for a controller. Automatic picks them "
-                                                       "from the controller you use; keys and mouse always show keys. "
-                                                       "Prompt art: Xelu's free prompts (CC0).");
-                        iniCombo(state, "##buttonprompts", "Game", "ButtonPrompts", "auto",
-                                 [](const char *id, std::string &value) { return choiceCombo(id, kButtonPrompts, value); });
+                        settingLabel("See-through", "Walls and pillars between the camera and Gene dissolve in an oval "
+                                                    "round him, so he and the enemies about him stay in view. Walls next "
+                                                    "to the camera, which the PS2 drops, are drawn too. Known: a banded "
+                                                    "blur where hazy distance shows through (the depth of field reads "
+                                                    "the dissolve).",
+                                     "F2 > Camera sizes it while playing.");
+                        iniCheckbox(state, "On##seethrough", "Video", "SeeThrough", true);
                         ImGui::EndTable();
                     }
-                    ImGui::Spacing();
-                    ImGui::TextWrapped("Keyboard and controller bindings are kept in controls.ini next to the game. "
-                                       "Remapping them on this screen is coming.");
-                    ImGui::Spacing();
-                    if (ImGui::Button("Open controls.ini"))
-                        platform::open(state.context->exeDir / "controls.ini");
                     ImGui::EndTabItem();
                 }
                 ImGui::EndTabBar();
             }
             ImGui::EndChild();
             ImGui::Dummy(ImVec2(0.0f, fontSize(state, 6.0f)));
-            ImGui::SetCursorPosX((ImGui::GetWindowWidth() - width) * 0.5f);
-            iniCheckbox(state, "Show advanced settings##advanced", "Launcher", "ShowAdvanced", false);
-            ImGui::SameLine();
             const float backWidth = fontSize(state, 200.0f);
             ImGui::SetCursorPosX((ImGui::GetWindowWidth() - backWidth) * 0.5f);
             const bool back = ImGui::Button("Back", ImVec2(backWidth, 0.0f));
             if (state.focusFirst)
                 ImGui::SetItemDefaultFocus();
-            const bool cancel = !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId) &&
+            const bool cancel = !g_captureFrame && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId) &&
                                 (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false));
             ImGui::PopFont();
             if (back || cancel)
             {
                 state.ini.save();
+                saveControls();
+                g_resetArmed = false;
                 state.screen = Screen::Home;
                 state.focusFirst = true;
                 return;
@@ -843,6 +1231,7 @@ namespace kamite::launcher
             EndDrawing();
         }
         state.ini.save();
+        saveControls();
         if (state.logo.id != 0u)
             UnloadTexture(state.logo);
         rlImGuiShutdown(); // the F12 debugger sets ImGui up again later

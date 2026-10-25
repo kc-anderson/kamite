@@ -34,6 +34,7 @@ bool ps2xVu1LastRunHitBudget(); // vu/ps2_vu1_core.cpp: sweep R2
 #include <stdexcept>
 #include <fstream>
 #include <algorithm>
+#include <cstdlib>
 #include <array>
 #include <cstring>
 #include <limits>
@@ -1081,6 +1082,16 @@ bool PS2Runtime::syncCoreSubsystems()
     m_boundGSVram = gsVram;
     return true;
 }
+#if !defined(PLATFORM_VITA)
+// raylib's borderless mode also makes the window topmost (GLFW_FLOATING): it then stayed over every other app, even
+// after Alt+Tab. A borderless window filling the screen behaves as full screen without it, like other games.
+static void keepBorderlessBehind()
+{
+    if (IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE) && IsWindowState(FLAG_WINDOW_TOPMOST))
+        ClearWindowState(FLAG_WINDOW_TOPMOST);
+}
+#endif
+
 
 // The game window (raylib): made once, by the port's launcher or by PS2Runtime::initialize; a second call keeps the
 // window and applies the size and fullscreen settings again if they changed.
@@ -1099,8 +1110,8 @@ void ps2_host_display::openHostWindow(const char *title)
     }
     else
         SetWindowTitle(title);
-    // Window size (PS2X_WINDOW_SIZE): "auto" (default) = 3/4 of the monitor's height in the display's shape,
-    // centered; "<w>x<h>" = that client size, centered; "native" = HOST_WINDOW_WIDTH x HOST_WINDOW_HEIGHT as before.
+    // Window size (PS2X_WINDOW_SIZE): "auto" (default) = the internal resolution's height (448 x PS2X_GS_SCALE, at most
+    // 9/10 of the monitor's) in the display's shape, centered; "<w>x<h>" = that client size, centered; "native" = HOST_WINDOW_WIDTH x HOST_WINDOW_HEIGHT as before.
     static std::string s_appliedSize;
     const char *sizeValue = std::getenv("PS2X_WINDOW_SIZE");
     const std::string sizeKey = std::string(sizeValue ? sizeValue : "") + "@" + std::to_string(ps2_host_display::aspect());
@@ -1117,8 +1128,11 @@ void ps2_host_display::openHostWindow(const char *title)
             int width = 0, height = 0;
             if (std::sscanf(mode.c_str(), "%dx%d", &width, &height) != 2 || width < 320 || height < 240)
             {
+                // auto: the internal resolution's height (448 per step of PS2X_GS_SCALE), at most 9/10 of the monitor.
                 const float aspect = std::max(0.5f, ps2_host_display::aspect());
-                height = monitorHeight * 3 / 4;
+                const char *scaleText = std::getenv("PS2X_GS_SCALE");
+                const int scale = std::clamp(scaleText && *scaleText ? std::atoi(scaleText) : 3, 1, 8);
+                height = std::min(448 * scale, monitorHeight * 9 / 10);
                 width = static_cast<int>(static_cast<float>(height) * aspect + 0.5f);
                 if (width > monitorWidth * 9 / 10)
                 {
@@ -1140,6 +1154,7 @@ void ps2_host_display::openHostWindow(const char *title)
     // A window kept from the launcher: its shape is set again only if the settings changed it.
     if (ps2_host_display::startFullscreen != IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE))
         ToggleBorderlessWindowed();
+    keepBorderlessBehind();
     if (ps2_host_display::startMaximized && !IsWindowState(FLAG_WINDOW_MAXIMIZED))
         MaximizeWindow();
     SetExitKey(KEY_NULL);
@@ -3369,6 +3384,7 @@ void PS2Runtime::run()
             if (!leavingFullscreen)
                 restoreMaximized = IsWindowMaximized();
             ToggleBorderlessWindowed();
+            keepBorderlessBehind();
             if (leavingFullscreen && restoreMaximized)
                 MaximizeWindow();
         }

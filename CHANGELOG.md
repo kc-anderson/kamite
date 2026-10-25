@@ -2,6 +2,24 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026
+
+- **Borderless fullscreen is a normal window again:** raylib's borderless mode also made the window topmost, so it
+  stayed over every other app even after Alt+Tab. That flag is now cleared (at start and on F11).
+- **Launcher Options reworked:** a line between settings, a setting's own sub-options in its section; F2/F7/F11
+  hints on a "NOTE:" line of their own; "Show advanced settings" sits under Camera with the camera's advanced
+  settings in its section; Menus is now "Menu width"; the HD texture pack is "Replacement textures" with its folder
+  in the same section; Window and Window size share a section. New defaults: aspect ratio 16:9 (menu width 4:3, camera
+  as on the PS2 as before). See-through moved to a new Experimental tab.
+- **Near geometry follows See-through:** it only exists for the see-through, so it is on with it and off without (read
+  at start); its own setting is gone.
+- **Window size, Automatic:** follows the internal resolution (448 x InternalResolution high, at most 9/10 of the
+  screen) instead of 3/4 of the screen.
+- **Controls in the launcher:** Options > Controls has player 1's bindings, keyboard & mouse (two keys per button) or
+  controller (one each): click a cell and press the key, mouse button, controller button, stick or trigger; right-click
+  clears; one button resets everything to the defaults. The same controls.ini as the F1 screen in game, saved when
+  leaving Options or the launcher.
+
 ## October 25, 2026 (night)
 
 - **Button prompts at full resolution, with or without a texture pack.** The prompts come from Xelu's free prompt pack
