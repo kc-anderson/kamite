@@ -10,6 +10,7 @@
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -796,11 +797,26 @@ namespace kamite::style_presets
 
         // A piece's width in the text, in the units cMessDrawFont_measureCode gets from func_002B12D8 for an icon (32 =
         // a cell, drawn as a 26-unit square; a piece is drawn at side / 28 a texel, so w texels = w x 26 / 28 units).
+        // Every arrow advances by the widest arrow, so the names start in one column (K, Oct 25).
         float pieceAdvance(int piece)
         {
-            const prompt_sheets::ArrowRect r = pieceRect(piece);
-            const float texels = (r.x1 - r.x0) + (piece == kPlusPiece ? 0.0f : kArrowTextGap);
+            float texels = 0.0f;
+            if (piece == kPlusPiece)
+                texels = pieceRect(piece).x1 - pieceRect(piece).x0;
+            else
+            {
+                for (int i = 0; i < kStyles; ++i)
+                    texels = std::max(texels, pieceRect(i).x1 - pieceRect(i).x0);
+                texels += kArrowTextGap;
+            }
             return texels * (26.0f / 28.0f);
+        }
+
+        // The list's text entry or its shadow is being drawn (the shadow draws no icons but measures and advances
+        // over them: it gets the same widths, so its letters sit under the text's).
+        bool drawingList()
+        {
+            return g_listEntry && (g_drawingEntry == g_listEntry || g_drawingEntry == g_shadowEntry);
         }
 
         int pieceOfCode(uint16_t code)
@@ -817,7 +833,7 @@ namespace kamite::style_presets
         // (this measure centres the block; the draw advances on its own, below).
         void onIconWidth(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
-            if (!g_ram || !g_listEntry || g_drawingEntry != g_listEntry)
+            if (!g_ram || !drawingList())
                 return;
             const int piece = pieceOfCode(rd16(GPR_U32(ctx, 17)));
             if (piece >= 0)
@@ -830,7 +846,7 @@ namespace kamite::style_presets
         // kArrowTextGap.
         void onIconAdvance(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
-            if (!g_ram || !g_listEntry || g_drawingEntry != g_listEntry)
+            if (!g_ram || !drawingList())
                 return;
             const uint32_t code = rd32(GPR_U32(ctx, 18) + 0x64u);
             if (!validPointer(code))
