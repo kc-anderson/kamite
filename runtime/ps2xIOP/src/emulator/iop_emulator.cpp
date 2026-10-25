@@ -839,7 +839,7 @@ namespace ps2x::iop::detail
         }
 
         // Where a held thread is: IRX id + offset, and whether it spins on a jump to itself. CRI ADX 9.67's SJ error
-        // handler ends in such a loop at IRX offset 0xb57c (God Hand: IRX id of "CRI ADX Driver", base 0x2c800) after
+        // handler ends in such a loop at IRX offset 0xb57c (IRX id of "CRI ADX Driver", base 0x2c800) after
         // printing e.g. "E2004090212 : Specified handle is invalid." with interrupts off (sweep IOPR-6).
         std::string describeCriHalt(uint32_t pc) const
         {
@@ -1257,7 +1257,7 @@ namespace ps2x::iop::detail
 
             // The IOP loader (modload StartModule) calls module_start(argc, argv): argv[0] is the module path, argv[1..]
             // are the NUL-separated strings of the argument block (sceSifLoadModule's arglen bytes; an unterminated
-            // last string is closed), argv[argc] = 0. God Hand's CRI_ADXI ("sdinit=0\0spucore=1") and SNDDRV ("dmach=0")
+            // last string is closed), argv[argc] = 0. The game's CRI_ADXI ("sdinit=0\0spucore=1") and SNDDRV ("dmach=0")
             // parse argv; passing (byte count, raw text) left CRI at its defaults (second cold sceSdInit, ADMA on core 0).
             std::vector<uint32_t> argOffsets;
             const auto *argBytes = static_cast<const uint8_t *>(arguments);

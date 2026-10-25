@@ -1,4 +1,4 @@
-"""SNR2 module format (God Hand's DLL / '.rel' format, also used for the boot ELF's own .sndata module #0).
+"""SNR2 module format (the game's DLL / '.rel' format, also used for the boot ELF's own .sndata module #0).
 
 Read-only parsing. Every field below is read by the game's loader in SLUS_215.03; addresses cite the boot ELF
 (see port/generated/<name>_0x<addr>.cpp for the per-instruction listing):

@@ -430,7 +430,7 @@ namespace ps2x::iop::detail
                     return {adma.left[255], adma.right[255]};
                 return {0, 0};
             }
-            // God Hand 2026-10-19 (user: music "cut out or crackled" in stage 3, no host-side gap): log streamed
+            // 2026-10-19 (user: music "cut out or crackled" in stage 3, no host-side gap): log streamed
             // blocks that came 1 ms or more late; until then the last sample was held, heard as a cut-out or click.
             if (const uint32_t late = g_admaLateRun[core & 1u]; late != 0u)
             {
@@ -554,8 +554,8 @@ namespace ps2x::iop::detail
         }
     }
 
-    // God Hand 2026-10-18 diagnosis: the whole mix went exactly silent for 8-10 ms about every 0.4 s in stage 2 while
-    // the game was loud around it. When the output drops to exact zero right after loud sound, log (rate-limited) what
+    // 2026-10-18 diagnosis: the whole mix went exactly silent for 8-10 ms about every 0.4 s in stage 2 while
+    // The game was loud around it. When the output drops to exact zero right after loud sound, log (rate-limited) what
     // the mixer saw: ATTR/MMIX per core, MVOL/AVOL/BVOL/EVOL as written, core 0's output and how many voices sound.
     void IopSpu2::reportSilentDrop(const std::array<int32_t, 2> &core0, const std::array<int32_t, 2> &output)
     {
@@ -591,7 +591,7 @@ namespace ps2x::iop::detail
                      sounding[0], sounding[1], autoDma(0u) ? 1u : 0u, autoDma(1u) ? 1u : 0u);
     }
 
-    // God Hand 2026-10-19: the mix dropped to exact 0 after loud sound with only the core 1 stream (ADMA) playing and
+    // 2026-10-19: the mix dropped to exact 0 after loud sound with only the core 1 stream (ADMA) playing and
     // no block late, so the stream itself delivered silence. Log what the stream gives: runs of all-zero blocks right
     // after loud ones (with their length; seconds = a track change), and non-zero blocks equal to one of the last 64
     // (a stale buffer played again, heard as a stutter or crackle). At most 60 lines.
@@ -717,7 +717,7 @@ namespace ps2x::iop::detail
             const int32_t master = volume(reg(shared + channel * 2u));
             output[channel] = scale(saturate(mixed), master);
         }
-        // ATTR bit 14 ("mute"). God Hand 2026-10-18: the whole mix went digitally silent for 8-10 ms about every 0.4 s
+        // ATTR bit 14 ("mute"). 2026-10-18: the whole mix went digitally silent for 8-10 ms about every 0.4 s
         // in stage 2 fights and the God Reel menu (logs/audio_out_last.pcm, the user's "sound cuts out"). Exact zero
         // under a reverb tail can only come from this final gate (or MVOL 0). PCSX2 ignores the bit (spu2sys.cpp
         // REG_C_ATTR: "thiscore.Mute = 0"), because drivers rewrite ATTR around their transfers. Ignored here too;

@@ -1,6 +1,6 @@
 // Controls screen (F1 / controller Back+Start): Tokyo Jungle's in-game rebinding screen (cellPad.c overlay) for this
 // runtime. The bindings live in ps2_host_input (PCSX2 [PadN] syntax, the controls file); this file is the screen: input,
-// capture, drawing and the GODHAND_CONTROLS_SELFTEST script. Window thread only.
+// capture, drawing and the KAMITE_CONTROLS_SELFTEST script. Window thread only.
 #include "runtime/ps2_controls_screen.h"
 #include "ps2_host_backend.h"
 #include "ps2_host_gamepads.h"
@@ -30,8 +30,8 @@ namespace ps2x::controls
         namespace pc = ps2_host_input::controls;
         using Clock = std::chrono::steady_clock;
 
-        // Rows in the order of Tokyo Jungle's screen (face buttons first). Actions from the God Hand manual
-        // (port_prep/controls/labels/godhand_labels.txt); buttons without a known action show the button only.
+        // Rows in the order of Tokyo Jungle's screen (face buttons first). Actions from the game manual
+        // (port_prep/controls/labels/kamite_labels.txt); buttons without a known action show the button only.
         struct Row
         {
             const char *key;    // PCSX2 [PadN] key
@@ -46,7 +46,7 @@ namespace ps2x::controls
             {"L1", "Turn around", "L1"},
             {"R1", "God Reel", "R1"},
             {"L2", "Taunt", "L2"},
-            {"R2", "God Hand", "R2"},
+            {"R2", "Unleash", "R2"},
             {"L3", "", "L3 (left stick click)"},
             {"R3", "", "R3 (right stick click)"},
             {"Start", "Pause menu", "Start"},
@@ -139,7 +139,7 @@ namespace ps2x::controls
         int g_fontSize = 0;
         bool g_fontOwned = false;
 
-        // GODHAND_CONTROLS_SELFTEST
+        // KAMITE_CONTROLS_SELFTEST
         struct SelfTest
         {
             bool active = false;
@@ -603,7 +603,7 @@ namespace ps2x::controls
                     return command(Command::Other, drawable, false);
         }
 
-        // ---- self-test (GODHAND_CONTROLS_SELFTEST) ----------------------------------------------------------------------
+        // ---- self-test (KAMITE_CONTROLS_SELFTEST) ----------------------------------------------------------------------
         constexpr const char *kDefaultScript =
             "dumpdefaults,wait:240,f1,wait:5,shot,down,down,right,enter,key:U,wait:2,shot,esc,wait:3,holdcheck,"
             "expect:Square=Keyboard/U,expect:Square=Keyboard/J,expect:Square=SDL-0/FaceWest,"
@@ -764,7 +764,7 @@ namespace ps2x::controls
             if (!started)
             {
                 started = true;
-                const char *value = std::getenv("GODHAND_CONTROLS_SELFTEST");
+                const char *value = std::getenv("KAMITE_CONTROLS_SELFTEST");
                 if (!value || !*value || std::string_view(value) == "0")
                     return;
                 const std::string script = std::string_view(value) == "1" ? kDefaultScript : value;

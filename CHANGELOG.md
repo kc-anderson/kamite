@@ -2,6 +2,20 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 25, 2026 (later)
+
+- **The project is now Kamite.** The exe is `kamite.exe`, the settings file `kamite.ini`, the start script
+  `Start-Kamite.cmd`; switches are `KAMITE_*` and the code lives in `src/kamite`. An existing `godhand.ini` next to the
+  exe is copied to `kamite.ini` once on the first start (its switches renamed). The README is simplified; building and
+  using the port is in `docs/BUILDING.md`.
+- **Menu button text from the disc:** with Modern menu buttons, the reworded hints (roulette bar, Change/Select, the
+  dialogs' Yes/No, the save menu's Confirm/Cancel) are written over the game's files as they are read from the disc,
+  checked against the disc's own text first. The thread that searched RAM for the save-menu text twice a second is
+  gone (it stays only as the fallback when a text is not where the disc should have it).
+- **Tools:** `tools/models/mot.py` reads the game's motions and samples them at any time (ported from chihuahua's
+  reader, checked against it), `tools/models/seq.py` reads and edits the motions' event tables (speed windows, sound
+  cues, attack windows, effects), and the model reader understands room geometry.
+
 ## October 25, 2026
 
 - **Menu buttons** (`[Game] MenuButtons=classic|modern`, launcher Gameplay > Menu buttons). Classic is the PS2's:
@@ -66,9 +80,9 @@ Newest first. Each change is commented in the code where it was made.
   open up even with the camera far behind them (the "bubble"), and the ground below his middle (floors, steps, table
   tops) never dissolves: the floor before his feet used to dissolve in stripes of dither.
 - **Crash reports for silent crashes:** a crash that skips the in-game reporter (a fail-fast, heap corruption) is still
-  recorded by Windows; at start the game reads the last three days of godhand.exe crashes from the Application event log
+  recorded by Windows; at start the game reads the last three days of kamite.exe crashes from the Application event log
   and writes them to the log (code, module, offset, and the function when it is this build). Heap corruption and stack
-  overflow are also logged as they are raised (src/godhand/crash_history.cpp).
+  overflow are also logged as they are raised (src/kamite/crash_history.cpp).
 
 ## October 24, 2026
 
@@ -87,7 +101,7 @@ Newest first. Each change is commented in the code where it was made.
   and every PATH1 packet goes through a filter that cuts what the GS cannot take from the full 32-bit positions the
   packet still carries: along the screen range (exact: everything the GS interpolates is affine on screen), and at the
   near plane in clip space for triangles reaching behind the camera. The game's strip stitching is read from each
-  batch's input in VU1 memory, so stitches stay out and back faces are recognised (src/godhand/near_geometry.cpp;
+  batch's input in VU1 memory, so stitches stay out and back faces are recognised (src/kamite/near_geometry.cpp;
   runtime hooks in ps2_vu1_hooks.h). F2 > Graphics shows its counters, and the log a line every 200,000 packets. A triangle with a corner between the camera and the near plane is cut there too (its depth runs past the 16-bit range: clamped, whole surfaces flickered in front of others).
 - **See-through oval:** both radii at the same scale (it was squashed when the camera looked down); default half-height 2.2 m.
 - **See-through** (`[Video] SeeThrough`, on; launcher Display; F2 > Camera sizes it live): walls, pillars and stalls
@@ -136,7 +150,7 @@ Newest first. Each change is commented in the code where it was made.
   edges. Nothing changes at 4:3 and 100%.
 - **F2 in-game menu, Camera tab:** field of view, field of view in fights, camera distance and tilt, the enemy
   setting and the presets, all applied while playing; "Keep playing" leaves the controller and keyboard to the game
-  and the mouse to the menu; Save writes godhand.ini and shows the values as a preset line.
+  and the mouse to the menu; Save writes kamite.ini and shows the values as a preset line.
 - **Launcher:** Display > Camera offers presets ("As on the PS2", "Wider", "Widest", "Action"); "Show advanced settings" shows
   the camera's own values.
 - **Field of view** (Display > Field of view, `[Video] FieldOfView`, 100-150%): the gameplay camera's own fov is
@@ -155,18 +169,18 @@ Newest first. Each change is commented in the code where it was made.
 
 ## October 23, 2026
 
-- **The project is God Hand: Rearmed**, on its own `main` branch; the launcher and window carry the name, and the
+- **The project is Kamite**, on its own `main` branch; the launcher and window carry the name, and the
   launcher draws `resources/images/logo.png` when it is there.
-- **Function names from the decomp:** `recomp/godhand_functions.csv` carries the decomp's names (4,255 of the 10,553
+- **Function names from the decomp:** `recomp/kamite_functions.csv` carries the decomp's names (4,255 of the 10,553
   functions; `tools/symbols/import_decomp_names.py` refreshes them), the generated code is named after them, and the
   crash log, the hang dump, the PC sampler and the call profiler print `cPlCamera_update+0x1c` instead of an address.
 - **Post effects option** (Graphics): the game's blur and heat-haze passes at the PS2's resolution (PCSX2's fix, grainy
   at 3x and up) or upscaled.
-- **Xavier:** the arm stump is capped, Gene's God Hand arm is clipped exactly where it enters the stump and its skin
+- **Xavier:** the arm stump is capped, Gene's gauntlet arm is clipped exactly where it enters the stump and its skin
   fades in from the fur colour, the gauntlet stays under the shoulder pad, the cheeks sit inside the loincloth, the
   hair strips no longer z-fight (lifted off the scalp and each other), the hair a little shorter and off the neck.
 - **Playable characters:** `[Mods] Character=gene|xavier`; Xavier (from *Xavier: Renegade Angel*) in place of Gene,
-  with Gene's God Hand arm and his loincloth on the coat's cloth physics, full-resolution textures through the
+  with Gene's gauntlet arm and his loincloth on the coat's cloth physics, full-resolution textures through the
   renderer's replacement system. Character files are written over the game's at disc level (the AFS table is never
   changed: a changed size broke later files).
 - **Launcher** in the game window: Install (pick and check the disc image), Play, Options (Display, Graphics, Gameplay,
@@ -178,7 +192,7 @@ Newest first. Each change is commented in the code where it was made.
 
 ## October 22, 2026
 
-- **PCSX2's hardware renderer** (Direct3D 11, `pcsx2gs.dll`) is the default, with God Hand's PCSX2 GameIndex fixes.
+- **PCSX2's hardware renderer** (Direct3D 11, `pcsx2gs.dll`) is the default, with the game's PCSX2 GameIndex fixes.
 - **VU1 microcode compiled ahead of time** per upload (`build.py vu`), captured uploads included; MTVU on by default.
   The in-game slowdowns of the first builds are gone.
 - **60 FPS mode** (`[Game] Fps60=1`): a port of the "60 Fps" PCSX2 patch as switchable recompiler patches, with the
@@ -188,24 +202,24 @@ Newest first. Each change is commented in the code where it was made.
 - **Any aspect ratio** (`[Video] AspectRatio`): a port of the PCSX2 widescreen patch plus a HUD layout system that
   places each on-screen group per screen third; low-health corners and other screen-edge overlays stay stretched.
 - **Crash log** for normal runs (exception, module and offset, guest pc, host stack), a PC sampler
-  (`GODHAND_PC_SAMPLE`), a call profiler (`GODHAND_CALL_PROFILE`), a counter finder, HUD frame dumps (F6) and the RAM
+  (`KAMITE_PC_SAMPLE`), a call profiler (`KAMITE_CALL_PROFILE`), a counter finder, HUD frame dumps (F6) and the RAM
   dump (F8).
 - Window opens at a usable size; SDL3 controllers on; build fixes.
 
 ## Before the fork: LasVola's godhand-recomp (to October 20, 2026)
 
-The entries below are from the project God Hand: Rearmed was forked from.
+The entries below are from the project Kamite was forked from.
 
 ## October 20, 2026
 
 - **Minigames show the proper buttons:** the crates in the pirate ship cannon minigame (stage 3) showed the PS2
   symbols. They now show your bound keys, or A/B/X/Y on an Xbox-style controller, and switch the moment you change
-  between keyboard and controller (`src/godhand/crate_prompts.cpp`, `src/godhand/button_prompts.cpp`). A PlayStation
+  between keyboard and controller (`src/kamite/crate_prompts.cpp`, `src/kamite/button_prompts.cpp`). A PlayStation
   controller keeps the original symbols.
 - **Sound cutting out in stage 3:** the same kind of gap as in stage 2 (the streamed music reaching the sound
   processor late). Data transfers to the sound side are now reported finished after a short, PCSX2-like delay
   (`Kernel/Stubs/SIF.cpp`). Not heard in the next play session. New log lines (`[sif-dma]`, `[spu2-adma]`) show it if it comes back.
-- Note for developers: `GODHAND_STALL_DUMP` pauses the game itself for up to about 1.5 s each time it fires (it loads
+- Note for developers: `KAMITE_STALL_DUMP` pauses the game itself for up to about 1.5 s each time it fires (it loads
   the debug symbols). Use it only to catch a freeze, not during normal play.
 
 ## October 19, 2026
@@ -215,7 +229,7 @@ The entries below are from the project God Hand: Rearmed was forked from.
   in-place depth shuffle, and the blur passes keep their original resolution (`gs_gpu_backend.cpp`).
 - **Freezes up to about a second** when the game read from the disc: the port reopened the whole disc image for
   every read. It now stays open, and the image is loaded into memory in the background at start
-  (`Kernel/Stubs/Helpers/Support.h`, `src/main.cpp`; `GODHAND_ISO_PREFETCH=0` turns the background load off).
+  (`Kernel/Stubs/Helpers/Support.h`, `src/main.cpp`; `KAMITE_ISO_PREFETCH=0` turns the background load off).
 
 ## October 18, 2026 (evening)
 
@@ -228,7 +242,7 @@ The entries below are from the project God Hand: Rearmed was forked from.
 - **The game could close while saving** after about 30 minutes of play: a small memory area for game threads was
   never given back. It is now reused (`EeScheduler.cpp`).
 - **Button prompts show your bound keys** (for example "F" instead of the PS2 circle), or Xbox-style names with a
-  controller (`src/godhand/button_prompts.cpp`).
+  controller (`src/kamite/button_prompts.cpp`).
 - **Controls:**
   - Start/Select no longer reach the game while you press Back + Start for the Controls screen.
   - Alt+Tab and similar shortcuts are no longer recorded as a key while rebinding.
@@ -236,7 +250,7 @@ The entries below are from the project God Hand: Rearmed was forked from.
   - The Windows Sticky Keys popup no longer appears while playing.
 - **Rare missing 3D pieces** in busy scenes: long-running VU1 programs are now finished instead of cut off.
 - **The ending credits cannot hang** if a movie ever stalls (a 20-second safety check).
-- Diagnostics for developers: `GODHAND_STALL_DUMP=<ms>` prints every thread's stack when the game stalls.
+- Diagnostics for developers: `KAMITE_STALL_DUMP=<ms>` prints every thread's stack when the game stalls.
 
 ## October 18, 2026 (morning)
 

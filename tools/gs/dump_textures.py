@@ -11,7 +11,7 @@ from a TIM3), the vertex and CLUT alphas of its draws, blend state, screen box (
 import sys, struct
 HERE=__import__('os').path.dirname(__import__('os').path.abspath(__file__)); sys.path.insert(0,HERE); sys.path.insert(0,HERE+'/../models'); sys.path.insert(0,HERE+'/../models/xavier')
 import gif_dump as G, numpy as np, xxhash
-from ghtex import _addr4, _addr8, _addr32
+from gametex import _addr4, _addr8, _addr32
 dump=sys.argv[1]; packlist=sys.argv[2] if len(sys.argv)>2 else None
 vram=None
 for k,p in G.records(dump):

@@ -683,7 +683,7 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
                     // An IMAGE tag cut at the end of this DIRECT is continued by exactly one layer: the GS frontend's
                     // GIF continuation when it is on (default; it resumes the real tag with the next packet), else the
                     // synthesized IMAGE tag above. Doing both makes the frontend read the synthesized tag as a pixel
-                    // qword and the upload's last qword as a new GIFtag (God Hand title: CLUT tail -> PACKED nloop
+                    // qword and the upload's last qword as a new GIFtag (the game title: CLUT tail -> PACKED nloop
                     // 30975 that swallowed every later packet, FBP 0 never written, black screen).
                     const uint32_t pendingImageQw = ps2xGsGifContinuationEnabled() ? 0u : pendingGifImageQwc(packets, packetBytes);
                     if (pendingImageQw != 0u)

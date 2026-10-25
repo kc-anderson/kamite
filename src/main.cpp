@@ -1,7 +1,7 @@
-// God Hand (USA, SLUS-21503) native port: the game layer's entry point (DRAFT, not compiled yet).
+// The game (USA, SLUS-21503) native port: the game layer's entry point (DRAFT, not compiled yet).
 // Adapted from the Urban Reign port's src/main.cpp (forks/urban-reign-recomp @2fa53c4). Kept: the generic start-up
 // (CPU check, crash reporter, settings file -> environment, disc check, runtime set-up, function hooks, HLE bindings,
-// diagnostics). Removed: everything Urban Reign-specific (GODHAND_PORT_NOTES.md lists each part with its line numbers).
+// diagnostics). Removed: everything Urban Reign-specific (KAMITE_PORT_NOTES.md lists each part with its line numbers).
 // Added: hidden (headless) runs, a wall-clock time limit with a hang dump, exit codes for scripted boots, and the
 // SNR2 DLL load logger.
 
@@ -15,32 +15,32 @@
 #include "runtime/gs/gs_gpu_backend.h"
 #include "runtime/gs/gs_pcsx2_backend.h"
 #include "runtime/gs/gs_threaded_backend.h"
-#include "godhand/call_profile.h"
-#include "godhand/guest_symbols.h"
-#include "godhand/button_prompts.h"
-#include "godhand/menu_buttons.h"
-#include "godhand/radar_glow.h"
-#include "godhand/call_trace.h"
-#include "godhand/default_ini.h" // generated from godhand.ini by src/CMakeLists.txt
-#include "godhand/function_hooks.h"
-#include "godhand/game_disc.h"
-#include "godhand/hang_dump.h"
-#include "godhand/hle_bindings.h"
-#include "godhand/host_window.h"
-#include "godhand/log.h"
-#include "godhand/movie_watchdog.h"
-#include "godhand/frame_patches.h"
-#include "godhand/game_options.h"
-#include "godhand/character_mods.h"
-#include "godhand/widescreen.h"
-#include "godhand/near_geometry.h"
-#include "godhand/crash_history.h"
-#include "godhand/camera.h"
-#if GODHAND_HAS_LAUNCHER
-#include "godhand/launcher.h"
+#include "kamite/call_profile.h"
+#include "kamite/guest_symbols.h"
+#include "kamite/button_prompts.h"
+#include "kamite/menu_buttons.h"
+#include "kamite/radar_glow.h"
+#include "kamite/call_trace.h"
+#include "kamite/default_ini.h" // generated from kamite.ini by src/CMakeLists.txt
+#include "kamite/function_hooks.h"
+#include "kamite/game_disc.h"
+#include "kamite/hang_dump.h"
+#include "kamite/hle_bindings.h"
+#include "kamite/host_window.h"
+#include "kamite/log.h"
+#include "kamite/movie_watchdog.h"
+#include "kamite/frame_patches.h"
+#include "kamite/game_options.h"
+#include "kamite/character_mods.h"
+#include "kamite/widescreen.h"
+#include "kamite/near_geometry.h"
+#include "kamite/crash_history.h"
+#include "kamite/camera.h"
+#if KAMITE_HAS_LAUNCHER
+#include "kamite/launcher.h"
 #endif
-#include "godhand/pc_sampler.h"
-#include "godhand/thread_policy.h"
+#include "kamite/pc_sampler.h"
+#include "kamite/thread_policy.h"
 
 #if defined(PS2X_ENABLE_DEBUG_UI)
 #include "ps2_debug_panel.h"
@@ -77,12 +77,12 @@
 #include <cwchar>
 #endif
 
-#if GODHAND_HAS_VU1_PROGRAMS
+#if KAMITE_HAS_VU1_PROGRAMS
 void registerGeneratedVu1Programs(); // generated/vu1/vu1_programs.cpp (VU1 microcode compiled ahead of time)
 #endif
 
-#if !defined(GODHAND_ARCH_NAME)
-#define GODHAND_ARCH_NAME "SSE41"
+#if !defined(KAMITE_ARCH_NAME)
+#define KAMITE_ARCH_NAME "SSE41"
 #endif
 
 namespace
@@ -93,11 +93,11 @@ namespace
     constexpr int kExitOk = 0;              // the runtime returned by itself (window closed, game thread ended)
     constexpr int kExitInitFailed = 1;      // runtime/ELF initialisation failed or a fatal exception
     constexpr int kExitNoDisc = 2;          // no disc image found
-    constexpr int kExitBadDisc = 3;         // not the God Hand (USA) disc, or the boot ELF hash differs
+    constexpr int kExitBadDisc = 3;         // not the USA disc (SLUS-21503), or the boot ELF hash differs
     constexpr int kExitCpu = 4;             // the CPU lacks SSE4.1 (or AVX2 for an AVX2 build)
     constexpr int kExitMissingFunction = 5; // stopped on a call to a guest address with no recompiled function (policy Stop)
     constexpr int kExitCrash = 6;           // unhandled exception, std::terminate or abort (see the [crash] lines)
-    constexpr int kExitTimeLimit = 124;     // GODHAND_TIME_LIMIT_SECONDS reached (same code as GNU timeout)
+    constexpr int kExitTimeLimit = 124;     // KAMITE_TIME_LIMIT_SECONDS reached (same code as GNU timeout)
 
     const fs::file_time_type g_startFileTime = fs::file_time_type::clock::now();
 
@@ -127,7 +127,7 @@ namespace
 
 #if defined(_WIN32)
     // The exe needs SSE4.1 (the PCSX2 minimum; the runtime uses SSE4.1 intrinsics), and AVX2 when built with
-    // GODHAND_ARCH=AVX2. Checked before any runtime code runs, so an old CPU gets a message instead of an
+    // KAMITE_ARCH=AVX2. Checked before any runtime code runs, so an old CPU gets a message instead of an
     // illegal-instruction crash. The default build's own compiler output is SSE2 only. GENERIC (Urban main.cpp:73-98).
     bool checkCpu(bool dialog)
     {
@@ -143,17 +143,17 @@ namespace
             __cpuidex(regs, 7, 0);
             avx2 = osAvx && (regs[1] & (1 << 5)) != 0;
         }
-        const bool needAvx2 = std::string_view(GODHAND_ARCH_NAME) == "AVX2";
-        std::fprintf(stderr, "[cpu] SSE4.1 %s, AVX2 %s; build %s\n", sse41 ? "yes" : "NO", avx2 ? "yes" : "no", GODHAND_ARCH_NAME);
+        const bool needAvx2 = std::string_view(KAMITE_ARCH_NAME) == "AVX2";
+        std::fprintf(stderr, "[cpu] SSE4.1 %s, AVX2 %s; build %s\n", sse41 ? "yes" : "NO", avx2 ? "yes" : "no", KAMITE_ARCH_NAME);
         const char *missing = !sse41 ? "SSE4.1" : (needAvx2 && !avx2 ? "AVX2" : nullptr);
         if (!missing)
             return true;
-        std::fprintf(stderr, "[cpu] this processor does not support %s, which this build of God Hand needs\n", missing);
+        std::fprintf(stderr, "[cpu] this processor does not support %s, which this build of Kamite needs\n", missing);
         if (dialog) // never a dialog in hidden runs: nothing may appear on screen
         {
             wchar_t text[160];
-            std::swprintf(text, 160, L"This processor does not support %hs, which this build of God Hand needs.", missing);
-            MessageBoxW(nullptr, text, L"God Hand: Rearmed", MB_OK | MB_ICONERROR);
+            std::swprintf(text, 160, L"This processor does not support %hs, which this build of Kamite needs.", missing);
+            MessageBoxW(nullptr, text, L"Kamite", MB_OK | MB_ICONERROR);
         }
         return false;
     }
@@ -187,8 +187,8 @@ namespace
     std::atomic<PS2Runtime *> g_crashRuntime{nullptr};
 
     // A native crash in a normal (windowed) run: the exception, the module and offset of the faulting code, the guest
-    // PC the EE was at, and the host stack walked from the faulting context (function names when godhand.pdb is next
-    // to godhand.exe), written to the log before Windows' own crash handling goes on.
+    // PC the EE was at, and the host stack walked from the faulting context (function names when kamite.pdb is next
+    // to kamite.exe), written to the log before Windows' own crash handling goes on.
     LONG WINAPI crashLogFilter(EXCEPTION_POINTERS *info)
     {
         static std::atomic<bool> entered{false};
@@ -232,9 +232,9 @@ namespace
         {
             if (const R5900Context *ctx = runtime->eeScheduler().currentContext())
                 std::fprintf(stderr, "[crash] guest: pc 0x%08x (%s) ra 0x%08x (%s) sp 0x%08x\n", ctx->pc,
-                             godhand::symbols::describe(ctx->pc).c_str(),
+                             kamite::symbols::describe(ctx->pc).c_str(),
                              static_cast<uint32_t>(_mm_cvtsi128_si32(ctx->r[31])),
-                             godhand::symbols::describe(static_cast<uint32_t>(_mm_cvtsi128_si32(ctx->r[31]))).c_str(),
+                             kamite::symbols::describe(static_cast<uint32_t>(_mm_cvtsi128_si32(ctx->r[31]))).c_str(),
                              static_cast<uint32_t>(_mm_cvtsi128_si32(ctx->r[29])));
         }
         if (record.ExceptionCode != EXCEPTION_STACK_OVERFLOW && info->ContextRecord)
@@ -264,7 +264,7 @@ namespace
     // GENERIC (Urban main.cpp:141-168).
     void installCrashReporter()
     {
-        if (!envFlag("GODHAND_HEADLESS", false))
+        if (!envFlag("KAMITE_HEADLESS", false))
             SetUnhandledExceptionFilter(crashLogFilter);
         std::set_terminate([]()
                            {
@@ -336,7 +336,7 @@ namespace
         _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
     }
 
-    // ---- godhand.ini -> environment ---------------------------------------------------------------------------------
+    // ---- kamite.ini -> environment ---------------------------------------------------------------------------------
     // GENERIC idea of Urban main.cpp:435-556 (config.ini lines become environment variables; the environment wins),
     // without Urban's legacy-file conversion, mods list and template upgrade.
 
@@ -361,50 +361,50 @@ namespace
         const char *variable;
     };
     constexpr IniSetting kIniSettings[] = {
-        {"game", "iso", "GODHAND_ISO"},
-        {"game", "fps60", "GODHAND_FPS60"},
-        {"game", "l3dash", "GODHAND_L3_DASH"},
-        {"game", "roulettetimer", "GODHAND_ROULETTE_TIMER"},
-        {"game", "unlockhard", "GODHAND_UNLOCK_HARD"},
-        {"sound", "mutemusic", "GODHAND_MUTE_MUSIC"},
-        {"mods", "character", "GODHAND_CHARACTER"},
-        {"run", "headless", "GODHAND_HEADLESS"},
-        {"run", "timelimitseconds", "GODHAND_TIME_LIMIT_SECONDS"},
-        {"run", "dumpontimelimit", "GODHAND_DUMP_ON_TIME_LIMIT"},
-        {"run", "missingfunction", "GODHAND_MISSING_FUNCTION"},
-        {"run", "dlllog", "GODHAND_DLL_LOG"},
-        {"run", "logfile", "GODHAND_LOG_FILE"},
+        {"game", "iso", "KAMITE_ISO"},
+        {"game", "fps60", "KAMITE_FPS60"},
+        {"game", "l3dash", "KAMITE_L3_DASH"},
+        {"game", "roulettetimer", "KAMITE_ROULETTE_TIMER"},
+        {"game", "unlockhard", "KAMITE_UNLOCK_HARD"},
+        {"sound", "mutemusic", "KAMITE_MUTE_MUSIC"},
+        {"mods", "character", "KAMITE_CHARACTER"},
+        {"run", "headless", "KAMITE_HEADLESS"},
+        {"run", "timelimitseconds", "KAMITE_TIME_LIMIT_SECONDS"},
+        {"run", "dumpontimelimit", "KAMITE_DUMP_ON_TIME_LIMIT"},
+        {"run", "missingfunction", "KAMITE_MISSING_FUNCTION"},
+        {"run", "dlllog", "KAMITE_DLL_LOG"},
+        {"run", "logfile", "KAMITE_LOG_FILE"},
         {"video", "renderer", "PS2X_GS_RENDERER"},
         {"video", "internalresolution", "PS2X_GS_SCALE"},
-        {"video", "startmaximized", "GODHAND_START_MAXIMIZED"},
+        {"video", "startmaximized", "KAMITE_START_MAXIMIZED"},
         {"video", "windowsize", "PS2X_WINDOW_SIZE"},
-        {"video", "aspectratio", "GODHAND_ASPECT"},
-        {"video", "hudlayout", "GODHAND_HUD"},
-        {"video", "menulayout", "GODHAND_MENUS"},
-        {"video", "fieldofview", "GODHAND_FOV"},
-        {"video", "fightfieldofview", "GODHAND_FIGHT_FOV"},
-        {"video", "cameradistance", "GODHAND_CAMERA_DISTANCE"},
-        {"video", "cameratilt", "GODHAND_CAMERA_TILT"},
-        {"game", "enemiesfollowview", "GODHAND_ENEMY_VIEW"},
-        {"game", "controlstyle", "GODHAND_CONTROL_STYLE"},
-        {"game", "menubuttons", "GODHAND_MENU_BUTTONS"},
-        {"game", "modernauto", "GODHAND_MODERN_AUTO"},
-        {"game", "modernl1", "GODHAND_MODERN_L1"},
-        {"game", "cameraspeed", "GODHAND_CAMERA_SPEED"},
-        {"game", "camerapitchspeed", "GODHAND_CAMERA_PITCH_SPEED"},
-        {"game", "camerainvertx", "GODHAND_CAMERA_INVERT_X"},
-        {"game", "camerainverty", "GODHAND_CAMERA_INVERT_Y"},
-        {"game", "mousecamera", "GODHAND_MOUSE_CAMERA"},
-        {"game", "mousesensitivity", "GODHAND_MOUSE_SENSITIVITY"},
-        {"video", "startfullscreen", "GODHAND_START_FULLSCREEN"},
+        {"video", "aspectratio", "KAMITE_ASPECT"},
+        {"video", "hudlayout", "KAMITE_HUD"},
+        {"video", "menulayout", "KAMITE_MENUS"},
+        {"video", "fieldofview", "KAMITE_FOV"},
+        {"video", "fightfieldofview", "KAMITE_FIGHT_FOV"},
+        {"video", "cameradistance", "KAMITE_CAMERA_DISTANCE"},
+        {"video", "cameratilt", "KAMITE_CAMERA_TILT"},
+        {"game", "enemiesfollowview", "KAMITE_ENEMY_VIEW"},
+        {"game", "controlstyle", "KAMITE_CONTROL_STYLE"},
+        {"game", "menubuttons", "KAMITE_MENU_BUTTONS"},
+        {"game", "modernauto", "KAMITE_MODERN_AUTO"},
+        {"game", "modernl1", "KAMITE_MODERN_L1"},
+        {"game", "cameraspeed", "KAMITE_CAMERA_SPEED"},
+        {"game", "camerapitchspeed", "KAMITE_CAMERA_PITCH_SPEED"},
+        {"game", "camerainvertx", "KAMITE_CAMERA_INVERT_X"},
+        {"game", "camerainverty", "KAMITE_CAMERA_INVERT_Y"},
+        {"game", "mousecamera", "KAMITE_MOUSE_CAMERA"},
+        {"game", "mousesensitivity", "KAMITE_MOUSE_SENSITIVITY"},
+        {"video", "startfullscreen", "KAMITE_START_FULLSCREEN"},
         {"video", "posteffects", "PS2X_PCSX2_NATIVE_SCALING"},
         {"video", "depthoffield", "PS2X_PCSX2_DOF"},
         {"video", "precisedepth", "PS2X_PCSX2_PRECISE_DEPTH"},
-        {"video", "neargeometry", "GODHAND_NEAR_GEOMETRY"},
-        {"launcher", "show", "GODHAND_LAUNCHER"},
+        {"video", "neargeometry", "KAMITE_NEAR_GEOMETRY"},
+        {"launcher", "show", "KAMITE_LAUNCHER"},
     };
 
-    // Variables holding a path: a relative value from godhand.ini is made absolute against the exe folder (a value
+    // Variables holding a path: a relative value from kamite.ini is made absolute against the exe folder (a value
     // from the real environment is left as it is), and the folder it needs is created.
     enum class PathUse
     {
@@ -418,14 +418,14 @@ namespace
         PathUse use;
     };
     constexpr PathVariable kPathVariables[] = {
-        {"GODHAND_ISO", PathUse::Read},
-        {"GODHAND_DLL_LOG", PathUse::File},
-        {"GODHAND_LOG_FILE", PathUse::File},
-        {"GODHAND_DUMP_RAM", PathUse::File},
-        {"GODHAND_DUMP_VRAM", PathUse::File},
-        {"GODHAND_QUICK_STATE", PathUse::File},
-        {"GODHAND_CONTROLS_FILE", PathUse::File},
-        {"GODHAND_MC_DIR", PathUse::Directory},
+        {"KAMITE_ISO", PathUse::Read},
+        {"KAMITE_DLL_LOG", PathUse::File},
+        {"KAMITE_LOG_FILE", PathUse::File},
+        {"KAMITE_DUMP_RAM", PathUse::File},
+        {"KAMITE_DUMP_VRAM", PathUse::File},
+        {"KAMITE_QUICK_STATE", PathUse::File},
+        {"KAMITE_CONTROLS_FILE", PathUse::File},
+        {"KAMITE_MC_DIR", PathUse::Directory},
         {"PS2X_DUMP_RAM_ON_MISSING", PathUse::File},
         {"PS2X_BRANCH_TRACE_FILE", PathUse::File},
         {"PS2X_FRAME_TIMES", PathUse::File},
@@ -452,17 +452,36 @@ namespace
         return value;
     }
 
-    // PS2X_PAD1, PS2X_PAD1_CROSS, ...: the controller layout an older godhand.ini carried (not PS2X_PAD_SCRIPT/_FIFO).
+    // PS2X_PAD1, PS2X_PAD1_CROSS, ...: the controller layout an older kamite.ini carried (not PS2X_PAD_SCRIPT/_FIFO).
     bool padLayoutVariable(const std::string &variable)
     {
         return variable.size() >= 9u && variable.rfind("PS2X_PAD", 0) == 0 && variable[8] >= '1' && variable[8] <= '8' &&
                (variable.size() == 9u || variable[9] == '_');
     }
 
-    // Reads godhand.ini (written from the built-in default when missing). Returns the lines to log once the log is set
-    // up ("ini: X=..." / "env: X=... (wins over godhand.ini)"). PS2X_PAD<n>* lines are not exported: they go to
+    // Reads kamite.ini (written from the built-in default when missing). Returns the lines to log once the log is set
+    // up ("ini: X=..." / "env: X=... (wins over kamite.ini)"). PS2X_PAD<n>* lines are not exported: they go to
     // `padLayout`, which only seeds the controls file (controls.ini) when that does not exist yet.
-    std::set<std::string> g_iniVariables; // set from godhand.ini (not the real environment)
+    std::set<std::string> g_iniVariables; // set from kamite.ini (not the real environment)
+
+    // Settings of a build from before the rename (2026-10-25): the old settings file next to the exe becomes kamite.ini
+    // once, with its port switches renamed (the old ones are left in place, unread). Returns a note for the log.
+    std::string migrateOldSettings(const fs::path &exeDir)
+    {
+        const fs::path now = exeDir / "kamite.ini", old = exeDir / "godhand.ini";
+        std::error_code error;
+        if (fs::exists(now, error) || !fs::exists(old, error))
+            return {};
+        std::ifstream in(old, std::ios::binary);
+        std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        const std::string from = "GODHAND_", to = "KAMITE_";
+        for (size_t at = text.find(from); at != std::string::npos; at = text.find(from, at + to.size()))
+            text.replace(at, from.size(), to);
+        std::ofstream out(now, std::ios::binary);
+        out << text;
+        return out ? "settings: copied the old godhand.ini to kamite.ini (switches renamed); the old file is no longer read"
+                   : "settings: could not write kamite.ini from the old godhand.ini";
+    }
 
     std::vector<std::string> loadSettings(const fs::path &iniPath, const fs::path &exeDir,
                                           std::vector<std::pair<std::string, std::string>> &padLayout)
@@ -470,7 +489,7 @@ namespace
         std::vector<std::string> notes;
         if (!fs::exists(iniPath))
         {
-            std::ofstream(iniPath, std::ios::binary) << godhand::kDefaultIni;
+            std::ofstream(iniPath, std::ios::binary) << kamite::kDefaultIni;
             notes.push_back("wrote the default " + iniPath.string());
         }
         std::ifstream file(iniPath);
@@ -500,9 +519,9 @@ namespace
             for (const IniSetting &setting : kIniSettings)
                 if (section == setting.section && lowerText(key) == setting.key)
                     variable = setting.variable;
-            // PS2X_* / GODHAND_* switches, and SDL_* hints (SDL3 reads them from the environment, e.g.
+            // PS2X_* / KAMITE_* switches, and SDL_* hints (SDL3 reads them from the environment, e.g.
             // SDL_JOYSTICK_HIDAPI_STEAM=1).
-            if (variable.empty() && (key.rfind("PS2X_", 0) == 0 || key.rfind("GODHAND_", 0) == 0 || key.rfind("SDL_", 0) == 0))
+            if (variable.empty() && (key.rfind("PS2X_", 0) == 0 || key.rfind("KAMITE_", 0) == 0 || key.rfind("SDL_", 0) == 0))
                 variable = key;
             if (variable.empty())
             {
@@ -525,7 +544,7 @@ namespace
             }
             if (const char *current = std::getenv(variable.c_str()); current && !ours)
             {
-                notes.push_back("env: " + variable + "=" + current + " (wins over godhand.ini " + value + ")");
+                notes.push_back("env: " + variable + "=" + current + " (wins over kamite.ini " + value + ")");
                 continue;
             }
             const std::string resolved = resolvePath(exeDir, variable, value);
@@ -536,11 +555,11 @@ namespace
         return notes;
     }
 
-    // GODHAND_LOG_FILE=<file>: stdout and stderr appended to that file (one handle, so the lines stay in order).
+    // KAMITE_LOG_FILE=<file>: stdout and stderr appended to that file (one handle, so the lines stay in order).
     void redirectOutput()
     {
 #if defined(_WIN32)
-        const char *path = std::getenv("GODHAND_LOG_FILE");
+        const char *path = std::getenv("KAMITE_LOG_FILE");
         if (!path || !*path)
             return;
         if (!std::freopen(path, "a", stdout))
@@ -550,7 +569,7 @@ namespace
         const std::time_t now = std::time(nullptr);
         char stamp[64] = {};
         std::strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
-        std::fprintf(stdout, "\n===== godhand.exe run %s (pid %lu) =====\n", stamp, static_cast<unsigned long>(GetCurrentProcessId()));
+        std::fprintf(stdout, "\n===== kamite.exe run %s (pid %lu) =====\n", stamp, static_cast<unsigned long>(GetCurrentProcessId()));
         std::fflush(stdout);
 #endif
     }
@@ -559,16 +578,16 @@ namespace
     std::atomic<PS2Runtime *> g_capRuntime{nullptr};
     std::atomic<bool> g_timeLimitHit{false};
 
-    // GODHAND_TIME_LIMIT_SECONDS=<s>: after that wall-clock time, a hang dump (GODHAND_DUMP_ON_TIME_LIMIT, default on),
+    // KAMITE_TIME_LIMIT_SECONDS=<s>: after that wall-clock time, a hang dump (KAMITE_DUMP_ON_TIME_LIMIT, default on),
     // then requestStop() every 0.5 s (run() clears the flag when it starts) for 10 s, then _Exit(124) if still running.
     void startTimeLimit()
     {
-        const char *value = std::getenv("GODHAND_TIME_LIMIT_SECONDS");
+        const char *value = std::getenv("KAMITE_TIME_LIMIT_SECONDS");
         const double seconds = value ? std::strtod(value, nullptr) : 0.0;
         if (!(seconds > 0.0))
             return;
-        const bool dump = envFlag("GODHAND_DUMP_ON_TIME_LIMIT", true);
-        GH_INFO(Boot, "time limit: " << seconds << " s" << (dump ? " (hang dump at the limit)" : ""));
+        const bool dump = envFlag("KAMITE_DUMP_ON_TIME_LIMIT", true);
+        KM_INFO(Boot, "time limit: " << seconds << " s" << (dump ? " (hang dump at the limit)" : ""));
         // Hard stop at the limit + 40 s, independent of the thread below: the hang dump suspends every thread and walks
         // their stacks, and it can deadlock if a suspended thread holds the heap or loader lock.
         std::thread([seconds]() {
@@ -581,16 +600,16 @@ namespace
         std::thread([seconds, dump]() {
             std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
             g_timeLimitHit.store(true);
-            GH_WARN(Boot, "time limit of " << seconds << " s reached; stopping the run");
+            KM_WARN(Boot, "time limit of " << seconds << " s reached; stopping the run");
             if (dump)
-                godhand::hangdump::dumpNow(true);
+                kamite::hangdump::dumpNow(true);
             for (int i = 0; i < 20; ++i)
             {
                 if (PS2Runtime *runtime = g_capRuntime.load())
                     runtime->requestStop();
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
             }
-            GH_ERROR(Boot, "the runtime did not stop within 10 s of the time limit; exiting with code " << kExitTimeLimit);
+            KM_ERROR(Boot, "the runtime did not stop within 10 s of the time limit; exiting with code " << kExitTimeLimit);
             std::fflush(stdout);
             std::fflush(stderr);
             std::_Exit(kExitTimeLimit);
@@ -599,7 +618,7 @@ namespace
 
     PS2Runtime::MissingFunctionPolicy missingFunctionPolicy()
     {
-        const char *value = std::getenv("GODHAND_MISSING_FUNCTION");
+        const char *value = std::getenv("KAMITE_MISSING_FUNCTION");
         const std::string policy = value ? lowerText(value) : std::string("stop");
         if (policy == "continue")
             return PS2Runtime::MissingFunctionPolicy::ContinueToTarget;
@@ -626,9 +645,9 @@ namespace
 
     void printUsage()
     {
-        std::cout << "usage: godhand [--iso <path-to-" << godhand::kSerial << ".iso>] [--headless|--window] [--time-limit <seconds>]\n"
+        std::cout << "usage: kamite [--iso <path-to-" << kamite::kSerial << ".iso>] [--headless|--window] [--time-limit <seconds>]\n"
                   << "               [--write-settings]\n"
-                  << "settings: godhand.ini next to godhand.exe (environment variables of the same name win)\n"
+                  << "settings: kamite.ini next to kamite.exe (environment variables of the same name win)\n"
                   << "exit codes: 0 ok, 1 init failed, 2 no disc, 3 wrong disc, 4 CPU, 5 missing function (stop), 6 crash, 124 time limit\n";
     }
 }
@@ -637,7 +656,7 @@ int main(int argc, char *argv[])
 {
     const fs::path exeDir = executableDirectory();
 
-    // Command line first: it wins over the environment, which wins over godhand.ini.
+    // Command line first: it wins over the environment, which wins over kamite.ini.
     fs::path iso;
     bool writeSettingsOnly = false;
     for (int i = 1; i < argc; ++i)
@@ -646,11 +665,11 @@ int main(int argc, char *argv[])
         if ((arg == "--iso" || arg == "-iso") && i + 1 < argc)
             iso = argv[++i];
         else if (arg == "--headless")
-            setEnv("GODHAND_HEADLESS", "1");
+            setEnv("KAMITE_HEADLESS", "1");
         else if (arg == "--window")
-            setEnv("GODHAND_HEADLESS", "0");
+            setEnv("KAMITE_HEADLESS", "0");
         else if (arg == "--time-limit" && i + 1 < argc)
-            setEnv("GODHAND_TIME_LIMIT_SECONDS", argv[++i]);
+            setEnv("KAMITE_TIME_LIMIT_SECONDS", argv[++i]);
         else if (arg == "--write-settings")
             writeSettingsOnly = true;
         else if (arg == "--help" || arg == "-h")
@@ -663,14 +682,17 @@ int main(int argc, char *argv[])
     }
 
     // The self-test rewrites the controls file several times: only with a file named in the real environment.
-    const bool controlsFileFromEnvironment = std::getenv("GODHAND_CONTROLS_FILE") && *std::getenv("GODHAND_CONTROLS_FILE");
+    const bool controlsFileFromEnvironment = std::getenv("KAMITE_CONTROLS_FILE") && *std::getenv("KAMITE_CONTROLS_FILE");
     std::vector<std::pair<std::string, std::string>> padLayout;
-    const std::vector<std::string> settingNotes = loadSettings(exeDir / "godhand.ini", exeDir, padLayout);
-    godhand::setCameraIniPath(exeDir / "godhand.ini"); // the F2 menu's Camera tab saves there
+    const std::string migrationNote = migrateOldSettings(exeDir);
+    std::vector<std::string> settingNotes = loadSettings(exeDir / "kamite.ini", exeDir, padLayout);
+    if (!migrationNote.empty())
+        settingNotes.insert(settingNotes.begin(), migrationNote);
+    kamite::setCameraIniPath(exeDir / "kamite.ini"); // the F2 menu's Camera tab saves there
     if (writeSettingsOnly)
         return kExitOk;
     redirectOutput();
-    const bool headless = envFlag("GODHAND_HEADLESS", false);
+    const bool headless = envFlag("KAMITE_HEADLESS", false);
 
 #if defined(_WIN32)
     if (headless)
@@ -678,41 +700,41 @@ int main(int argc, char *argv[])
     if (!checkCpu(!headless))
         return kExitCpu;
     installCrashReporter();
-    godhand::installFatalExceptionLog();
+    kamite::installFatalExceptionLog();
 #endif
-    godhand::log::configureFromEnvironment();
+    kamite::log::configureFromEnvironment();
     if (!headless)
     {
-        godhand::reportPreviousCrashes();
-        godhand::startWindowWatch();
+        kamite::reportPreviousCrashes();
+        kamite::startWindowWatch();
     }
     for (const std::string &note : settingNotes)
-        GH_INFO(Boot, "settings: " << note);
+        KM_INFO(Boot, "settings: " << note);
     if (!padLayout.empty())
-        GH_INFO(Boot, "settings: " << padLayout.size() << " PS2X_PAD<n> line(s) in godhand.ini are not used: the layout lives in the "
+        KM_INFO(Boot, "settings: " << padLayout.size() << " PS2X_PAD<n> line(s) in kamite.ini are not used: the layout lives in the "
                                    "controls file (they only seed it when it is missing)");
-    // GODHAND_CONTROLS_FILE: the bindings file the F1 Controls screen edits (default controls.ini next to the exe).
+    // KAMITE_CONTROLS_FILE: the bindings file the F1 Controls screen edits (default controls.ini next to the exe).
     {
-        const char *controls = std::getenv("GODHAND_CONTROLS_FILE");
+        const char *controls = std::getenv("KAMITE_CONTROLS_FILE");
         const fs::path controlsPath = controls && *controls ? fs::path(controls) : exeDir / "controls.ini";
         std::error_code sameError;
         const fs::path playerControls = exeDir / "controls.ini";
         const bool playerFile = fs::exists(controlsPath, sameError) && fs::exists(playerControls, sameError) &&
                                 fs::equivalent(controlsPath, playerControls, sameError);
-        if (envFlag("GODHAND_CONTROLS_SELFTEST", false) && (!controlsFileFromEnvironment || playerFile))
+        if (envFlag("KAMITE_CONTROLS_SELFTEST", false) && (!controlsFileFromEnvironment || playerFile))
         {
-            GH_WARN(Boot, "GODHAND_CONTROLS_SELFTEST ignored: it needs GODHAND_CONTROLS_FILE=<scratch file> in the environment"
+            KM_WARN(Boot, "KAMITE_CONTROLS_SELFTEST ignored: it needs KAMITE_CONTROLS_FILE=<scratch file> in the environment"
                           " (not the player's controls.ini)");
-            setEnv("GODHAND_CONTROLS_SELFTEST", "0");
+            setEnv("KAMITE_CONTROLS_SELFTEST", "0");
         }
-        GH_INFO(Boot, "controls file: " << controlsPath.string());
+        KM_INFO(Boot, "controls file: " << controlsPath.string());
         ps2_host_input::setControlsFile(controlsPath.string(), padLayout);
     }
-    godhand::hangdump::startFromEnvironment();
-    godhand::threadpolicy::startFromEnvironment(); // PS2X_THREAD_POLICY (godhand.ini: off)
+    kamite::hangdump::startFromEnvironment();
+    kamite::threadpolicy::startFromEnvironment(); // PS2X_THREAD_POLICY (kamite.ini: off)
     startTimeLimit();                                // counts from here: covers disc check, init and the run
 
-    // The disc image: --iso, then GODHAND_ISO / [Game] Iso, then an .iso in a game folder near the exe. Without one (or
+    // The disc image: --iso, then KAMITE_ISO / [Game] Iso, then an .iso in a game folder near the exe. Without one (or
     // with one that fails the check) a windowed run shows the launcher's Install screen; the launcher also shows at
     // start unless hidden ([Launcher] Show=0, Shift held brings it back).
     const fs::path cacheDir = exeDir / "game_data";
@@ -721,32 +743,32 @@ int main(int argc, char *argv[])
     {
         if (isoFromCommandLine)
             return iso;
-        if (const char *env = std::getenv("GODHAND_ISO"); env && *env)
+        if (const char *env = std::getenv("KAMITE_ISO"); env && *env)
             return fs::path(env);
-        return godhand::findDiscImage({exeDir / "game", exeDir.parent_path() / "game", exeDir.parent_path().parent_path() / "game",
+        return kamite::findDiscImage({exeDir / "game", exeDir.parent_path() / "game", exeDir.parent_path().parent_path() / "game",
                                        exeDir.parent_path().parent_path().parent_path() / "game", fs::current_path() / "game",
                                        fs::current_path()});
     };
     iso = resolveIso();
-#if GODHAND_HAS_LAUNCHER
+#if KAMITE_HAS_LAUNCHER
     const bool launcherAllowed = !headless && !isoFromCommandLine;
 #else
     const bool launcherAllowed = false;
 #endif
-    // Shows the launcher; false = the player quit. Afterwards godhand.ini is read again (the settings it changed).
+    // Shows the launcher; false = the player quit. Afterwards kamite.ini is read again (the settings it changed).
     auto showLauncher = [&](const std::string &message) -> bool
     {
-#if GODHAND_HAS_LAUNCHER
-        godhand::installWidescreen(); // the window's shape, as the game will have it
-        ps2_host_display::setStartMaximized(envFlag("GODHAND_START_MAXIMIZED", false));
-        ps2_host_display::setStartFullscreen(envFlag("GODHAND_START_FULLSCREEN", false));
-        const godhand::launcher::Result result =
-            godhand::launcher::run(godhand::launcher::Context{exeDir, exeDir / "godhand.ini", cacheDir, iso, message});
-        if (result == godhand::launcher::Result::Quit)
+#if KAMITE_HAS_LAUNCHER
+        kamite::installWidescreen(); // the window's shape, as the game will have it
+        ps2_host_display::setStartMaximized(envFlag("KAMITE_START_MAXIMIZED", false));
+        ps2_host_display::setStartFullscreen(envFlag("KAMITE_START_FULLSCREEN", false));
+        const kamite::launcher::Result result =
+            kamite::launcher::run(kamite::launcher::Context{exeDir, exeDir / "kamite.ini", cacheDir, iso, message});
+        if (result == kamite::launcher::Result::Quit)
             return false;
         std::vector<std::pair<std::string, std::string>> unusedPadLayout;
-        for (const std::string &note : loadSettings(exeDir / "godhand.ini", exeDir, unusedPadLayout))
-            GH_INFO(Boot, "settings (after the launcher): " << note);
+        for (const std::string &note : loadSettings(exeDir / "kamite.ini", exeDir, unusedPadLayout))
+            KM_INFO(Boot, "settings (after the launcher): " << note);
         iso = resolveIso();
         return true;
 #else
@@ -756,8 +778,8 @@ int main(int argc, char *argv[])
     };
     {
         std::error_code isoError;
-#if GODHAND_HAS_LAUNCHER
-        const bool showAtStart = launcherAllowed && godhand::launcher::wanted(!iso.empty() && fs::is_regular_file(iso, isoError));
+#if KAMITE_HAS_LAUNCHER
+        const bool showAtStart = launcherAllowed && kamite::launcher::wanted(!iso.empty() && fs::is_regular_file(iso, isoError));
 #else
         const bool showAtStart = false;
 #endif
@@ -765,32 +787,32 @@ int main(int argc, char *argv[])
         {
             if (!showLauncher(""))
             {
-                GH_INFO(Boot, "quit from the launcher");
+                KM_INFO(Boot, "quit from the launcher");
                 return kExitOk;
             }
         }
     }
-    godhand::DiscCheckResult disc;
+    kamite::DiscCheckResult disc;
     for (;;)
     {
         if (iso.empty())
         {
             if (!launcherAllowed)
             {
-                GH_ERROR(Boot, "no disc image found. Pass --iso <path> (or [Game] Iso=) to your own " << godhand::kGameTitle
-                                                                                                     << " (" << godhand::kSerial << ") disc image.");
+                KM_ERROR(Boot, "no disc image found. Pass --iso <path> (or [Game] Iso=) to your own " << kamite::kGameTitle
+                                                                                                     << " (" << kamite::kSerial << ") disc image.");
                 printUsage();
                 return kExitNoDisc;
             }
-            if (!showLauncher("Choose your God Hand (USA, SLUS-21503) disc image."))
+            if (!showLauncher("Choose your disc image (USA, SLUS-21503)."))
                 return kExitOk;
             continue;
         }
-        GH_INFO(Boot, "disc image: " << iso.string());
-        disc = godhand::verifyDiscAndPrepare(iso, cacheDir);
+        KM_INFO(Boot, "disc image: " << iso.string());
+        disc = kamite::verifyDiscAndPrepare(iso, cacheDir);
         if (disc.ok)
             break;
-        GH_ERROR(Boot, disc.error);
+        KM_ERROR(Boot, disc.error);
         if (!launcherAllowed)
             return kExitBadDisc;
         if (!showLauncher("The disc image " + iso.string() + " cannot be used: " + disc.error))
@@ -803,15 +825,15 @@ int main(int argc, char *argv[])
     paths.hostRoot = cacheDir;
     paths.cdRoot = cacheDir;
     paths.mcRoot = exeDir / "memcards" / "mc0";
-    // GODHAND_MC_DIR=<folder>: memory cards from another folder (test drivers use a copy).
-    if (const char *mcDir = std::getenv("GODHAND_MC_DIR"); mcDir && *mcDir)
+    // KAMITE_MC_DIR=<folder>: memory cards from another folder (test drivers use a copy).
+    if (const char *mcDir = std::getenv("KAMITE_MC_DIR"); mcDir && *mcDir)
         paths.mcRoot = fs::path(mcDir) / "mc0";
     setDefaultEnv("PS2X_GS_SHADER_CACHE_DIR", (cacheDir / "gs_shaders").string());
     paths.cdImage = fs::absolute(iso);
     // Disc image prefetch (2026-10-18): the game's disc reads are synchronous here (sceCdRead on the EE thread), so a
     // read that misses the OS file cache stalls the game; one took 1.2 s in stage 3. Reading the whole image once in
-    // the background, at the lowest thread priority, puts it in the OS cache. GODHAND_ISO_PREFETCH=0 turns it off.
-    if (!headless && envFlag("GODHAND_ISO_PREFETCH", true))
+    // the background, at the lowest thread priority, puts it in the OS cache. KAMITE_ISO_PREFETCH=0 turns it off.
+    if (!headless && envFlag("KAMITE_ISO_PREFETCH", true))
     {
         std::thread([image = paths.cdImage]
         {
@@ -828,20 +850,20 @@ int main(int argc, char *argv[])
                 total += static_cast<uint64_t>(file.gcount());
             }
             const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
-            GH_INFO(Boot, "disc image prefetched into the OS file cache: " << (total >> 20) << " MB in " << ms << " ms");
+            KM_INFO(Boot, "disc image prefetched into the OS file cache: " << (total >> 20) << " MB in " << ms << " ms");
         }).detach();
     }
     std::error_code error;
     fs::create_directories(paths.mcRoot, error);
-    // GODHAND_QUICK_STATE=<file>: the F5/F9 save-state slot (default states/quick.state).
-    const char *quickState = std::getenv("GODHAND_QUICK_STATE");
+    // KAMITE_QUICK_STATE=<file>: the F5/F9 save-state slot (default states/quick.state).
+    const char *quickState = std::getenv("KAMITE_QUICK_STATE");
     ps2x::savestate::setQuickSlotPath(quickState && *quickState ? fs::path(quickState) : exeDir / "states" / "quick.state");
 
     // Runtime defaults both the SotC and the Urban Reign ports ship with (each still overridable: PS2X_GS_THREAD,
     // PS2X_GS_GPU, PS2X_GS_ASYNC_PRESENT, PS2X_EE_HOST_PACING, PS2X_MTVU). Urban's game-tuned values (EE loop cycles,
     // MTVU on, direct present, async readback, MCSERV switch) are left at the runtime's defaults.
     // PS2X_SIO2_RECV1=2: with the runtime default (0, sticky) one unanswered command in PADMAN's multi-port transfer
-    // reports the whole transfer as no response, so God Hand's libpad never leaves DISCONN (padArea+0x70 = 0) and no
+    // reports the whole transfer as no response, so the game's libpad never leaves DISCONN (padArea+0x70 = 0) and no
     // button reaches the game. Same PADMAN quirk Urban found. Hidden runs 2026-10-17 06:30-06:47: pad 0 mode 0x79,
     // padArea+0x70 = 6 (STABLE), title menus and gameplay take input. Still overridable.
     setDefaultEnv("PS2X_SIO2_RECV1", "2");
@@ -854,7 +876,7 @@ int main(int argc, char *argv[])
     GSGpuBackend::SetAsyncPresentDefault(true);
     // MTVU (VU1 and the GIF on threads of their own, as PCSX2's MTVU) on by default since 2026-10-22: in gameplay the EE
     // thread spent ~27% in VU1 and ~5% in VIF/GIF and had speed drops into the 80s at 60 FPS with widescreen; with
-    // MTVU it waits ~70% of the time and held 100%. PS2X_MTVU=0 (godhand.ini [Runtime]) runs VU1 on the EE thread.
+    // MTVU it waits ~70% of the time and held 100%. PS2X_MTVU=0 (kamite.ini [Runtime]) runs VU1 on the EE thread.
     ps2x::asyncvif::setDefaultEnabled(true);
     ps2x::asyncvif::setHostPacingDefault(true);
     EeScheduler::setHostPacingDefault(true);
@@ -862,10 +884,10 @@ int main(int argc, char *argv[])
     // Hidden runs: no visible window, no sound, no monitor-driven vsync, no dialogs.
     if (headless)
     {
-        const godhand::hostwindow::HeadlessMethod method = godhand::hostwindow::requestHeadless();
+        const kamite::hostwindow::HeadlessMethod method = kamite::hostwindow::requestHeadless();
         setDefaultEnv("PS2X_AUDIO_MUTE", "1"); // the audio device still opens without the runtime's setHeadless
         setDefaultEnv("PS2X_VSYNC", "0");      // the software 60 Hz limiter instead of a hidden window's swap interval
-        GH_INFO(Boot, "headless: " << godhand::hostwindow::methodName(method) << "; PS2X_AUDIO_MUTE=" << std::getenv("PS2X_AUDIO_MUTE")
+        KM_INFO(Boot, "headless: " << kamite::hostwindow::methodName(method) << "; PS2X_AUDIO_MUTE=" << std::getenv("PS2X_AUDIO_MUTE")
                                     << " PS2X_VSYNC=" << std::getenv("PS2X_VSYNC"));
     }
 
@@ -878,9 +900,9 @@ int main(int argc, char *argv[])
         g_crashRuntime.store(&runtime);
 #endif
 #if defined(PS2X_ENABLE_DEBUG_UI)
-        // ImGui runtime debugger from PS2Recomp: F12 toggles it (F1 = Controls screen); GODHAND_DEBUG_UI=1 opens it at start-up.
+        // ImGui runtime debugger from PS2Recomp: F12 toggles it (F1 = Controls screen); KAMITE_DEBUG_UI=1 opens it at start-up.
         static PS2DebugPanel debugPanel;
-        debugPanel.setVisible(!headless && envFlag("GODHAND_DEBUG_UI", false));
+        debugPanel.setVisible(!headless && envFlag("KAMITE_DEBUG_UI", false));
         runtime.setDebugUiCallbacks(
             [](PS2Runtime &, void *userData) { static_cast<PS2DebugPanel *>(userData)->initialize(); },
             [](PS2Runtime &rt, void *userData)
@@ -893,59 +915,59 @@ int main(int argc, char *argv[])
             [](PS2Runtime &, void *userData) { static_cast<PS2DebugPanel *>(userData)->shutdown(); },
             &debugPanel);
 #endif
-        ps2_host_display::setStartMaximized(!headless && envFlag("GODHAND_START_MAXIMIZED", false));
-        godhand::installWidescreen(); // the picture's shape: before the window is made
-        godhand::installNearGeometry(); // VU1 hooks: before the first microcode upload
-        ps2_host_display::setStartFullscreen(!headless && envFlag("GODHAND_START_FULLSCREEN", false));
-        if (!runtime.initialize(godhand::kGameTitle))
+        ps2_host_display::setStartMaximized(!headless && envFlag("KAMITE_START_MAXIMIZED", false));
+        kamite::installWidescreen(); // the picture's shape: before the window is made
+        kamite::installNearGeometry(); // VU1 hooks: before the first microcode upload
+        ps2_host_display::setStartFullscreen(!headless && envFlag("KAMITE_START_FULLSCREEN", false));
+        if (!runtime.initialize(kamite::kGameTitle))
         {
-            GH_ERROR(Boot, "runtime initialization failed");
+            KM_ERROR(Boot, "runtime initialization failed");
             std::fflush(stdout);
             std::_Exit(kExitInitFailed);
         }
-        GH_INFO(Boot, "runtime initialized; loading " << disc.bootElfPath.string());
+        KM_INFO(Boot, "runtime initialized; loading " << disc.bootElfPath.string());
         if (!runtime.loadELF(disc.bootElfPath.string()))
         {
-            GH_ERROR(Boot, "failed to load " << disc.bootElfPath.string());
+            KM_ERROR(Boot, "failed to load " << disc.bootElfPath.string());
             std::fflush(stdout);
             std::_Exit(kExitInitFailed);
         }
-        GH_INFO(Boot, "ELF loaded, entry 0x" << std::hex << runtime.cpu().pc);
+        KM_INFO(Boot, "ELF loaded, entry 0x" << std::hex << runtime.cpu().pc);
         // PS2X_PNACH=<file>[;<file>...]: PCSX2 patches, patch=0 lines now (patch=1 lines at every vblank). Off by default.
         if (ps2x::pnach::loadFromEnvironment() != 0u)
             ps2x::pnach::applyOnce(runtime.memory().getRDRAM());
         PS2Runtime::setIoPaths(paths);
-        godhand::characters::install(exeDir); // [Mods] Character: a replacement model for Gene
+        kamite::characters::install(exeDir); // [Mods] Character: a replacement model for Gene
 
         runtime.setMissingFunctionPolicy(missingFunctionPolicy());
-        GH_INFO(Boot, "missing-function policy: " << (std::getenv("GODHAND_MISSING_FUNCTION") ? std::getenv("GODHAND_MISSING_FUNCTION") : "stop")
+        KM_INFO(Boot, "missing-function policy: " << (std::getenv("KAMITE_MISSING_FUNCTION") ? std::getenv("KAMITE_MISSING_FUNCTION") : "stop")
                                                   << "; RAM dump on missing: "
                                                   << (std::getenv("PS2X_DUMP_RAM_ON_MISSING") ? std::getenv("PS2X_DUMP_RAM_ON_MISSING") : "(off)"));
-        godhand::FunctionHooks::instance().attach(runtime);
-        godhand::FunctionHooks::instance().observeEntry(runtime.cpu().pc, "boot_entry", [](uint8_t *, R5900Context *, PS2Runtime *) {
+        kamite::FunctionHooks::instance().attach(runtime);
+        kamite::FunctionHooks::instance().observeEntry(runtime.cpu().pc, "boot_entry", [](uint8_t *, R5900Context *, PS2Runtime *) {
             applyEeFloatingPointMode(); // on the game thread
-            GH_INFO(Ee, "EE FPU host mode: round toward zero, denormals flushed");
+            KM_INFO(Ee, "EE FPU host mode: round toward zero, denormals flushed");
         });
-        godhand::installHleBindings(runtime); // port_prep/hle-bindings owns the God Hand table
-#if GODHAND_HAS_VU1_PROGRAMS
+        kamite::installHleBindings(runtime); // port_prep/hle-bindings owns the game's table
+#if KAMITE_HAS_VU1_PROGRAMS
         registerGeneratedVu1Programs();
 #endif
-        godhand::installDllLoadLogger(runtime); // observe only: [DLL] lines + GODHAND_DLL_LOG CSV
-        godhand::installHiresFlipCopy(runtime); // PS2X_GS_SCALE > 1 only: flip copy without the flicker filter
-        godhand::button_prompts::install(runtime); // the button prompts show the bound keys (GODHAND_PROMPTS=0: PS2 art)
-        godhand::menu_buttons::install(runtime.memory().getRDRAM()); // [Game] MenuButtons: the menus' confirm/cancel buttons
-        godhand::radar_glow::install(runtime.memory().getRDRAM()); // Modern: the radar glows while the original controls are in effect
-        godhand::installMovieWatchdog(runtime); // sweep R3: ending/movie-list movie polls cannot spin forever
+        kamite::installDllLoadLogger(runtime); // observe only: [DLL] lines + KAMITE_DLL_LOG CSV
+        kamite::installHiresFlipCopy(runtime); // PS2X_GS_SCALE > 1 only: flip copy without the flicker filter
+        kamite::button_prompts::install(runtime); // the button prompts show the bound keys (KAMITE_PROMPTS=0: PS2 art)
+        kamite::menu_buttons::install(runtime.memory().getRDRAM()); // [Game] MenuButtons: the menus' confirm/cancel buttons
+        kamite::radar_glow::install(runtime.memory().getRDRAM()); // Modern: the radar glows while the original controls are in effect
+        kamite::installMovieWatchdog(runtime); // sweep R3: ending/movie-list movie polls cannot spin forever
         // 60 FPS mode, L3 dash, and the game-frame count for the F3 overlay (a hook at the top of the main loop).
-        godhand::installFramePatches(runtime);
-        godhand::installGameOptions(runtime); // [Game] UnlockHard, [Sound] MuteMusic
-        godhand::hangdump::setRuntime(&runtime);
-        godhand::calltrace::installFromEnvironment(runtime);
-        godhand::pcsampler::installFromEnvironment(runtime);
-        godhand::FunctionHooks::instance().logBindings();
-        godhand::callprofile::installFromEnvironment(runtime); // last: wraps whatever the slots hold now
+        kamite::installFramePatches(runtime);
+        kamite::installGameOptions(runtime); // [Game] UnlockHard, [Sound] MuteMusic
+        kamite::hangdump::setRuntime(&runtime);
+        kamite::calltrace::installFromEnvironment(runtime);
+        kamite::pcsampler::installFromEnvironment(runtime);
+        kamite::FunctionHooks::instance().logBindings();
+        kamite::callprofile::installFromEnvironment(runtime); // last: wraps whatever the slots hold now
 
-        GH_INFO(Boot, "starting guest at 0x" << std::hex << runtime.cpu().pc);
+        KM_INFO(Boot, "starting guest at 0x" << std::hex << runtime.cpu().pc);
         runtime.run();
 
         int code = kExitOk;
@@ -960,7 +982,7 @@ int main(int argc, char *argv[])
             code = kExitMissingFunction;
             reason = "stopped on a missing function (see [guest-branch:missing-target] above)";
         }
-        GH_INFO(Boot, "runtime exited: " << reason << "; exit code " << code << " after " << godhand::log::elapsedSeconds() << " s");
+        KM_INFO(Boot, "runtime exited: " << reason << "; exit code " << code << " after " << kamite::log::elapsedSeconds() << " s");
         std::cout.flush();
         std::fflush(stdout);
         std::fflush(stderr);
@@ -968,7 +990,7 @@ int main(int argc, char *argv[])
     }
     catch (const std::exception &e)
     {
-        GH_ERROR(Boot, "fatal: " << e.what());
+        KM_ERROR(Boot, "fatal: " << e.what());
         std::cout.flush();
         std::fflush(stderr);
         std::_Exit(kExitInitFailed);

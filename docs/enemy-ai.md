@@ -1,4 +1,4 @@
-# How God Hand's enemies decide to attack
+# How the game's enemies decide to attack
 
 Read from the retail code (SLUS_215.03). Addresses are of the boot ELF; names come from the
 [decomp](https://github.com/LucasPicoli/god-hand-decomp) where it has one. Distances are in metres (the game's units),
@@ -85,7 +85,7 @@ half, the first three come in to 1.8 m, and nobody steps back.
 
 ## What the port changes
 
-With `[Game] EnemiesFollowView=1` (the default), `src/godhand/camera.cpp` scales the 60° wedge (the compares at
+With `[Game] EnemiesFollowView=1` (the default), `src/kamite/camera.cpp` scales the 60° wedge (the compares at
 `0x2126C4` and `0x2127D0` in `func_00211C08`) and the lunge cones (the nine compares that read `+0x768` in
 `func_00262AA8`) by how much further round Gene the picture reaches than the PS2's did, at the enemy's distance: the
 screen's edge passes Gene's facing at `phi + asin(D sin(phi) / r)` (`phi` = half the picture's width as an angle, `D`

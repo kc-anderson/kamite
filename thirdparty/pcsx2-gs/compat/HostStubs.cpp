@@ -422,7 +422,7 @@ std::string VMManager::GetDiscSerial()
 
 std::string VMManager::GetTitle(bool prefer_en)
 {
-    return "God Hand";
+    return "Kamite";
 }
 
 u32 VMManager::GetDiscCRC()

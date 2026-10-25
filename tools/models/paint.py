@@ -1,4 +1,4 @@
-"""Paints a character's fur onto the game's arm-skin textures where the God Hand arm leaves the character's stump, so the
+"""Paints a character's fur onto the game's arm-skin textures where the gauntlet arm leaves the character's stump, so the
 arm grows out of the fur the way Xavier's snake arm does in his own texture (build_characters.py, trim "paint").
 
 paint_textures(game_texs, node, names, fur_rgba, axis, start, length) -> {name: new tim3 bytes, ...}
@@ -15,7 +15,7 @@ import struct
 import numpy as np
 from PIL import Image
 
-from ghmodel import strip_tris
+from gamemodel import strip_tris
 
 
 def node_tris(node):
@@ -92,7 +92,7 @@ def quantize16(rgba):
 
 def tim3_encode(idx, pal, w, h):
     """A 4-bit TIM3 in the game's layout (as encode_xavier.py writes them)."""
-    from ghtex import swizzle4
+    from gametex import swizzle4
     idx = np.asarray(idx, np.uint8)
     if w >= 128 and h >= 128:
         data = swizzle4(idx, w, h)
@@ -113,7 +113,7 @@ def tim3_encode(idx, pal, w, h):
 
 
 def paint_textures(game_texs, node, names, fur_rgba, axis, start, length):
-    from ghtex import tim3_decode
+    from gametex import tim3_decode
     out = {}
     for name, t in game_texs:
         if name not in names:

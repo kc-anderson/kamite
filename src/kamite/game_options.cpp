@@ -1,0 +1,79 @@
+// Optional changes to the game ([Game] UnlockHard / MuteMusic). See game_options.h.
+//
+// UnlockHard: the difficulty select is in the title room DLL r020 (cR020::titleLevelSel, 0x79B0E0). It reads the save's
+// "Hard unlocked" bit (0x747A28 & 0x200000, set by clearing the game) three times: for the menu's item animation
+// (0x79B25C), the confirm (0x79B374, a locked Hard buzzes) and the item sprites (0x79B924, Hard or the locked plate).
+// recomp/modules/r020.toml turns each of those 'and' into 'or rX,zero,0x200000' under the flag "unlock_hard".
+//
+// MuteMusic: the music is CRI ADX streams driven by the SDE sound library. Every stream volume change goes through
+// func_00373FF0(node a0, category a1, volume f12) for a one-channel node, or func_003745C0(node a0, category a1,
+// channel a2, volume f12) for a node with 2+ channels (node+0x58 > 1; the stereo music takes this one, which the
+// first version of this option missed): volume x the cSnd category levels (0x5FEE00) -> the dB table at 0x3F2060 ->
+// ADXT_SetOutVol (0x32A9F0) / func_0032EC78 per channel. Music streams are the cSndBgmNode pool inside cSnd
+// (0x601180, 16 nodes of 0xDC bytes; decomp cSnd.h); for those the volume is made 0 at both functions' entry
+// (table[0] = -96.0 dB, silent), except bank 1, the cutscene streams (their voices are in the same stream).
+// Voices and sound effects are other node types; movies use Sofdec's own ADXT handles.
+// KAMITE_TRACE=GAME logs the first calls (node, vtable, category, volume) to check the match.
+#include "kamite/game_options.h"
+#include "kamite/log.h"
+#include "ps2_runtime_macros.h"
+
+#include <cstdlib>
+#include <cstring>
+
+namespace kamite
+{
+    namespace
+    {
+        // The BGM nodes are the pool cSnd::node[16] (0xDC bytes each) at cSnd (0x5FEE00) + 0x2380 (the decomp's
+        // cSnd.h); the volume setters get a pointer to one of them. The first version of this option looked for a
+        // vtable at node+0x80, which these nodes do not have (KAMITE_TRACE=GAME showed node 0x601180, vtable 0).
+        constexpr uint32_t kBgmPool = 0x5FEE00u + 0x2380u;
+        constexpr uint32_t kBgmNodeSize = 0xDCu;
+        constexpr uint32_t kBgmNodeCount = 16u;
+
+        bool envOn(const char *name)
+        {
+            const char *value = std::getenv(name);
+            return value && *value && *value != '0';
+        }
+
+        // Before the first instruction of func_00373FF0 (the stream volume setter).
+        void muteMusicVolume(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t node = GPR_U32(ctx, 4);
+            bool music = node >= kBgmPool && node < kBgmPool + kBgmNodeSize * kBgmNodeCount &&
+                         (node - kBgmPool) % kBgmNodeSize == 0u;
+            if (music)
+            {
+                // Cutscene streams are BGM nodes too: bank 1 (stored biased, 0x81 at +0x8C), started per cut by
+                // cSnd_BgmEvCutSet from the event's bgm data. They carry the cutscene's voices and effects mixed
+                // with its music, so they stay; the stage, boss, menu and minigame music (bank 0) is muted.
+                int32_t bank = 0;
+                std::memcpy(&bank, rdram + node + 0x8Cu, sizeof(bank));
+                if (bank - 0x80 == 1)
+                    music = false;
+            }
+            static int logged = 0;
+            if (logged < 40)
+            {
+                ++logged;
+                KM_TRACE(Game, "[mute] volume call: node 0x" << std::hex << node << std::dec << " category " << GPR_U32(ctx, 5)
+                                   << " volume " << ctx->f[12] << (music ? " (music: muted)" : ""));
+            }
+            if (music)
+                ctx->f[12] = 0.0f;
+        }
+    }
+
+    void installGameOptions(PS2Runtime &)
+    {
+        const bool unlockHard = envOn("KAMITE_UNLOCK_HARD");
+        const bool muteMusic = envOn("KAMITE_MUTE_MUSIC");
+        ps2xRegisterHostHook("km_mute_music_volume", &muteMusicVolume);
+        ps2xSetPatchFlag("unlock_hard", unlockHard);
+        ps2xSetPatchFlag("mute_music", muteMusic);
+        KM_INFO(Game, "options: Hard " << (unlockHard ? "unlocked from the start" : "as saved") << "; music "
+                                       << (muteMusic ? "muted" : "on"));
+    }
+}

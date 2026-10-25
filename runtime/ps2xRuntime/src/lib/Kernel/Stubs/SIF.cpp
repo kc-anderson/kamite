@@ -129,8 +129,8 @@ namespace ps2_stubs
             }
         } g_sifStateInitializer;
 
-        // God Hand port: transfers complete inside sceSifSetDma, but on hardware a status poll right after
-        // sceSifSetDma sees the transfer queued (>= 0). God Hand's IRX loader (func_002BE240, 0x2BE3D8-0x2BE3E8)
+        // Kamite: transfers complete inside sceSifSetDma, but on hardware a status poll right after
+        // sceSifSetDma sees the transfer queued (>= 0). The game's IRX loader (func_002BE240, 0x2BE3D8-0x2BE3E8)
         // spins "while (sceSifDmaStat(id) < 0)" and only exits on that first non-negative status. So each id
         // reports "in progress" (0) to its first poll and "done" (-1) after that; unknown/old ids report done.
         constexpr uint32_t kSifDmaFreshIdSlots = 64u;

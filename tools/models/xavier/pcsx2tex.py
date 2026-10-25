@@ -3,7 +3,7 @@
 PCSX2 finds a replacement by <TEX0 hash>-<CLUT hash>-<bits>.png (GSTextureReplacements.cpp): the TEX0 hash is XXH3-64
 over the texture's 256-byte GS memory blocks in block order (PSMT4 at TBP 0 with the texture's TBW; blocks of 32x16
 texels), the CLUT hash XXH3-64 over the 16 CLUT entries (RGBA, alpha 0-128), bits = PSM | TW << 6 | TH << 10 (| 0x4000,
-the old TCC bit, which PCSX2's own dumps of this game carry). Checked against a God Hand pack: Gene's pl0000, pl0001
+the old TCC bit, which PCSX2's own dumps of this game carry). Checked against a texture pack for the game: Gene's pl0000, pl0001
 and pl0009 come out with the names its replacements use.
 """
 import struct
@@ -11,7 +11,7 @@ import struct
 import numpy as np
 import xxhash
 
-from ghtex import _addr4, unswizzle4
+from gametex import _addr4, unswizzle4
 
 
 def indices(tim3):

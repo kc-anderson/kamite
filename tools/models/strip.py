@@ -1,4 +1,4 @@
-"""Triangle list -> God Hand strip vertex buffers (flags: 0x8000 = no triangle, 0/1 = triangle winding)."""
+"""Triangle list -> the game's strip vertex buffers (flags: 0x8000 = no triangle, 0/1 = triangle winding)."""
 from collections import defaultdict
 
 def stripify(tris):

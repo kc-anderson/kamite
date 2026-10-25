@@ -115,6 +115,6 @@ endif()
 # resources/ (shaders, OSD font; see resources/README.md) next to the DLL. No shader cache is shipped: the Urban Reign
 # one came without its blob (.gitignore drops *.bin), and its orphan index, copied over a player's own cache, made PCSX2
 # read wrong bytecode from that player's blob (black screen, then a failed swap chain resize). PCSX2 builds the cache
-# (shadercache_pcsx2 next to godhand.exe) as the game runs.
+# (shadercache_pcsx2 next to kamite.exe) as the game runs.
 add_custom_command(TARGET pcsx2gs POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/resources" "$<TARGET_FILE_DIR:pcsx2gs>/resources")

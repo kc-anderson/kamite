@@ -480,8 +480,8 @@ namespace ps2_host_input
         std::atomic<bool> g_overlayOpen{false};
 
         // ---- button prompts (prompts:: in the header) ------------------------------------------------------------------
-        // Player 1's labels for the game's PS2 button art (God Hand: the text icon sheet, texture 0x18 of core_usa.bin
-        // drawn by func_002B1300, and the action prompt sheet, texture 0x0F; src/godhand/button_prompts.cpp redraws
+        // Player 1's labels for the game's PS2 button art (the text icon sheet, texture 0x18 of core_usa.bin
+        // drawn by func_002B1300, and the action prompt sheet, texture 0x0F; src/kamite/button_prompts.cpp redraws
         // them in guest RAM). Written on the window thread (rebuildConfigs, readPort); read from any thread, the EE
         // thread's vblank hook included: atomics, plus g_promptMutex held only for the ~1 KB copy.
         std::mutex g_promptMutex;
@@ -783,7 +783,7 @@ namespace ps2_host_input
             if (const std::string_view preamble = trimTrailingBlank(model.preamble); !preamble.empty())
                 out << preamble << '\n'; // the file's own header (and the player's notes in it), as written
             else
-                out << "# God Hand controls (godhand.exe). F1 in the game opens the Controls screen, which edits and saves this file.\n"
+                out << "# Kamite controls (kamite.exe). F1 in the game opens the Controls screen, which edits and saves this file.\n"
                    "# PCSX2 syntax, one binding per line: <Key> = Keyboard/<key> | Pointer-0/LeftButton, RightButton, MiddleButton |\n"
                    "#   SDL-<n>/<button> (controller n: FaceSouth FaceEast FaceWest FaceNorth Back Start LeftStick RightStick\n"
                    "#   LeftShoulder RightShoulder DPadUp DPadDown DPadLeft DPadRight) | SDL-<n>/+<axis> or -<axis> (LeftX LeftY\n"
@@ -1347,7 +1347,7 @@ namespace ps2_host_input
                     {
                         // Released. A quick tap (shorter than kGateDelay): the game still gets it, as a kGatePulse press.
                         // Review 2026-10-18: a press released just after kGateDelay was shown for a frame or less, which
-                        // the game's pad read can miss (a lost Start); it now stays shown until it was up for kGatePulse.
+                        // The game's pad read can miss (a lost Start); it now stays shown until it was up for kGatePulse.
                         gate.pulseUntil[which] = now - gate.since[which] < kGateDelay ? now + kGatePulse
                                                                                       : gate.since[which] + kGateDelay + kGatePulse;
                     }
@@ -1799,7 +1799,7 @@ namespace ps2_host_input
         }
 
 #if defined(_WIN32)
-        // The crash paths chain to whatever was installed before (godhand main's crash reporter, the CRT's filter).
+        // The crash paths chain to whatever was installed before (kamite main's crash reporter, the CRT's filter).
         Ps2xTopLevelExceptionFilter g_previousCrashFilter = nullptr;
         void(__cdecl *g_previousAbortHandler)(int) = nullptr;
         std::terminate_handler g_previousTerminate = nullptr;
@@ -1826,7 +1826,7 @@ namespace ps2_host_input
             std::abort();
         }
 
-        // Review 2026-10-18: godhand.exe is a console program and Start-God-Hand.cmd runs it in the minimized "God Hand
+        // Review 2026-10-18: kamite.exe is a console program and Start-Kamite.cmd runs it in the minimized "Kamite
         // log" console. Closing that window (or Ctrl+C / Ctrl+Break in it) ends the process through ExitProcess: no
         // atexit, no end of the run loop, so the hotkeys stayed off until sign-out. Runs on a thread of its own; FALSE
         // lets the default handling (the exit) go on.
@@ -1934,7 +1934,7 @@ namespace ps2_host_input
             state[player] = readPort(player, &rawStick);
             if (player == 0u)
             {
-                // Self-test buttons (GODHAND_CONTROLS_SELFTEST "press:"): through the same idle and hold rules as a key.
+                // Self-test buttons (KAMITE_CONTROLS_SELFTEST "press:"): through the same idle and hold rules as a key.
                 if (const uint16_t test = g_testButtons.load(std::memory_order_relaxed); test != 0u)
                 {
                     state[0].connected = true;
@@ -2087,7 +2087,7 @@ namespace ps2_host_input
             std::error_code error;
             if (!std::filesystem::exists(path, error))
             {
-                // First run: the PS2X_PAD<n>=1 / PS2X_PAD<n>_<KEY>=a;b lines godhand.ini used to carry, else the defaults.
+                // First run: the PS2X_PAD<n>=1 / PS2X_PAD<n>_<KEY>=a;b lines kamite.ini used to carry, else the defaults.
                 constexpr std::string_view kSettingKeys[] = {"Type", "Deadzone", "AxisScale", "ButtonDeadzone",
                                                              "LargeMotorScale", "SmallMotorScale", "InvertL", "InvertR",
                                                              "LargeMotor", "SmallMotor"};
@@ -2118,7 +2118,7 @@ namespace ps2_host_input
                 }
                 std::string message;
                 if (writeControlsFile(g_model, message))
-                    std::cerr << "[controls] wrote " << path << (fromLegacy ? " from the godhand.ini PS2X_PAD lines" : " with the default layout") << std::endl;
+                    std::cerr << "[controls] wrote " << path << (fromLegacy ? " from the kamite.ini PS2X_PAD lines" : " with the default layout") << std::endl;
                 else
                     std::cerr << "[controls] " << message << "; using that layout without a file" << std::endl;
             }
@@ -2536,7 +2536,7 @@ namespace ps2_host_input
             {"SmallMotorScale", "1"},
         };
         const std::string sdl = "SDL-" + std::to_string(pad) + "/";
-        // Player 1 also has the keyboard. God Hand layout (2026-10-17, the godhand.ini PS2X_PAD1_* lines it replaces): D-pad
+        // Player 1 also has the keyboard. The layout (2026-10-17, the kamite.ini PS2X_PAD1_* lines it replaces): D-pad
         // on the arrow keys (menus move with the D-pad), face buttons on I/L/K/J, left stick on WASD, Start = Return,
         // Select = Backspace, L1/R1 = Q/E, L2/R2 = 1/3, L3/R3 = F/G; the right stick (evade) has no keys by default.
         const bool keyboard = pad == 0u;

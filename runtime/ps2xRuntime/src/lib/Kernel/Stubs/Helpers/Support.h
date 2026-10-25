@@ -432,7 +432,7 @@ namespace
         }
 
         std::memset(dst, 0, byteCount);
-        // God Hand 2026-10-18: this opened the 1.5 GB disc image anew for every sceCdRead. In stage 3 one read held the
+        // 2026-10-18: this opened the 1.5 GB disc image anew for every sceCdRead. In stage 3 one read held the
         // EE game thread for 1.2 s inside NtReadFile (stall dump: readHostRange <- readCdSectors <- sceCdRead), a visible
         // freeze. The file now stays open (one stream per path, reused under a lock), and any read slower than 30 ms is
         // logged with its size so a remaining stall can be told from a slow disk.

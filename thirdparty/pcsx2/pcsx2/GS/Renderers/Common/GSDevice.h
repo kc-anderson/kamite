@@ -813,7 +813,7 @@ struct alignas(16) GSHWDrawConfig
 				u32 rov_color : 1;
 				PS_ROV_DEPTH rov_depth : 2;
 
-				// pcsx2gs (God Hand): the see-through oval round the player (GSRendererHW::ApplySeeThrough)
+				// pcsx2gs (Kamite): the see-through oval round the player (GSRendererHW::ApplySeeThrough)
 				u32 see_through : 1;
 			};
 
@@ -1053,7 +1053,7 @@ struct alignas(16) GSHWDrawConfig
 		GSVector2 point_size;
 		u32 max_depth;
 		float line_aa1_width;
-		float depth_scale; // pcsx2gs (God Hand): vertex Z units per GS depth unit, 1/256 for GSRendererHW::ApplyPreciseDepth
+		float depth_scale; // pcsx2gs (Kamite): vertex Z units per GS depth unit, 1/256 for GSRendererHW::ApplyPreciseDepth
 		__fi VSConstantBuffer()
 		{
 			memset(static_cast<void*>(this), 0, sizeof(*this));
@@ -1149,7 +1149,7 @@ struct alignas(16) GSHWDrawConfig
 		float _pad1;
 		float _pad2;
 
-		// pcsx2gs (God Hand), GSRendererHW::ApplySeeThrough: A = the oval's centre (render-target pixels) and 1 / its
+		// pcsx2gs (Kamite), GSRendererHW::ApplySeeThrough: A = the oval's centre (render-target pixels) and 1 / its
 		// radii; B = the distance from the eye where hiding starts (world units), 1 / the distance over which it
 		// reaches full, the strength (0..1), 1 / the soft edge's width (fraction of the radius); M0..M3 = the rows of
 		// the inverse of the game camera's world-to-screen matrix (screen x, y in GS primitive coordinates, z = the

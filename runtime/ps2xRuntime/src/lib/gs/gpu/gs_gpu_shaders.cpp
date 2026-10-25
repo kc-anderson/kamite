@@ -885,7 +885,7 @@ void drawTriangle(uint p, uint s, int x, int y)
     {
         // Relative to vertex 0, like the GS DDA (start value + gradient * distance): a constant attribute stays exact.
         // The weighted sum c0*w0 + c1*w1 + c2*w2 gave 127 for an all-0x80 alpha wherever w0+w1+w2 < 1 (float rounding),
-        // which flipped God Hand's ATST GREATER 0x7F / AFAIL FB_ONLY test and dropped Z writes (speckled skin and cloth).
+        // which flipped the game's ATST GREATER 0x7F / AFAIL FB_ONLY test and dropped Z writes (speckled skin and cloth).
         precise vec4 mixed = vec4(c0) + (vec4(c1) - vec4(c0)) * w1 + (vec4(c2) - vec4(c0)) * w2;
         color = uvec4(clampU8(int(mixed.r)), clampU8(int(mixed.g)), clampU8(int(mixed.b)), clampU8(int(mixed.a)));
     }

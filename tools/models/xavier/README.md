@@ -1,4 +1,4 @@
-# Xavier for God Hand
+# Xavier
 
 `assets/characters/xavier/` (the model nodes and textures) was made from `Xavier_v1_1_1-README.blend` (Xavier:
 Renegade Angel, © Adult Swim) with these scripts, Blender 5.2 as a Python module (`pip install bpy==5.2.3
@@ -7,7 +7,7 @@ pillow`), numpy and Pillow:
 1. `prep1.py`: Xavier's mesh (shape keys applied, rest pose) moved onto Gene's skeleton: uniform scale to Gene's height
    (top of the head 1.837), legs and the snake arm aimed along Gene's bones, the right arm cut halfway down the upper
    arm (his shoulder and the top of the upper arm stay, skinned to Gene's arm bones, so the joint bends like his own
-   skin; the game's God Hand arm comes out of the cut, clipped at build time to start inside it: `trim` in
+   skin; the game's gauntlet arm comes out of the cut, clipped at build time to start inside it: `trim` in
    character.json, the gauntlet a little further out than the arm's skin so it stays under the shoulder pad, and the
    skin's vertex colours tinted from the fur colour to plain over 8 cm: `tint`), the human mouth interior dropped,
    Xavier's deform bones mapped to Gene's 32 bones. The cut's open ring is capped with a disc of fur (nothing shows
@@ -30,5 +30,5 @@ pillow`), numpy and Pillow:
    opaque (0x80), as in Gene's hair texture.
 
 Environment: `XAVIER_BLEND`, `GENE_PL00` (the game's pl/pl00.dat), `XAVIER_WORK` (work folder; Xavier's packed
-textures saved as PNG in `<work>/textures`). The game's skeleton, motions, God Hand arm and the merge into pl00.dat
+textures saved as PNG in `<work>/textures`). The game's skeleton, motions, gauntlet arm and the merge into pl00.dat
 happen at build time from your disc (`tools/models/build_characters.py`), so nothing of the game is in the repository.

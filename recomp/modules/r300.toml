@@ -4,7 +4,7 @@
 # and recompiled by 'python -I build.py modules r300' into build/snr2/gen/r300, then packed into
 # generated_modules/r300/ (never generated/). Class 'room': slot heap 0x799000/0xF000 (cRelSys_loadSlot ReadAlloc, ra 0x2BE5A0, redirected from heap D 0x754220).
 # The generated code is valid only at that base (literal PCs/return addresses), checked at link time by
-# src/godhand/function_hooks.cpp (name + base + code sha256).
+# src/kamite/function_hooks.cpp (name + base + code sha256).
 # Paths are relative to this file; build.py modules makes them absolute.
 input = "../../build/snr2/out/r300/r300.elf"
 output = "../../build/snr2/gen/r300"

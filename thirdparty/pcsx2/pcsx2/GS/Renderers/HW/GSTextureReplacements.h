@@ -28,7 +28,7 @@ namespace GSTextureReplacements
 		};
 		std::vector<MipData> mips;
 
-		// pcsx2gs (God Hand port): the alpha levels this texture was snapped to (MatchOriginalAlpha); 0 = not snapped.
+		// pcsx2gs (Kamite): the alpha levels this texture was snapped to (MatchOriginalAlpha); 0 = not snapped.
 		u64 snapped_levels_hash = 0;
 	};
 
@@ -46,10 +46,10 @@ namespace GSTextureReplacements
 	GSTexture* LookupReplacementTexture(const GSTextureCache::HashCacheKey& hash, bool mipmap, bool* pending, std::pair<u8, u8>* alpha_minmax);
 	GSTexture* CreateReplacementTexture(const ReplacementTexture& rtex, bool mipmap);
 
-	// pcsx2gs (God Hand port): a replacement may only use the alpha levels of the game's own texture: each texel's alpha
+	// pcsx2gs (Kamite): a replacement may only use the alpha levels of the game's own texture: each texel's alpha
 	// is snapped to the nearest level the texture's palette has (an opaque texture: 0x80 everywhere; a cutout such as
 	// a mountain backdrop: 0 or 0x80; a graded cloud keeps its gradient). Packs made from dumps and edited carry
-	// 0x7F, 0x40, 0x89, 0xAC... there: God Hand's alpha test (GREATER 0x7F, AFAIL FB_ONLY) fails on them, so they blend
+	// 0x7F, 0x40, 0x89, 0xAC... there: the game's alpha test (GREATER 0x7F, AFAIL FB_ONLY) fails on them, so they blend
 	// half-transparent, write no depth (the scene behind shows through, the depth of field blurs over them), and values
 	// above 0x80 blend brighter than the original. PS2X_PCSX2_MATCH_ALPHA=0 turns it off.
 	void MatchOriginalAlpha(const GSTextureCache::HashCacheKey& hash, const u32* clut, u32 entries);

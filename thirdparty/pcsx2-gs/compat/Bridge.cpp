@@ -34,11 +34,11 @@ namespace
     bool g_open = false;
     WindowInfo g_window;
 
-    // God Hand's entry in PCSX2's GameIndex.yaml (SLUS-21503, same for SLES-54320, SLPM-66399, SCKA-20084):
+    // The game's entry in PCSX2's GameIndex.yaml (SLUS-21503, same for SLES-54320, SLPM-66399, SCKA-20084):
     //   gsHWFixes: halfPixelOffset: 2  # Depth of field effect aligned properly + Shifts buildings correctly.
     //              nativeScaling: 2    # Fixes post effects.
     // PCSX2's GameDatabase casts the numbers straight to the enums: 2 = GSHalfPixelOffset::Special,
-    // 2 = GSNativeScaling::Aggressive. No other God Hand fixes exist upstream (PCSX2 2954ebe); everything else keeps
+    // 2 = GSNativeScaling::Aggressive. No other fixes for the game exist upstream (PCSX2 2954ebe); everything else keeps
     // PCSX2's defaults. PCSX2 applies these through its game database; here they are fixed.
     void ApplyGameFixes(Pcsx2Config::GSOptions &options)
     {
@@ -144,7 +144,7 @@ namespace
             else if (key == "native_scaling")
             {
                 // The game's post effects (depth of field, the heat haze) are drawn from downscaled copies of the
-                // frame. PCSX2's God Hand fix ("ps2", Aggressive) draws those copies at the PS2's resolution, which
+                // frame. PCSX2's fix for the game ("ps2", Aggressive) draws those copies at the PS2's resolution, which
                 // keeps them aligned but leaves the blur grainy at high internal resolutions; "upscaled"
                 // (AggressiveUpscaled) keeps the copies at the internal resolution where the draw is a plain blend;
                 // "off" leaves everything upscaled (the effects may misalign). Numbers are PCSX2's own enum.
@@ -163,7 +163,7 @@ namespace
                     options.UserHacks_NativeScaling = static_cast<GSNativeScaling>(std::clamp(value, 0, 4));
             }
             else if (key == "half_pixel_offset")
-                options.UserHacks_HalfPixelOffset = static_cast<GSHalfPixelOffset>(std::clamp(value, 0, 5)); // 2 = God Hand's fix
+                options.UserHacks_HalfPixelOffset = static_cast<GSHalfPixelOffset>(std::clamp(value, 0, 5)); // 2 = the game's fix
         }
     }
 

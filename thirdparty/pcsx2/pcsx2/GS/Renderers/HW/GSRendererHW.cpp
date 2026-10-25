@@ -2811,7 +2811,7 @@ void GSRendererHW::Draw()
 		return;
 	}
 
-	// God Hand (pcsx2gs): with the depth of field off, drops the game's depth-of-field composite, the full-screen sprite that
+	// pcsx2gs (Kamite): with the depth of field off, drops the game's depth-of-field composite, the full-screen sprite that
 	// blends its blurred 256x256 copy of the frame (CT32 at TBP 0x2800, alpha = the depth mask the game built there)
 	// over the frame with ALPHA 0x44. An A/B switch for the 2026-10 transparent-enemies / grainy-haze investigation.
 	{
@@ -5796,9 +5796,9 @@ void GSRendererHW::SetupIA(float target_scale, float sx, float sy, bool req_vert
 	m_conf.nindices = m_index->tail;
 }
 
-// pcsx2gs (God Hand): precise depth for perspective-textured draws.
+// pcsx2gs (Kamite): precise depth for perspective-textured draws.
 //
-// God Hand draws into a 16-bit depth buffer with a projection whose depth falls as 1/distance from a near plane at
+// The game draws into a 16-bit depth buffer with a projection whose depth falls as 1/distance from a near plane at
 // 0.1 m (zmax 65535): most of a scene sits between depth 30 and 300, one step is 6 cm at 20 m and 55 cm at 60 m, and
 // surfaces that meet or lie close together in the distance cut into each other in jagged steps that jump as the
 // camera moves (on the PS2 too, under a pixel there). The integer depth is all the GS gets, but a perspective-
@@ -6003,7 +6003,7 @@ void GSRendererHW::ApplyPreciseDepth()
 	scaled();
 }
 
-// pcsx2gs (God Hand): the see-through oval. The game gives, every frame, where the player is on screen, an oval round
+// pcsx2gs (Kamite): the see-through oval. The game gives, every frame, where the player is on screen, an oval round
 // him, the distance from the eye where hiding starts, and its camera (the eye, the inverse of its world-to-screen
 // matrix: camera.cpp). Every depth-tested triangle draw into the scene's 16-bit depth buffer gets the pixel shader's
 // PS_SEE_THROUGH: its pixels inside the oval and nearer the eye than that are dissolved, the ground below the player
@@ -6022,7 +6022,7 @@ void GSRendererHW::ApplySeeThrough(float rtscale)
 	// Only the scenery (the port marks each PATH1 packet's class, GSState::GIFRegHandlerNOP): Gene's arms reaching
 	// towards the camera and the enemies between it and him are nearer than him too, and they are what the oval is
 	// there to show (K, Oct 2026).
-	if (m_gh_draw_class != 1u)
+	if (m_km_draw_class != 1u)
 		return;
 	const float ox = static_cast<float>(m_context->XYOFFSET.OFX) / 16.0f;
 	const float oy = static_cast<float>(m_context->XYOFFSET.OFY) / 16.0f;

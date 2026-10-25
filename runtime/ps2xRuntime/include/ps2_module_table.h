@@ -1,6 +1,6 @@
 #pragma once
 
-// God Hand port: run-time loaded guest code (SN Systems SNR2 DLLs). A second, page-allocated dense function table over
+// Kamite: run-time loaded guest code (SN Systems SNR2 DLLs). A second, page-allocated dense function table over
 // guest RAM outside the generated table's range [g_ps2RecompiledFunctionTableBase, g_ps2RecompiledFunctionTableEnd).
 // hasFunction / lookupFunction / dispatchGuestBranch (single lookup) try the generated table first, then this one,
 // so boot-ELF dispatch does the same work as before and module dispatch costs one range check plus two loads.

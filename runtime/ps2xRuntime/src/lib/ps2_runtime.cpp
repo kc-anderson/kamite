@@ -401,7 +401,7 @@ namespace
         }
     }
 
-    // Two calls per guest JAL (dispatchGuestBranch). Round 10 (GODHAND_SAMPLE_PROFILE, hidden r100 runs at 3x, which run
+    // Two calls per guest JAL (dispatchGuestBranch). Round 10 (KAMITE_SAMPLE_PROFILE, hidden r100 runs at 3x, which run
     // with PS2X_BRANCH_TRACE=256 from 'build.py boot'): pushBranchEvent was 14.8% / 13.2% of the GameThread's samples
     // (boot_20261017-134756 / -135545). With the trace off (visible play) the out-of-line call + branchTrace() call still
     // ran every time; the disabled check is now inline and the enabled ring wraps without a division.
@@ -968,7 +968,7 @@ namespace
     // batch, including the strip XGKICK the stage program only issues after its vertex loop (0x340).
     // Capped so a runaway program still returns. Both cases are logged.
     constexpr uint32_t kVu1Slice = 65536u;
-    constexpr uint32_t kVu1MaxSlices = 16u; // 1,048,576 VU cycles (~3.6 ms of VU1 time); worst God Hand case measured 107,783
+    constexpr uint32_t kVu1MaxSlices = 16u; // 1,048,576 VU cycles (~3.6 ms of VU1 time); worst case in the game measured 107,783
 
     void finishVu1Program(VU1Interpreter &vu1, PS2Memory &memory, GS &gs, uint32_t top, uint32_t itop,
                           const char *what, uint32_t startPc, uint64_t startCycles)
@@ -2889,7 +2889,7 @@ void PS2Runtime::postEeEvent(EeEvent event)
 
 // Budget of the deferred EE checkpoints (Kernel/EeScheduler.cpp). Checked here, before the call into the scheduler:
 // it was tried inline in the generated code (in ps2_runtime.h), and the extra code in tens of thousands of loops made
-// the game thread ~4 points slower overall (PROGRESS §76).
+// The game thread ~4 points slower overall (PROGRESS §76).
 extern uint64_t g_ps2xEeDeferred;
 extern std::atomic<uint64_t> g_ps2xEeDeferBudget;
 extern uint32_t g_ps2xEeLoopCycles;

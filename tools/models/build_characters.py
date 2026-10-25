@@ -1,16 +1,16 @@
 """Build the playable character mods from your own disc: assets/characters/<id>/ -> <out>/mods/characters/<id>/.
 
-    python -I tools/models/build_characters.py --iso <God Hand.iso> --out <folder holding godhand.exe> [--texture-pack <dir>] [id ...]
+    python -I tools/models/build_characters.py --iso <disc image .iso> --out <folder holding kamite.exe> [--texture-pack <dir>] [id ...]
 
 Each assets/characters/<id>/character.json lists the disc files it replaces:
     {"files": {"pl/pl00.dat": {"nodes": "xavier_nodes.scr", "textures": "xavier_textures.tm3"},
                "pl/pl01.dat": {"nodes": "xavier_coat.scr", "textures": "xavier_textures.tm3", "keep": [],
                                "append_textures": false}}}
 "nodes"/"textures": the mod's own model nodes and textures merged into the game's file (its skeleton, motions and the
-"keep" nodes, by default the God Hand arm, stay the game's; textures replace the game's of the same name, new names
+"keep" nodes, by default the gauntlet arm, stay the game's; textures replace the game's of the same name, new names
 are appended unless "append_textures" is false); "trim": {"GH_00": {"axis": [-1, 0, 0], "min": 0.27}} cuts a kept
 node at the plane axis.p = min (rest pose, model space), keeping the far side and clipping the triangles that cross it
-(e.g. the God Hand arm where it enters the character's own upper arm); a "tint": {"start": s, "length": l, "rgb": [r,
+(e.g. the gauntlet arm where it enters the character's own upper arm); a "tint": {"start": s, "length": l, "rgb": [r,
 g, b]} on a trim multiplies the node's vertex colours by rgb/128 up to axis.p = s, fading to unchanged over l; an
 "inset": {"start": s, "factor": f, "centre": [cy, cz]} pulls the vertices between the cut and axis.p = s towards the
 bone line (by f at the cut, unchanged at s), so the part inside the character's own stump stays hidden; "empty": every
@@ -36,7 +36,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "xavier"))
 sys.path.insert(0, os.path.join(ROOT, "tools", "snr2"))
-import ghmodel  # noqa: E402
+import gamemodel  # noqa: E402
 from snr2disc import Disc  # noqa: E402
 
 
@@ -58,7 +58,7 @@ def build(iso, out, only=()):
                 raise SystemExit("%s: %s is not on the disc" % (cid, rel))
             game = disc.read_afs(paths[rel.lower()])
             if how.get("empty"):
-                data = ghmodel.empty_model(game)
+                data = gamemodel.empty_model(game)
             else:
                 nodes = open(os.path.join(folder, how["nodes"]), "rb").read()
                 texs = open(os.path.join(folder, how["textures"]), "rb").read()
@@ -70,7 +70,7 @@ def build(iso, out, only=()):
                                   (inset["start"], inset["factor"], tuple(inset["centre"])) if inset else None)
                     if pt:
                         paint[name] = (tuple(pt["textures"]), pt["fur"], pt["start"], pt["length"])
-                data = ghmodel.merge_model(game, nodes, texs, tuple(how.get("keep", ghmodel.KEEP)),
+                data = gamemodel.merge_model(game, nodes, texs, tuple(how.get("keep", gamemodel.KEEP)),
                                            how.get("append_textures", True), trim, paint)
                 if paint:
                     try:
@@ -101,25 +101,25 @@ def build(iso, out, only=()):
 
 def painted_hd(folder, dest, game, merged, mod_tm3, paint, trim, texture_pack):
     """Full-resolution replacements for the painted textures: the pack's replacement of the game's texture (an
-    uncompressed BGRA .dds, as God Hand packs ship) or the game's own texture scaled up, with the character's
+    uncompressed BGRA .dds, as texture packs for the game ship) or the game's own texture scaled up, with the character's
     full-resolution fur painted on with the same weights, saved under the painted texture's replacement name."""
     import numpy as np
     from PIL import Image
     import paint as painter
-    from ghtex import tim3_decode
+    from gametex import tim3_decode
     from pcsx2tex import replacement_name
-    game_tex = {nm: tb for t, d, o in ghmodel.dat_read(game) if t == "TM3" and d is not None for nm, tb, _ in ghmodel.tm3_read(d)}
-    new_tex = {nm: tb for t, d, o in ghmodel.dat_read(merged) if t == "TM3" and d is not None for nm, tb, _ in ghmodel.tm3_read(d)}
-    mod_tex = {nm: tb for nm, tb, _ in ghmodel.tm3_read(mod_tm3)}
-    md = [d for t, d, o in ghmodel.dat_read(game) if t == "MD" and d is not None and d[:3] == b"scr"][0]
-    kind, nodes = ghmodel.scr_read(md)
+    game_tex = {nm: tb for t, d, o in gamemodel.dat_read(game) if t == "TM3" and d is not None for nm, tb, _ in gamemodel.tm3_read(d)}
+    new_tex = {nm: tb for t, d, o in gamemodel.dat_read(merged) if t == "TM3" and d is not None for nm, tb, _ in gamemodel.tm3_read(d)}
+    mod_tex = {nm: tb for nm, tb, _ in gamemodel.tm3_read(mod_tm3)}
+    md = [d for t, d, o in gamemodel.dat_read(game) if t == "MD" and d is not None and d[:3] == b"scr"][0]
+    kind, nodes = gamemodel.scr_read(md)
     hd_dir = os.path.join(dest, "textures")
     os.makedirs(hd_dir, exist_ok=True)
     for node_name, (names, fur_name, start, length) in paint.items():
         nd = [n for n in nodes if n["name"] == node_name][0]
-        mdb = ghmodel.mdb_read(md, nd["mdb_off"])
+        mdb = gamemodel.mdb_read(md, nd["mdb_off"])
         if node_name in trim:
-            mdb = ghmodel.trim_mdb(mdb, *trim[node_name])
+            mdb = gamemodel.trim_mdb(mdb, *trim[node_name])
         axis = trim[node_name][0] if node_name in trim else (-1, 0, 0)
         # the fur at full resolution: the character's own replacement of its fur texture
         fur_png = os.path.join(folder, "textures", replacement_name(mod_tex[fur_name]) + ".png")

@@ -1,4 +1,4 @@
-"""God Hand disc access for the SNR2 tool: ISO9660 root -> _DATA.AFS -> GODHAND.FST names.
+"""the game disc access for the SNR2 tool: ISO9660 root -> _DATA.AFS -> GODHAND.FST names.
 
 Read-only. Standard library only. Layouts (checked against the disc, Oct 17 2026):
   ISO9660: PVD at sector 16; only the root directory is needed (SLUS_215.03, _DATA.AFS, GODHAND.FST).

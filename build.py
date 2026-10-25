@@ -1,4 +1,4 @@
-"""God Hand (USA, SLUS-21503) PC port: generate, configure, build, boot.
+"""The game (USA, SLUS-21503) PC port: generate, configure, build, boot.
 
     python -I build.py generate [--iso X] [--toml F]  recompile SLUS_215.03 from your disc image into generated/
     python -I build.py modules [--force] [mod ...]    recompile SNR2 DLLs (recomp/modules/<mod>.toml, after
@@ -7,17 +7,17 @@
     python -I build.py vu [capture dir ...]           VU1 microcode ahead of time: the uploads found on your disc plus
                                                       captured images (vu1_*.bin) into generated/vu1
     python -I build.py configure [-DOPTION=...]       CMake configure (Ninja, RelWithDebInfo, no LTCG)
-    python -I build.py build [target]                 compile godhand.exe (configures first if needed)
+    python -I build.py build [target]                 compile kamite.exe (configures first if needed)
     python -I build.py all [--iso X]                  generate -> configure -> build
     python -I build.py characters [--iso X] [--texture-pack D] [id ...]  playable characters (assets/characters) built
                                                       from your disc into build/port/bin/mods/characters (D: the HD
                                                       pack folder, for the painted textures' full-resolution versions)
     python -I build.py boot [--seconds N] [--iso X]   one hidden, time-capped run; output in build/port/bin/logs
-    python -I build.py run [args]                     a normal run in a window (arguments go to godhand.exe)
+    python -I build.py run [args]                     a normal run in a window (arguments go to kamite.exe)
     python -I build.py status                         what exists so far
 
 Needs Python 3.10+, Visual Studio 2022 with C++ (cl, CMake and Ninja come with it; VSROOT if it is not in the default
-folder; tools/win/vsenv.cmd sets it up) and your own God Hand (USA) disc image in game/ (or GODHAND_ISO / --iso).
+folder; tools/win/vsenv.cmd sets it up) and your own disc image (USA, SLUS-21503) in game/ (or KAMITE_ISO / --iso).
 Adapted from the Urban Reign port's build.py and tools/generate.py (one file here; no menu, release or bench).
 """
 import hashlib
@@ -33,11 +33,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 BUILD = ROOT / "build" / "port"
 BIN = BUILD / "bin"
-EXE = BIN / "godhand.exe"
+EXE = BIN / "kamite.exe"
 VSENV = ROOT / "tools" / "win" / "vsenv.cmd"
-JOBS = os.environ.get("GODHAND_JOBS", str(os.cpu_count() or 8))
+JOBS = os.environ.get("KAMITE_JOBS", str(os.cpu_count() or 8))
 GENERATED = ROOT / "generated"
-TOML = Path(os.environ.get("GODHAND_TOML", ROOT / "recomp" / "godhand.toml"))
+TOML = Path(os.environ.get("KAMITE_TOML", ROOT / "recomp" / "kamite.toml"))
 
 SERIAL = "SLUS-21503"
 BOOT_ELF = "SLUS_215.03"
@@ -58,8 +58,8 @@ EXIT_CODES = {
 
 
 # Builds, the recompiler and test boots run at below-normal priority so the PC stays responsive (child processes such
-# as ninja/cl inherit it) only when GODHAND_LOW_PRIORITY=1 (2026-10-18: normal priority and all cores by default).
-LOW_PRIORITY = getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0) if os.environ.get("GODHAND_LOW_PRIORITY") == "1" else 0
+# as ninja/cl inherit it) only when KAMITE_LOW_PRIORITY=1 (2026-10-18: normal priority and all cores by default).
+LOW_PRIORITY = getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0) if os.environ.get("KAMITE_LOW_PRIORITY") == "1" else 0
 
 
 def run(cmd, **kwargs):
@@ -103,8 +103,8 @@ def in_vs(*cmd):
 def game_running():
     if os.name != "nt":
         return False
-    out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq godhand.exe", "/NH"], capture_output=True, text=True).stdout
-    return "godhand.exe" in out.lower()
+    out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq kamite.exe", "/NH"], capture_output=True, text=True).stdout
+    return "kamite.exe" in out.lower()
 
 
 # ---- disc ---------------------------------------------------------------------------------------------------------
@@ -135,7 +135,7 @@ def iso_read_root_file(iso_path, name):
     return None
 
 
-def boots_god_hand(iso_path):
+def boots_game(iso_path):
     try:
         cnf = iso_read_root_file(iso_path, "SYSTEM.CNF")
     except OSError:
@@ -146,10 +146,10 @@ def boots_god_hand(iso_path):
 def find_iso(arg=None):
     if arg:
         return Path(arg)
-    if os.environ.get("GODHAND_ISO"):
-        return Path(os.environ["GODHAND_ISO"])
+    if os.environ.get("KAMITE_ISO"):
+        return Path(os.environ["KAMITE_ISO"])
     for path in sorted((ROOT / "game").glob("*.iso")):
-        if boots_god_hand(path):
+        if boots_game(path):
             return path
     return None
 
@@ -174,10 +174,10 @@ def extract_boot_elf(iso):
 # ---- generate -----------------------------------------------------------------------------------------------------
 
 def find_recompiler():
-    """GODHAND_RECOMP, then the recompiler built from runtime/ps2xRecomp into out/recomp, then the port build tree."""
+    """KAMITE_RECOMP, then the recompiler built from runtime/ps2xRecomp into out/recomp, then the port build tree."""
     candidates = []
-    if os.environ.get("GODHAND_RECOMP"):
-        candidates.append(Path(os.environ["GODHAND_RECOMP"]))
+    if os.environ.get("KAMITE_RECOMP"):
+        candidates.append(Path(os.environ["KAMITE_RECOMP"]))
     candidates += [ROOT / "out" / "recomp" / "ps2_recomp.exe",
                    BUILD / "runtime" / "ps2xRecomp" / "ps2_recomp.exe",
                    ROOT / "tools" / "ps2_recomp.exe"]
@@ -188,7 +188,7 @@ def find_recompiler():
 
 
 def stage_toml(toml_path, elf, staging):
-    """recomp/godhand.toml with input/output pointed at build/ and its relative CSV paths made absolute."""
+    """recomp/kamite.toml with input/output pointed at build/ and its relative CSV paths made absolute."""
     text = toml_path.read_text(encoding="utf-8")
     text = re.sub(r'(?m)^input\s*=.*$', f'input = "{elf.as_posix()}"', text)
     text = re.sub(r'(?m)^output\s*=.*$', f'output = "{staging.as_posix()}"', text)
@@ -203,7 +203,7 @@ def stage_toml(toml_path, elf, staging):
         raise SystemExit(f"{key} {path} is missing (named in {toml_path})")
 
     text = re.sub(r'(?m)^(ghidra_output|runtime_relocations)\s*=\s*"([^"]+)"', absolute, text)
-    staged = ROOT / "build" / "godhand.staging.toml"
+    staged = ROOT / "build" / "kamite.staging.toml"
     staged.write_text(text, encoding="utf-8")
     return staged
 
@@ -232,16 +232,16 @@ def generate(args=()):
     iso_arg = args[args.index("--iso") + 1] if "--iso" in args and args.index("--iso") + 1 < len(args) else None
     toml_path = Path(args[args.index("--toml") + 1]) if "--toml" in args and args.index("--toml") + 1 < len(args) else TOML
     if not toml_path.exists():
-        print(f"{toml_path} not found (the God Hand recompiler config; see GODHAND_PORT_NOTES.md).")
+        print(f"{toml_path} not found (the recompiler config; see KAMITE_PORT_NOTES.md).")
         return 1
-    if toml_path.name != "godhand.toml":
+    if toml_path.name != "kamite.toml":
         # generate syncs into generated/ and deletes every file it did not write: a module toml here would wipe the
         # boot code and force a full rebuild. Modules go through 'build.py modules'.
-        print(f"generate takes only godhand.toml (got {toml_path}); SNR2 modules: python -I build.py modules <mod>")
+        print(f"generate takes only kamite.toml (got {toml_path}); SNR2 modules: python -I build.py modules <mod>")
         return 1
     iso = find_iso(iso_arg)
     if not iso:
-        print(f"No disc image found. Put your own God Hand (USA) image in game/, set GODHAND_ISO or pass --iso.")
+        print(f"No disc image found. Put your own disc image (USA, SLUS-21503) in game/, set KAMITE_ISO or pass --iso.")
         return 1
     print(f"disc image: {iso}")
     elf = extract_boot_elf(iso)
@@ -249,16 +249,16 @@ def generate(args=()):
         return 1
     recompiler = find_recompiler()
     # The recompiler built here is rebuilt when its sources changed (switchable patches, fixes), so the game code is
-    # always generated by the current one. GODHAND_RECOMP or out/recomp: taken as they are.
+    # always generated by the current one. KAMITE_RECOMP or out/recomp: taken as they are.
     built_here = BUILD / "runtime" / "ps2xRecomp" / "ps2_recomp.exe"
-    if recompiler and Path(recompiler) == built_here and not os.environ.get("GODHAND_RECOMP"):
+    if recompiler and Path(recompiler) == built_here and not os.environ.get("KAMITE_RECOMP"):
         newest = max(f.stat().st_mtime for f in (ROOT / "runtime" / "ps2xRecomp").rglob("*") if f.is_file())
         if newest > built_here.stat().st_mtime:
             print("The recompiler's sources changed: rebuilding ps2_recomp.")
             recompiler = None
     if not recompiler:
         print("Building the recompiler (ps2_recomp) first.")
-        if configure(["-DGODHAND_BUILD_RECOMP=ON"]) or in_vs("cmake", "--build", BUILD, "--target", "ps2_recomp", "--", "-j", JOBS):
+        if configure(["-DKAMITE_BUILD_RECOMP=ON"]) or in_vs("cmake", "--build", BUILD, "--target", "ps2_recomp", "--", "-j", JOBS):
             return 1
         recompiler = find_recompiler()
         if not recompiler:
@@ -313,7 +313,7 @@ def stage_module_toml(toml_path, staging):
 
 def module_pack_source(mod, link, linked, entries):
     """<mod>_pack.cpp: the module's dense-table entries + identity (name, base, size, code range, code sha256).
-    The functions live in namespace gh_<mod> (module_namespace): every room pack is generated for the same slot base,
+    The functions live in namespace km_<mod> (module_namespace): every room pack is generated for the same slot base,
     so the address-suffixed names repeat across packs."""
     base = int(link["base"], 16)
     text_begin, text_end = (int(x, 16) for x in link["code"])
@@ -330,14 +330,14 @@ def module_pack_source(mod, link, linked, entries):
     image_name = link["image_name"].replace("\\", "\\\\")
     out = [f"// Generated by build.py modules from build/snr2/gen/{mod}/register_functions.cpp. Do not edit.",
            f"// {link['module']} linked at {link['base']} ({link['size']} bytes), code {link['code'][0]}-{link['code'][1]}.",
-           '#include "godhand/module_registry.h"',
+           '#include "kamite/module_registry.h"',
            f'#include "{mod}_functions.h"']
     out += ["", "namespace", "{"]
     if live:
         out.append("    const uint32_t kLiveSites[] = {" + ", ".join(f"0x{x:08X}u" for x in live) + "};")
-    out.append("    const godhand::ModuleEntry kEntries[] = {")
-    out += [f"        {{0x{addr:08X}u, gh_{mod}::{name}}}," for addr, name in entries]
-    out += ["    };", "}", "", "namespace godhand", "{",
+    out.append("    const kamite::ModuleEntry kEntries[] = {")
+    out += [f"        {{0x{addr:08X}u, km_{mod}::{name}}}," for addr, name in entries]
+    out += ["    };", "}", "", "namespace kamite", "{",
             f"    extern const ModulePack kModulePack_{mod} = {{",
             f'        "{image_name}", 0x{base:08X}u, 0x{link["size"]:X}u, 0x{text_begin:08X}u, 0x{text_end:08X}u,',
             f'        "{digest}",',
@@ -347,7 +347,7 @@ def module_pack_source(mod, link, linked, entries):
     return "\n".join(out), digest
 
 
-MODULE_PIPELINE = "modules-v2-namespace"  # bump when the post-processing below changes (invalidates the stamps)
+MODULE_PIPELINE = "modules-v3-kamite"  # bump when the post-processing below changes (invalidates the stamps)
 INCLUDE_FUNCS = "#include <ps2_recompiled_functions.h>"
 INCLUDE_STUBS = "#include <ps2_recompiled_stubs.h>"
 
@@ -366,10 +366,10 @@ def module_stamp(mod, toml_path, recompiler):
 
 
 def module_namespace(mod, staging):
-    """Puts every generated function of the module into namespace gh_<mod>, renames the module header to
+    """Puts every generated function of the module into namespace km_<mod>, renames the module header to
     <mod>_functions.h (unique name and guard: the old shared name/guard PS2_RECOMPILED_FUNCTIONS_H made one module's
     header hide another's) and drops the empty stubs header. Returns an error text or None."""
-    ns = f"gh_{mod}"
+    ns = f"km_{mod}"
     header = staging / "ps2_recompiled_functions.h"
     text = header.read_text(encoding="utf-8")
     decls = [line for line in text.splitlines() if line.startswith("void ")]
@@ -461,7 +461,7 @@ def module_table_coverage(mod, link, linked, entries, staging):
 
 def modules(args=()):
     """Recompiles SNR2 DLLs into generated_modules/<mod>/ (never generated/): ps2_recomp at below-normal priority into
-    build/snr2/gen/<mod>, every function put into namespace gh_<mod> (room packs share one slot base, so their
+    build/snr2/gen/<mod>, every function put into namespace km_<mod> (room packs share one slot base, so their
     address-suffixed names repeat), register_functions.cpp turned into <mod>_pack.cpp (ModuleEntry array + ModulePack;
     the original would define the boot table's g_ps2RecompiledFunctionTable* globals a second time), offline gates
     (no name shared with the boot code, every definition inside the namespace, per jr-site table coverage), then a sync
@@ -542,16 +542,16 @@ def modules(args=()):
         if error:
             print(f"{mod}: {error}")
             return 1
-        # Namespace gate: no function definition outside gh_<mod> (the godhand link uses /FORCE:MULTIPLE, so a stray
+        # Namespace gate: no function definition outside km_<mod> (the kamite link uses /FORCE:MULTIPLE, so a stray
         # global duplicate would be merged silently).
-        opener = f"namespace gh_{mod}\n{{\n"
+        opener = f"namespace km_{mod}\n{{\n"
         for path in staging.glob("*.cpp"):
             if path.name == "register_functions.cpp":
                 continue
             text = path.read_text(encoding="utf-8")
             at = text.find(opener)
-            if at < 0 or DECL_LINE.search(text[:at]) or not text.rstrip().endswith(f"}} // namespace gh_{mod}"):
-                print(f"{mod}: {path.name} has code outside namespace gh_{mod}")
+            if at < 0 or DECL_LINE.search(text[:at]) or not text.rstrip().endswith(f"}} // namespace km_{mod}"):
+                print(f"{mod}: {path.name} has code outside namespace km_{mod}")
                 return 1
         print(f"{mod}: {len(sources)} sources, {len(decls)} functions, {len(entries)} table entries; {coverage}")
         pack, digest = module_pack_source(mod, link, linked, entries)
@@ -573,11 +573,11 @@ DEFAULT_DEPS = ROOT.parent / "PS2Recomp" / "out" / "rel" / "_deps"
 def configure(extra=()):
     extra = list(extra)
     args = ["cmake", "-S", ROOT, "-B", BUILD, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
-            # No /GL over the generated code ever (src/CMakeLists.txt); GODHAND_LTO adds it for the port and IOP only.
-            "-DGODHAND_LTO=OFF"]
-    # GODHAND_DEPS: an already downloaded FetchContent _deps folder (raylib-src, ...) to reuse instead of downloading.
+            # No /GL over the generated code ever (src/CMakeLists.txt); KAMITE_LTO adds it for the port and IOP only.
+            "-DKAMITE_LTO=OFF"]
+    # KAMITE_DEPS: an already downloaded FetchContent _deps folder (raylib-src, ...) to reuse instead of downloading.
     # Default: the PS2Recomp checkout's out/rel/_deps next to this port, when it exists.
-    deps = os.environ.get("GODHAND_DEPS") or (str(DEFAULT_DEPS) if DEFAULT_DEPS.is_dir() else "")
+    deps = os.environ.get("KAMITE_DEPS") or (str(DEFAULT_DEPS) if DEFAULT_DEPS.is_dir() else "")
     if deps:
         for name in ("raylib", "sdl3", "imgui", "rlimgui", "nlohmann_json", "fmt", "elfio", "toml11", "libdwarf",
                      "rabbitizer"):
@@ -585,12 +585,12 @@ def configure(extra=()):
             if src.is_dir():
                 args.append(f"-DFETCHCONTENT_SOURCE_DIR_{name.upper()}={src.as_posix()}")
     # Never download at configure time unless asked: a missing dependency fails instead.
-    if os.environ.get("GODHAND_ALLOW_DOWNLOADS") != "1":
+    if os.environ.get("KAMITE_ALLOW_DOWNLOADS") != "1":
         args.append("-DFETCHCONTENT_FULLY_DISCONNECTED=ON")
-    # The recompiler is not part of the game build; only an explicit -DGODHAND_BUILD_RECOMP=ON turns it on, and every
+    # The recompiler is not part of the game build; only an explicit -DKAMITE_BUILD_RECOMP=ON turns it on, and every
     # other configure resets it (a stale ON would pull elfio, toml11, fmt, libdwarf and rabbitizer).
-    if not any(a.startswith("-DGODHAND_BUILD_RECOMP=") for a in extra):
-        args.append("-DGODHAND_BUILD_RECOMP=OFF")
+    if not any(a.startswith("-DKAMITE_BUILD_RECOMP=") for a in extra):
+        args.append("-DKAMITE_BUILD_RECOMP=OFF")
     return in_vs(*args, *extra)
 
 
@@ -598,12 +598,12 @@ def has_generated_code():
     return (GENERATED / "register_functions.cpp").exists()
 
 
-def build(target="godhand"):
+def build(target="kamite"):
     if not has_generated_code():
         print("The recompiled game code is missing: run 'python -I build.py generate' first.")
         return 1
     if game_running():
-        print("godhand.exe is running: close it first (the link would fail).")
+        print("kamite.exe is running: close it first (the link would fail).")
         return 1
     # build.ninja, not CMakeCache.txt: CMake writes the cache even when configure fails.
     if not (BUILD / "build.ninja").exists() and configure():
@@ -625,10 +625,10 @@ def build(target="godhand"):
         code = proc.wait()
     if code:
         return code
-    # Link gate: godhand links with /FORCE:MULTIPLE, so a duplicate module symbol would only be a warning and one
-    # definition would be picked silently. Every module function lives in namespace gh_<mod> (build.py modules).
+    # Link gate: kamite links with /FORCE:MULTIPLE, so a duplicate module symbol would only be a warning and one
+    # definition would be picked silently. Every module function lives in namespace km_<mod> (build.py modules).
     dups = [line.strip() for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines()
-            if ("LNK4006" in line or "LNK4088" in line) and ("gh_" in line or "kModulePack_" in line)]
+            if ("LNK4006" in line or "LNK4088" in line) and ("km_" in line or "kModulePack_" in line)]
     if dups:
         print(f"link gate: {len(dups)} duplicate module symbol warnings (first: {dups[0][:200]})")
         return 1
@@ -643,7 +643,7 @@ def build_all(args=()):
 
 def play(args=()):
     if not EXE.exists():
-        print("godhand.exe not built yet: run 'python -I build.py build' first.")
+        print("kamite.exe not built yet: run 'python -I build.py build' first.")
         return 1
     # Session header (sweep L2): play_last.log had elapsed seconds only, no wall-clock time or exe identity.
     digest = hashlib.sha256(EXE.read_bytes()).hexdigest()
@@ -655,7 +655,7 @@ def play(args=()):
 
 
 def keep_play_log(args=()):
-    """Start-God-Hand.cmd, before it overwrites logs/play_last.log: keep the previous session as
+    """Start-Kamite.cmd, before it overwrites logs/play_last.log: keep the previous session as
     logs/play_<its time>.log (nothing is deleted; each is ~1 MB). Sweep 2026-10-17 L2: two sessions' logs were lost."""
     logs = BIN / "logs"
     last = logs / "play_last.log"
@@ -685,7 +685,7 @@ def summarize(log_path, code, stamp):
 
 def boot(args=()):
     """One hidden run with a wall-clock cap. Nothing appears on screen (no console window, hidden game window, muted).
-    godhand.exe stops itself at the cap (exit 124); only if it is still alive 60 s later is this one process killed."""
+    kamite.exe stops itself at the cap (exit 124); only if it is still alive 60 s later is this one process killed."""
     args = list(args)
     seconds = 120
     extra = []
@@ -701,35 +701,35 @@ def boot(args=()):
             extra.append(args[i])
             i += 1
     if not EXE.exists():
-        print("godhand.exe not built yet: run 'python -I build.py build' first.")
+        print("kamite.exe not built yet: run 'python -I build.py build' first.")
         return 1
     if game_running():
-        print("godhand.exe is already running; not starting another one.")
+        print("kamite.exe is already running; not starting another one.")
         return 1
     logs = BIN / "logs"
     logs.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     log_path = logs / f"boot_{stamp}.log"
     env = dict(os.environ)
-    env["GODHAND_HEADLESS"] = "1"
-    env["GODHAND_TIME_LIMIT_SECONDS"] = str(seconds)
-    env.setdefault("GODHAND_MISSING_FUNCTION", "stop")
+    env["KAMITE_HEADLESS"] = "1"
+    env["KAMITE_TIME_LIMIT_SECONDS"] = str(seconds)
+    env.setdefault("KAMITE_MISSING_FUNCTION", "stop")
     env.setdefault("PS2X_DUMP_RAM_ON_MISSING", str(logs / f"missing_ram_{stamp}.bin"))
-    env.setdefault("GODHAND_DUMP_RAM", str(logs / f"timeout_ram_{stamp}.bin"))
-    env.setdefault("GODHAND_DLL_LOG", str(logs / f"dll_loads_{stamp}.csv"))
+    env.setdefault("KAMITE_DUMP_RAM", str(logs / f"timeout_ram_{stamp}.bin"))
+    env.setdefault("KAMITE_DLL_LOG", str(logs / f"dll_loads_{stamp}.csv"))
     # Hidden runs never read or write the player's controls.ini: a fresh default-layout file per run.
-    env.setdefault("GODHAND_CONTROLS_FILE", str(logs / f"controls_{stamp}.ini"))
+    env.setdefault("KAMITE_CONTROLS_FILE", str(logs / f"controls_{stamp}.ini"))
     # ... nor the player's memory card (sweep 2026-10-17 L3/CR-2): 30 earlier hidden boots opened bin/memcards/Mcd001.ps2
     # read/write and a time-limit stop can land mid-save. Default: a per-run copy (the run still sees the player's saves).
     def resolved(value):
         path = Path(value)
         return (path if path.is_absolute() else BIN / path).resolve()
-    if resolved(env["GODHAND_CONTROLS_FILE"]) == (BIN / "controls.ini").resolve():
-        print("refusing: GODHAND_CONTROLS_FILE is the player's controls.ini; hidden runs use a scratch file.")
+    if resolved(env["KAMITE_CONTROLS_FILE"]) == (BIN / "controls.ini").resolve():
+        print("refusing: KAMITE_CONTROLS_FILE is the player's controls.ini; hidden runs use a scratch file.")
         return 1
-    if env.get("GODHAND_MC_DIR"):
-        if resolved(env["GODHAND_MC_DIR"]) == (BIN / "memcards").resolve():
-            print("refusing: GODHAND_MC_DIR is the player's memory card folder; hidden runs use a copy.")
+    if env.get("KAMITE_MC_DIR"):
+        if resolved(env["KAMITE_MC_DIR"]) == (BIN / "memcards").resolve():
+            print("refusing: KAMITE_MC_DIR is the player's memory card folder; hidden runs use a copy.")
             return 1
     else:
         mc_copy = logs / f"mc_{stamp}"
@@ -737,8 +737,8 @@ def boot(args=()):
         for name in ("Mcd001.ps2", "Mcd002.ps2"):
             if (BIN / "memcards" / name).is_file():
                 shutil.copy2(BIN / "memcards" / name, mc_copy / name)
-        env["GODHAND_MC_DIR"] = str(mc_copy)
-    print(f"memory cards: {env['GODHAND_MC_DIR']}")
+        env["KAMITE_MC_DIR"] = str(mc_copy)
+    print(f"memory cards: {env['KAMITE_MC_DIR']}")
     # Read by the runtime before main() (a static initializer), so it must come from the real environment.
     env.setdefault("PS2X_BRANCH_TRACE", "256")
     env.setdefault("PS2X_BRANCH_TRACE_FILE", str(logs / f"branch_trace_{stamp}.txt"))
@@ -748,7 +748,7 @@ def boot(args=()):
     with open(log_path, "w", encoding="utf-8") as out:
         proc = subprocess.Popen(cmd, cwd=BIN, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
                                 creationflags=flags)
-        print(f"godhand.exe pid {proc.pid}, cap {seconds} s")
+        print(f"kamite.exe pid {proc.pid}, cap {seconds} s")
         try:
             code = proc.wait(timeout=seconds + 60)
         except subprocess.TimeoutExpired:
@@ -769,7 +769,7 @@ def status(args=()):
         ("generated code", GENERATED / "register_functions.cpp"),
         ("VU1 microcode compiled", GENERATED / "vu1" / "vu1_programs.cpp"),
         ("CMake cache", BUILD / "CMakeCache.txt"),
-        ("godhand.exe", EXE),
+        ("kamite.exe", EXE),
         ("tools/win/vsenv.cmd", VSENV),
     ]
     for label, path in rows:
@@ -785,7 +785,7 @@ VU1_RECOMP = BUILD / "runtime" / "ps2xTest" / "vu1_recomp.exe"
 
 
 def near_clip_patch(code):
-    """The near-geometry patch of a VU1 upload or image (src/godhand/near_geometry.cpp, uploadHook: keep the two the
+    """The near-geometry patch of a VU1 upload or image (src/kamite/near_geometry.cpp, uploadHook: keep the two the
     same): "fcand vi01,0x03ffff" (a lower word, upper without the I bit) with a CLIPw within 64 pairs becomes
     "fcand vi01,0x010410" (the far plane only). Returns the patched bytes, or None when nothing changed."""
     words = list(struct.unpack(f"<{len(code) // 4}I", code[:len(code) // 8 * 8]))
@@ -807,7 +807,7 @@ def vu(args=()):
     every microcode upload (VIF MPG) found in the boot ELF and the SNR2 DLLs (tools/vu/extract_uploads.py), and the
     vu1_*.bin images and vup_*_cap_*.bin uploads captured while playing (PS2X_VU1_CAPTURE, logs/vu1_missing) from the
     folders given here or in
-    GODHAND_VU_CAPTURE (separated by ';'). Captured images are kept in build/vu1_images across runs. At run time the
+    KAMITE_VU_CAPTURE (separated by ';'). Captured images are kept in build/vu1_images across runs. At run time the
     compiled blocks are assembled for whatever combination of programs is in VU1's micro memory."""
     elf = ROOT / "build" / BOOT_ELF
     if not elf.exists():
@@ -817,7 +817,7 @@ def vu(args=()):
     rels = sorted((ROOT / "build" / "snr2" / "rel").glob("*.rel"))
     if run([sys.executable, "-I", ROOT / "tools" / "vu" / "extract_uploads.py", VU_IMAGES, elf, *rels]):
         return 1
-    folders = list(args) + [f for f in os.environ.get("GODHAND_VU_CAPTURE", "").split(";") if f]
+    folders = list(args) + [f for f in os.environ.get("KAMITE_VU_CAPTURE", "").split(";") if f]
     copied = 0
     for folder in folders:
         for image in sorted(Path(folder).glob("vu1_*.bin")) + sorted(Path(folder).glob("vup_*_cap_*.bin")):
@@ -841,9 +841,9 @@ def vu(args=()):
             target.write_bytes(code)
             patched += 1
     print(f"near geometry: {patched} new patched uploads/images")
-    if not (BUILD / "build.ninja").exists() or "GODHAND_BUILD_TOOLS:BOOL=ON" not in \
+    if not (BUILD / "build.ninja").exists() or "KAMITE_BUILD_TOOLS:BOOL=ON" not in \
             (BUILD / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace"):
-        if configure(["-DGODHAND_BUILD_TOOLS=ON"]):
+        if configure(["-DKAMITE_BUILD_TOOLS=ON"]):
             return 1
     if build("vu1_recomp"):
         return 1
@@ -871,7 +871,7 @@ def characters(args=()):
         i = args.index("--iso"); iso_arg = args[i + 1]; del args[i:i + 2]
     iso = find_iso(iso_arg)
     if not iso:
-        print("No disc image found. Put your own God Hand (USA) image in game/, set GODHAND_ISO or pass --iso.")
+        print("No disc image found. Put your own disc image (USA, SLUS-21503) in game/, set KAMITE_ISO or pass --iso.")
         return 1
     pack = None
     if "--texture-pack" in args and args.index("--texture-pack") + 1 < len(args):
@@ -892,7 +892,7 @@ COMMANDS = {
     "vu": vu,
     "modules": modules,
     "configure": lambda a: configure(a),
-    "build": lambda a: build(a[0] if a else "godhand"),
+    "build": lambda a: build(a[0] if a else "kamite"),
     "all": build_all,
     "boot": boot,
     "run": play,

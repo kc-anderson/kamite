@@ -1,12 +1,12 @@
 import os
 WORK=os.environ.get('XAVIER_WORK','xavier_work')
-"""Xavier faces JSON + textures -> God Hand node blobs (scr) + TIM3 textures. numpy + Pillow."""
+"""Xavier faces JSON + textures -> the game's node blobs (scr) + TIM3 textures. numpy + Pillow."""
 import json, math, os, struct, sys
 import numpy as np
 from PIL import Image
 sys.path.insert(0,os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0,os.path.join(os.path.dirname(os.path.abspath(__file__)),'..'))
-from ghmodel import *
-from ghtex import swizzle4
+from gamemodel import *
+from gametex import swizzle4
 from strip import build_buffers
 
 OUT=WORK; TEX=WORK+'/textures'

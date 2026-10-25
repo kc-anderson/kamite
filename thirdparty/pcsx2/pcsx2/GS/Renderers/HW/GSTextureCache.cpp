@@ -7136,7 +7136,7 @@ GSTextureCache::HashCacheEntry* GSTextureCache::LookupHashCache(const GIFRegTEX0
 	// check for a replacement texture with the full clut key
 	if (replace)
 	{
-		// pcsx2gs (God Hand port): a paletted texture whose alpha is used (TCC=1): its replacement keeps to the alpha
+		// pcsx2gs (Kamite): a paletted texture whose alpha is used (TCC=1): its replacement keeps to the alpha
 		// levels of the game's palette (MatchOriginalAlpha).
 		if (clut && TEX0.TCC)
 		{

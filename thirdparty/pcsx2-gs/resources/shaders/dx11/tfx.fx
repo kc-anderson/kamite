@@ -294,8 +294,8 @@ cbuffer cb1
 };
 
 #if PS_SEE_THROUGH
-// pcsx2gs (God Hand): the see-through oval round the player (GSRendererHW::ApplySeeThrough). Each pixel's place in
-// the game's world is rebuilt from its screen position and depth (the inverse of the game camera's matrix). What lies
+// pcsx2gs (Kamite): the see-through oval round the player (GSRendererHW::ApplySeeThrough). Each pixel's place in
+// The game's world is rebuilt from its screen position and depth (the inverse of the game camera's matrix). What lies
 // nearer the eye than the player by a margin, inside the oval, is dissolved: an ordered 4x4 dither of the pixels,
 // densest in the middle, thinning over the soft edge and over the first stretch of distance past the margin. The
 // ground stays (a surface facing up or down, below the player's middle: floors, steps, table tops): it cannot hide

@@ -1751,7 +1751,7 @@ uint32_t EeScheduler::invocationStackTop()
     {
         return existing->second;
     }
-    // God Hand 2026-10-18: the pool (kCallbackStackFloor..Top) holds only 22 stacks of kCallbackStackSize, and thread ids
+    // 2026-10-18: the pool (kCallbackStackFloor..Top) holds only 22 stacks of kCallbackStackSize, and thread ids
     // only grow (allocateThreadId), so every new thread that ever ran an invocation (an interrupt handler, an RPC end
     // callback...) kept one forever. After ~30 minutes with save-menu visits the user's game exited with "EE invocation
     // stack space exhausted" while opening the save menu. Stacks whose (thread, depth) is not in use any more are now

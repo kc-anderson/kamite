@@ -4,7 +4,7 @@
 # and recompiled by 'python -I build.py modules event' into build/snr2/gen/event, then packed into
 # generated_modules/event/ (never generated/). Class 'event': slot heap 0x7A8000/0x18000 (LoadResourceEntry_297378 ReadAlloc, ra 0x297410, redirected from heap D).
 # The generated code is valid only at that base (literal PCs/return addresses), checked at link time by
-# src/godhand/function_hooks.cpp (name + base + code sha256).
+# src/kamite/function_hooks.cpp (name + base + code sha256).
 # Paths are relative to this file; build.py modules makes them absolute.
 input = "../../build/snr2/out/event/event.elf"
 output = "../../build/snr2/gen/event"

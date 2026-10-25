@@ -1,6 +1,6 @@
-"""Extract God Hand's files from your own disc image (for modding work; the output is game data: keep it private).
+"""Extract the game's files from your own disc image (for modding work; the output is game data: keep it private).
 
-    python tools/disc_extract.py <God Hand.iso> <output folder> [name filter ...]
+    python tools/disc_extract.py <disc image .iso> <output folder> [name filter ...]
 
 Writes every file of _DATA.AFS under its GODHAND.FST path (e.g. <out>/pl/pl00.dat), plus the ISO root files, and
 <out>/files.csv (path, AFS index, size). With filters, only paths containing one of them (case-insensitive).

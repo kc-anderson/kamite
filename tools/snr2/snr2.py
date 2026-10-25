@@ -1,7 +1,7 @@
-"""snr2 - God Hand SNR2 DLL tool (list / extract / parse / static link / verify / emit for ps2_recomp).
+"""snr2 - the game's SNR2 DLL tool (list / extract / parse / static link / verify / emit for ps2_recomp).
 
 Run with python -I (standard library only). Paths default to this port tree:
-  ISO      GODHAND_ISO, else ../../disc/God Hand (USA).iso (read-only) --iso (before the command)
+  ISO      KAMITE_ISO, else the first .iso in game/ (read-only)   --iso (before the command)
   rel dir  build/snr2/rel/                (extract output)      --rel-dir
   out dir  build/snr2/out/<module>/       (emit output)         --out
   boot ELF SLUS_215.03 from the ISO root  (import resolution)   --boot-elf
@@ -39,8 +39,14 @@ from snr2fmt import JR_RA, Module, RELOC_TYPES, STREAM_KINDS, SYM_TYPES, branch_
 from snr2link import LinkError, Registry, link  # noqa: E402
 
 PORT = os.path.normpath(os.path.join(HERE, "..", ".."))
-# GODHAND_ISO (as build.py) wins, so gen_modules.py's "snr2 emit" calls find the disc too.
-DEF_ISO = os.environ.get("GODHAND_ISO") or os.path.normpath(os.path.join(PORT, "..", "disc", "God Hand (USA).iso"))
+# KAMITE_ISO (as build.py) wins, so gen_modules.py's "snr2 emit" calls find the disc too.
+def _first_iso():
+    game = os.path.join(PORT, "game")
+    isos = sorted(f for f in os.listdir(game) if f.lower().endswith(".iso")) if os.path.isdir(game) else []
+    return os.path.join(game, isos[0]) if isos else os.path.join(game, "game.iso")
+
+
+DEF_ISO = os.environ.get("KAMITE_ISO") or _first_iso()
 DEF_REL = os.path.join(PORT, "build", "snr2", "rel")
 DEF_OUT = os.path.join(PORT, "build", "snr2", "out")
 

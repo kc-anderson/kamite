@@ -2327,7 +2327,7 @@ void main()
             return;
 
         // A bilinear FST sprite whose GS filter weights are 0 on every drawn pixel (1:1 copies with the usual +0.5 texel
-        // and 1/16 over-span: God Hand's sepia and depth-of-field byte shuffles) gives the top-left texel alone on the
+        // and 1/16 over-span: the game's sepia and depth-of-field byte shuffles) gives the top-left texel alone on the
         // GS, so it is drawn with the point filter. The shaders' bilinear path rounds U to the nearest 1/16 and, at
         // internal resolution, samples at sub-pixel positions: up to 25% of the next texel leaked into the 16-bit
         // shuffle (dark lines every 8 px in the ev03 flashbacks, port_prep/gridlines). Scales above 8 keep bilinear
@@ -2340,7 +2340,7 @@ void main()
                                 gsSpriteAxisZeroWeight(px0, px1, v0.u, v1.u, drawX0, drawX1) &&
                                 gsSpriteAxisZeroWeight(py0, py1, v0.v, v1.v, drawY0, drawY1);
         // At internal resolution the sub-samples of the last drawn row/column read the texture up to (SCALE-1)/SCALE px
-        // past the GS sample point, so a bilinear tap can land on a texel the GS never reads at 1x. God Hand's movie
+        // past the GS sample point, so a bilinear tap can land on a texel the GS never reads at 1x. The game's movie
         // sprite (640x448 IPU frame in a 1024x512 CLAMP texture, 640 -> 512 wide, V = pixel) took 19% of VRAM row 448
         // into the last 3x row: the thin dark line under movies (port_prep/polish/movie). On CLAMP axes the taps are
         // clamped to the whole sprite's 1x footprint with REGION_CLAMP. Use unclipped bounds so adjoining scissors

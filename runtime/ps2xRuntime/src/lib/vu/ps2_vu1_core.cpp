@@ -429,7 +429,7 @@ namespace
         ++trace->records;
     }
 
-    // Diagnostic (God Hand round 9, missing clipped stage geometry), inert unless PS2X_VU1_FRAMESTATS=<csv path>:
+    // Diagnostic (round 9, missing clipped stage geometry), inert unless PS2X_VU1_FRAMESTATS=<csv path>:
     // one CSV line per field with VU1 work: calls, XGKICK GIF tags with PRE and PRIM fan (5) / strip (4), and per
     // (image hash, start pc) calls/fans/strips. The VU1 calls of the last fields are kept in memory; a field with
     // >= 500 strip tags and no fan tag is written with the fields before it as a PS2X_VU1_TRACE-format file

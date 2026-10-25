@@ -388,8 +388,8 @@ bool GSPcsx2Backend::EnsureOpen()
         {"PS2X_PCSX2_BLENDING", "blending", nullptr},
         {"PS2X_PCSX2_TEXTURE_PRECACHE", "texture_precache", nullptr},
         {"PS2X_PCSX2_ASPECT", "aspect", nullptr},
-        {"PS2X_PCSX2_NATIVE_SCALING", "native_scaling", nullptr},     // post effects: ps2 (God Hand's fix) / upscaled / off
-        {"PS2X_PCSX2_HALF_PIXEL_OFFSET", "half_pixel_offset", nullptr}, // dev: 0..5, God Hand's fix is 2
+        {"PS2X_PCSX2_NATIVE_SCALING", "native_scaling", nullptr},     // post effects: ps2 (the game's fix) / upscaled / off
+        {"PS2X_PCSX2_HALF_PIXEL_OFFSET", "half_pixel_offset", nullptr}, // dev: 0..5, the game's fix is 2
     };
     std::string options;
     for (const auto &option : kOptions)
@@ -401,8 +401,8 @@ bool GSPcsx2Backend::EnsureOpen()
             options += std::string(option.key) + "=" + value + ";";
     }
     // HD textures (PS2X_PCSX2_TEXTURES=0 turns them off): PCSX2's replacement packs, from PS2X_PCSX2_TEXTURE_DIR (the
-    // folder holding replacements/) or textures/SLUS-21503 next to godhand.exe or up to three folders above it (the
-    // repository's textures/ when godhand.exe runs from build/port/bin, as with game/).
+    // folder holding replacements/) or textures/SLUS-21503 next to kamite.exe or up to three folders above it (the
+    // repository's textures/ when kamite.exe runs from build/port/bin, as with game/).
     if (envInt("PS2X_PCSX2_TEXTURES", 1) != 0)
     {
         const char *textureDir = std::getenv("PS2X_PCSX2_TEXTURE_DIR");
@@ -425,7 +425,7 @@ bool GSPcsx2Backend::EnsureOpen()
         else if (textureDir && *textureDir)
             std::fprintf(stderr, "[gs] PS2X_PCSX2_TEXTURE_DIR: no replacements folder in %s\n", utf8(folder).c_str());
     }
-    // PS2X_PCSX2_TEXTURE_EXTRA: more replacement folders ('|' between), e.g. a character mod's own textures (godhand
+    // PS2X_PCSX2_TEXTURE_EXTRA: more replacement folders ('|' between), e.g. a character mod's own textures (kamite
     // sets it for [Mods] Character); used with or without a texture pack.
     if (const char *extra = std::getenv("PS2X_PCSX2_TEXTURE_EXTRA"); extra && *extra)
         options += std::string("texture_extra=") + extra + ";";

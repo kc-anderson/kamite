@@ -39,7 +39,7 @@ namespace
     //   range checks; VU1_RECOMP_EXACT_FMAC=1 keeps fmacV);
     // - gRawLoads (now OFF by default; VU1_RECOMP_RAW_LOADS=1 turns it on): LQ/LQI/LQD keep the loaded bits as the
     //   normalized value, relying on DAZ for denormal operands. Urban Reign verified it (PS2X_VU1_VERIFY=obs, 0
-    //   mismatches), but that check restores the interpreter's normalization at every call. God Hand (2026-10-17,
+    //   mismatches), but that check restores the interpreter's normalization at every call. The game (2026-10-17,
     //   round 9) loads integer data whose exponent field is 255 (negative ints such as 0xFFFFFF8F) into VF registers
     //   that a later program reads with an FMAC: the character program 4dfe leaves vf31 = (0xFFFFFF8F, 0xFFFFFFC8, 0,
     //   0xFFFFF334) and the stage program cd8f runs MUL vf31, vf31, vf0x at 0x368. The interpreter (and the VU) read

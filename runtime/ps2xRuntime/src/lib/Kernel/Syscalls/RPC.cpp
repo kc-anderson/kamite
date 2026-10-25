@@ -786,7 +786,7 @@ namespace ps2_syscalls
     {
         // Servers the EE registered (sceSifRegisterRpc on the EE). On the PS2 only the IOP can call them (IOP
         // sceSifBindRpc/sceSifCallRpc); an EE client's sceSifBindRpc always goes to an IOP server. They are kept out of
-        // g_rpc_servers (the EE clients' bind targets) whenever the IOP serves the same SID: God Hand's McPort registers
+        // g_rpc_servers (the EE clients' bind targets) whenever the IOP serves the same SID: the game's McPort registers
         // 0x80000400 on the EE (libmc reverse server, McPort func_0111EBE0) while MCSERV on the IOP registers
         // 0x80000400 too, and the old shared map rebound libmc's EE client to McPort's own EE descriptor.
         std::mutex g_eeRegisteredMutex;

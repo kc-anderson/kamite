@@ -27,7 +27,7 @@ namespace ps2_host_input
     [[nodiscard]] std::vector<std::pair<std::string, std::string>> defaultPadSettings(uint32_t pad);
 
     // The controls file ([Pad1]-[Pad8] in PCSX2's syntax) the Controls screen (F1) edits; call before the run loop.
-    // Missing: written from `legacy` (the PS2X_PAD<n>=1 / PS2X_PAD<n>_<KEY> settings an older godhand.ini carried),
+    // Missing: written from `legacy` (the PS2X_PAD<n>=1 / PS2X_PAD<n>_<KEY> settings an older kamite.ini carried),
     // else from the defaults. Reloaded while the game runs when it changes. A pad with PS2X_PAD<n> in the environment
     // keeps using those variables. An empty path: no file (the old behaviour).
     void setControlsFile(const std::string &path, const std::vector<std::pair<std::string, std::string>> &legacy);

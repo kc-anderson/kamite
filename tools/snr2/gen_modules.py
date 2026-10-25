@@ -2,7 +2,7 @@
 
     python -I tools/snr2/gen_modules.py [mod ...]      (default: every .rel in build/snr2/rel/manifest.json)
 
-Base strategy (GODHAND_PORT_NOTES.md section 9): the game layer (src/godhand/function_hooks.cpp, slot redirect)
+Base strategy (KAMITE_PORT_NOTES.md section 9): the game layer (src/kamite/function_hooks.cpp, slot redirect)
 moves the room-DLL and Event.rel allocations out of heap D into two fixed slot heaps in the unused RAM hole
 0x7957C0..0x8A0000, so every DLL of a class always links at the same base and one recompiled pack per DLL is enough:
     room DLLs (79)  slot heap 0x799000 size 0xF000   -> DLL base 0x799080
@@ -23,7 +23,7 @@ SNR2 = os.path.join(HERE, "snr2.py")
 REL = os.path.join(PORT, "build", "snr2", "rel")
 OUT = os.path.join(PORT, "build", "snr2", "out")
 TOMLS = os.path.join(PORT, "recomp", "modules")
-LOW = getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0) if os.environ.get("GODHAND_LOW_PRIORITY") == "1" else 0
+LOW = getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0) if os.environ.get("KAMITE_LOW_PRIORITY") == "1" else 0
 
 ROOM_SLOT_HEAP, ROOM_SLOT_SIZE = 0x00799000, 0xF000
 EVENT_SLOT_HEAP, EVENT_SLOT_SIZE = 0x007A8000, 0x18000
@@ -51,7 +51,7 @@ TOML = """[general]
 # and recompiled by 'python -I build.py modules {mod}' into build/snr2/gen/{mod}, then packed into
 # generated_modules/{mod}/ (never generated/). Class '{cls}': {why}
 # The generated code is valid only at that base (literal PCs/return addresses), checked at link time by
-# src/godhand/function_hooks.cpp (name + base + code sha256).
+# src/kamite/function_hooks.cpp (name + base + code sha256).
 # Paths are relative to this file; build.py modules makes them absolute.
 input = "../../build/snr2/out/{mod}/{mod}.elf"
 output = "../../build/snr2/gen/{mod}"

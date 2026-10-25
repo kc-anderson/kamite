@@ -1,4 +1,4 @@
-"""Static re-implementation of God Hand's SNR2 loader (boot ELF func_00394DD8 -> func_00394828), for one module.
+"""Static re-implementation of the game's SNR2 loader (boot ELF func_00394DD8 -> func_00394828), for one module.
 
 Everything is emulated on a byte image laid out exactly as the game has it in EE RAM (module loaded at `base`, header at
 offset 0), so the result can be compared byte-for-byte with a RAM dump. Cross-module side effects (an export of this

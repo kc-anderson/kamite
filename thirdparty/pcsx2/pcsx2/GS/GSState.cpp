@@ -1864,17 +1864,17 @@ void GSState::GIFRegHandlerFOG(const GIFReg* RESTRICT r)
 
 void GSState::GIFRegHandlerNOP(const GIFReg* RESTRICT r)
 {
-	// pcsx2gs (God Hand): a NOP carrying the magic "GHSE" in its upper word marks what the PATH1 packets after it
+	// pcsx2gs (Kamite): a NOP carrying the magic "KMSE" in its upper word marks what the PATH1 packets after it
 	// draw: 1 = the scenery renderers (walls, pillars: what the see-through oval may dissolve), 0 = anything else
 	// (characters, objects, effects: never dissolved). Written by the port's near_geometry filter in front of each
 	// packet whose class differs from the last; a NOP is nothing to the PS2, so the stream stays valid everywhere.
-	if ((r->U64 >> 32) == 0x47485345ull)
+	if ((r->U64 >> 32) == 0x4B4D5345ull)
 	{
 		const u32 cls = static_cast<u32>(r->U64 & 0xFFFFFFFFull);
-		if (cls != m_gh_draw_class)
+		if (cls != m_km_draw_class)
 		{
 			Flush(GSFlushReason::UNKNOWN);
-			m_gh_draw_class = cls;
+			m_km_draw_class = cls;
 		}
 	}
 }
