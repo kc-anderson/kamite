@@ -304,6 +304,10 @@ namespace kamite::menu_buttons
             // The roulette's bar ("[R1]Select [cross][circle]OK [triangle]Cancel", 0x591CC) is left as it is: the roulette
             // is part of play (its OK reads the cross and circle bits 33/35 directly, func_00145810 at 0x145CE8, and its
             // cancel comes from the player side), so it keeps the game's buttons in both modes.
+            // The Techniques screen's "[triangle] Exit" (0x59224: colour code 0xB602 with its colour, the icon, 0xB301
+            // back to white): exiting is the menus' Cancel, now the circle, in the circle's own colour (1, as the
+            // "[circle] Default" hint has it).
+            {0x59224u, {0xB602u, 2u, kTriangle, 0xB301u}, {0xB602u, 1u, kCircle, 0xB301u}},
             // "[cross][circle]Change" and "[cross][circle]Select": the circle becomes a space.
             {0x591F8u, text({kCross, kCircle}, "Change"), text({kCross, kSpace}, "Change")},
             {0x59238u, text({kCross, kCircle}, "Select"), text({kCross, kSpace}, "Select")},

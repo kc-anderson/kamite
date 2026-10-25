@@ -15,6 +15,10 @@ Newest first. Each change is commented in the code where it was made.
   that name into `cache/hd-textures` and hands it to the GS (`texture_add`, added at the next vsync). A texture pack's
   own prompt images no longer apply over the port's, and the port's images are not snapped to the game's alpha levels.
   With texture replacements off the small version shows.
+- **Techniques screen:** its "Exit" hint shows the circle/B with Modern menu buttons (it showed the triangle/Y), and
+  the pause menu's own screens count as menus for the widescreen layout even without a full-screen background (an
+  open sub screen), so they are stretched or pillarboxed as a whole: the RETURN panel and its highlight no longer
+  come apart.
 
 ## October 25, 2026 (evening)
 

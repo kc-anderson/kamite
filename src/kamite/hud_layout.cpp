@@ -60,6 +60,7 @@ namespace kamite::hud
 
         constexpr uint32_t kScreenWidth = 0x3C1180u;
         constexpr uint32_t kScreenYOffset = 0x586B80u;
+        constexpr uint32_t kSubScrPointer = 0x3BD930u; // D_003BD930: the cSubScr (pause menu and its screens)
         constexpr uint32_t kPlayerBar = 0xF0000001u, kRadar = 0xF0000002u, kRoulette = 0xF0000003u;
 
         Layout g_layout = Layout::Anchored;
@@ -495,10 +496,21 @@ namespace kamite::hud
 
     bool menuActive() { return menuNow(); }
 
-    void onFrame(uint8_t *)
+    void onFrame(uint8_t *rdram)
     {
         roulette_bar::onFrame();
-        g_menuHold = g_menuSeen ? 8 : std::max(0, g_menuHold - 1);
+        // The pause menu's own screens (Techniques, the move list...) can be drawn over the 3D view with no
+        // full-screen background: an open sub screen counts as a menu too (cSubScr D_003BD930, +0x48 the open screen's
+        // kind, -1 when closed; decomp include/godhand/cSubScr.h). Narrowed, their layers came apart (the Techniques
+        // screen's RETURN panel and its highlight, Oct 25).
+        bool subScreen = false;
+        if (rdram)
+        {
+            const uint32_t subScr = read32(rdram, kSubScrPointer);
+            if (subScr >= 0x100000u && subScr < PS2_RAM_SIZE - 0x100u)
+                subScreen = static_cast<int32_t>(read32(rdram, subScr + 0x48u)) >= 0;
+        }
+        g_menuHold = (g_menuSeen || subScreen) ? 8 : std::max(0, g_menuHold - 1);
         g_menuSeen = false;
         if (g_wide)
             setMenuAspect(g_menuHold > 0 && g_menuMode == MenuMode::Pillarbox);
