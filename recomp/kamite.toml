@@ -527,6 +527,13 @@ address = "0x002B0A24"
 hook = "km_styles_icon_width"
 flag = "styles"
 
+# cMessDrawFont_draw's own advance for an icon (lui at,0x4200 / mtc1 f2 just before; hook before lwc1 f1,0x88(s2) at
+# 0x2AFB30; $s2 the font state, +0x64 the code pointer): the same widths while drawing.
+[[patches.hooks]]
+address = "0x002AFB30"
+hook = "km_styles_icon_advance"
+flag = "styles"
+
 # cIDBase_transText after its line spacing is set (lwc1 f12,0x50(s1) at 0x2AB1E0; $s1 the entry, $s0 the font's
 # draw state): the style list's lines further apart.
 [[patches.hooks]]

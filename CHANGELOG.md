@@ -2,6 +2,12 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 25, 2026 (night, 3)
+
+- **Style list:** the plus now touches its arrow and the name follows the arrow closely (the text draw's own icon
+  advance is hooked as well; the measure hook alone only moved the block's centring), the block pinned by the names'
+  right end; the line pitch is documented as it really is (a letter is the tallest code, not an icon).
+
 ## October 25, 2026 (night, 2)
 
 - **Style list:** lines 16 px apart (the block's top line stays where it was); the plus starts right after the Y
