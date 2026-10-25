@@ -71,9 +71,14 @@ namespace ps2_host_gamepads
             auto has = [&](const char *part) { return lower.find(part) != std::string::npos; };
             if (has("playstation") || has("dualshock") || has("dualsense") || has("sony") || has("ps3") || has("ps4") || has("ps5"))
                 return Style::PlayStation;
-            // Steam Input's virtual pad ("Steam Virtual Gamepad") and Steam Controllers have Xbox-style A/B/X/Y.
-            if (has("xbox") || has("x-box") || has("xinput") || has("steam"))
+            if (has("nintendo") || has("switch") || has("joy-con") || has("joycon"))
+                return Style::Nintendo;
+            // Steam Input's virtual pad ("Steam Virtual Gamepad") stands for whatever controller Steam is reading: Xbox
+            // letters unless SDL could tell the type (above). A Steam Controller or Steam Deck by name: Steam's art.
+            if (has("steam virtual") || has("xbox") || has("x-box") || has("xinput"))
                 return Style::Xbox;
+            if (has("steam"))
+                return Style::Steam;
             return Style::Unknown;
         }
 
@@ -118,7 +123,10 @@ namespace ps2_host_gamepads
             device.name = name ? name : "Controller";
             // SDL knows the controller family (an XInput pad is an Xbox 360 controller whatever its name); the name
             // decides for the rest.
-            switch (SDL_GetGamepadType(gamepad))
+            // Valve's own hardware (vendor 0x28DE) is a Steam Deck or Steam Controller, except Steam Input's virtual pad
+            // (product 0x11FF), which SDL reports as the controller it stands for when Steam says so.
+            const bool valveHardware = SDL_GetGamepadVendor(gamepad) == 0x28DE && SDL_GetGamepadProduct(gamepad) != 0x11FF;
+            switch (valveHardware ? SDL_GAMEPAD_TYPE_UNKNOWN : SDL_GetGamepadType(gamepad))
             {
             case SDL_GAMEPAD_TYPE_XBOX360:
             case SDL_GAMEPAD_TYPE_XBOXONE:
@@ -129,12 +137,18 @@ namespace ps2_host_gamepads
             case SDL_GAMEPAD_TYPE_PS5:
                 device.style = Style::PlayStation;
                 break;
+            case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO:
+            case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+            case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+            case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+                device.style = Style::Nintendo;
+                break;
             default:
-                device.style = styleFromName(device.name);
+                device.style = valveHardware ? Style::Steam : styleFromName(device.name);
                 break;
             }
-            std::cerr << "[input] SDL-" << slot << ": " << device.name << " ("
-                      << (device.style == Style::Xbox ? "Xbox" : device.style == Style::PlayStation ? "PlayStation" : "other")
+            static const char *const kStyleNames[] = {"other", "Xbox", "PlayStation", "Nintendo", "Steam"};
+            std::cerr << "[input] SDL-" << slot << ": " << device.name << " (" << kStyleNames[static_cast<int>(device.style)]
                       << " buttons)" << std::endl;
         }
 

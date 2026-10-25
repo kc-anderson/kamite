@@ -71,7 +71,9 @@ namespace ps2_host_gamepads
     {
         Unknown,
         Xbox,
-        PlayStation
+        PlayStation,
+        Nintendo, // Switch Pro, Joy-Cons, Switch-style pads: positional buttons, Nintendo's letters
+        Steam     // Steam Deck, Steam Controller
     };
     [[nodiscard]] Style style(int device);
 }

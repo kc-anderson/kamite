@@ -28,7 +28,8 @@ game's own code rebuilt as a Windows program, with PCSX2's hardware renderer for
 - **Quality of life:** L3 dash, d-pad scrolling in the God Reel, a double-time roulette timer, Hard unlocked from the
   start, music mute, the blur effects at full resolution.
 - **Controls:** keyboard, mouse and controllers, rebindable in game (F1). Button prompts show the keys and buttons you
-  use, in Xbox colours on an Xbox pad. Modern menu buttons (south confirms, east cancels) as an option; the moves keep
+  use at full resolution (Xbox 360, Steam Deck, Switch or keyboard art, picked from your controller or set in the
+  launcher; PlayStation pads keep the game's own). Modern menu buttons (south confirms, east cancels) as an option; the moves keep
   their buttons.
 - **Playable characters:** a character system that swaps the player model at the disc level, with an example mod
   (Xavier from *Xavier: Renegade Angel*).
@@ -65,6 +66,8 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed and when.
   `tools/models/mot.py` is ported from.
 - [akitotheanimator/God-Hand-Tools](https://github.com/akitotheanimator/God-Hand-Tools) (with CarLoiD, Kerilk and Roni
   Evil): model, motion and motion-event format knowledge.
+- Nicolae "Xelu" Berbece (Those Awesome Guys): [Xelu's free controller and keyboard prompts](https://opengameart.org/content/free-keyboard-and-controllers-prompts-pack)
+  (CC0), the button prompt art in `resources/prompts/xelu`.
 - [Ace Combat 5 static recompilation](https://github.com/sal063/Ace-Combat-5-Static-recompilation): the movie decoder
   (Apache-2.0).
 - Xavier and *Xavier: Renegade Angel* belong to Adult Swim. The Xavier mod is a fan-made example of the character

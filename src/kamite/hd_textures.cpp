@@ -27,7 +27,7 @@ namespace kamite::hd_textures
     namespace
     {
         bool g_enabled = false;
-        fs::path g_generated;
+        fs::path g_generated, g_exeDir;
         std::unordered_map<std::string, fs::path> g_pack; // lower-case stem -> file
 
         std::string utf8(const fs::path &p)
@@ -76,6 +76,7 @@ namespace kamite::hd_textures
 
     void install(const fs::path &exeDir)
     {
+        g_exeDir = exeDir;
         const char *textures = std::getenv("PS2X_PCSX2_TEXTURES");
         if (textures && *textures == '0')
         {
@@ -124,6 +125,11 @@ namespace kamite::hd_textures
     bool enabled()
     {
         return g_enabled;
+    }
+
+    const fs::path &exeDirectory()
+    {
+        return g_exeDir;
     }
 
     fs::path packFile(const std::string &name)

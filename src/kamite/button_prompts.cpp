@@ -1,5 +1,7 @@
 #include "kamite/button_prompts.h"
 #include "kamite/hd_textures.h"
+#include "kamite/prompt_hd.h"
+#include "runtime/gs/gs_pcsx2_backend.h"
 
 #include "kamite/button_prompt_sheets.h"
 #include "kamite/crate_prompts.h"
@@ -10,6 +12,7 @@
 #include "runtime/ps2_pnach.h"
 
 #include <array>
+#include <filesystem>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -250,6 +253,34 @@ namespace kamite::button_prompts
             g_applied = images;
         }
 
+        // Gives a sheet's CLUT its art set's mark (see the builder): an entry with alpha 0 that no texel of the sheet
+        // uses (else the first with alpha 0) gets 0xA0 + the set's number in its red. Nothing shows it.
+        void markClut(const uint8_t *payload, uint8_t *clut, uint8_t mark)
+        {
+            std::vector<uint8_t> indices(static_cast<size_t>(sheets::kSheetSize) * sheets::kSheetSize);
+            sheets::unswizzle(payload, indices.data());
+            std::array<bool, 256> used{};
+            for (uint8_t v : indices)
+                used[v] = true;
+            uint8_t *first = nullptr;
+            for (int k = 0; k < 256; ++k)
+            {
+                const int slot = (k & 0xE7) | ((k & 0x08) << 1) | ((k & 0x10) >> 1); // CSM1
+                uint8_t *e = clut + slot * 4;
+                if (e[3] != 0u)
+                    continue;
+                if (!used[static_cast<size_t>(k)])
+                {
+                    e[0] = static_cast<uint8_t>(0xA0u | mark);
+                    return;
+                }
+                if (!first)
+                    first = e;
+            }
+            if (first)
+                first[0] = static_cast<uint8_t>(0xA0u | mark);
+        }
+
         // ---- builder thread ----
         std::string labelOf(const bindings::Binding &binding)
         {
@@ -405,37 +436,96 @@ namespace kamite::button_prompts
 
                 auto images = std::make_shared<Images>();
                 images->version = ++version;
-                const bool playStation = device == bindings::Device::Controller && style == bindings::PadStyle::PlayStation;
-                // A texture pack that replaces both sheets (Xbox prompts drawn at full resolution, as the common packs
-                // for this game do) is kept for a controller: the sheets drawn here are 32-texel cells at the PS2's
-                // resolution, and any change to them loses the pack's images (they are found by the sheets' content).
-                static const bool packSheets = [] {
-                    if (!hd_textures::enabled())
-                        return false;
-                    bool all = true;
-                    for (int i = 0; i < kSheetCount; ++i)
-                        all = all && !hd_textures::packFile(hd_textures::name8(g_origPayload[i].data(), 64, 64, g_origClut[i].data(),
-                                                                              sheets::kSheetSize, sheets::kSheetSize)).empty();
-                    if (all)
-                        KM_INFO(Game, "button prompts: the texture pack has its own controller prompts; they are kept for a controller");
-                    return all;
-                }();
-                const bool keepSheets = playStation || (packSheets && device == bindings::Device::Controller);
-                for (int i = 0; i < kSheetCount; ++i)
-                    images->clut[i] = g_origClut[i];
-                std::string summary = playStation ? "PlayStation controller: original art" : keepSheets ? "controller: the texture pack's prompts" : "";
-                const sheets::PromptLabels labels = labelsFor(bindings::snapshot(), device);
-                if (!keepSheets)
+                // The art set: keys get the keyboard's; a controller the one [Game] ButtonPrompts names, or with Auto the
+                // one its type asks for (PlayStation pads keep the game's own art).
+                prompt_hd::Set set = prompt_hd::Set::Keyboard;
+                if (device == bindings::Device::Controller)
                 {
-                    images->patched[0] = sheets::buildIconSheet(g_origPayload[0].data(), g_origClut[0].data(), labels, images->payload[0].data(),
+                    switch (prompt_hd::choice())
+                    {
+                    case prompt_hd::Choice::Xbox: set = prompt_hd::Set::Xbox360; break;
+                    case prompt_hd::Choice::PlayStation: set = prompt_hd::Set::PlayStation; break;
+                    case prompt_hd::Choice::Nintendo: set = prompt_hd::Set::Switch; break;
+                    case prompt_hd::Choice::Steam: set = prompt_hd::Set::SteamDeck; break;
+                    case prompt_hd::Choice::Auto:
+                    default:
+                        set = style == bindings::PadStyle::PlayStation ? prompt_hd::Set::PlayStation
+                              : style == bindings::PadStyle::Nintendo  ? prompt_hd::Set::Switch
+                              : style == bindings::PadStyle::Steam     ? prompt_hd::Set::SteamDeck
+                                                                       : prompt_hd::Set::Xbox360;
+                        break;
+                    }
+                }
+                const bool playStation = set == prompt_hd::Set::PlayStation;
+                const sheets::PromptLabels labels = labelsFor(bindings::snapshot(), device);
+                std::string summary = std::string(prompt_hd::setName(set)) + " prompts";
+                if (playStation)
+                {
+                    // The disc's art, with the set's mark in the CLUT (a texture pack's image for the original sheets,
+                    // often Xbox buttons, must not apply over it).
+                    for (int i = 0; i < kSheetCount; ++i)
+                    {
+                        images->payload[i] = g_origPayload[i];
+                        images->clut[i] = g_origClut[i];
+                        images->patched[i] = true;
+                    }
+                }
+                else
+                {
+                    // The PS2-resolution drawing (what shows with replacements off), Nintendo's letters on a Switch pad.
+                    sheets::PromptLabels drawn = labels;
+                    if (set == prompt_hd::Set::Switch)
+                    {
+                        for (const sheets::Icon icon : {sheets::Circle, sheets::Triangle, sheets::Square, sheets::Cross})
+                        {
+                            std::string &l = drawn.icon[icon];
+                            l = l == "A" ? "B" : l == "B" ? "A" : l == "X" ? "Y" : l == "Y" ? "X" : l;
+                            drawn.tint[icon] = sheets::Tint::White;
+                        }
+                    }
+                    images->patched[0] = sheets::buildIconSheet(g_origPayload[0].data(), g_origClut[0].data(), drawn, images->payload[0].data(),
                                                                 images->clut[0].data());
-                    images->patched[1] = sheets::buildActionSheet(g_origPayload[1].data(), g_origClut[1].data(), labels, images->payload[1].data(),
+                    images->patched[1] = sheets::buildActionSheet(g_origPayload[1].data(), g_origClut[1].data(), drawn, images->payload[1].data(),
                                                                   images->clut[1].data());
-                    summary = std::string(device == bindings::Device::Controller ? "controller" : "keys") + ": circle " +
-                              labels.icon[sheets::Circle] + ", triangle " + labels.icon[sheets::Triangle] + ", square " +
-                              labels.icon[sheets::Square] + ", cross " + labels.icon[sheets::Cross] + ", start " +
-                              labels.icon[sheets::Start] + (images->patched[0] ? "" : " (text icons kept: build failed)") +
-                              (images->patched[1] ? "" : " (action prompt kept: build failed)");
+                    summary += std::string(device == bindings::Device::Controller ? " (controller" : " (keys") + ": circle " +
+                               labels.icon[sheets::Circle] + ", triangle " + labels.icon[sheets::Triangle] + ", square " +
+                               labels.icon[sheets::Square] + ", cross " + labels.icon[sheets::Cross] + ", start " +
+                               labels.icon[sheets::Start] + ")" + (images->patched[0] ? "" : " (text icons kept: build failed)") +
+                               (images->patched[1] ? "" : " (action prompt kept: build failed)");
+                    for (int i = 0; i < kSheetCount; ++i)
+                        if (!images->patched[i])
+                            images->clut[i] = g_origClut[i];
+                }
+                // The set's mark: the red of the first CLUT entry with alpha 0 (nothing draws it) gets the set's number,
+                // so each set's sheets have their own texture names, then the full-resolution images for them.
+                bool added = false;
+                for (int i = 0; i < kSheetCount; ++i)
+                {
+                    if (!images->patched[i])
+                        continue;
+                    markClut(images->payload[i].data(), images->clut[i].data(), static_cast<uint8_t>(static_cast<int>(set) + 1));
+                    if (playStation || !hd_textures::enabled())
+                        continue;
+                    const std::string name = hd_textures::name8(images->payload[i].data(), 64, 64, images->clut[i].data(),
+                                                                sheets::kSheetSize, sheets::kSheetSize);
+                    const auto path = hd_textures::generatedDir() / (name + ".png");
+                    std::error_code ec;
+                    if (!std::filesystem::exists(path, ec))
+                    {
+                        hd_textures::Image hd;
+                        if (!prompt_hd::compose(set, i, images->payload[i].data(), images->clut[i].data(), labels, hd) ||
+                            !hd_textures::savePng(path, hd))
+                            continue;
+                    }
+                    const std::u8string native = path.u8string();
+                    GSPcsx2Backend::SetOption("texture_add", std::string(native.begin(), native.end()).c_str());
+                    added = true;
+                }
+                if (added)
+                {
+                    summary += ", full resolution";
+                    // The GS adds the images at its next vsync: they are there before the sheets change.
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 }
                 if (!playStation)
                 {

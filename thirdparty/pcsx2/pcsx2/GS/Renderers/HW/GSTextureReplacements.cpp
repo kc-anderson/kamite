@@ -523,6 +523,27 @@ void GSTextureReplacements::ReloadReplacementMap()
 	}
 }
 
+void GSTextureReplacements::AddReplacementFile(const std::string& path)
+{
+	// pcsx2gs (Kamite): images the port writes while the game runs (its button prompts), added without listing every
+	// folder again. Written before the texture they replace first appears, so no hash cache entry has to be dropped.
+	if (!GSConfig.LoadTextureReplacements)
+		return;
+	const char* filename = Path::GetFileName(path).data();
+	if (!GetLoader(filename))
+		return;
+	const std::optional<TextureName> name = ParseReplacementName(filename);
+	if (!name)
+		return;
+	{
+		std::unique_lock<std::mutex> lock(s_replacement_texture_cache_mutex);
+		s_replacement_texture_cache.erase(*name);
+	}
+	s_replacement_texture_filenames.erase(*name);
+	AddReplacementTexture(*name, filename, path);
+	std::fprintf(stderr, "[pcsx2-gs] replacement added: %s\n", filename);
+}
+
 void GSTextureReplacements::UpdateConfig(Pcsx2Config::GSOptions& old_config)
 {
 	// get rid of worker thread if it's no longer needed
@@ -935,7 +956,12 @@ void GSTextureReplacements::MatchOriginalAlpha(const GSTextureCache::HashCacheKe
 	if (!enabled || !clut || entries == 0)
 		return;
 	const TextureName name(CreateTextureName(hash, 0));
-	if (s_replacement_texture_filenames.find(name) == s_replacement_texture_filenames.end())
+	const auto file = s_replacement_texture_filenames.find(name);
+	if (file == s_replacement_texture_filenames.end())
+		return;
+	// pcsx2gs (Kamite): the port's own images (cache/hd-textures: the button prompts, the radar's glow) are made for
+	// the texture they replace; snapping their smooth edges to the game's few alpha levels would make them jagged.
+	if (file->second.path.find("hd-textures") != std::string::npos)
 		return;
 	AlphaLevels levels;
 	for (u32 i = 0; i < entries; i++)

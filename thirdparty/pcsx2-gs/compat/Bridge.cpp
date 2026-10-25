@@ -9,6 +9,7 @@
 #include "GS/GS.h"
 #include "GS/Renderers/Common/GSRenderer.h"
 #include "GS/Renderers/DX11/GSDevice11.h"
+#include "GS/Renderers/HW/GSTextureReplacements.h"
 
 #include <algorithm>
 #include <cctype>
@@ -23,6 +24,8 @@
 namespace pcsx2gs
 {
     extern std::atomic<uint32_t> g_frame; // below; GSRendererHW::ApplyPreciseDepth starts its lines over each frame
+    extern std::mutex g_textureAddMutex;  // below (texture_add)
+    extern std::vector<std::string> g_textureAdds;
 }
 
 extern Pcsx2Config EmuConfig;
@@ -264,6 +267,15 @@ namespace
         std::memcpy(g_regs + 0x1080, &regs->siglblid, 8);
         // As PCSX2's MTGS: CSR.FIELD (bit 13) picks the field.
         pcsx2gs::g_frame.fetch_add(1u, std::memory_order_relaxed);
+        {
+            std::vector<std::string> adds;
+            {
+                std::lock_guard<std::mutex> lock(pcsx2gs::g_textureAddMutex);
+                adds.swap(pcsx2gs::g_textureAdds);
+            }
+            for (const std::string &path : adds)
+                GSTextureReplacements::AddReplacementFile(path);
+        }
         GSvsync((regs->csr & 0x2000u) ? 0u : 1u, true);
         WritePresentStats();
     }
@@ -383,6 +395,8 @@ extern "C" __declspec(dllexport) const Pcsx2GsApi *pcsx2gs_get_api(uint32_t vers
 }
 
 // Options the port changes while the game runs (the in-game menu), any thread; unknown keys are ignored:
+//   texture_add=<path> a replacement image written while the game runs (the port's button prompts), added at
+//                      the next vsync (GSTextureReplacements::AddReplacementFile)
 //   dof=0/1            the game's depth-of-field composite drawn (1, the default) or skipped (GSRendererHW.cpp)
 //   precise_depth=0/1  depth from Q for perspective-textured draws (1, the default; GSRendererHW::ApplyPreciseDepth)
 //   see_through=0 | "cx cy rx ry start ramp strength soft ex ey ez mid m00 m01 .. m33"   the see-through oval round
@@ -417,6 +431,9 @@ namespace pcsx2gs
         float eye[3], mid;
         float inverse[16]; // row-major
     };
+    // texture_add (any thread) -> added on the GS thread at the next vsync.
+    std::mutex g_textureAddMutex;
+    std::vector<std::string> g_textureAdds;
     std::atomic<bool> g_seeThroughOn{false};
     std::atomic<uint32_t> g_seeThroughFrame{0}; // g_frame when it was last given
     std::mutex g_seeThroughMutex;
@@ -465,6 +482,12 @@ extern "C" __declspec(dllexport) void pcsx2gs_set_option(const char *key, const 
             pcsx2gs::g_seeThroughFrame.store(pcsx2gs::g_frame.load(std::memory_order_relaxed), std::memory_order_relaxed);
         }
         pcsx2gs::g_seeThroughOn.store(on, std::memory_order_relaxed);
+        return;
+    }
+    if (std::strcmp(key, "texture_add") == 0)
+    {
+        std::lock_guard<std::mutex> lock(pcsx2gs::g_textureAddMutex);
+        pcsx2gs::g_textureAdds.emplace_back(value);
         return;
     }
     if (std::strcmp(key, "dof") == 0)

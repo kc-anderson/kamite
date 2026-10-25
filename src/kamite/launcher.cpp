@@ -49,6 +49,9 @@ namespace kamite::launcher
         constexpr Choice kControlStyles[] = {{"Classic", "classic"}, {"Modern", "modern"}};
         constexpr Choice kModernL1[] = {{"Hold", "hold"}, {"Toggle", "toggle"}};
         constexpr Choice kMenuButtons[] = {{"Classic", "classic"}, {"Modern", "modern"}};
+        constexpr Choice kButtonPrompts[] = {{"Automatic (follows your controller)", "auto"}, {"Xbox", "xbox"},
+                                             {"PlayStation (the game's own)", "playstation"}, {"Nintendo Switch", "nintendo"},
+                                             {"Steam Deck / Steam Controller", "steam"}};
         constexpr Choice kCameraTilts[] = {{"None", "0"}, {"5 degrees", "5"}, {"10 degrees", "10"}, {"15 degrees", "15"}};
         constexpr Choice kWindowSizes[] = {{"Automatic (3/4 of the screen)", "auto"}, {"PS2 size", "native"}};
         constexpr Choice kResolutions[] = {{"1x  native (512x448)", "1"}, {"2x  1024x896", "2"}, {"3x  1536x1344", "3"},
@@ -712,6 +715,16 @@ namespace kamite::launcher
                 {
                     ImGui::TextWrapped("Controllers (Xbox, PlayStation, Steam and others) work without setup, and the "
                                        "button prompts in the game show your controller's buttons.");
+                    ImGui::Spacing();
+                    if (beginSettings("controls"))
+                    {
+                        settingLabel("Button prompts", "The buttons the game shows for a controller. Automatic picks them "
+                                                       "from the controller you use; keys and mouse always show keys. "
+                                                       "Prompt art: Xelu's free prompts (CC0).");
+                        iniCombo(state, "##buttonprompts", "Game", "ButtonPrompts", "auto",
+                                 [](const char *id, std::string &value) { return choiceCombo(id, kButtonPrompts, value); });
+                        ImGui::EndTable();
+                    }
                     ImGui::Spacing();
                     ImGui::TextWrapped("Keyboard and controller bindings are kept in controls.ini next to the game. "
                                        "Remapping them on this screen is coming.");

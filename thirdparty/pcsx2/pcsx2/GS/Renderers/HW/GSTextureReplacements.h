@@ -35,6 +35,9 @@ namespace GSTextureReplacements
 	void Initialize();
 	void GameChanged();
 	void ReloadReplacementMap();
+	// pcsx2gs (Kamite): one more replacement file (its name says which texture it replaces), or a new image under a
+	// name already known; GS thread.
+	void AddReplacementFile(const std::string& path);
 	void UpdateConfig(Pcsx2Config::GSOptions& old_config);
 	void Shutdown();
 

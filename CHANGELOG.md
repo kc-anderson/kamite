@@ -2,6 +2,20 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 25, 2026 (night)
+
+- **Button prompts at full resolution, with or without a texture pack.** The prompts come from Xelu's free prompt pack
+  (CC0, in `resources/prompts/xelu`): Xbox 360 buttons for Xbox and other pads, Steam Deck buttons for a Steam Deck or
+  Steam Controller, Switch buttons (Nintendo's letters) for Nintendo pads, key caps for keys and mouse buttons
+  (the four direction keys as an inverted T); PlayStation pads keep the game's own art. Launcher Options > Controls >
+  Button prompts (`[Game] ButtonPrompts=auto|xbox|playstation|nintendo|steam`) overrides the automatic choice.
+  Controllers are now told apart as Xbox, PlayStation, Nintendo or Steam (SDL's type, Valve's own hardware by its
+  vendor id, then the name). How: the port still writes its own small version of the two prompt sheets into the game,
+  marked per art set in one unused CLUT entry so each set has its own texture name, writes a full-resolution image for
+  that name into `cache/hd-textures` and hands it to the GS (`texture_add`, added at the next vsync). A texture pack's
+  own prompt images no longer apply over the port's, and the port's images are not snapped to the game's alpha levels.
+  With texture replacements off the small version shows.
+
 ## October 25, 2026 (evening)
 
 - **Menu buttons fixed.** Modern did nothing in the menus: the command table was read with the pad's two button bytes

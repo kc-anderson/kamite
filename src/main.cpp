@@ -389,6 +389,7 @@ namespace
         {"game", "enemiesfollowview", "KAMITE_ENEMY_VIEW"},
         {"game", "controlstyle", "KAMITE_CONTROL_STYLE"},
         {"game", "menubuttons", "KAMITE_MENU_BUTTONS"},
+        {"game", "buttonprompts", "KAMITE_BUTTON_PROMPTS"},
         {"game", "modernauto", "KAMITE_MODERN_AUTO"},
         {"game", "modernl1", "KAMITE_MODERN_L1"},
         {"game", "cameraspeed", "KAMITE_CAMERA_SPEED"},

@@ -1628,6 +1628,8 @@ namespace ps2_host_input
             {
             case ps2_host_gamepads::Style::Xbox: style = prompts::PadStyle::Xbox; break;
             case ps2_host_gamepads::Style::PlayStation: style = prompts::PadStyle::PlayStation; break;
+            case ps2_host_gamepads::Style::Nintendo: style = prompts::PadStyle::Nintendo; break;
+            case ps2_host_gamepads::Style::Steam: style = prompts::PadStyle::Steam; break;
             default: break;
             }
             g_promptStyle.store(style, std::memory_order_relaxed);

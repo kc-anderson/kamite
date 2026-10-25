@@ -127,7 +127,9 @@ namespace ps2_host_input
         {
             Unknown, // no controller yet, or a name that says neither (positional layout: draw it like Xbox)
             Xbox,
-            PlayStation
+            PlayStation,
+            Nintendo,
+            Steam
         };
 
         enum class Type : uint8_t
