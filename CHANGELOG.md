@@ -2,7 +2,7 @@
 
 Newest first. Each change is commented in the code where it was made.
 
-## October 26, 2026
+## October 25, 2026 (late night)
 
 - **Borderless fullscreen is a normal window again:** raylib's borderless mode also made the window topmost, so it
   stayed over every other app even after Alt+Tab. That flag is now cleared (at start and on F11).
