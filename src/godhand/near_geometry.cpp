@@ -72,6 +72,7 @@ namespace godhand
         std::array<uint32_t, kPairs> g_programLayout{}; // k | s << 16 of the patched renderer it is part of, 0 = none
         std::array<bool, kPairs> g_programPatched{};    // part of a program with a patched clip test
         std::array<uint16_t, kPairs> g_program{};       // the program each pair belongs to (its lowest pair)
+        std::array<bool, kPairs> g_programSkinned{};    // fetches matrices per vertex: a character renderer
 
         // A program is the code one renderer runs: the stretches between [E] bits (an end bit, then its delay slot)
         // united by the direct branches between them. The [E] bits alone are not a boundary: a renderer's vertex loop
@@ -153,6 +154,31 @@ namespace godhand
                     for (uint32_t j = 0; j < pairs; ++j)
                         if (g_program[j] == g_program[i])
                             g_programPatched[j] = true;
+            // Skinned renderers (characters, the coat chains): bone indices read from the vertex with ilw, then the
+            // matrices fetched through them (lq with that register as the base): 2fed58 (3 bones: ilw.y/z/w
+            // vi15/vi12/vi13,3(vi04); lq vf15..18,0..3(vi15)), 2fe488 and its family, 302078. The stage renderers
+            // (the big ones with their own clipper, 30ad58/304bb8/30b0c8) load fixed matrices from (vi00).
+            g_programSkinned.fill(false);
+            {
+                static std::array<uint32_t, kPairs> ilwTargets, lqBases; // bit masks per program, indexed by its first pair
+                ilwTargets.fill(0u);
+                lqBases.fill(0u);
+                for (uint32_t i = 0; i < pairs; ++i)
+                {
+                    uint32_t lo, up;
+                    std::memcpy(&lo, code + i * 8u, 4u);
+                    std::memcpy(&up, code + i * 8u + 4u, 4u);
+                    if (up >> 31)
+                        continue;
+                    const uint32_t op = lo >> 25, it = (lo >> 16) & 0x1Fu, is = (lo >> 11) & 0x1Fu;
+                    if (op == 0x04u && it) // ilw
+                        ilwTargets[g_program[i]] |= 1u << it;
+                    else if (op == 0x00u && is) // lq
+                        lqBases[g_program[i]] |= 1u << is;
+                }
+                for (uint32_t i = 0; i < pairs; ++i)
+                    g_programSkinned[i] = (ilwTargets[g_program[i]] & lqBases[g_program[i]]) != 0u;
+            }
             auto pair = [code](uint32_t i, uint32_t &lo, uint32_t &up) {
                 std::memcpy(&lo, code + i * 8u, 4u);
                 std::memcpy(&up, code + i * 8u + 4u, 4u);
@@ -520,11 +546,13 @@ namespace godhand
         thread_local bool t_primKnown = false;
 
         // What a packet draws, for the GS's see-through oval (pcsx2gs GSState::GIFRegHandlerNOP, ApplySeeThrough):
-        // 1 = scenery (a patched renderer with a stitch layout: walls, pillars, the stage), 0 = everything else
-        // (characters, objects, effects: the big renderers and the two odd ones). Told to the GS by a NOP write
-        // carrying "GHSE" (nothing to the PS2) in front of the first packet of each run of one class: Gene's arms
-        // reaching towards the camera and the enemies between it and him were dissolved as "nearer than Gene", and
-        // they are what the oval is there to show (K, Oct 2026).
+        // 0 = a skinned renderer (characters, their coats and chains), 1 = everything else (the stage, objects,
+        // effects). Told to the GS by a NOP write carrying "GHSE" (nothing to the PS2) in front of the first packet of
+        // each run of one class: Gene's arms reaching towards the camera and the enemies between it and him were
+        // dissolved as "nearer than Gene", and they are what the oval is there to show (K, Oct 2026). The first
+        // try keyed on the patched renderers instead; gif_13533 showed the walls are drawn by the big renderers (their
+        // clipper's fans under the stage textures) and the patched "simple" ones are the skinned character renderers,
+        // so nothing dissolved.
         thread_local uint32_t t_lastClass = 0xFFFFFFFFu;
         thread_local uint32_t t_sinceMark = 0;
 
@@ -542,7 +570,7 @@ namespace godhand
                          uint32_t kickPc, std::vector<uint8_t> &before, std::vector<uint8_t> &extra)
         {
             const uint32_t pair = (kickPc / 8u) % kPairs;
-            markClass(before, g_programPatched[pair] && g_programLayout[pair] ? 1u : 0u);
+            markClass(before, g_programSkinned[pair] ? 0u : 1u);
             // The other renderers (the big ones, 2D, effects) are left as the PS2 has them: their clip tests were not
             // changed, and the big ones redraw what they skip as clipped fans of their own. By the XGKICK's own address:
             // the start of the VU1 run is not enough (the renderers end with [E] and a branch back to their top, and
@@ -782,12 +810,13 @@ namespace godhand
         GH_INFO(Game, "near geometry: on (triangles at the screen edges and behind the camera are cut and drawn)");
     }
 
-    void nearGeometryProgramAt(uint32_t pair, uint32_t &program, bool &patched, uint32_t &layout)
+    void nearGeometryProgramAt(uint32_t pair, uint32_t &program, bool &patched, uint32_t &layout, bool &skinned)
     {
         pair %= kPairs;
         program = g_program[pair];
         patched = g_programPatched[pair];
         layout = g_programLayout[pair];
+        skinned = g_programSkinned[pair];
     }
 
     void nearGeometryStats(uint64_t &patched, uint64_t &cut, uint64_t &cutNear, uint64_t &noStitch)
