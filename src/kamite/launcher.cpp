@@ -14,6 +14,7 @@
 #include "imgui_internal.h"
 #include "raylib.h"
 #include "rlImGui.h"
+#include "rlgl.h"
 
 #include <algorithm>
 #include <cctype>
@@ -222,7 +223,75 @@ namespace kamite::launcher
             ImFont *font = nullptr;
             float unit = 1.0f; // UI scale: window height / 720
             Texture2D logo{};  // resources/images/logo.png when present (the project's own logo)
+            Texture2D burst{}; // resources/images/burst.png: the speed lines behind the logo
+            // The title's motion: the cursor (eased, plus a slow drift of its own) shifts the burst layers and the
+            // logo by different amounts, the bursts turn slowly and pulse.
+            float time = 0.0f;
+            ImVec2 parallax{0.0f, 0.0f}; // -1..1 each way
+            float burstShown = 0.0f;     // fades the burst in on the screens with the logo, out on the others
+            bool logoPlaced = false;     // logoMin/logoMax hold last frame's logo rectangle (without the parallax shift)
+            ImVec2 logoMin{}, logoMax{};
         };
+
+        // The wordmark's centre inside logo.png (tools/logo/build_logo.py prints it); the burst is centred there.
+        constexpr float kLogoCentreX = 0.480f, kLogoCentreY = 0.737f;
+
+        void updateMotion(State &state, Screen screen)
+        {
+            const float dt = std::min(GetFrameTime(), 0.1f);
+            state.time += dt;
+            const float width = static_cast<float>(GetScreenWidth()), height = static_cast<float>(GetScreenHeight());
+            ImVec2 target(0.0f, 0.0f);
+            if (IsCursorOnScreen() && width > 0.0f && height > 0.0f)
+            {
+                const Vector2 mouse = GetMousePosition();
+                target.x = std::clamp((mouse.x - width * 0.5f) / (width * 0.5f), -1.0f, 1.0f);
+                target.y = std::clamp((mouse.y - height * 0.5f) / (height * 0.5f), -1.0f, 1.0f);
+            }
+            target.x += 0.15f * std::sin(state.time * 0.23f);
+            target.y += 0.15f * std::cos(state.time * 0.31f);
+            const float ease = 1.0f - std::exp(-dt * 3.0f);
+            state.parallax.x += (target.x - state.parallax.x) * ease;
+            state.parallax.y += (target.y - state.parallax.y) * ease;
+            const float shown = screen == Screen::Options ? 0.0f : 1.0f;
+            state.burstShown += (shown - state.burstShown) * (1.0f - std::exp(-dt * 5.0f));
+        }
+
+        // One layer of the burst: the texture centred at (x, y), radius in pixels, squashed vertically, turned.
+        void drawBurstLayer(const Texture2D &burst, float x, float y, float radius, float angle, unsigned char alpha)
+        {
+            const float size = radius * 2.0f;
+            rlPushMatrix();
+            rlTranslatef(x, y, 0.0f);
+            rlScalef(1.0f, 0.75f, 1.0f);
+            rlRotatef(angle, 0.0f, 0.0f, 1.0f);
+            DrawTexturePro(burst, Rectangle{0.0f, 0.0f, static_cast<float>(burst.width), static_cast<float>(burst.height)},
+                           Rectangle{0.0f, 0.0f, size, size}, Vector2{radius, radius}, 0.0f, Color{255, 255, 255, alpha});
+            rlPopMatrix();
+        }
+
+        void drawBurst(const State &state)
+        {
+            if (state.burst.id == 0u || state.burstShown < 0.01f)
+                return;
+            const float width = static_cast<float>(GetScreenWidth()), height = static_cast<float>(GetScreenHeight());
+            const float diagonal = std::hypot(width, height);
+            float x = width * 0.5f, y = height * 0.3f;
+            if (state.logoPlaced)
+            {
+                x = state.logoMin.x + (state.logoMax.x - state.logoMin.x) * kLogoCentreX;
+                y = state.logoMin.y + (state.logoMax.y - state.logoMin.y) * kLogoCentreY;
+            }
+            const float unit = state.unit, t = state.time, shown = state.burstShown;
+            const ImVec2 p = state.parallax;
+            // Back layer: bigger, dimmer, turns one way and shifts the most; front layer: the other way, less.
+            drawBurstLayer(state.burst, x - p.x * 36.0f * unit, y - p.y * 36.0f * unit,
+                           diagonal * 0.80f * (1.0f + 0.02f * std::sin(t * 1.1f + 1.0f)), t * 1.2f,
+                           static_cast<unsigned char>(45.0f * shown));
+            drawBurstLayer(state.burst, x - p.x * 18.0f * unit, y - p.y * 18.0f * unit,
+                           diagonal * 0.62f * (1.0f + 0.03f * std::sin(t * 1.6f)), 40.0f - t * 2.0f,
+                           static_cast<unsigned char>(70.0f * shown));
+        }
 
         float fontSize(const State &state, float base) { return std::round(base * state.unit); }
 
@@ -251,19 +320,31 @@ namespace kamite::launcher
             return clicked;
         }
 
-        void title(const State &state)
+        void title(State &state)
         {
-            ImGui::Dummy(ImVec2(0.0f, fontSize(state, 70.0f)));
             if (state.logo.id != 0u && state.logo.height > 0)
             {
-                const float width = std::min(ImGui::GetWindowWidth() * 0.8f, fontSize(state, 820.0f));
-                const float height = width * static_cast<float>(state.logo.height) / static_cast<float>(state.logo.width);
-                ImGui::SetCursorPosX((ImGui::GetWindowWidth() - width) * 0.5f);
+                ImGui::Dummy(ImVec2(0.0f, fontSize(state, 24.0f)));
+                // Big: as wide as fits, at most 44% of the window's height.
+                const float aspect = static_cast<float>(state.logo.height) / static_cast<float>(state.logo.width);
+                const float width = std::min({ImGui::GetWindowWidth() * 0.92f, fontSize(state, 1150.0f),
+                                              ImGui::GetWindowHeight() * 0.44f / aspect});
+                const float height = width * aspect;
+                const ImVec2 start((ImGui::GetWindowWidth() - width) * 0.5f, ImGui::GetCursorPosY());
+                const ImVec2 shift(state.parallax.x * fontSize(state, 8.0f), state.parallax.y * fontSize(state, 8.0f));
+                ImGui::SetCursorPos(start);
+                const ImVec2 screenStart = ImGui::GetCursorScreenPos();
+                ImGui::SetCursorPos(ImVec2(start.x + shift.x, start.y + shift.y));
                 rlImGuiImageSize(&state.logo, static_cast<int>(width), static_cast<int>(height));
+                state.logoMin = screenStart;
+                state.logoMax = ImVec2(screenStart.x + width, screenStart.y + height);
+                state.logoPlaced = true;
+                ImGui::SetCursorPos(ImVec2(0.0f, start.y + height));
                 ImGui::Dummy(ImVec2(0.0f, fontSize(state, 6.0f)));
             }
             else
             {
+                ImGui::Dummy(ImVec2(0.0f, fontSize(state, 70.0f)));
                 pushSize(state, 92.0f);
                 centeredText("K A M I T E", ImVec4(1.0f, 0.62f, 0.30f, 1.0f));
                 ImGui::PopFont();
@@ -1219,6 +1300,16 @@ namespace kamite::launcher
                 SetTextureFilter(state.logo, TEXTURE_FILTER_TRILINEAR);
             }
         }
+        const fs::path burstPath = context.exeDir / "resources" / "images" / "burst.png";
+        if (fs::is_regular_file(burstPath, error))
+        {
+            state.burst = LoadTexture(utf8(burstPath).c_str());
+            if (state.burst.id != 0u)
+            {
+                GenTextureMipmaps(&state.burst);
+                SetTextureFilter(state.burst, TEXTURE_FILTER_TRILINEAR);
+            }
+        }
         KM_INFO(Boot, "launcher: shown (" << (state.installed ? "installed" : "not installed") << ")");
 
         while (!state.done)
@@ -1230,8 +1321,10 @@ namespace kamite::launcher
             }
             state.unit = std::clamp(static_cast<float>(GetScreenHeight()) / 900.0f, 0.55f, 3.0f);
             feedGamepads(io);
+            updateMotion(state, state.screen);
             BeginDrawing();
             drawBackground();
+            drawBurst(state);
             rlImGuiBegin();
             ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
             ImGui::SetNextWindowSize(io.DisplaySize);
@@ -1260,6 +1353,8 @@ namespace kamite::launcher
         saveControls();
         if (state.logo.id != 0u)
             UnloadTexture(state.logo);
+        if (state.burst.id != 0u)
+            UnloadTexture(state.burst);
         rlImGuiShutdown(); // the F12 debugger sets ImGui up again later
         // One empty frame, so the window does not keep showing the launcher until the game's first picture.
         BeginDrawing();

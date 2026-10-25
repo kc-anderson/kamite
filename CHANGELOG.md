@@ -2,6 +2,15 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 25, 2026 (title art)
+
+- **The launcher has its logo:** K's cracked KAMITE wordmark with かみて painted in turquoise over its top right
+  (`resources/images/logo.png`), much bigger than the old text title (as wide as fits, up to 44% of the window's
+  height). Behind it, turquoise speed lines (`resources/images/burst.png`) in two layers that turn slowly in opposite
+  directions and pulse; the mouse shifts the layers and the logo by different amounts (parallax), with a slow drift of
+  its own when the mouse is still. The burst fades out on the Options screen. Both images are built by
+  `tools/logo/build_logo.py` from the wordmark render and the brush kana (the sources are not in the repo).
+
 ## October 25, 2026 (late night)
 
 - **Borderless fullscreen is a normal window again:** raylib's borderless mode also made the window topmost, so it
