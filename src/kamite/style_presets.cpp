@@ -190,7 +190,7 @@ namespace kamite::style_presets
             uint32_t magic;
             uint8_t version;
             uint8_t used;   // bit n: style n saved
-            uint8_t active; // the style loaded last (kNoStyle: none, or the moves were changed by hand since)
+            uint8_t active; // the style loaded or saved last (shown as loaded while the equipped moves still match it)
             uint8_t reserved;
             Combo styles[kStyles][kSets];
             uint32_t checksum;
@@ -569,7 +569,32 @@ namespace kamite::style_presets
             return true;
         }
 
-        std::vector<uint16_t> listText(const Store &store, bool colours)
+        // The equipped moves are this style's (as loading it gave them): ids and lengths, levels aside.
+        bool equipped(uint32_t data, const Combo (&style)[kSets])
+        {
+            Combo now[kSets];
+            read(data, now);
+            const int8_t *skill = reinterpret_cast<const int8_t *>(g_ram + data + kSkills);
+            for (int s = 0; s < kSets; ++s)
+            {
+                const int n = style[s].max < 0 ? 0 : style[s].max > kSlots ? kSlots : style[s].max;
+                int out = 0;
+                for (int i = 0; i < n; ++i)
+                {
+                    const int32_t id = style[s].id[i];
+                    if (id < 0 || id >= kMoveCount || skill[id] < 0)
+                        continue;
+                    if (out >= now[s].max || now[s].id[out] != id)
+                        return false;
+                    ++out;
+                }
+                if (out != now[s].max)
+                    return false;
+            }
+            return true;
+        }
+
+        std::vector<uint16_t> listText(uint32_t data, const Store &store, bool colours)
         {
             const int holding = g_holding.load(std::memory_order_relaxed);
             const bool blinkOn = (g_vblanks / 8u) % 2u == 0u;
@@ -588,7 +613,7 @@ namespace kamite::style_presets
                 uint32_t colour = 0u; // 0: the line's own colour
                 if (slot == holding)
                     colour = blinkOn ? kGold : 0u; // held with Y: blinks until it saves
-                else if (used && store.active == slot)
+                else if (used && store.active == slot && equipped(data, store.styles[slot]))
                     colour = (flash && !blinkOn) ? 0u : kGold; // the loaded style (a few blinks right after)
                 else if (!used)
                     colour = kDim;
@@ -654,8 +679,8 @@ namespace kamite::style_presets
                 return;
             Store store{};
             readStore(data, store);
-            writeText(data + kListText, listText(store, true));
-            writeText(data + kShadowText, listText(store, false));
+            writeText(data + kListText, listText(data, store, true));
+            writeText(data + kShadowText, listText(data, store, false));
             writeText(data + kHintText, hintText());
             if (!pointMessage(kListMessage, data + kListText) || !pointMessage(kShadowMessage, data + kShadowText) ||
                 !pointMessage(kHintMessage, data + kHintText))
