@@ -1,31 +1,37 @@
-// Menu buttons: Classic (PS2) or Modern (south confirms, east cancels). See menu_buttons.h.
+// Menu buttons: Classic (PS2) or Modern (south confirms, east cancels), menus only. See menu_buttons.h.
 //
-// How the game reads buttons (SLUS_215.03): func_0031AFE0 turns the pad's 16 PS2 button bits into a 64-bit command
-// word (D_007474A0+0x1A0 held, +0x1B0 pressed) through a 64-entry table at 0x3C3D50 (0x3C3E50 for the second
-// button configuration): bit 24 = triangle, 25 = cross, 26 = circle, 27 = square, 28-35 the d-pad, 36-43 the rest.
-// Menus and dialogs test those bits (MenuInput_stepPad, the choice strings "[circle] Yes [triangle] No"), and in
-// play circle and triangle are two of the four attack slots. So the swap is made once, at the pad, for everything:
-// the game's own prompts stay right once the sheets show the swapped cells, and a move assigned to "triangle" is
-// shown with and thrown by the same button.
+// The first version (aa44ccf) traded circle and triangle at the pad, which also traded two attack slots in play;
+// the game's own split between the raw word (play) and the command word (menus) is what keeps this one to the menus.
 #include "godhand/menu_buttons.h"
 #include "godhand/log.h"
-#include "ps2x/iop/iop_pad.h"
+#include "runtime/ps2_pnach.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <string>
-#include <utility>
+#include <thread>
 
 namespace godhand::menu_buttons
 {
     namespace
     {
         std::atomic<bool> g_modern{false};
+        uint8_t *g_ram = nullptr;
+
+        // The command tables (SLUS_215.03 .data): 64 raw masks, entry i = the raw bits that set command bit i.
+        constexpr uint32_t kTables[2] = {0x3C3D50u, 0x3C3E50u};
+        constexpr uint32_t kTriangleEntry = 24u, kCircleEntry = 26u;
+        constexpr uint32_t kRawTriangle = 0x1000u, kRawCircle = 0x2000u;
+        constexpr uint32_t kCorePointer = 0x7479F8u; // *(u32*) = where core_usa.bin was loaded
+        constexpr uint32_t kRamBytes = 0x2000000u;
 
         // Glyph codes of the game's text (core_usa.bin, 16-bit).
-        constexpr uint16_t kEnd = 0x8001u, kSpace = 0x10u;
+        constexpr uint16_t kSpace = 0x10u, kSpace2 = 0x35u, kColon = 0x31u;
         constexpr uint16_t kCircle = 0u, kTriangle = 1u, kCross = 3u, kR1 = 5u;
         uint16_t glyph(char c)
         {
@@ -51,17 +57,152 @@ namespace godhand::menu_buttons
                 out.insert(out.end(), p.begin(), p.end());
             return out;
         }
+
+        uint32_t rd32(uint32_t address)
+        {
+            uint32_t value;
+            std::memcpy(&value, g_ram + (address & 0x1FFFFFFu), sizeof(value));
+            return value;
+        }
+        void wr32(uint32_t address, uint32_t value)
+        {
+            std::memcpy(g_ram + (address & 0x1FFFFFFu), &value, sizeof(value));
+        }
+
+        // EE thread, every vblank: the two table entries. Only the disc's pair or ours is touched (a mod that remaps
+        // the buttons keeps its table).
+        void applyTables()
+        {
+            const uint32_t wantTriangle = g_modern.load(std::memory_order_relaxed) ? kRawCircle : kRawTriangle;
+            const uint32_t wantCircle = g_modern.load(std::memory_order_relaxed) ? kRawTriangle : kRawCircle;
+            for (uint32_t table : kTables)
+            {
+                const uint32_t t = rd32(table + kTriangleEntry * 4u), c = rd32(table + kCircleEntry * 4u);
+                if (t == wantTriangle && c == wantCircle)
+                    continue;
+                const bool disc = t == kRawTriangle && c == kRawCircle, ours = t == kRawCircle && c == kRawTriangle;
+                if (!disc && !ours)
+                    continue;
+                wr32(table + kTriangleEntry * 4u, wantTriangle);
+                wr32(table + kCircleEntry * 4u, wantCircle);
+            }
+        }
+
+        // EE thread, every 30 vblanks: the hint strings in the core block, checked against the disc's words first
+        // (another language's core or a changed one is left alone, once with a warning).
+        void applyCoreText()
+        {
+            const uint32_t core = rd32(kCorePointer);
+            if (core < 0x100000u || core >= kRamBytes - 0x100000u || (core & 0xFu) != 0u)
+                return;
+            static bool warned = false;
+            for (const TextPatch &patch : textPatches())
+            {
+                uint8_t *guest = g_ram + core + patch.offset;
+                const size_t bytes = patch.original.size() * 2u;
+                if (core + patch.offset + bytes > kRamBytes)
+                    continue;
+                if (std::memcmp(guest, patch.modern.data(), bytes) == 0)
+                    continue;
+                if (std::memcmp(guest, patch.original.data(), bytes) != 0)
+                {
+                    if (!warned)
+                    {
+                        warned = true;
+                        GH_WARN(Game, "menu buttons: the hint text at core+0x" << std::hex << patch.offset << std::dec
+                                                                               << " is not the US disc's; its wording is left alone");
+                    }
+                    continue;
+                }
+                std::memcpy(guest, patch.modern.data(), bytes);
+            }
+        }
+
+        // Menu-file strings: the scanner thread lists where each rewrite's original text is, the EE thread rewrites.
+        std::mutex g_foundMutex;
+        std::vector<std::pair<size_t, uint32_t>> g_found; // rewrite index, guest address
+
+        void scanLoop()
+        {
+            const auto &rewrites = textRewrites();
+            for (;;)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                std::vector<std::pair<size_t, uint32_t>> found;
+                const uint8_t *begin = g_ram + 0x100000u, *end = g_ram + kRamBytes;
+                for (size_t i = 0; i < rewrites.size(); ++i)
+                {
+                    const uint8_t *pat = reinterpret_cast<const uint8_t *>(rewrites[i].original.data());
+                    const size_t bytes = rewrites[i].original.size() * 2u;
+                    for (const uint8_t *p = begin; p + bytes <= end;)
+                    {
+                        p = static_cast<const uint8_t *>(std::memchr(p, pat[0], static_cast<size_t>(end - bytes - p) + 1u));
+                        if (!p)
+                            break;
+                        if (std::memcmp(p, pat, bytes) == 0)
+                            found.emplace_back(i, static_cast<uint32_t>(p - g_ram));
+                        ++p;
+                    }
+                }
+                if (found.empty())
+                    continue;
+                std::lock_guard<std::mutex> lock(g_foundMutex);
+                g_found.insert(g_found.end(), found.begin(), found.end());
+            }
+        }
+
+        void applyFoundText()
+        {
+            std::vector<std::pair<size_t, uint32_t>> found;
+            {
+                std::unique_lock<std::mutex> lock(g_foundMutex, std::try_to_lock);
+                if (!lock.owns_lock())
+                    return;
+                found.swap(g_found);
+            }
+            const auto &rewrites = textRewrites();
+            for (const auto &[index, address] : found)
+            {
+                const TextRewrite &rw = rewrites[index];
+                const size_t bytes = rw.original.size() * 2u;
+                if (address + bytes > kRamBytes)
+                    continue;
+                uint8_t *guest = g_ram + address;
+                if (std::memcmp(guest, rw.original.data(), bytes) != 0)
+                    continue; // gone since the scan
+                std::memcpy(guest, rw.modern.data(), bytes);
+                GH_INFO(Game, "menu buttons: " << rw.where << " reworded at 0x" << std::hex << address << std::dec);
+            }
+        }
+
+        void onVblank()
+        {
+            static uint32_t vblanks = 0u;
+            ++vblanks;
+            applyTables();
+            if (!g_modern.load(std::memory_order_relaxed))
+                return;
+            if (vblanks % 30u == 0u)
+                applyCoreText();
+            applyFoundText();
+        }
     }
 
-    void install()
+    void install(uint8_t *rdram)
     {
         const char *value = std::getenv("GODHAND_MENU_BUTTONS");
         std::string text = value ? value : "classic";
         for (char &c : text)
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         g_modern.store(text == "modern" || text == "1", std::memory_order_relaxed);
-        GH_INFO(Game, "menu buttons: " << (g_modern.load() ? "modern (the south button confirms, the east one cancels: circle and triangle traded)"
+        g_ram = rdram;
+        GH_INFO(Game, "menu buttons: " << (g_modern.load() ? "modern (in menus the south button confirms and the east one cancels; play unchanged)"
                                                             : "classic (circle and cross confirm, triangle cancels, as on the PS2)"));
+        if (!g_ram)
+            return;
+        ps2x::pnach::addFrameHook(&onVblank);
+        if (g_modern.load())
+            std::thread(scanLoop).detach();
     }
 
     bool modern()
@@ -69,35 +210,43 @@ namespace godhand::menu_buttons
         return g_modern.load(std::memory_order_relaxed);
     }
 
-    void swapPad(ps2x::iop::PadInputState &state)
-    {
-        if (!g_modern.load(std::memory_order_relaxed))
-            return;
-        namespace PadButton = ps2x::iop::PadButton;
-        using ps2x::iop::PadPressure;
-        const uint16_t circle = state.buttons & PadButton::Circle, triangle = state.buttons & PadButton::Triangle;
-        state.buttons = static_cast<uint16_t>((state.buttons & ~(PadButton::Circle | PadButton::Triangle)) |
-                                              (circle ? PadButton::Triangle : 0u) | (triangle ? PadButton::Circle : 0u));
-        std::swap(state.pressure[static_cast<size_t>(PadPressure::Circle)], state.pressure[static_cast<size_t>(PadPressure::Triangle)]);
-    }
-
     const std::vector<TextPatch> &textPatches()
     {
-        // Offsets in core_usa.bin (US), found by their icon codes (Oct 2026); each patch keeps its length.
+        // Offsets in core_usa.bin (US), found by their icon codes (Oct 2026); each patch keeps its length. The icons
+        // name the buttons that work the menu: the game's "triangle" (cancel) is now the circle, its two confirms the
+        // cross alone.
         static const std::vector<TextPatch> patches = {
             // The roulette's bar: "[R1]Select [cross][circle]OK [triangle]Cancel" (20 codes) ->
-            // "[R1]Cycle  [cross]OK  [triangle]Cancel": one button per action, the gaps where the second icon was.
+            // "[R1]Cycle  [cross]OK  [circle]Cancel": one button per action, the gaps where the second icon was.
             {0x591CCu,
              cat({text({kR1}, "Select"), text({kSpace, kCross, kCircle}, "OK"), text({kSpace, kTriangle}, "Cancel")}),
-             cat({text({kR1}, "Cycle"), text({kSpace, kSpace, kCross}, "OK"), text({kSpace, kSpace, kTriangle}, "Cancel")})},
+             cat({text({kR1}, "Cycle"), text({kSpace, kSpace, kCross}, "OK"), text({kSpace, kSpace, kCircle}, "Cancel")})},
             // "[cross][circle]Change" and "[cross][circle]Select": the circle becomes a space.
             {0x591F8u, text({kCross, kCircle}, "Change"), text({kCross, kSpace}, "Change")},
             {0x59238u, text({kCross, kCircle}, "Select"), text({kCross, kSpace}, "Select")},
-            // The dialog choices "[circle] Of course / Yes" (the "[triangle] No" stays): the circle becomes the cross.
+            // The dialog choices "[circle] Of course / Yes" and "[triangle] Leave me alone / No": cross and circle.
             {0x577A8u, {kCircle, 0xFFFFu, 0xFFFFu}, {kCross, 0xFFFFu, 0xFFFFu}},
+            {0x577C8u, {kTriangle, 0xFFFFu, 0xFFFFu}, {kCircle, 0xFFFFu, 0xFFFFu}},
             {0x57820u, {kCircle, 0xFFFFu, 0xFFFFu}, {kCross, 0xFFFFu, 0xFFFFu}},
+            {0x57830u, {kTriangle, 0xFFFFu, 0xFFFFu}, {kCircle, 0xFFFFu, 0xFFFFu}},
             {0x57866u, {kCircle, 0xFFFFu, 0xFFFFu}, {kCross, 0xFFFFu, 0xFFFFu}},
+            {0x57876u, {kTriangle, 0xFFFFu, 0xFFFFu}, {kCircle, 0xFFFFu, 0xFFFFu}},
         };
         return patches;
+    }
+
+    const std::vector<TextRewrite> &textRewrites()
+    {
+        // id/local/us/idsavecore_us.idd (the save and load menus): "[cross] [circle] : Confirm" and
+        // "[triangle] : Cancel" (0x35 is that font's space, 0x31 its colon).
+        static const std::vector<TextRewrite> rewrites = {
+            {"save menu Confirm",
+             cat({{kCross, kSpace2, kCircle, kSpace2, kColon, kSpace2, kSpace2}, text({}, "Confirm")}),
+             cat({{kCross, kSpace2, kSpace2, kSpace2, kColon, kSpace2, kSpace2}, text({}, "Confirm")})},
+            {"save menu Cancel",
+             cat({{kSpace2, kTriangle, kSpace2, kColon, kSpace2, kSpace2}, text({}, "Cancel")}),
+             cat({{kSpace2, kCircle, kSpace2, kColon, kSpace2, kSpace2}, text({}, "Cancel")})},
+        };
+        return rewrites;
     }
 }

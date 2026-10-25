@@ -23,6 +23,7 @@
 // screen's left edge, centre or right edge.
 #include "godhand/hud_layout.h"
 #include "godhand/log.h"
+#include "godhand/roulette_bar.h"
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/gs/gs_aspect.h"
@@ -114,6 +115,7 @@ namespace godhand::hud
         Region g_region = Region::None;
         Context g_regionCtx, g_lastEntry;
         bool g_inIdTrans = false;
+        uint32_t g_curLayout = 0u; // the cIDBase being drawn (every caller)
 
         struct Loose
         {
@@ -232,6 +234,8 @@ namespace godhand::hud
                 y0 = std::min(y0, y);
                 y1 = std::max(y1, y);
             }
+            if (g_inIdTrans)
+                roulette_bar::onDraw(g_curLayout, g_entry, x0, x1, !withOffset);
             const float none = std::nanf("");
             if (n >= 2 && x1 - x0 >= 0.9f * width)
             {
@@ -349,6 +353,7 @@ namespace godhand::hud
         void idBegin(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             g_inIdTrans = true;
+            g_curLayout = GPR_U32(ctx, 18) & 0x01FFFFFFu;
             if (g_region == Region::Forced)
                 return; // g_ctx is the region's
             // Only the in-game HUD widgets (by who called cIDBase_trans) keep to the screen edges; every other layout
@@ -384,8 +389,13 @@ namespace godhand::hud
             g_lastEntry = g_ctx;
         }
 
-        // cIDBase_trans, before an entry is drawn: $a1 = the entry (only noted, for the F6 dump).
-        void idEntry(uint8_t *, R5900Context *ctx, PS2Runtime *) { g_entry = GPR_U32(ctx, 5); }
+        // cIDBase_trans, before an entry is drawn: $a1 = the entry (noted for the F6 dump; the roulette's hint bar is
+        // laid out again here, roulette_bar.h).
+        void idEntry(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            g_entry = GPR_U32(ctx, 5) & 0x01FFFFFFu;
+            roulette_bar::onEntry(rdram, g_curLayout, g_entry);
+        }
 
         void idEnd(uint8_t *, R5900Context *, PS2Runtime *)
         {
@@ -487,6 +497,7 @@ namespace godhand::hud
 
     void onFrame(uint8_t *)
     {
+        roulette_bar::onFrame();
         g_menuHold = g_menuSeen ? 8 : std::max(0, g_menuHold - 1);
         g_menuSeen = false;
         if (g_wide)

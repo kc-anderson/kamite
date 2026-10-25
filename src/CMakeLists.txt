@@ -48,6 +48,8 @@ set(GODHAND_HOST_SOURCES
     godhand/near_geometry.cpp
     godhand/crash_history.cpp
     godhand/hud_layout.cpp
+    godhand/roulette_bar.cpp
+    godhand/radar_glow.cpp
     godhand/ini_file.cpp
     godhand/counter_finder.cpp
     godhand/pc_sampler.cpp

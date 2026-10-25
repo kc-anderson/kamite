@@ -541,9 +541,12 @@ namespace godhand::launcher
                                                "already widens it sideways). Cutscenes keep their framing. F2 while "
                                                "playing tunes it live.");
                         cameraPresetCombo(state);
-                        settingLabel("See-through", "Walls and pillars between the camera and Gene dissolve in an oval "
-                                                    "round him, so he and the enemies about him stay in view. F2 > "
-                                                    "Camera sizes it while playing.");
+                        settingLabel("See-through (experimental)", "Walls and pillars between the camera and Gene "
+                                                                   "dissolve in an oval round him, so he and the enemies "
+                                                                   "about him stay in view. Known: a banded blur where "
+                                                                   "hazy distance shows through (the depth of field "
+                                                                   "reads the dissolve). F2 > Camera sizes it while "
+                                                                   "playing.");
                         iniCheckbox(state, "On##seethrough", "Video", "SeeThrough", true);
                         if (advanced)
                         {
@@ -670,8 +673,8 @@ namespace godhand::launcher
                         settingLabel("Menu buttons", "Classic: as on the PS2, circle and cross confirm and triangle "
                                                      "cancels (B/A confirm, Y cancels on an Xbox pad). Modern: the "
                                                      "bottom button confirms and the right one cancels (A/B, or "
-                                                     "cross/circle on a PlayStation pad). The two buttons trade places "
-                                                     "everywhere, moves and prompts included.");
+                                                     "cross/circle on a PlayStation pad). Menus, dialogs and the "
+                                                     "roulette only; the moves keep their buttons.");
                         iniCombo(state, "##menubuttons", "Game", "MenuButtons", "classic",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kMenuButtons, value); });
                         settingLabel("Mute music", "Stage, boss, menu and minigame music plays silent. Cutscenes keep "

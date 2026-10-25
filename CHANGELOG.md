@@ -6,12 +6,29 @@ Newest first. Each change is commented in the code where it was made.
 
 - **Menu buttons** (`[Game] MenuButtons=classic|modern`, launcher Gameplay > Menu buttons). Classic is the PS2's:
   circle and cross confirm, triangle cancels (the Japanese layout the US release kept: B/A confirm and Y cancels on an
-  Xbox pad). Modern: the bottom button confirms and the right one cancels (A/B; cross/circle on a PlayStation pad).
-  The game is given circle and triangle traded at the pad, so menus, dialogs, the roulette, the title screen and the
-  two attack slots all follow, and every prompt the game draws for circle shows the triangle button and the other way
-  round. The roulette's bar reads "RB Cycle / A OK / B Cancel" instead of the squeezed "Select / A B OK / Y Cancel"
-  (its text in the core block is reworded in place); "[A][B] Change/Select" and the dialogs' "[B] Yes" become A. A
-  PlayStation pad keeps the original symbols, with the circle and triangle cells exchanged.
+  Xbox pad). Modern: the bottom button confirms and the right one cancels (A/B; cross/circle on a PlayStation pad), in
+  the menus, the dialogs' choices, the roulette and the title screen only; the moves keep their buttons. The game
+  reads the pad twice: play takes the raw button word, the menus a "command" word built from it through a table of
+  masks (0x3C3D50, and 0x3C3E50 with the d-pad turned), so Modern exchanges the circle and triangle masks in the
+  tables and nothing else. The prompt art keeps showing each cell's own button (a move slot's label is the button that
+  throws it); the hint strings that name the menu buttons are reworded to the ones that now work them: the roulette's
+  bar reads "RB Cycle / A OK / B Cancel" instead of the squeezed "Select / A B OK / Y Cancel", "[A][B] Change/Select"
+  becomes A, the dialogs' "[B] Yes / [Y] No" become A / B, and the save menu's "Confirm / Cancel" (in its menu file,
+  found by scanning RAM) likewise. The first cut of this traded the two buttons at the pad, which traded two attack
+  slots too; that is gone.
+- **The roulette's hint bar laid out again** (Modern wording): full letter width instead of the squeeze, its right
+  end on the block's right edge (roulette_bar.cpp: the glyph and block extents of one frame set the text entry's scale
+  and position in the next, before cIDBase_transText).
+- **Controller letters in the look of the PS2 symbols:** A/B/X/Y as big as the symbols (18 px caps), bold, no black
+  outline, lit along the top-left inside of their strokes and shaded along the bottom-right, as the rings and crosses
+  are. The yellow ramp made of the square's pink entries is spread in brightness so the Y shades too.
+- **Radar glow for the controls in effect** (Modern control style only): the radar's floor glows yellow-orange along
+  the inside of its rim while the original controls are in effect (L1, Auto in a fight, the game holding the camera)
+  and not while the free camera is on. The radar texture in the core block gets a second version of its texels and
+  CLUT (eight little-used blip entries become the glow's ramp), written over it like the button prompts. Classic
+  players see the PS2 art.
+- **See-through is tagged experimental** in the launcher and the ini: the banded blur where hazy distance shows
+  through the dissolve (the depth of field reads the dissolved depth) stays for now; DepthOfField=0 removes it.
 - **Controller prompts in Xbox colours:** A green, B red, X blue, Y yellow, on the grey caps, as the PS2 art has coloured
   symbols on them (white letters read as a Switch pad). The letters are drawn from the sheets' own colour ramps; the
   pink square ramp, used by nothing else, is turned yellow in the CLUT for the Y. Keyboard caps stay white.

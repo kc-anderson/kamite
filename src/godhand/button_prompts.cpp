@@ -3,7 +3,6 @@
 #include "godhand/button_prompt_sheets.h"
 #include "godhand/crate_prompts.h"
 #include "godhand/log.h"
-#include "godhand/menu_buttons.h"
 #include "godhand/prompt_art.h"
 #include "godhand/sha256.h"
 #include "ps2_host_input.h"
@@ -191,35 +190,6 @@ namespace godhand::button_prompts
         // Every vblank (EE thread, ps2x::pnach frame hook): copy the newest built image over the sheets when it changed,
         // and every 30 vblanks check that the sheets still hold what was put there (a savestate load or a reload of
         // core_usa.bin brings other bytes back). Bytes this code does not know are never overwritten.
-        // [Game] MenuButtons=modern: the hint strings in the core block (menu_buttons::textPatches), checked against
-        // the disc's words first (another language's core or a changed one is left alone, once with a warning).
-        void applyText(uint32_t core)
-        {
-            if (!menu_buttons::modern())
-                return;
-            static bool warned = false;
-            for (const menu_buttons::TextPatch &patch : menu_buttons::textPatches())
-            {
-                uint8_t *guest = g_ram + core + patch.offset;
-                const size_t bytes = patch.original.size() * 2u;
-                if (core + patch.offset + bytes > 0x2000000u)
-                    continue;
-                if (std::memcmp(guest, patch.modern.data(), bytes) == 0)
-                    continue;
-                if (std::memcmp(guest, patch.original.data(), bytes) != 0)
-                {
-                    if (!warned)
-                    {
-                        warned = true;
-                        GH_WARN(Game, "menu buttons: the hint text at core+0x" << std::hex << patch.offset << std::dec
-                                                                               << " is not the US disc's; its wording is left alone");
-                    }
-                    continue;
-                }
-                std::memcpy(guest, patch.modern.data(), bytes);
-            }
-        }
-
         void onVblank()
         {
             ++g_vblanks;
@@ -276,7 +246,6 @@ namespace godhand::button_prompts
                     std::memcpy(guest, want, sheets::kClutBytes);
             }
             applyCrate(*images, fresh);
-            applyText(core);
             g_applied = images;
         }
 
@@ -305,10 +274,10 @@ namespace godhand::button_prompts
             const auto &set = pad ? snapshot.controller : snapshot.keys;
             sheets::PromptLabels labels;
             const auto put = [&](sheets::Icon icon, bindings::Input input) { labels.icon[icon] = labelOf(set[input]); };
-            // Modern menu buttons: the game's circle is the triangle binding and the other way round (menu_buttons.h).
-            const bool traded = menu_buttons::modern();
-            put(sheets::Circle, traded ? bindings::Triangle : bindings::Circle);
-            put(sheets::Triangle, traded ? bindings::Circle : bindings::Triangle);
+            // Each cell shows its own button whatever [Game] MenuButtons says: a move slot's label is the button that
+            // throws it, and Modern reworded the menu hints to the buttons that work them (menu_buttons.h).
+            put(sheets::Circle, bindings::Circle);
+            put(sheets::Triangle, bindings::Triangle);
             put(sheets::Square, bindings::Square);
             put(sheets::Cross, bindings::Cross);
             put(sheets::L1, bindings::L1);
@@ -439,13 +408,6 @@ namespace godhand::button_prompts
                 for (int i = 0; i < kSheetCount; ++i)
                     images->clut[i] = g_origClut[i];
                 std::string summary = playStation ? "PlayStation controller: original art" : "";
-                if (playStation && menu_buttons::modern())
-                {
-                    // Modern menu buttons on a PlayStation pad: the circle cell shows the triangle and the other way
-                    // round (the floating action prompt keeps its shapes: their rects differ in size).
-                    images->patched[0] = sheets::swapIconCells(g_origPayload[0].data(), sheets::Circle, sheets::Triangle, images->payload[0].data());
-                    summary += images->patched[0] ? ", circle and triangle traded" : " (trade failed: text icons kept)";
-                }
                 if (!playStation)
                 {
                     const sheets::PromptLabels labels = labelsFor(bindings::snapshot(), device);

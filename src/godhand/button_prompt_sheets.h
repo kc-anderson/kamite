@@ -99,10 +99,6 @@ namespace godhand::prompt_sheets
     bool buildActionSheet(const uint8_t *origPayload, const uint8_t *clut, const PromptLabels &labels, uint8_t *outPayload,
                           uint8_t *outClut);
 
-    // The original art with two of the face-button cells exchanged (a PlayStation pad with Modern menu buttons: the
-    // circle cell shows the triangle and the other way round). Texture 0x18 only; the action prompt's shapes have
-    // rects of different sizes and are left as they are.
-    bool swapIconCells(const uint8_t *origPayload, Icon a, Icon b, uint8_t *outPayload);
 
     // Sheet <-> 128x128 palette indices (row-major), and the CLUT as 256 RGBA entries in index order (alpha as
     // stored, 0x80 = opaque). For the hook's checks and offline tools.

@@ -18,6 +18,8 @@
 #include "godhand/call_profile.h"
 #include "godhand/guest_symbols.h"
 #include "godhand/button_prompts.h"
+#include "godhand/menu_buttons.h"
+#include "godhand/radar_glow.h"
 #include "godhand/call_trace.h"
 #include "godhand/default_ini.h" // generated from godhand.ini by src/CMakeLists.txt
 #include "godhand/function_hooks.h"
@@ -931,6 +933,8 @@ int main(int argc, char *argv[])
         godhand::installDllLoadLogger(runtime); // observe only: [DLL] lines + GODHAND_DLL_LOG CSV
         godhand::installHiresFlipCopy(runtime); // PS2X_GS_SCALE > 1 only: flip copy without the flicker filter
         godhand::button_prompts::install(runtime); // the button prompts show the bound keys (GODHAND_PROMPTS=0: PS2 art)
+        godhand::menu_buttons::install(runtime.memory().getRDRAM()); // [Game] MenuButtons: the menus' confirm/cancel buttons
+        godhand::radar_glow::install(runtime.memory().getRDRAM()); // Modern: the radar glows while the original controls are in effect
         godhand::installMovieWatchdog(runtime); // sweep R3: ending/movie-list movie polls cannot spin forever
         // 60 FPS mode, L3 dash, and the game-frame count for the F3 overlay (a hook at the top of the main loop).
         godhand::installFramePatches(runtime);

@@ -32,4 +32,10 @@ namespace godhand::modern
     void setPitchFloor(float floor);
     // setCamUpdate (a cut, a new room): back behind Gene.
     void resetCamera();
+
+    // [Game] ControlStyle=modern is on (whatever is in effect now).
+    bool enabled();
+    // Modern is on and the original controls are in effect now (L1, Auto in a fight, or the game holding the camera)
+    // rather than the free camera. For the radar's glow (radar_glow.h). Any thread.
+    bool originalControlsNow();
 }

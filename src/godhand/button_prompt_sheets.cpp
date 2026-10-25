@@ -74,9 +74,15 @@ namespace godhand::prompt_sheets
         };
         constexpr LabelBox kRoundBoxes[3] = {{16.0f, 16.0f, 17.0f, 14.0f}, {16.0f, 16.0f, 20.0f, 12.0f}, {16.0f, 16.0f, 21.0f, 10.0f}};
         constexpr LabelBox kRoundedBoxes[3] = {{16.0f, 16.5f, 20.0f, 15.0f}, {16.0f, 16.5f, 21.0f, 13.0f}, {16.0f, 16.5f, 23.0f, 11.0f}};
+        // A coloured letter in the look of the PS2 symbols (A/B/X/Y on a controller): as big as the symbols (the
+        // circle is 22 px across, the triangle 24 wide), bold, no outline, lit from the top left inside its strokes.
+        constexpr LabelBox kSymbolBoxes[3] = {{16.0f, 16.0f, 19.0f, 18.0f}, {16.0f, 16.0f, 21.0f, 15.0f}, {16.0f, 16.0f, 22.0f, 12.0f}};
 
         // The dark edge around the white label: the original R1/L3 letters have a black outline.
         constexpr float kHaloAlpha = 0.80f;
+        // The symbol look's bevel: the stroke's top-left inside edge is lit, its bottom-right one in shadow (the
+        // original rings and crosses have this), as a share of the ink's brightness.
+        constexpr float kBevelLight = 0.45f, kBevelShadow = 0.40f;
 
         // The stick cells' inverted T inside the 1-texel clear border (bilinear sampling of the 32x32 cell reads
         // half a texel outside it).
@@ -201,16 +207,26 @@ namespace godhand::prompt_sheets
             std::memcpy(outClut, clut, 1024u);
             if (!yellow)
                 return;
+            // The pink entries are all about as bright (the square's edge blends); the yellow ramp made of them is
+            // spread in brightness too, so the Y gets its bevel (the lightest keeps its brightness, the others step down).
+            std::vector<std::pair<float, int>> pinks; // brightness, entry
             for (int c = 0; c < 256; ++c)
             {
                 if (keep[static_cast<size_t>(c)])
                     continue;
                 const int j = (c & 0xE7) | ((c & 0x08) << 1) | ((c & 0x10) >> 1); // CSM1 storage order (paletteRgba)
-                uint8_t *e = outClut + j * 4;
-                if (hueOf(e) != Hue::Pink)
-                    continue;
+                const uint8_t *e = outClut + j * 4;
+                if (hueOf(e) == Hue::Pink)
+                    pinks.emplace_back(static_cast<float>(std::max({e[0], e[1], e[2]})) / 255.0f, j);
+            }
+            std::sort(pinks.begin(), pinks.end());
+            for (size_t k = 0; k < pinks.size(); ++k)
+            {
+                uint8_t *e = outClut + pinks[k].second * 4;
                 float h, sat, v, r, g, b;
                 rgbToHsv(e[0] / 255.0f, e[1] / 255.0f, e[2] / 255.0f, h, sat, v);
+                const float step = pinks.size() > 1 ? static_cast<float>(pinks.size() - 1u - k) / static_cast<float>(pinks.size() - 1u) : 0.0f;
+                v = std::max(0.45f, v - 0.5f * step); // the brightest stays, the darkest ends near half
                 hsvToRgb(50.0f, std::clamp(sat * 1.8f, 0.6f, 0.95f), v, r, g, b);
                 e[0] = static_cast<uint8_t>(std::lround(r * 255.0f));
                 e[1] = static_cast<uint8_t>(std::lround(g * 255.0f));
@@ -391,9 +407,11 @@ namespace godhand::prompt_sheets
             return count;
         }
 
-        // White label with a dark halo over the cap face; marks the touched texels dirty. False when nothing could be
-        // drawn (GDI failure, no usable font).
-        bool drawLabel(CellWork &w, const std::string &text, const LabelBox (&boxes)[3], art::Rgb ink = {1.0f, 1.0f, 1.0f})
+        // White label with a dark halo over the cap face, or (symbol look, with `ink` a colour) a big bold bevelled
+        // letter without one; marks the touched texels dirty. False when nothing could be drawn (GDI failure, no
+        // usable font).
+        bool drawLabel(CellWork &w, const std::string &text, const LabelBox (&boxes)[3], art::Rgb ink = {1.0f, 1.0f, 1.0f},
+                       bool symbolLook = false)
         {
             const LabelBox &b = boxes[std::clamp<size_t>(glyphCount(text), 1u, 3u) - 1u];
             art::TextBox box;
@@ -401,9 +419,42 @@ namespace godhand::prompt_sheets
             box.cy = b.cy;
             box.width = b.width;
             box.capHeight = b.cap;
+            if (symbolLook)
+                box.weight = art::Weight::Bold;
             std::array<float, kCellTexels> cov{};
             if (art::textCoverage(text, box, kCellSize, kCellSize, cov.data()) <= 0.0f)
                 return false;
+            if (symbolLook)
+            {
+                const auto at = [&](int x, int y) {
+                    return x < 0 || y < 0 || x >= kCellSize || y >= kCellSize ? 0.0f : cov[static_cast<size_t>(y * kCellSize + x)];
+                };
+                std::array<float, kCellTexels> light{}, shadow{};
+                for (int y = 0; y < kCellSize; ++y)
+                {
+                    for (int x = 0; x < kCellSize; ++x)
+                    {
+                        const float c = at(x, y);
+                        if (c <= 0.0f)
+                            continue;
+                        // Inside edges: where the texel up-left (down-right) is outside the stroke.
+                        light[static_cast<size_t>(y * kCellSize + x)] = std::max(0.0f, c - std::min({at(x - 1, y), at(x, y - 1), at(x - 1, y - 1)}));
+                        shadow[static_cast<size_t>(y * kCellSize + x)] = std::max(0.0f, c - std::min({at(x + 1, y), at(x, y + 1), at(x + 1, y + 1)}));
+                    }
+                }
+                // The base ink a step below the ramp's top, so the lit edge has somewhere to go.
+                const art::Rgb base{ink.r * 0.82f, ink.g * 0.82f, ink.b * 0.82f};
+                const art::Rgb lit{std::min(1.0f, ink.r + (1.0f - ink.r) * kBevelLight), std::min(1.0f, ink.g + (1.0f - ink.g) * kBevelLight),
+                                   std::min(1.0f, ink.b + (1.0f - ink.b) * kBevelLight)};
+                const art::Rgb dark{base.r * (1.0f - kBevelShadow), base.g * (1.0f - kBevelShadow), base.b * (1.0f - kBevelShadow)};
+                art::composite(w.img, cov.data(), base, 1.0f);
+                art::composite(w.img, shadow.data(), dark, 1.0f);
+                art::composite(w.img, light.data(), lit, 1.0f);
+                for (int i = 0; i < kCellTexels; ++i)
+                    if (cov[static_cast<size_t>(i)] > 0.0f)
+                        w.dirty[static_cast<size_t>(i)] = true;
+                return true;
+            }
             std::array<float, kCellTexels> halo{};
             for (int y = 0; y < kCellSize; ++y)
             {
@@ -599,7 +650,9 @@ namespace godhand::prompt_sheets
                     clearRoundCap(w, rawPal.data());
                 else
                     clearRoundedCap(w);
-                if (!drawLabel(w, labels.icon[icon], cell.kind == CellKind::RoundCap ? kRoundBoxes : kRoundedBoxes, inkColour))
+                const bool symbolLook = cell.kind == CellKind::RoundCap && labels.tint[icon] != Tint::White;
+                if (!drawLabel(w, labels.icon[icon], symbolLook ? kSymbolBoxes : cell.kind == CellKind::RoundCap ? kRoundBoxes : kRoundedBoxes,
+                               inkColour, symbolLook))
                     return false;
                 break;
             }
@@ -724,22 +777,6 @@ namespace godhand::prompt_sheets
                         static_cast<uint8_t>(nearest(pal, allowed, &img.px[static_cast<size_t>(y * w + x) * 4u]));
         }
 
-        swizzle(sheet.data(), outPayload);
-        return true;
-    }
-
-    bool swapIconCells(const uint8_t *origPayload, Icon a, Icon b, uint8_t *outPayload)
-    {
-        if (!origPayload || !outPayload || a < 0 || b < 0 || a >= IconCount || b >= IconCount)
-            return false;
-        std::vector<uint8_t> sheet(kPayloadBytes);
-        unswizzle(origPayload, sheet.data());
-        if (!looksLikeIconSheet(sheet.data()))
-            return false;
-        const Cell &ca = kCells[a], &cb = kCells[b];
-        for (int y = 0; y < kCellSize; ++y)
-            for (int x = 0; x < kCellSize; ++x)
-                std::swap(sheet[(ca.y + y) * kSheetSize + ca.x + x], sheet[(cb.y + y) * kSheetSize + cb.x + x]);
         swizzle(sheet.data(), outPayload);
         return true;
     }
