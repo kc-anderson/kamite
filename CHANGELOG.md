@@ -2,6 +2,16 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 25, 2026 (night, 2)
+
+- **Style list:** lines 16 px apart (the block's top line stays where it was); the plus starts right after the Y
+  button, the arrow right after the plus, and the style's name right after the arrow (the plus and the arrows now
+  advance the text by their own width instead of a full icon cell).
+- **Hints follow their buttons closely:** the Techniques screen's "[A]Change" / "[A]Select" and "[Y]Hold D-Pad: Save
+  Style" lose the gap after the button (as "[B]Exit" has it); the save and load menus' "[A] : Confirm" and
+  "[B] : Cancel" become "[A]Confirm" and "[B]Cancel", the two buttons one above the other (the lines had kept the PS2
+  layout's spacing for two buttons on the first line). The same strings in the pause menu's files are reworded too.
+
 ## October 25, 2026 (night)
 
 - **60 FPS: effects keep the PS2's timing.** The effect system counts frames; the 60 FPS patch had halved only an
