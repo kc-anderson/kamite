@@ -3241,7 +3241,8 @@ void PS2Runtime::run()
             std::string top;
             uint32_t topRgba = 0xCC000000u;
             float topAlpha = 0.0f;
-            if (ps2x::savestate::overlayMessage(top, topAlpha) || ps2x::pnach::overlayMessage(top, topAlpha))
+            if (ps2x::savestate::overlayMessage(top, topAlpha) || ps2x::pnach::overlayMessage(top, topAlpha) ||
+                ps2x::menu::notice(top, topAlpha))
                 topRgba = 0x99000000u; // black, 60%
             else
             {
@@ -3318,7 +3319,7 @@ void PS2Runtime::run()
         {
             std::string stateText;
             float stateAlpha = 0.0f;
-            if (ps2x::savestate::overlayMessage(stateText, stateAlpha))
+            if (ps2x::savestate::overlayMessage(stateText, stateAlpha) || ps2x::menu::notice(stateText, stateAlpha))
             {
                 const int fontSize = std::max(18, GetScreenHeight() / 30);
                 const int width = MeasureText(stateText.c_str(), fontSize);

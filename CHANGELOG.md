@@ -4,6 +4,16 @@ Newest first. Each change is commented in the code where it was made.
 
 ## October 25, 2026 (evening)
 
+- **Style presets, stage 2: swapping in play and on the Techniques screen, kept in the save.**
+  - In play (Gene under your control, mid-fight and mid-combo too), a **d-pad tap loads a style**: up = S, right = E,
+    down = X, left = Y (L, I, F, E as Xavier). The next move of a chain already comes from the new style. A small
+    notice in the corner names the style for now.
+  - On the **Techniques screen** (Modern menu buttons): **Y + d-pad** loads that style when let go before 1.5 s, and
+    **held 1.5 s saves** the equipped moves to it. The d-pad doesn't move the cursor while Y is held.
+  - The styles are **stored in the save** (in a part of the save data the game never uses), so they go to the memory
+    card with it, each save file has its own, and a new game starts with none. A Continue keeps them.
+  - F2 > Styles shows which style is loaded and saves/loads them too.
+- Fixed: digits in the port's rewritten menu hints used the wrong glyphs (none were in use).
 - **Tutorial pop-ups are no longer menus:** with 4:3 menus in a 16:9 game, a tutorial pop-up's full-screen backing
   made the picture go 4:3 and back, and the health block could land in its 4:3 place. While the pop-up is up (and no
   pause menu is open over it) nothing counts as a menu. HUD pieces also keep their last place across any menu instead

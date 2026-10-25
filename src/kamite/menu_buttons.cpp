@@ -52,7 +52,7 @@ namespace kamite::menu_buttons
             if (c >= 'a' && c <= 'z')
                 return static_cast<uint16_t>(0x5A + (c - 'a'));
             if (c >= '0' && c <= '9')
-                return static_cast<uint16_t>(0x20 + (c - '0'));
+                return static_cast<uint16_t>(0x36 + (c - '0')); // 0x36..0x3F (0x20 is "=")
             return kSpace;
         }
         std::vector<uint16_t> text(std::initializer_list<uint16_t> icons, const char *word = nullptr)

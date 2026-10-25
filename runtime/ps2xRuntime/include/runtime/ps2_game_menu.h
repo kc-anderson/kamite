@@ -21,4 +21,10 @@ namespace ps2x::menu
     [[nodiscard]] bool isOpen() noexcept;
     // Window thread, once per host frame: F2 opens/closes it and the input goes to the menu while it is open.
     void hostTick();
+
+    // A short notice in the corner where the save-state and patch messages show (any thread): shown for `seconds`,
+    // the last half second fading. A newer notice replaces the one shown.
+    void notify(std::string text, float seconds = 1.5f);
+    // For the presenter: the notice to draw now and its alpha; false when there is none.
+    [[nodiscard]] bool notice(std::string &text, float &alpha);
 }

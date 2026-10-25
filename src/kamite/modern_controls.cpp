@@ -28,6 +28,7 @@
 #include "kamite/ini_file.h"
 #include "kamite/log.h"
 #include "kamite/menu_buttons.h"
+#include "kamite/style_presets.h"
 #include "ps2_host_input.h"
 #include "runtime/ps2_game_menu.h"
 #include "runtime/ps2_input_options.h"
@@ -141,6 +142,7 @@ namespace kamite::modern
         // ps2_host_input's pad filter (window thread), player 1 only.
         void padFilter(uint32_t player, ps2x::iop::PadInputState &state)
         {
+            style_presets::padFilter(player, state); // the d-pad style swaps (ps2_host_input has one filter)
             if (player != 0u)
                 return;
             if (!g_modern.load(std::memory_order_relaxed))

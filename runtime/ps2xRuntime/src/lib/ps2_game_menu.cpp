@@ -6,6 +6,7 @@
 #include "runtime/gs/gs_pcsx2_backend.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
@@ -196,5 +197,38 @@ namespace ps2x::menu
             GSPcsx2Backend::SetMenuInput(&input);
         }
 #endif
+    }
+
+    namespace
+    {
+        std::mutex g_noticeMutex;
+        std::string g_notice;
+        float g_noticeSeconds = 0.0f;
+        std::chrono::steady_clock::time_point g_noticeTime;
+    }
+
+    void notify(std::string text, float seconds)
+    {
+        std::lock_guard<std::mutex> lock(g_noticeMutex);
+        g_notice = std::move(text);
+        g_noticeSeconds = seconds;
+        g_noticeTime = std::chrono::steady_clock::now();
+    }
+
+    bool notice(std::string &text, float &alpha)
+    {
+        std::lock_guard<std::mutex> lock(g_noticeMutex);
+        if (g_notice.empty())
+            return false;
+        const float seconds = std::chrono::duration<float>(std::chrono::steady_clock::now() - g_noticeTime).count();
+        if (seconds >= g_noticeSeconds)
+        {
+            g_notice.clear();
+            return false;
+        }
+        text = g_notice;
+        const float fade = g_noticeSeconds - seconds;
+        alpha = fade < 0.5f ? fade / 0.5f : 1.0f;
+        return true;
     }
 }
