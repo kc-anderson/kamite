@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -268,7 +269,7 @@ namespace kamite::launcher
                 ImGui::PopFont();
             }
             pushSize(state, 22.0f);
-            centeredText("God Hand for PS2 Recompiled, Refined, Rearmed.", kTextDim);
+            centeredText("God Hand\u2122 for PS2 Recompiled, Refined, Rearmed.", kTextDim);
             ImGui::PopFont();
             ImGui::Dummy(ImVec2(0.0f, fontSize(state, 40.0f)));
         }
@@ -360,6 +361,20 @@ namespace kamite::launcher
                 state.done = true;
             }
             ImGui::PopFont();
+            // The rights notice at the foot of the title screen.
+            {
+                pushSize(state, 16.0f);
+                const char *lines[] = {"God Hand\u2122 is a trademark of CAPCOM CO., LTD. All rights to the game belong to Capcom.",
+                                       "Kamite is a fan-made project, not affiliated with or endorsed by Capcom or Clover Studio. "
+                                       "It contains no game data: play your own copy."};
+                const float lineHeight = ImGui::GetTextLineHeightWithSpacing();
+                const float y = ImGui::GetWindowHeight() - lineHeight * 2.0f - fontSize(state, 18.0f);
+                if (ImGui::GetCursorPosY() < y)
+                    ImGui::SetCursorPosY(y);
+                for (const char *line : lines)
+                    centeredText(line, kTextDim);
+                ImGui::PopFont();
+            }
             state.focusFirst = false;
         }
 
@@ -427,7 +442,7 @@ namespace kamite::launcher
         void dividerLine()
         {
             ImGuiWindow *window = ImGui::GetCurrentWindow();
-            const float y = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y * 0.5f - 1.0f;
+            const float y = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y * 0.5f;
             const float x0 = window->InnerRect.Min.x + ImGui::GetStyle().WindowPadding.x;
             const float x1 = window->InnerRect.Max.x - ImGui::GetStyle().WindowPadding.x;
             ImGui::PushClipRect(window->InnerRect.Min, window->InnerRect.Max, false);
@@ -446,15 +461,27 @@ namespace kamite::launcher
             ImGui::PopStyleColor();
         }
 
-        // A setting in a section of its own. `note`: a line of its own at the bottom of the help ("NOTE: ...").
-        void settingLabel(const char *name, const char *help, const char *note = nullptr)
+        // A setting in a section of its own: a line with some room above and below it, then the name and help on the
+        // left (`note`: a line of its own at the bottom of the help, "NOTE: ..."; `below`: more controls under the help,
+        // such as Camera's "Show advanced settings"), the control on the right.
+        void settingLabel(const char *name, const char *help, const char *note = nullptr, const std::function<void()> &below = {})
         {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            if (g_settingRows++ > 0)
+            const bool divided = g_settingRows++ > 0;
+            const float gap = std::round(ImGui::GetFontSize() * 0.45f), spacing = ImGui::GetStyle().ItemSpacing.y;
+            if (divided)
+            {
+                ImGui::Dummy(ImVec2(0.0f, gap));
                 dividerLine();
+                ImGui::Dummy(ImVec2(0.0f, gap));
+            }
             describe(name, help, note);
+            if (below)
+                below();
             ImGui::TableSetColumnIndex(1);
+            if (divided)
+                ImGui::Dummy(ImVec2(0.0f, 2.0f * gap + spacing)); // the control lines up with the name
         }
 
         // A sub-option in the section of the setting above it.
@@ -939,10 +966,9 @@ namespace kamite::launcher
                         ImGui::EndDisabled();
                         settingLabel("Camera", "How much the gameplay camera shows and how it frames Gene (widescreen "
                                                "already widens it sideways). Cutscenes keep their framing.",
-                                     "F2 while playing tunes it live.");
+                                     "F2 while playing tunes it live.",
+                                     [&] { iniCheckbox(state, "Show advanced settings##advanced", "Launcher", "ShowAdvanced", false); });
                         cameraPresetCombo(state);
-                        ImGui::TableSetColumnIndex(0);
-                        iniCheckbox(state, "Show advanced settings##advanced", "Launcher", "ShowAdvanced", false);
                         if (advanced)
                         {
                             subSetting("Field of view", "How much the camera shows, both ways, outside fights.");
