@@ -29,6 +29,92 @@ namespace pcsx2gs
 		float inverse[16]; // row-major
 	};
 	bool GetSeeThrough(SeeThroughParams& out); // compat/Bridge.cpp: pcsx2gs_set_option("see_through")
+	extern std::atomic<int> g_drawDumpState;   // compat/Bridge.cpp: pcsx2gs_set_option("draw_dump"); 2 = recording
+	extern std::FILE* g_drawDumpFile;
+	extern std::string g_drawDumpBase;
+
+	// The draw dump (diagnostic, Shift+F10 in the port): every draw of one frame as the GPU gets it (after the port's
+	// depth and shading changes), and the frame's colour and depth at its end. For the precise-depth stripes.
+	GSTexture* s_ddRt = nullptr;
+	GSTexture* s_ddDs = nullptr;
+
+	// Bridge.cpp's Vsync, when the recorded frame is over: the last scene targets as PNG (depth through PCSX2's
+	// depth-to-colour conversion: the 32-bit depth's bytes in RGBA), then the file is closed.
+	void FinishDrawDump()
+	{
+		if (s_ddRt)
+			s_ddRt->Save(g_drawDumpBase + "_rt.png");
+		if (s_ddDs)
+			s_ddDs->Save(g_drawDumpBase + "_depth.png");
+		s_ddRt = s_ddDs = nullptr;
+		if (g_drawDumpFile)
+		{
+			std::fclose(g_drawDumpFile);
+			g_drawDumpFile = nullptr;
+		}
+	}
+}
+
+// One record per draw: 'K','D', then the fields below, the vertices (GSVertex, 32 bytes each) and the u16 indices.
+void GSRendererHW::KamiteDumpDraw(GSTextureCache::Target* rt, GSTextureCache::Target* ds)
+{
+	std::FILE* f = pcsx2gs::g_drawDumpFile;
+	if (!f || pcsx2gs::g_drawDumpState.load(std::memory_order_relaxed) != 2)
+		return;
+	struct Header
+	{
+		char magic[2] = {'K', 'D'};
+		u16 version = 1;
+		u32 primclass, prim, nverts, nindices;
+		u64 n, frame, zbuf, test, xyoffset, tex0, alpha;
+		float depth_scale;
+		u32 max_depth;
+		u8 zfloor, zwe, ztst, alpha_test, second_pass, second_zwe, persp, see_through;
+		u8 draw_class, has_rt, has_ds, ds_fmt;
+		u32 rt_w, rt_h, ds_w, ds_h;
+		float rt_scale;
+	} h;
+	h.primclass = m_vt.m_primclass;
+	h.prim = PRIM->U32[0];
+	h.nverts = m_conf.nverts;
+	h.nindices = m_conf.nindices;
+	h.n = s_n;
+	h.frame = m_cached_ctx.FRAME.U64;
+	h.zbuf = m_cached_ctx.ZBUF.U64;
+	h.test = m_cached_ctx.TEST.U64;
+	h.xyoffset = m_context->XYOFFSET.U64;
+	h.tex0 = m_cached_ctx.TEX0.U64;
+	h.alpha = m_context->ALPHA.U64;
+	h.depth_scale = m_conf.cb_vs.depth_scale;
+	h.max_depth = m_conf.cb_vs.max_depth;
+	h.zfloor = m_conf.ps.zfloor;
+	h.zwe = m_conf.depth.zwe;
+	h.ztst = m_conf.depth.ztst;
+	h.alpha_test = static_cast<u8>(m_conf.alpha_test);
+	h.second_pass = m_conf.alpha_second_pass.enable;
+	h.second_zwe = m_conf.alpha_second_pass.depth.zwe;
+	h.persp = m_conf.ps.persp_color;
+	h.see_through = m_conf.ps.see_through;
+	h.draw_class = static_cast<u8>(m_km_draw_class);
+	h.has_rt = rt != nullptr;
+	h.has_ds = ds != nullptr;
+	h.ds_fmt = static_cast<u8>(GSLocalMemory::m_psm[m_cached_ctx.ZBUF.PSM].fmt);
+	h.rt_w = rt && rt->m_texture ? rt->m_texture->GetWidth() : 0;
+	h.rt_h = rt && rt->m_texture ? rt->m_texture->GetHeight() : 0;
+	h.ds_w = ds && ds->m_texture ? ds->m_texture->GetWidth() : 0;
+	h.ds_h = ds && ds->m_texture ? ds->m_texture->GetHeight() : 0;
+	h.rt_scale = rt ? rt->GetScale() : (ds ? ds->GetScale() : 1.0f);
+	std::fwrite(&h, sizeof(h), 1, f);
+	if (m_conf.verts && m_conf.nverts)
+		std::fwrite(m_conf.verts, sizeof(GSVertex), m_conf.nverts, f);
+	if (m_conf.indices && m_conf.nindices)
+		std::fwrite(m_conf.indices, sizeof(u16), m_conf.nindices, f);
+	// The scene: the last draw with a 16-bit depth buffer and a colour target.
+	if (rt && ds && h.ds_fmt == 2 && rt->m_texture && ds->m_texture)
+	{
+		pcsx2gs::s_ddRt = rt->m_texture;
+		pcsx2gs::s_ddDs = ds->m_texture;
+	}
 }
 
 using PS_ATST  = GSShader::PS_ATST;
@@ -10018,6 +10104,8 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 
 	if (g_gs_device->IsDSInRTActive())
 		g_gs_device->EndDSAsRT();
+
+	KamiteDumpDraw(rt, ds); // pcsx2gs (Kamite): the Shift+F10 draw dump, when it is recording
 }
 
 // If the EE uploaded a new CLUT since the last draw, use that.

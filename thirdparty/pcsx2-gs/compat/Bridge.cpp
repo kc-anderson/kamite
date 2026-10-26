@@ -25,6 +25,15 @@
 namespace pcsx2gs
 {
     extern std::atomic<uint32_t> g_frame; // below; GSRendererHW::ApplyPreciseDepth starts its lines over each frame
+    // The draw dump (diagnostic: pcsx2gs_set_option("draw_dump", "<file base>"), Shift+F10 in the port): 1 = armed, starts
+    // at the next vsync; 2 = recording the frame (GSRendererHW::KamiteDumpDraw); at the vsync after it,
+    // FinishDrawDump saves the frame's colour and depth and closes the file. GS thread only, but for the arming.
+    std::atomic<int> g_drawDumpState{0};
+    std::FILE *g_drawDumpFile = nullptr;
+    std::string g_drawDumpBase;
+    std::mutex g_drawDumpMutex;
+    std::string g_drawDumpRequest;
+    void FinishDrawDump(); // GSRendererHW.cpp
     extern std::mutex g_textureAddMutex;  // below (texture_add)
     extern std::vector<std::string> g_textureAdds;
 }
@@ -274,6 +283,19 @@ namespace
         std::memcpy(g_regs + 0x1080, &regs->siglblid, 8);
         // As PCSX2's MTGS: CSR.FIELD (bit 13) picks the field.
         pcsx2gs::g_frame.fetch_add(1u, std::memory_order_relaxed);
+        if (pcsx2gs::g_drawDumpState.load(std::memory_order_relaxed) == 2)
+        {
+            pcsx2gs::FinishDrawDump();
+            std::fprintf(stderr, "[pcsx2-gs] draw dump written: %s.bin, _rt.png, _depth.png\n", pcsx2gs::g_drawDumpBase.c_str());
+            pcsx2gs::g_drawDumpState.store(0, std::memory_order_relaxed);
+        }
+        else if (pcsx2gs::g_drawDumpState.load(std::memory_order_relaxed) == 1)
+        {
+            std::lock_guard<std::mutex> lock(pcsx2gs::g_drawDumpMutex);
+            pcsx2gs::g_drawDumpBase = pcsx2gs::g_drawDumpRequest;
+            pcsx2gs::g_drawDumpFile = std::fopen((pcsx2gs::g_drawDumpBase + ".bin").c_str(), "wb");
+            pcsx2gs::g_drawDumpState.store(pcsx2gs::g_drawDumpFile ? 2 : 0, std::memory_order_relaxed);
+        }
         {
             std::vector<std::string> adds;
             {
@@ -511,6 +533,12 @@ extern "C" __declspec(dllexport) void pcsx2gs_set_option(const char *key, const 
         pcsx2gs::g_preciseDepth.store(*value != '0', std::memory_order_relaxed);
     else if (std::strcmp(key, "perspective_shading") == 0)
         pcsx2gs::g_perspectiveShading.store(*value != '0', std::memory_order_relaxed);
+    else if (std::strcmp(key, "draw_dump") == 0 && *value && pcsx2gs::g_drawDumpState.load(std::memory_order_relaxed) == 0)
+    {
+        std::lock_guard<std::mutex> lock(pcsx2gs::g_drawDumpMutex);
+        pcsx2gs::g_drawDumpRequest = value;
+        pcsx2gs::g_drawDumpState.store(1, std::memory_order_relaxed);
+    }
 }
 
 // The aspect ratio while the game runs (0 = 4:3, 1 = 16:9, 2 = fill the window), read at every present: the port uses

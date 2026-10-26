@@ -3415,7 +3415,8 @@ void PS2Runtime::run()
             ps2xRequestVu1Trace(2u);
             std::fprintf(stderr, "[F8] wrote %s, VU1 trace requested\n", name);
         }
-        if (!controlsOpen && IsKeyPressed(KEY_F10))
+        const bool shiftHeld = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+        if (!controlsOpen && !shiftHeld && IsKeyPressed(KEY_F10))
         {
             // Debug capture: the GIF stream of the next 2 fields as sent to PCSX2's GS (gif_<tick>.bin, the
             // PS2X_GIF_DUMP format; tools/gs/gif_dump.py lists its draws).
@@ -3423,6 +3424,16 @@ void PS2Runtime::run()
             char name[64];
             std::snprintf(name, sizeof(name), "gif_%llu.bin", tick);
             ps2xRequestGifDump(2u, name);
+        }
+        if (!controlsOpen && shiftHeld && IsKeyPressed(KEY_F10))
+        {
+            // Debug capture (Shift+F10): every draw of the next frame as PCSX2's GPU renderer gets it, with the frame's colour and
+            // depth (drawdump_<tick>.bin / _rt.png / _depth.png; pcsx2gs "draw_dump").
+            const unsigned long long tick = static_cast<unsigned long long>(m_memory.gs().vsyncTick.load());
+            char name[64];
+            std::snprintf(name, sizeof(name), "drawdump_%llu", tick);
+            const bool sent = GSPcsx2Backend::SetOption("draw_dump", name);
+            std::fprintf(stderr, "[Shift+F10] draw dump %s: %s\n", sent ? "requested" : "not available (rebuild pcsx2gs.dll)", name);
         }
 
         if (WindowShouldClose())

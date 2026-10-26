@@ -2,6 +2,13 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026 (7)
+
+- **Diagnostic: Shift+F10 draw dump.** Every draw of the next frame as PCSX2's GPU renderer gets it (after the
+  port's depth and shading changes: vertices, depth scale, depth write/test, alpha-test passes) into
+  drawdump_<tick>.bin, and that frame's colour and depth as drawdump_<tick>_rt.png / _depth.png. For the
+  precise-depth stripes; to be stripped once they are fixed.
+
 ## October 26, 2026 (6)
 
 - **See-through leaves characters alone again:** which packets may dissolve is now decided per XGKICK from the
