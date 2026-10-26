@@ -84,9 +84,13 @@ git apply --check ~/pr-1-message-font-names.patch   # no output = it applies
 git apply ~/pr-1-message-font-names.patch
 git diff                                            # read every line against pr-1-*.md
 .venv/bin/python scripts/check_naming_sync.py
+./scripts/resplat.sh && .venv/bin/python -m splat split config/r207.yaml   # renamed symbols reach the asm
 .venv/bin/python compile.py && sha256sum build/SLUS_215.03.elf disc_extract/SLUS_215.03
+.venv/bin/python compile.py --reseed-paths <units listed in the PR file>         # PR 1 only, see below
 scripts/session_check.sh
 ```
+
+Why the reseed: `expected/build/` is a local, git-ignored copy of every object as it was at your first build (objdiff compares against it, and the `expected` check relinks it and wants the retail sha256). After a rename, the objects of the TUs that mention the renamed functions carry the new symbol names, so their pinned copies are stale and `expected` fails with "baseline divergence" even though the real build matches retail. `--reseed-paths` refreshes exactly those copies (the PR file lists them) and nothing else. A header-only change like PR 2 doesn't need it.
 
 If `git apply --check` fails, upstream moved since beb2575f: say so in the Kamite chat and the patch gets rebased.
 
