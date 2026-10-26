@@ -2,6 +2,16 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026 (11)
+
+- **NPC poses: a choice of motion and more to set.** The NPCs tab has a Motion list (the built-in rail lean and any
+  .mot file in mods/npc_motions next to the exe) and new sliders: head up/down and turn, arms raised or lowered,
+  elbows bent, bottom out, and the amount of the motion's own movement. The head, arm and elbow settings turn the bone
+  in front of the motion's own rotation, every frame (the curves are resampled), so they work on any motion.
+  npc_poses.txt keeps the new values after the old ones (older lines still load). Slots are now 8 KB (60 NPCs).
+- tools/models/npc_motion.py: an NPC pose motion from a .blend / .fbx / .glb animation (custom, Mixamo and
+  Quaternius rigs), with smoothing and slowing.
+
 ## October 26, 2026 (10)
 
 - **NPC poses:** switching the lean on or off starts the NPC's idle again, so she no longer jerks about for a moment

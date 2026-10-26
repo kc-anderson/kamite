@@ -22,6 +22,12 @@
 //   turn                bone 0's y rotation, with the feet's targets turned round her middle
 // Since the slot is the motion the game plays, an edit is written into it and shows at once.
 //
+// Motions: the rail idle built in, and MOT files in mods/npc_motions (tools/models/npc_motion.py makes them from a
+// .blend / .fbx / .glb; the file's name is the motion's id). On top of the motion: the head (pitch, turn), the upper
+// arms (raised round the shoulders' side axis) and the forearms (bent round the upper arms' up axis) are turned in
+// front of the motion's own rotation, every frame (preRotate resamples those curves); bottom out tips the pelvis;
+// amount scales the motion's own rotations round its first frame.
+//
 // Which actors lean: npc_poses.txt next to the exe, one line per actor (room, the place it first started the idle in
 // centimetres, and the adjustments). The F2 menu's NPCs tab edits the nearest actor and saves the file.
 #include "kamite/npc_poses.h"
@@ -39,6 +45,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -58,8 +65,8 @@ namespace kamite::npc_poses
 
         constexpr uint32_t kStartMotion = 0x002A8578u; // func_002A8578: (actor, motion, events, ...)
         constexpr uint32_t kSlotBase = 0x00084000u;
-        constexpr uint32_t kSlotSize = 0x1000u;
-        constexpr uint32_t kSlotCount = (0x000FC000u - kSlotBase) / kSlotSize; // 120
+        constexpr uint32_t kSlotSize = 0x2000u;
+        constexpr uint32_t kSlotCount = (0x000FC000u - kSlotBase) / kSlotSize; // 60
         constexpr uint32_t kMaxMotion = 0x4000u;
         constexpr float kDeg = 3.14159265358979f / 180.0f;
 
@@ -72,7 +79,23 @@ namespace kamite::npc_poses
             float forward = 0.0f; // metres
             float side = 0.0f;    // metres
             float turn = 0.0f;    // degrees
+            std::string motion = "rail"; // kMotions' id or a file's name in mods/npc_motions
+            float headPitch = 0.0f;  // degrees, + = looks down
+            float headYaw = 0.0f;    // degrees, + = to her left
+            float arms = 0.0f;       // degrees, + = the upper arms raised (the hands come up)
+            float elbows = 0.0f;     // degrees, + = the forearms bent further forward
+            float butt = 0.0f;       // degrees, + = the pelvis tipped forward (the bottom out)
+            float amount = 100.0f;   // percent of the motion's own movement
         };
+
+        // The motions a pose can play: the rail lean built in, and any MOT files in mods/npc_motions (made with
+        // tools/models/npc_rail.py's retargeting; the file's name is the id).
+        struct Motion
+        {
+            std::string id, label;
+            std::vector<uint8_t> bytes;
+        };
+        std::vector<Motion> g_motions;
 
         struct Key
         {
@@ -86,7 +109,7 @@ namespace kamite::npc_poses
             float spawn[3] = {};
             std::vector<uint8_t> original; // its own idle, as the game has it
             bool dirty = true;
-            bool leaning = false;          // what the slot holds now
+            std::string playing;           // what the slot holds now: "" for its own idle, else the motion's id
             bool restart = false;          // the slot changed between the idle and the lean: start it again
             // The motion start's other arguments, to start it again (a2 events, a3, t0, t1; f12..f14), and what
             // tells the actor is still the one that started it.
@@ -263,9 +286,303 @@ namespace kamite::npc_poses
             });
         }
 
+        // ---- resampling a bone's rotation (for the head, arm and elbow adjustments: a rotation put in front of the
+        // motion's own, which no single Euler curve can carry) ----
+        struct Rec
+        {
+            uint8_t bone = 0, channel = 0;
+            uint32_t flags = 0;
+            uint16_t count = 0;
+            float constant = 0.0f;
+            std::vector<uint8_t> block; // header (6 halves) and keys, for a curve
+        };
+
+        bool parse(const std::vector<uint8_t> &m, std::vector<Rec> &recs)
+        {
+            if (m.size() < 8)
+                return false;
+            const uint32_t n = m[6];
+            for (uint32_t i = 0; i < n; ++i)
+            {
+                const uint8_t *r = m.data() + 8 + 12 * i;
+                if (r[1] == 0xFF)
+                    continue;
+                Rec rec;
+                rec.bone = r[0];
+                rec.channel = r[1];
+                std::memcpy(&rec.count, r + 2, 2);
+                std::memcpy(&rec.flags, r + 4, 4);
+                uint32_t payload;
+                std::memcpy(&payload, r + 8, 4);
+                if ((r[1] & 0xF0) == 0x10)
+                {
+                    const uint32_t size = 12u + 4u * rec.count;
+                    if (payload + size > m.size())
+                        return false;
+                    rec.block.assign(m.begin() + payload, m.begin() + payload + size);
+                }
+                else
+                    std::memcpy(&rec.constant, &payload, 4);
+                recs.push_back(std::move(rec));
+            }
+            return true;
+        }
+
+        std::vector<uint8_t> serialize(uint16_t frames, uint8_t loop, const std::vector<Rec> &recs)
+        {
+            const uint32_t n = static_cast<uint32_t>(recs.size()) + 1;
+            std::vector<uint8_t> out(8 + 12 * n);
+            std::memcpy(out.data(), "mtb3", 4);
+            std::memcpy(out.data() + 4, &frames, 2);
+            out[6] = static_cast<uint8_t>(n);
+            out[7] = loop;
+            for (size_t i = 0; i < recs.size(); ++i)
+            {
+                uint8_t *r = out.data() + 8 + 12 * i;
+                const Rec &rec = recs[i];
+                r[0] = rec.bone;
+                r[1] = rec.channel;
+                std::memcpy(r + 2, &rec.count, 2);
+                std::memcpy(r + 4, &rec.flags, 4);
+                uint32_t payload;
+                if ((rec.channel & 0xF0) == 0x10)
+                {
+                    payload = static_cast<uint32_t>(out.size());
+                    out.insert(out.end(), rec.block.begin(), rec.block.end());
+                    std::memcpy(out.data() + 8 + 12 * i + 8, &payload, 4);
+                }
+                else
+                {
+                    std::memcpy(&payload, &rec.constant, 4);
+                    std::memcpy(r + 8, &payload, 4);
+                }
+            }
+            uint8_t *end = out.data() + 8 + 12 * recs.size();
+            end[0] = 127;
+            end[1] = 0xFF;
+            end[2] = end[3] = 0xFF;
+            return out;
+        }
+
+        float hermite(float p0, float m0, float p1, float m1, float t)
+        {
+            const float t2 = t * t, t3 = t2 * t;
+            return (2 * t3 - 3 * t2 + 1) * p0 + (t3 - 2 * t2 + t) * m0 + (-2 * t3 + 3 * t2) * p1 + (t3 - t2) * m1;
+        }
+
+        float sample(const Rec &rec, float t)
+        {
+            if ((rec.channel & 0xF0) != 0x10)
+                return rec.constant;
+            const uint16_t *h = reinterpret_cast<const uint16_t *>(rec.block.data());
+            const float pos = halfToFloat(h[0]), dpos = halfToFloat(h[1]), t0 = halfToFloat(h[2]), dt0 = halfToFloat(h[3]),
+                        t1 = halfToFloat(h[4]), dt1 = halfToFloat(h[5]);
+            int frame = 0, prevFrame = 0;
+            float prevV = 0, prevOut = 0;
+            for (uint16_t k = 0; k < rec.count; ++k)
+            {
+                const uint8_t *key = rec.block.data() + 12 + 4 * k;
+                frame += key[0];
+                const float v = pos + dpos * key[1], in = t0 + dt0 * key[2], out = t1 + dt1 * key[3];
+                if (k == 0 && t < frame)
+                    return v;
+                if (k > 0 && t < frame)
+                    return frame == prevFrame ? v : hermite(prevV, prevOut, v, in, (t - prevFrame) / (frame - prevFrame));
+                prevFrame = frame;
+                prevV = v;
+                prevOut = out;
+            }
+            return prevV;
+        }
+
+        uint16_t halfAtMost(float x)
+        {
+            uint16_t h = floatToHalf(x);
+            for (int i = 0; i < 8 && halfToFloat(h) > x; ++i)
+                h = floatToHalf(x - std::fabs(x) * 0.004f * (i + 1) - 1e-6f);
+            return h;
+        }
+
+        // pos + delta * k (k 0..255) over [lo, hi]
+        void range(float lo, float hi, uint16_t &posBits, uint16_t &deltaBits)
+        {
+            posBits = halfAtMost(lo);
+            const float pos = halfToFloat(posBits);
+            deltaBits = 0;
+            if (hi - pos <= 1e-7f)
+                return;
+            float d = (hi - pos) / 255.0f;
+            for (int i = 0; i < 16; ++i)
+            {
+                deltaBits = floatToHalf(d);
+                if (pos + halfToFloat(deltaBits) * 255.0f >= hi)
+                    break;
+                d *= 1.004f;
+            }
+        }
+
+        uint8_t step(float v, uint16_t posBits, uint16_t deltaBits)
+        {
+            const float pos = halfToFloat(posBits), d = halfToFloat(deltaBits);
+            if (d == 0.0f)
+                return 0;
+            return static_cast<uint8_t>(std::clamp(std::lround((v - pos) / d), 0L, 255L));
+        }
+
+        // A looping curve through `v` (one value a frame), keys every 3 frames (more apart past 120) and on the last.
+        Rec encode(uint8_t bone, uint8_t component, const std::vector<float> &v)
+        {
+            Rec rec;
+            rec.bone = bone;
+            const float lo = *std::min_element(v.begin(), v.end()), hi = *std::max_element(v.begin(), v.end());
+            if (hi - lo < 1e-4f)
+            {
+                rec.channel = component;
+                rec.constant = 0.5f * (lo + hi);
+                return rec;
+            }
+            rec.channel = static_cast<uint8_t>(0x10 | component);
+            const int n = static_cast<int>(v.size());
+            std::vector<int> frames;
+            const int every = std::max(3, n / 40); // a long motion keeps its slot size in hand
+            for (int f = 0; f < n - 1; f += every)
+                frames.push_back(f);
+            frames.push_back(n - 1);
+            std::vector<float> vals, ins, outs;
+            for (size_t i = 0; i < frames.size(); ++i)
+            {
+                const int f = frames[i];
+                const float slope = 0.5f * (v[(f + 1) % n] - v[(f - 1 + n) % n]);
+                const int lin = i > 0 ? f - frames[i - 1] : 1, lout = i + 1 < frames.size() ? frames[i + 1] - f : 1;
+                vals.push_back(v[f]);
+                ins.push_back(slope * lin);
+                outs.push_back(slope * lout);
+            }
+            uint16_t h[6];
+            range(*std::min_element(vals.begin(), vals.end()), *std::max_element(vals.begin(), vals.end()), h[0], h[1]);
+            range(*std::min_element(ins.begin(), ins.end()), *std::max_element(ins.begin(), ins.end()), h[2], h[3]);
+            range(*std::min_element(outs.begin(), outs.end()), *std::max_element(outs.begin(), outs.end()), h[4], h[5]);
+            rec.block.resize(12);
+            std::memcpy(rec.block.data(), h, 12);
+            int prev = 0;
+            for (size_t i = 0; i < frames.size(); ++i)
+            {
+                rec.block.push_back(static_cast<uint8_t>(frames[i] - prev));
+                rec.block.push_back(step(vals[i], h[0], h[1]));
+                rec.block.push_back(step(ins[i], h[2], h[3]));
+                rec.block.push_back(step(outs[i], h[4], h[5]));
+                prev = frames[i];
+            }
+            rec.count = static_cast<uint16_t>(frames.size());
+            return rec;
+        }
+
+        using Mat = std::array<float, 9>; // row-major
+        Mat mul(const Mat &a, const Mat &b)
+        {
+            Mat r{};
+            for (int i = 0; i < 3; ++i)
+                for (int j = 0; j < 3; ++j)
+                    r[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j];
+            return r;
+        }
+        Mat rotX(float a) { const float c = std::cos(a), s = std::sin(a); return {1, 0, 0, 0, c, -s, 0, s, c}; }
+        Mat rotY(float a) { const float c = std::cos(a), s = std::sin(a); return {c, 0, s, 0, 1, 0, -s, 0, c}; }
+        Mat rotZ(float a) { const float c = std::cos(a), s = std::sin(a); return {c, -s, 0, s, c, 0, 0, 0, 1}; }
+        // The game's order (mot.py, pose.rot 'XYZ'): R = Rz * Ry * Rx.
+        Mat euler(float x, float y, float z) { return mul(rotZ(z), mul(rotY(y), rotX(x))); }
+        void toEuler(const Mat &r, float &x, float &y, float &z)
+        {
+            y = std::asin(std::clamp(-r[6], -1.0f, 1.0f));
+            x = std::atan2(r[7], r[8]);
+            z = std::atan2(r[3], r[0]);
+        }
+        float near(float a, float ref)
+        {
+            constexpr float tau = 6.28318530718f;
+            while (a - ref > 3.14159265f) a -= tau;
+            while (a - ref < -3.14159265f) a += tau;
+            return a;
+        }
+
+        // The bone's rotation becomes pre * its own (pre in its parent's space), every frame.
+        void preRotate(std::vector<uint8_t> &m, int bone, const Mat &pre)
+        {
+            std::vector<Rec> recs;
+            if (!parse(m, recs))
+                return;
+            uint16_t frames;
+            std::memcpy(&frames, m.data() + 4, 2);
+            const uint8_t loop = m[7];
+            const Rec *comp[3] = {};
+            size_t where = recs.size();
+            for (size_t i = 0; i < recs.size(); ++i)
+                if (recs[i].bone == bone && (recs[i].channel & 0x0F) >= 3 && (recs[i].channel & 0x0F) <= 5)
+                {
+                    comp[(recs[i].channel & 0x0F) - 3] = &recs[i];
+                    where = std::min(where, i);
+                }
+            std::vector<float> xs(frames), ys(frames), zs(frames);
+            for (int f = 0; f < frames; ++f)
+            {
+                float a[3];
+                for (int c = 0; c < 3; ++c)
+                    a[c] = comp[c] ? sample(*comp[c], static_cast<float>(f)) : 0.0f;
+                float x, y, z;
+                toEuler(mul(pre, euler(a[0], a[1], a[2])), x, y, z);
+                if (f > 0)
+                {
+                    x = near(x, xs[f - 1]);
+                    y = near(y, ys[f - 1]);
+                    z = near(z, zs[f - 1]);
+                }
+                xs[f] = x;
+                ys[f] = y;
+                zs[f] = z;
+            }
+            std::vector<Rec> out;
+            for (size_t i = 0; i < recs.size(); ++i)
+            {
+                if (i == where)
+                {
+                    out.push_back(encode(static_cast<uint8_t>(bone), 3, xs));
+                    out.push_back(encode(static_cast<uint8_t>(bone), 4, ys));
+                    out.push_back(encode(static_cast<uint8_t>(bone), 5, zs));
+                }
+                const Rec &r = recs[i];
+                if (!(r.bone == bone && (r.channel & 0x0F) >= 3 && (r.channel & 0x0F) <= 5))
+                    out.push_back(r);
+            }
+            if (where == recs.size())
+            {
+                out.push_back(encode(static_cast<uint8_t>(bone), 3, xs));
+                out.push_back(encode(static_cast<uint8_t>(bone), 4, ys));
+                out.push_back(encode(static_cast<uint8_t>(bone), 5, zs));
+            }
+            if (out.size() < 254)
+                m = serialize(frames, loop, out);
+        }
+
+        const Motion *motionFor(const std::string &id)
+        {
+            for (const Motion &mo : g_motions)
+                if (mo.id == id)
+                    return &mo;
+            return g_motions.empty() ? nullptr : &g_motions.front();
+        }
+
         std::vector<uint8_t> leanMotion(const Pose &p)
         {
-            std::vector<uint8_t> m(std::begin(data::kRailLoop), std::end(data::kRailLoop));
+            const Motion *mo = motionFor(p.motion);
+            if (!mo)
+                return {};
+            std::vector<uint8_t> m = mo->bytes;
+            // How much of the motion's own movement (round its first frame), for the upper body and the hips.
+            const float amount = p.amount / 100.0f;
+            for (int bone : {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 26, 29})
+                for (int c = 3; c <= 5; ++c)
+                    scale(m, bone, c, amount);
+            shift(m, 17, 3, p.butt * kDeg);
             shift(m, 1, 3, p.waist * kDeg);
             const float s = p.sway / 100.0f;
             scale(m, 0, 1, s);
@@ -286,6 +603,18 @@ namespace kamite::npc_poses
                 shift(m, bone, 1, p.height);
                 shift(m, bone, 2, p.forward);
                 shift(m, bone, 0, p.side);
+            }
+            // The head (in the neck's space), the upper arms round the shoulders' side axis, the forearms round the
+            // upper arms' up axis (a T-pose arm bends forward round it; + on the left is - on the right).
+            if (p.headPitch != 0.0f || p.headYaw != 0.0f)
+                preRotate(m, 4, mul(rotY(p.headYaw * kDeg), rotX(p.headPitch * kDeg)));
+            if (p.arms != 0.0f)
+                for (int bone : {6, 7, 12, 13})
+                    preRotate(m, bone, rotX(-p.arms * kDeg));
+            if (p.elbows != 0.0f)
+            {
+                preRotate(m, 8, rotY(p.elbows * kDeg));
+                preRotate(m, 14, rotY(-p.elbows * kDeg));
             }
             return m;
         }
@@ -311,13 +640,23 @@ namespace kamite::npc_poses
         void writeSlot(uint8_t *rdram, Npc &npc, bool starting)
         {
             const Pose *pose = poseFor(g_room, npc.spawn);
-            const bool lean = pose && pose->lean;
-            const std::vector<uint8_t> bytes = lean ? leanMotion(*pose) : npc.original;
+            std::vector<uint8_t> bytes;
+            std::string playing;
+            if (pose && pose->lean)
+            {
+                bytes = leanMotion(*pose);
+                playing = motionFor(pose->motion) ? motionFor(pose->motion)->id : std::string();
+            }
+            if (bytes.empty() || bytes.size() > kSlotSize)
+            {
+                bytes = npc.original;
+                playing.clear();
+            }
             if (bytes.size() <= kSlotSize)
                 std::memcpy(rdram + kSlotBase + kSlotSize * static_cast<uint32_t>(npc.slot), bytes.data(), bytes.size());
-            if (!starting && lean != npc.leaning)
+            if (!starting && playing != npc.playing)
                 npc.restart = true;
-            npc.leaning = lean;
+            npc.playing = playing;
             npc.dirty = false;
         }
 
@@ -417,6 +756,13 @@ namespace kamite::npc_poses
                     continue;
                 key.room = static_cast<uint16_t>(std::strtoul(room.c_str(), nullptr, 16));
                 pose.lean = lean != 0;
+                // Added later (older lines stop here): motion, head pitch and yaw, arms, elbows, bottom, amount.
+                std::string motion;
+                if (fields >> motion)
+                {
+                    pose.motion = motion;
+                    fields >> pose.headPitch >> pose.headYaw >> pose.arms >> pose.elbows >> pose.butt >> pose.amount;
+                }
                 g_poses.emplace_back(key, pose);
             }
         }
@@ -428,12 +774,15 @@ namespace kamite::npc_poses
                 return false;
             out << "# Kamite's NPC poses (the F2 menu's NPCs tab writes this file).\r\n"
                    "# room (hex), where the NPC stands (x z, cm), lean (0/1), bend at the waist (degrees), hip sway (%),\r\n"
-                   "# height (m), forward (m), sideways (m, + = her left), turn (degrees, + = to her left)\r\n";
+                   "# height (m), forward (m), sideways (m, + = her left), turn (degrees, + = to her left), motion,\r\n"
+                   "# head pitch and turn, arms raised, elbows bent, bottom out (degrees), amount of movement (%)\r\n";
             for (const auto &[key, pose] : g_poses)
             {
-                char line[160];
-                std::snprintf(line, sizeof(line), "%s %d %.1f %.0f %.3f %.3f %.3f %.1f\r\n", keyText(key).c_str(), pose.lean ? 1 : 0,
-                              pose.waist, pose.sway, pose.height, pose.forward, pose.side, pose.turn);
+                char line[320];
+                std::snprintf(line, sizeof(line), "%s %d %.1f %.0f %.3f %.3f %.3f %.1f %s %.1f %.1f %.1f %.1f %.1f %.0f\r\n",
+                              keyText(key).c_str(), pose.lean ? 1 : 0, pose.waist, pose.sway, pose.height, pose.forward,
+                              pose.side, pose.turn, pose.motion.c_str(), pose.headPitch, pose.headYaw, pose.arms, pose.elbows,
+                              pose.butt, pose.amount);
                 out << line;
             }
             return static_cast<bool>(out);
@@ -468,12 +817,28 @@ namespace kamite::npc_poses
                 ui->text(line);
                 bool changed = false;
                 int lean = pose.lean ? 1 : 0;
-                if (ui->checkbox("Lean on the counter##lean", &lean))
+                if (ui->checkbox("Play a pose motion##lean", &lean))
                 {
                     pose.lean = lean != 0;
                     changed = true;
                 }
                 ui->begin_disabled(!pose.lean);
+                {
+                    std::vector<const char *> labels;
+                    int current = 0;
+                    for (size_t i = 0; i < g_motions.size(); ++i)
+                    {
+                        labels.push_back(g_motions[i].label.c_str());
+                        if (g_motions[i].id == pose.motion)
+                            current = static_cast<int>(i);
+                    }
+                    ui->set_next_width(340.0f);
+                    if (!labels.empty() && ui->combo("Motion##motion", &current, labels.data(), static_cast<int>(labels.size())))
+                    {
+                        pose.motion = g_motions[current].id;
+                        changed = true;
+                    }
+                }
                 const auto slider = [&](const char *label, float &value, float low, float high, const char *format) {
                     ui->set_next_width(340.0f);
                     if (ui->slider_float(label, &value, low, high, format))
@@ -485,6 +850,12 @@ namespace kamite::npc_poses
                 slider("Forward##forward", pose.forward, -2.0f, 2.0f, "%.3f m");
                 slider("Sideways (+ = her left)##side", pose.side, -2.0f, 2.0f, "%.3f m");
                 slider("Turn (+ = to her left)##turn", pose.turn, -180.0f, 180.0f, "%.1f deg");
+                slider("Head: look down (+) / up (-)##hpitch", pose.headPitch, -60.0f, 60.0f, "%.1f deg");
+                slider("Head: turn (+ = to her left)##hyaw", pose.headYaw, -90.0f, 90.0f, "%.1f deg");
+                slider("Arms: raise (+) / lower (-)##arms", pose.arms, -60.0f, 60.0f, "%.1f deg");
+                slider("Elbows: bend (+) / straighten (-)##elbows", pose.elbows, -60.0f, 60.0f, "%.1f deg");
+                slider("Bottom out (+) / in (-)##butt", pose.butt, -40.0f, 40.0f, "%.1f deg");
+                slider("Amount of movement##amount", pose.amount, 0.0f, 150.0f, "%.0f%%");
                 ui->end_disabled();
                 if (changed)
                 {
@@ -540,6 +911,29 @@ namespace kamite::npc_poses
     void install(PS2Runtime &, const fs::path &exeDir)
     {
         g_file = exeDir / "npc_poses.txt";
+        g_motions.push_back(Motion{"rail", "Rail lean (Quaternius, built in)",
+                                   std::vector<uint8_t>(std::begin(data::kRailLoop), std::end(data::kRailLoop))});
+        {
+            std::error_code error;
+            std::vector<fs::path> files;
+            for (const auto &entry : fs::directory_iterator(exeDir / "mods" / "npc_motions", error))
+                if (entry.is_regular_file(error) && entry.path().extension() == ".mot")
+                    files.push_back(entry.path());
+            std::sort(files.begin(), files.end());
+            for (const fs::path &file : files)
+            {
+                std::ifstream in(file, std::ios::binary);
+                std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                if (motionLength(bytes.data(), static_cast<uint32_t>(bytes.size())) == 0 || bytes.size() > kSlotSize)
+                {
+                    KM_WARN(Game, "NPC poses: " << file.filename().string() << " is not a motion that fits a slot; left out");
+                    continue;
+                }
+                std::string id = file.stem().string();
+                std::replace(id.begin(), id.end(), ' ', '_'); // npc_poses.txt keeps it as one word
+                g_motions.push_back(Motion{id, id, std::move(bytes)});
+            }
+        }
         {
             std::lock_guard<std::mutex> lock(g_mutex);
             load();
