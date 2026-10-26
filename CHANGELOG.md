@@ -10,10 +10,8 @@ Newest first. Each change is commented in the code where it was made.
   and continuation branches, so one group could hold the stage renderers and a character's: the class then followed
   whichever character programs were loaded (Xavier dissolved when seen from above), and the "skinned" test also
   missed renderers that fetch no per-vertex matrices.
-- **Precise depth: the far corner's stripes.** A scenery batch with a corner behind the camera (the strips skip
-  those triangles) fell back to the PS2's integer depth as a whole, so a floor came out in bands, some precise and
-  some integer, and the shadow and light layers over it passed on one kind and failed on the other. The skipped
-  corners are now left out and the drawn triangles get the precise depth like the rest.
+- **Precise depth: the far corner's stripes** are not fixed yet (K: still there; an attempt that gave batches
+  with skipped corners precise depth was taken out again, it changed nothing).
 
 ## October 26, 2026 (5)
 
