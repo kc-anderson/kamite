@@ -23,7 +23,7 @@
 // Since the slot is the motion the game plays, an edit is written into it and shows at once.
 //
 // Motions: the rail idle built in, MOT files in resources/npc_motions (shipped: K's own table_tease and
-// counter_idle, from his own animations) and mods/npc_motions (tools/models/npc_motion.py makes them from a
+// counter_idle) and mods/npc_motions (tools/models/npc_motion.py makes them from a
 // .blend / .fbx / .glb; the file's name is the motion's id). On top of the motion: the head (pitch, turn), the upper
 // arms (raised round the shoulders' side axis) and the forearms (bent round the upper arms' up axis) are turned in
 // front of the motion's own rotation, every frame (preRotate resamples those curves); bottom out tips the pelvis;
