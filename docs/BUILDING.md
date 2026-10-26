@@ -108,6 +108,8 @@ options were on (60 FPS, aspect ratio, character).
   flags from `kamite.ini`.
 - **Faster 3D:** `python -I build.py vu` compiles every VU1 microcode upload found on the disc. A few uploads are placed
   by the game itself: play with `PS2X_VU1_CAPTURE=<folder>` set, then `python -I build.py vu <folder>` and build again.
-- **Diagnostics** (environment or `[Runtime]` in `kamite.ini`): `KAMITE_PC_SAMPLE`, `KAMITE_CALL_PROFILE`,
-  `KAMITE_FIND_COUNTERS`, `KAMITE_TRACE`; F8 in game dumps RAM and the VU1 trace.
+- **Diagnostics** (environment or `[Runtime]` in `kamite.ini`): `KAMITE_PC_SAMPLE` (`KAMITE_PC_SAMPLE_ALL=1` adds
+  every thread of the process: busy share and hottest host functions, for a frame's bottleneck outside the EE),
+  `KAMITE_CALL_PROFILE`, `KAMITE_FIND_COUNTERS`, `KAMITE_TRACE`; F8 in game dumps RAM and the VU1 trace; F6 writes one
+  frame's 2D primitives and every drawn layout's entry table to the log.
 - **Watching upstream:** changes in LasVola's recomp and in the decomp are reviewed weekly and ported when they help.

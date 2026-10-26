@@ -232,9 +232,15 @@ namespace kamite::hud
         uint32_t g_entry = 0; // the cIDBase entry being drawn
         std::vector<std::string> g_dump;
 
+        void dump(const char *line)
+        {
+            if (g_dumping && g_dump.size() < 3000u)
+                g_dump.emplace_back(line);
+        }
+
         void dumpPrim(const char *tag, uint32_t caller, float x0, float x1, float y0, float y1, const char *what, float anchor)
         {
-            if (!g_dumping || g_dump.size() >= 1500u)
+            if (!g_dumping || g_dump.size() >= 3000u)
                 return;
             char line[200];
             const float n0 = std::isnan(anchor) ? x0 : anchor + (x0 - anchor) * g_k;
@@ -383,6 +389,29 @@ namespace kamite::hud
             g_inIdTrans = true;
             g_curLayout = GPR_U32(ctx, 18) & 0x01FFFFFFu;
             g_idCaller = read32(rdram, GPR_U32(ctx, 29) + 0x40u);
+            if (g_dumping)
+            {
+                // The F6 dump also lists every entry of each layout drawn (hidden ones too): index, kind (+0x88), flags
+                // (+0x2C; 0x08000000 = not drawn), colour set (+0x8B), message id (+0x90), draw position (+0x50/+0x54),
+                // for finding a spare text entry to carry a hint or an indicator.
+                const int32_t count = static_cast<int32_t>(read32(rdram, g_curLayout + 0xCu));
+                const uint32_t entries = read32(rdram, g_curLayout + 0x4u);
+                char line[160];
+                std::snprintf(line, sizeof(line), "layout %08X (caller %08X): %d entries at %08X", g_curLayout, g_idCaller, count, entries);
+                dump(line);
+                for (int32_t i = 0; entries != 0u && i < count && i < 512; ++i)
+                {
+                    const uint32_t e = entries + 0xACu * static_cast<uint32_t>(i);
+                    float x, y;
+                    const uint32_t xb = read32(rdram, e + 0x50u), yb = read32(rdram, e + 0x54u);
+                    std::memcpy(&x, &xb, sizeof(x));
+                    std::memcpy(&y, &yb, sizeof(y));
+                    std::snprintf(line, sizeof(line), "  entry %3d %08X kind %u flags %08X colour %u msg %04X pos %.1f,%.1f", i, e,
+                                  rdram[(e + 0x88u) & 0x01FFFFFFu], read32(rdram, e + 0x2Cu), rdram[(e + 0x8Bu) & 0x01FFFFFFu],
+                                  read32(rdram, e + 0x90u) & 0xFFFFu, x, y);
+                    dump(line);
+                }
+            }
             if (g_region == Region::Forced)
                 return; // g_ctx is the region's
             // Only the in-game HUD widgets (by who called cIDBase_trans) keep to the screen edges; every other layout

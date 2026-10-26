@@ -24,6 +24,7 @@
 #endif
 #include <windows.h>
 #include <dbghelp.h>
+#include <tlhelp32.h>
 #include <timeapi.h> // timeBeginPeriod (left out by WIN32_LEAN_AND_MEAN)
 #pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "dbghelp.lib")
@@ -123,6 +124,81 @@ namespace kamite::pcsampler
 #endif
     }
 
+#if defined(_WIN32)
+    namespace
+    {
+        // KAMITE_PC_SAMPLE_ALL=1: every thread of the process (the GS thread of pcsx2gs.dll, the VU1 thread, the IOP,
+        // the window loop...) sampled about 250 times a second, reported with the main thread's report: per thread its
+        // share of time busy (not inside a kernel wait) and its hottest host functions. For finding the frame's
+        // bottleneck when the EE thread itself is mostly waiting (the casino, Oct 26).
+        struct ThreadSample
+        {
+            HANDLE handle = nullptr;
+            DWORD id = 0;
+            std::string name;
+            uint32_t samples = 0, busy = 0;
+            std::unordered_map<DWORD64, uint32_t> rips;
+        };
+        std::vector<ThreadSample> g_threads;
+
+        void refreshThreads()
+        {
+            const DWORD process = GetCurrentProcessId(), self = GetCurrentThreadId();
+            HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+            if (snapshot == INVALID_HANDLE_VALUE)
+                return;
+            THREADENTRY32 entry{};
+            entry.dwSize = sizeof(entry);
+            std::vector<DWORD> seen;
+            for (BOOL ok = Thread32First(snapshot, &entry); ok; ok = Thread32Next(snapshot, &entry))
+            {
+                if (entry.th32OwnerProcessID != process || entry.th32ThreadID == self)
+                    continue;
+                seen.push_back(entry.th32ThreadID);
+                bool known = false;
+                for (const ThreadSample &t : g_threads)
+                    known = known || t.id == entry.th32ThreadID;
+                if (known)
+                    continue;
+                HANDLE handle = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, entry.th32ThreadID);
+                if (!handle)
+                    continue;
+                ThreadSample t;
+                t.handle = handle;
+                t.id = entry.th32ThreadID;
+                PWSTR description = nullptr;
+                if (SUCCEEDED(GetThreadDescription(handle, &description)) && description)
+                {
+                    char text[128] = {};
+                    WideCharToMultiByte(CP_UTF8, 0, description, -1, text, sizeof(text) - 1, nullptr, nullptr);
+                    t.name = text;
+                    LocalFree(description);
+                }
+                g_threads.push_back(std::move(t));
+            }
+            CloseHandle(snapshot);
+            for (size_t i = 0; i < g_threads.size();)
+            {
+                if (std::find(seen.begin(), seen.end(), g_threads[i].id) == seen.end())
+                {
+                    CloseHandle(g_threads[i].handle);
+                    g_threads.erase(g_threads.begin() + static_cast<std::ptrdiff_t>(i));
+                }
+                else
+                    ++i;
+            }
+        }
+
+        bool isWait(const std::string &function)
+        {
+            // Kernel waits and the like: the thread is idle there.
+            return function.find("ntdll.dll!Zw") != std::string::npos || function.find("ntdll.dll!Nt") != std::string::npos ||
+                   function.find("WaitFor") != std::string::npos || function.find("Sleep") != std::string::npos ||
+                   function.find("!Zw") != std::string::npos;
+        }
+    }
+#endif
+
     void installFromEnvironment(PS2Runtime &runtime)
     {
         const char *value = std::getenv("KAMITE_PC_SAMPLE");
@@ -130,7 +206,9 @@ namespace kamite::pcsampler
         if (seconds <= 0)
             return;
         (void)runtime;
-        std::thread([seconds]() {
+        const char *allValue = std::getenv("KAMITE_PC_SAMPLE_ALL");
+        const bool all = allValue && *allValue && *allValue != '0';
+        std::thread([seconds, all]() {
 #if defined(_WIN32)
             timeBeginPeriod(1);
             SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
@@ -140,9 +218,51 @@ namespace kamite::pcsampler
             std::unordered_map<uint32_t, uint32_t> pcs;
             auto reportAt = std::chrono::steady_clock::now() + std::chrono::seconds(seconds);
             uint32_t samples = 0, none = 0;
+#if defined(_WIN32)
+            auto refreshAt = std::chrono::steady_clock::now();
+            static std::unordered_map<DWORD64, std::pair<DWORD64, std::string>> names; // rip -> function
+            const auto nameOf = [](DWORD64 rip) -> const std::string & {
+                auto it = names.find(rip);
+                if (it == names.end())
+                {
+                    DWORD64 start = 0;
+                    std::string name = hostFunction(rip, start);
+                    it = names.emplace(rip, std::make_pair(start, std::move(name))).first;
+                }
+                return it->second.second;
+            };
+#endif
             for (;;)
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
+#if defined(_WIN32)
+                if (all)
+                {
+                    if (std::chrono::steady_clock::now() >= refreshAt)
+                    {
+                        refreshThreads();
+                        refreshAt = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+                    }
+                    if (samples % 4u == 0u)
+                        for (ThreadSample &t : g_threads)
+                        {
+                            CONTEXT context{};
+                            context.ContextFlags = CONTEXT_CONTROL;
+                            DWORD64 rip = 0;
+                            if (SuspendThread(t.handle) != static_cast<DWORD>(-1))
+                            {
+                                if (GetThreadContext(t.handle, &context))
+                                    rip = context.Rip;
+                                ResumeThread(t.handle);
+                            }
+                            if (rip)
+                            {
+                                ++t.samples;
+                                ++t.rips[rip];
+                            }
+                        }
+                }
+#endif
                 const R5900Context *ctx = g_mainContext.load(std::memory_order_relaxed);
                 ++samples;
                 if (ctx)
@@ -192,21 +312,46 @@ namespace kamite::pcsampler
                     line << " " << symbols::describe(top[i].first) << "=" << (1000 * top[i].second / std::max(1u, samples)) / 10.0 << "%";
                 KM_INFO(Game, line.str());
 #if defined(_WIN32)
+                if (all)
+                {
+                    std::ostringstream out;
+                    out << "[pc-sample] all threads (busy = not in a kernel wait):";
+                    for (ThreadSample &t : g_threads)
+                    {
+                        if (t.samples == 0u)
+                            continue;
+                        std::unordered_map<std::string, uint32_t> functions;
+                        uint32_t busy = 0;
+                        for (const auto &[rip, count] : t.rips)
+                        {
+                            const std::string &name = nameOf(rip);
+                            functions[name] += count;
+                            if (!isWait(name))
+                                busy += count;
+                        }
+                        const auto top = sorted(functions);
+                        out << "\n  thread " << t.id << (t.name.empty() ? std::string() : " \"" + t.name + "\"") << ": busy "
+                            << (1000 * busy / std::max(1u, t.samples)) / 10.0 << "% of " << t.samples << " samples";
+                        if (busy * 20u < t.samples) // mostly idle: the busy share is enough
+                        {
+                            t.rips.clear();
+                            t.samples = t.busy = 0;
+                            continue;
+                        }
+                        for (size_t i = 0; i < top.size() && i < 12u; ++i)
+                            out << "\n      " << (1000 * top[i].second / std::max(1u, t.samples)) / 10.0 << "%  " << top[i].first;
+                        t.rips.clear();
+                        t.samples = t.busy = 0;
+                    }
+                    KM_INFO(Game, out.str());
+                }
                 if (!hostRips.empty())
                 {
-                    static std::unordered_map<DWORD64, std::pair<DWORD64, std::string>> names; // rip -> function
                     std::unordered_map<std::string, uint32_t> hostFunctions;
                     uint32_t hostSamples = 0;
                     for (const auto &[rip, count] : hostRips)
                     {
-                        auto it = names.find(rip);
-                        if (it == names.end())
-                        {
-                            DWORD64 start = 0;
-                            std::string name = hostFunction(rip, start);
-                            it = names.emplace(rip, std::make_pair(start, std::move(name))).first;
-                        }
-                        hostFunctions[it->second.second] += count;
+                        hostFunctions[nameOf(rip)] += count;
                         hostSamples += count;
                     }
                     const auto hostTop = sorted(hostFunctions);
