@@ -34,19 +34,28 @@ namespace pcsx2gs
 	extern std::string g_drawDumpBase;
 
 	// The draw dump (diagnostic, Shift+F10 in the port): every draw of one frame as the GPU gets it (after the port's
-	// depth and shading changes), and the frame's colour and depth at its end. For the precise-depth stripes.
-	GSTexture* s_ddRt = nullptr;
-	GSTexture* s_ddDs = nullptr;
+	// depth and shading changes), and the frame's colour and depth. For the precise-depth stripes.
+	GSTexture* s_ddRt = nullptr;     // the scene's colour target (the last draw writing the 16-bit depth)
+	GSTexture* s_ddDs = nullptr;     // and its depth
+	GSTexture* s_ddScene = nullptr;  // a copy of the scene's colour before the first draw into another target after it
+	bool s_ddSceneDone = false;
 
-	// Bridge.cpp's Vsync, when the recorded frame is over: the last scene targets as PNG (depth through PCSX2's
-	// depth-to-colour conversion: the 32-bit depth's bytes in RGBA), then the file is closed.
+	// Bridge.cpp's Vsync, when the recorded frame is over: _scene.png (the scene before the game's full-screen passes),
+	// _rt.png (the frame as shown) and _depth.png (depth through PCSX2's depth-to-colour conversion: the integer
+	// depth's bytes in RGBA), then the file is closed.
 	void FinishDrawDump()
 	{
+		if (s_ddScene)
+		{
+			s_ddScene->Save(g_drawDumpBase + "_scene.png");
+			g_gs_device->Recycle(s_ddScene);
+		}
 		if (s_ddRt)
 			s_ddRt->Save(g_drawDumpBase + "_rt.png");
 		if (s_ddDs)
 			s_ddDs->Save(g_drawDumpBase + "_depth.png");
-		s_ddRt = s_ddDs = nullptr;
+		s_ddRt = s_ddDs = s_ddScene = nullptr;
+		s_ddSceneDone = false;
 		if (g_drawDumpFile)
 		{
 			std::fclose(g_drawDumpFile);
@@ -109,10 +118,20 @@ void GSRendererHW::KamiteDumpDraw(GSTextureCache::Target* rt, GSTextureCache::Ta
 		std::fwrite(m_conf.verts, sizeof(GSVertex), m_conf.nverts, f);
 	if (m_conf.indices && m_conf.nindices)
 		std::fwrite(m_conf.indices, sizeof(u16), m_conf.nindices, f);
-	// The scene: the last draw with a 16-bit depth buffer and a colour target.
-	if (rt && ds && h.ds_fmt == 2 && rt->m_texture && ds->m_texture)
+	// The scene: the last depth-tested draw writing the 16-bit depth with a colour target. The first draw into another target after
+	// one of those (the game's full-screen passes) takes a copy of the scene as it was.
+	GSTexture* const rt_tex = rt ? rt->m_texture : nullptr;
+	if (pcsx2gs::s_ddRt && rt_tex != pcsx2gs::s_ddRt && !pcsx2gs::s_ddSceneDone)
 	{
-		pcsx2gs::s_ddRt = rt->m_texture;
+		pcsx2gs::s_ddSceneDone = true;
+		const GSVector2i size = pcsx2gs::s_ddRt->GetSize();
+		pcsx2gs::s_ddScene = g_gs_device->CreateRenderTarget(size.x, size.y, pcsx2gs::s_ddRt->GetFormat(), false);
+		if (pcsx2gs::s_ddScene)
+			g_gs_device->CopyRect(pcsx2gs::s_ddRt, pcsx2gs::s_ddScene, GSVector4i(0, 0, size.x, size.y), 0, 0);
+	}
+	if (rt_tex && ds && h.ds_fmt == 2 && h.zwe && h.ztst >= 2 && ds->m_texture)
+	{
+		pcsx2gs::s_ddRt = rt_tex;
 		pcsx2gs::s_ddDs = ds->m_texture;
 	}
 }

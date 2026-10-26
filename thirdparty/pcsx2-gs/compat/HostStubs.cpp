@@ -2,6 +2,10 @@
 // Most are empty: no OSD, no dumps, no video capture, no texture replacement yet. PCSX2 is GPL-3; so is this file.
 #include "pcsx2gs_host.h"
 
+#include <algorithm>
+#include <cstdio>
+#include <vector>
+
 #include "Config.h"
 #include "Counters.h"
 #include "GS.h"
@@ -698,9 +702,77 @@ void GSCapture::Flush()
 {
 }
 
+// A small PNG writer (stored deflate blocks, no libpng): the port's draw dump (Shift+F10) saves the frame's colour and
+// depth through GSTexture::Save. RGBA and RGB_A write one RGBA image, RGB drops the alpha, R8I is greyscale.
 bool GSPng::Save(GSPng::Format fmt, const std::string &file, const u8 *image, int w, int h, int pitch, int compression, bool rb_swapped)
 {
-    return false;
+    (void)compression;
+    if (!image || w <= 0 || h <= 0)
+        return false;
+    int channels, in_bpp;
+    u8 colour_type;
+    switch (fmt)
+    {
+        case RGBA_PNG: case RGB_A_PNG: channels = 4; in_bpp = 4; colour_type = 6; break;
+        case RGB_PNG: channels = 3; in_bpp = 4; colour_type = 2; break;
+        case R8I_PNG: channels = 1; in_bpp = 1; colour_type = 0; break;
+        default: return false;
+    }
+    std::vector<u8> raw;
+    raw.reserve(static_cast<size_t>(h) * (1 + w * channels));
+    for (int y = 0; y < h; y++)
+    {
+        raw.push_back(0);
+        const u8 *row = image + static_cast<size_t>(y) * pitch;
+        for (int x = 0; x < w; x++)
+        {
+            const u8 *px = row + x * in_bpp;
+            if (channels == 1) { raw.push_back(px[0]); continue; }
+            raw.push_back(px[rb_swapped ? 2 : 0]);
+            raw.push_back(px[1]);
+            raw.push_back(px[rb_swapped ? 0 : 2]);
+            if (channels == 4) raw.push_back(px[3]);
+        }
+    }
+    static u32 table[256];
+    if (!table[1])
+        for (u32 n = 0; n < 256; n++) { u32 c = n; for (int k = 0; k < 8; k++) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1; table[n] = c; }
+    const auto put32 = [](std::vector<u8> &v, u32 x) { v.push_back(x >> 24); v.push_back(x >> 16); v.push_back(x >> 8); v.push_back(x); };
+    std::vector<u8> out = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
+    const auto chunk = [&](const char *type, const std::vector<u8> &data) {
+        put32(out, static_cast<u32>(data.size()));
+        const size_t start = out.size();
+        out.insert(out.end(), type, type + 4);
+        out.insert(out.end(), data.begin(), data.end());
+        u32 c = 0xFFFFFFFFu;
+        for (size_t i = start; i < out.size(); i++) c = table[(c ^ out[i]) & 0xFF] ^ (c >> 8);
+        put32(out, c ^ 0xFFFFFFFFu);
+    };
+    std::vector<u8> ihdr;
+    put32(ihdr, static_cast<u32>(w)); put32(ihdr, static_cast<u32>(h));
+    ihdr.insert(ihdr.end(), {8, colour_type, 0, 0, 0});
+    chunk("IHDR", ihdr);
+    std::vector<u8> z = {0x78, 0x01};
+    u32 a = 1, b = 0;
+    for (size_t pos = 0; pos < raw.size() || pos == 0;)
+    {
+        const size_t len = std::min<size_t>(65535, raw.size() - pos);
+        z.push_back(pos + len >= raw.size() ? 1 : 0);
+        z.push_back(len & 0xFF); z.push_back(len >> 8); z.push_back(~len & 0xFF); z.push_back((~len >> 8) & 0xFF);
+        z.insert(z.end(), raw.begin() + pos, raw.begin() + pos + len);
+        for (size_t i = pos; i < pos + len; i++) { a = (a + raw[i]) % 65521u; b = (b + a) % 65521u; }
+        pos += len;
+        if (pos >= raw.size()) break;
+    }
+    put32(z, (b << 16) | a);
+    chunk("IDAT", z);
+    chunk("IEND", {});
+    std::FILE *f = std::fopen(file.c_str(), "wb");
+    if (!f)
+        return false;
+    const bool ok = std::fwrite(out.data(), 1, out.size(), f) == out.size();
+    std::fclose(f);
+    return ok;
 }
 
 RGBA8Image::RGBA8Image() = default;

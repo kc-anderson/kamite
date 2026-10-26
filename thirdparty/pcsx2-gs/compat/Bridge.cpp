@@ -286,7 +286,7 @@ namespace
         if (pcsx2gs::g_drawDumpState.load(std::memory_order_relaxed) == 2)
         {
             pcsx2gs::FinishDrawDump();
-            std::fprintf(stderr, "[pcsx2-gs] draw dump written: %s.bin, _rt.png, _depth.png\n", pcsx2gs::g_drawDumpBase.c_str());
+            std::fprintf(stderr, "[pcsx2-gs] draw dump written: %s.bin, _scene.png, _rt.png, _depth.png\n", pcsx2gs::g_drawDumpBase.c_str());
             pcsx2gs::g_drawDumpState.store(0, std::memory_order_relaxed);
         }
         else if (pcsx2gs::g_drawDumpState.load(std::memory_order_relaxed) == 1)
