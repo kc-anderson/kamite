@@ -16,6 +16,7 @@
 #include "kamite/log.h"
 #include "kamite/modern_controls.h"
 #include "kamite/sha256.h"
+#include "kamite/game_layout.h"
 #include "runtime/gs/ps2_gs_psmct32.h"
 #include "runtime/gs/ps2_gs_psmt8.h"
 #include "runtime/ps2_pnach.h"
@@ -30,7 +31,7 @@ namespace kamite::radar_glow
 {
     namespace
     {
-        constexpr uint32_t kCorePointer = 0x7479F8u;
+        constexpr uint32_t kCorePointer = game::GameWork::address(game::GameWork::kLangData); // GameWork.langData (core_usa.bin)
         constexpr uint32_t kData = 0x11C830u, kClut = 0x124930u; // from the core block's base
         constexpr int kWidth = 128, kHeight = 256;
         constexpr size_t kPayloadBytes = static_cast<size_t>(kWidth) * kHeight, kClutBytes = 1024u;

@@ -31,6 +31,7 @@
 #include "kamite/log.h"
 #include "kamite/menu_buttons.h"
 #include "kamite/style_presets.h"
+#include "kamite/game_layout.h"
 #include "ps2_host_input.h"
 #include "runtime/ps2_game_menu.h"
 #include "runtime/ps2_input_options.h"
@@ -65,7 +66,7 @@ namespace kamite::modern
         constexpr float kFightRange = 3.0f;                    // Auto: still in the fight while an enemy is this close
         constexpr int64_t kFightLingerMs = 1500;               // ... or was, this long ago
         constexpr float kTurnRate = 900.0f * (3.14159265f / 180.0f); // Gene turned toward the stick, radians a second
-        constexpr uint32_t kPlayerPointer = 0x747A94u;         // Getplayer
+        constexpr uint32_t kPlayerPointer = game::GameWork::address(game::GameWork::kPlayerObj); // GameWork.playerObj (Getplayer)
         constexpr uint32_t kEnemyList = 0x5864F0u + 0x500u;    // cEmManage D_005864F0: the first used slot
 
         // Settings (F2 menu on the GS thread, read by the window and game threads).

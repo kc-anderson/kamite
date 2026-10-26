@@ -3,6 +3,7 @@
 
 #include "kamite/button_prompt_sheets.h"
 #include "kamite/function_hooks.h"
+#include "kamite/game_layout.h"
 #include "kamite/log.h"
 #include "kamite/menu_buttons.h"
 #include "runtime/ps2_game_menu.h"
@@ -33,16 +34,19 @@ namespace kamite::style_presets
     namespace
     {
         constexpr uint32_t kCoreSave = 0x569B70u;   // cCoreSave D_00569B70: { cCoreSaveData *data; }
-        constexpr uint32_t kSkills = 0xB0u;         // char skill[0x80]: -1 = not owned
-        constexpr uint32_t kCombos = 0x1B0u;        // cCoreSaveCombo combo[6]
-        constexpr uint32_t kSetBytes = 0x24u;       // int id[6]; char lv[6]; char pad[2]; int max;
+        namespace ent = game::IDBaseEnt;
+        namespace work = game::GameWork;
+        constexpr uint32_t kSkills = game::CoreSaveData::kSkill;       // char skill[0x80]: -1 = not owned
+        constexpr uint32_t kCombos = game::CoreSaveData::kCombo;       // cCoreSaveCombo combo[6]
+        constexpr uint32_t kSetBytes = game::CoreSaveData::kComboSize; // int id[6]; char lv[6]; char pad[2]; int max;
+        constexpr uint32_t kSaveSize = game::CoreSaveData::kSize;
         constexpr int kSets = 6, kSlots = 6, kStyles = 4;
         constexpr uint32_t kComboBytes = kSetBytes * kSets;
         // The Techniques screen (research of Oct 25, SLUS_215.03): sub screen kind 1, cSubScrWaza, registered at
         // cSubScr+0x310 (D_003BD930 -> 0x566E50, so 0x567160). +0x5A its state: 0 browsing the slots, 1 the move picker
         // open, 2 leaving. +0x25C the cursor row (s8, -1 = RETURN), +0x284 the column (0 the square chain). Its input
         // (0x16DF38) never tests triangle; it re-reads combo[] every frame (0x16C730), so a load shows at once.
-        constexpr uint32_t kSubScrPointer = 0x3BD930u;
+        constexpr uint32_t kSubScrPointer = game::SubScr::kPointer;
         constexpr int32_t kTechniquesKind = 1;
         constexpr uint32_t kWazaOffset = 0x310u, kWazaState = 0x5Au, kWazaCursor = 0x25Cu, kWazaColumn = 0x284u;
 
@@ -176,8 +180,8 @@ namespace kamite::style_presets
         static_assert(sizeof(Combo) == kSetBytes, "cCoreSaveCombo is 0x24 bytes");
 
         // ---- the styles in the save data ----
-        // cCoreSaveData is 0x14A0 bytes; no game code reads or writes past +0xBBA (the highest field, Olivia's costume,
-        // is at +0xBC0): only the new game's memset (cCoreSave_systemInit 0x1F9848, so a new game starts with no styles)
+        // cCoreSaveData is 0x14A0 bytes; no game code reads or writes past +0xBC3 (the highest field, Olivia's costume,
+        // oliviaCostumeNo, is the word at +0xBC0): only the new game's memset (cCoreSave_systemInit 0x1F9848, so a new game starts with no styles)
         // and the whole-record copies (the checkpoint slot, the memory card) touch the rest. The styles live at +0xC00,
         // with a magic and a checksum so a cleared record or one from another tool reads as "no styles".
         // The checkpoint slot (*(u32 *)0x3C264C, a whole copy of the record taken at every room change and put back on
@@ -198,7 +202,8 @@ namespace kamite::style_presets
             uint32_t checksum;
         };
         static_assert(sizeof(Store) == 8u + kStyles * kComboBytes + 4u, "Store layout");
-        static_assert(kStoreOffset + sizeof(Store) <= 0x14A0u, "Store fits in cCoreSaveData");
+        static_assert(kStoreOffset >= game::CoreSaveData::kUsedEnd, "Store clear of the game's fields");
+        static_assert(kStoreOffset + sizeof(Store) <= kSaveSize, "Store fits in cCoreSaveData");
 
         uint32_t checksumOf(const Store &store)
         {
@@ -254,7 +259,7 @@ namespace kamite::style_presets
         uint32_t dataPointer()
         {
             const uint32_t data = rd32(kCoreSave);
-            return validPointer(data, 0x14A0u) ? data : 0u;
+            return validPointer(data, kSaveSize) ? data : 0u;
         }
 
         std::string moveName(int32_t id)
@@ -304,7 +309,7 @@ namespace kamite::style_presets
             // The checkpoint slot: the same record (its save pointer is the live one's copy), refreshed at every room
             // change. Only when it holds this game's record (the same skills), so a stale slot from the title is left.
             const uint32_t checkpoint = rd32(kCheckpointPointer);
-            if (validPointer(checkpoint, 0x14A0u) && checkpoint != data &&
+            if (validPointer(checkpoint, kSaveSize) && checkpoint != data &&
                 std::memcmp(g_ram + checkpoint + kSkills, g_ram + data + kSkills, 0x80u) == 0)
                 std::memcpy(g_ram + checkpoint + kStoreOffset, &store, sizeof(Store));
         }
@@ -344,7 +349,7 @@ namespace kamite::style_presets
 
         bool techniquesBrowsing(uint32_t subScr, bool subScreenOpen)
         {
-            return subScreenOpen && static_cast<int32_t>(rd32(subScr + 0x48u)) == kTechniquesKind &&
+            return subScreenOpen && static_cast<int32_t>(rd32(subScr + game::SubScr::kKind)) == kTechniquesKind &&
                    g_ram[(wazaScreen(subScr) + kWazaState) & 0x1FFFFFFu] == 0u;
         }
 
@@ -352,17 +357,18 @@ namespace kamite::style_presets
         // 0x7474A0): a player (Getplayer's 0x747A94), no sub screen open, Gene not ignoring input or the game frozen
         // (0x747A78 bits 31/30: sub screens, movies, events), no scripted "soft event" (0x747A84 bit 0x40: the casino
         // slots, the dog race), Gene not suspended (+0x250 bit 0x8000) and in his normal mode (+0x2F4 == 0; 5 is the
-        // sub-screen mode, 6 the cannon), no tutorial pop-up. Mid-attack counts: the next move of a chain comes from
+        // sub-screen mode: state table 0x3BD0B8 entry 5, 0x10B780, the decomp's UpdateBossPhase_10B780, plays the
+        // Techniques screen's move demo; 6 the cannon), no tutorial pop-up. Mid-attack counts: the next move of a chain comes from
         // the new set (ComboObj_startNext 0x126918 reads combo[] only when a move starts; a chain shorter than the hit
         // reached starts over).
         bool inPlay(uint32_t subScr, bool subScreenOpen)
         {
-            if (subScreenOpen || !validPointer(subScr) || static_cast<int16_t>(rd32(subScr + 0x50u)) != 0)
+            if (subScreenOpen || !validPointer(subScr) || static_cast<int16_t>(rd32(subScr + game::SubScr::kOpen)) != 0)
                 return false;
-            const uint32_t player = rd32(0x747A94u);
+            const uint32_t player = rd32(work::address(work::kPlayerObj));
             if (!validPointer(player, 0x700u))
                 return false;
-            if ((rd32(0x747A78u) & 0xC0000000u) != 0u || (rd32(0x747A84u) & 0x40u) != 0u)
+            if ((rd32(work::address(work::kFlags5D8)) & game::kFlags5D8PlayerOff) != 0u || (rd32(work::address(work::kFlags5E4)) & 0x40u) != 0u)
                 return false;
             if ((rd32(player + 0x250u) & 0x8000u) != 0u || g_ram[player + 0x2F4u] != 0u)
                 return false;
@@ -377,7 +383,7 @@ namespace kamite::style_presets
             ++g_vblanks;
             const uint32_t data = dataPointer();
             const uint32_t subScr = rd32(kSubScrPointer);
-            const bool subScreenOpen = validPointer(subScr, 0x1000u) && static_cast<int32_t>(rd32(subScr + 0x48u)) >= 0;
+            const bool subScreenOpen = validPointer(subScr, 0x1000u) && static_cast<int32_t>(rd32(subScr + game::SubScr::kKind)) >= 0;
             int moment = Elsewhere;
             if (data)
             {
@@ -506,7 +512,7 @@ namespace kamite::style_presets
         // flipped), drawn in place of icon codes 4..8 (L1 R1 L2 R2 L3, never in this text) while the list's entry is
         // drawn, at the size the game draws its own "+down" art next to a button, the plus against the arrow as in
         // that art.
-        constexpr uint32_t kNoDraw = 0x08000000u;
+        constexpr uint32_t kNoDraw = game::kIdentFlagNoDraw;
         constexpr uint32_t kMessageBankPointer = 0x3C23A4u; // *(*(u32 *)0x3C23A4 + 0xC) = the message bank
         constexpr uint16_t kListMessage = 0x30C4u, kShadowMessage = 0x30FEu, kHintMessage = 0x30FFu, kBlankMessage = 0x30D0u;
         constexpr uint32_t kListText = 0x1000u, kShadowText = 0x1100u, kHintText = 0x1200u; // in the save record's unused tail
@@ -519,7 +525,7 @@ namespace kamite::style_presets
         constexpr uint16_t kArrowCode[kStyles] = {4u, 5u, 6u, 7u}; // up, right, down, left
         constexpr uint16_t kPlusCode = 8u;                         // the plus before the arrow
         constexpr int kPlusPiece = kStyles;                        // g_pendingArrow: the plus
-        constexpr uint32_t kFontState = 0x5E7510u;                 // the font's draw state (D_005E7510)
+        constexpr uint32_t kFontState = game::MessDrawFont::kInstance; // the font's draw state (D_005E7510)
         constexpr float kArrowTextGap = 5.0f;                      // texels between the arrow and the style's name
         constexpr uint16_t kTriangleIcon = 1u, kPlus = 0x0Eu, kSpace = 0x10u, kNewLine = 0xA001u, kEnd = 0x8001u;
         constexpr uint16_t kColour = 0xB203u, kColourRestore = 0xB301u; // 0xB203 hi lo: A B G R (0x80 = full)
@@ -705,26 +711,26 @@ namespace kamite::style_presets
         uint32_t part(uint32_t waza, int id) { return rd32(waza + 0x80u + 4u * static_cast<uint32_t>(id)); }
         void setNoDraw(uint32_t entry, bool hidden)
         {
-            if (!validPointer(entry, 0xACu))
+            if (!validPointer(entry, ent::kSize))
                 return;
-            const uint32_t flags = rd32(entry + 0x2Cu);
-            wr32(entry + 0x2Cu, hidden ? (flags | kNoDraw) : (flags & ~kNoDraw));
+            const uint32_t flags = rd32(entry + ent::kFlags);
+            wr32(entry + ent::kFlags, hidden ? (flags | kNoDraw) : (flags & ~kNoDraw));
         }
 
         // The money display's layout (cCockMoney): the indicator goes into its two spare text entries.
         bool isHudLayout(uint32_t layout, uint32_t &text, uint32_t &shadow)
         {
-            if (!validPointer(layout, 0x10u) || rd32(layout + 0xCu) != 6u)
+            if (!validPointer(layout, 0x10u) || rd32(layout + game::IDBase::kEntNum) != 6u)
                 return false;
-            const uint32_t entries = rd32(layout + 0x4u);
-            if (!validPointer(entries, 6u * 0xACu))
+            const uint32_t entries = rd32(layout + game::IDBase::kEnt);
+            if (!validPointer(entries, 6u * ent::kSize))
                 return false;
-            text = entries + 4u * 0xACu;
-            shadow = entries + 5u * 0xACu;
+            text = entries + 4u * ent::kSize;
+            shadow = entries + 5u * ent::kSize;
             for (const uint32_t e : {text, shadow})
             {
-                const uint16_t msg = rd16(e + 0x90u);
-                if (g_ram[(e + 0x88u) & 0x1FFFFFFu] != 2u || (msg != 0u && msg != kHudMessage && msg != kHudShadowMessage))
+                const uint16_t msg = rd16(e + ent::kMsg);
+                if (g_ram[(e + ent::kKind) & 0x1FFFFFFu] != game::kIdentKindText || (msg != 0u && msg != kHudMessage && msg != kHudShadowMessage))
                     return false;
             }
             return true;
@@ -753,10 +759,10 @@ namespace kamite::style_presets
                 return;
             for (const uint32_t e : {text, shadow})
             {
-                wr16(e + 0x90u, e == text ? kHudMessage : kHudShadowMessage);
-                g_ram[(e + 0x89u) & 0x1FFFFFFu] = 0u; // align: the block centred on its position
-                wrFloat(e + 0x58u, kHudScale);
-                wrFloat(e + 0x5Cu, kHudScale);
+                wr16(e + ent::kMsg, e == text ? kHudMessage : kHudShadowMessage);
+                g_ram[(e + ent::kAlign) & 0x1FFFFFFu] = 0u; // align: the block centred on its position
+                wrFloat(e + ent::kDrawSclX, kHudScale);
+                wrFloat(e + ent::kDrawSclY, kHudScale);
                 setNoDraw(e, false);
             }
             g_hudShown = true;
@@ -774,7 +780,7 @@ namespace kamite::style_presets
                 return;
             const uint32_t waza = wazaScreen(subScr);
             const uint32_t data = dataPointer();
-            const bool show = data && menu_buttons::modern() && static_cast<int32_t>(rd32(subScr + 0x48u)) == kTechniquesKind &&
+            const bool show = data && menu_buttons::modern() && static_cast<int32_t>(rd32(subScr + game::SubScr::kKind)) == kTechniquesKind &&
                               g_ram[waza + kWazaState] == 0u;
             const uint32_t text = part(waza, 0x23), shadow = part(waza, 0x24), hintEntry = part(waza, 57),
                            hintShadow = part(waza, 58);
@@ -789,11 +795,11 @@ namespace kamite::style_presets
                 g_hidName = g_hidBox = 0u;
                 g_listEntry = g_shadowEntry = 0u;
                 for (const uint32_t entry : {hintEntry, hintShadow})
-                    if (validPointer(entry, 0xACu) && rd16(entry + 0x90u) == kHintMessage)
-                        wr16(entry + 0x90u, kBlankMessage);
+                    if (validPointer(entry, ent::kSize) && rd16(entry + ent::kMsg) == kHintMessage)
+                        wr16(entry + ent::kMsg, kBlankMessage);
                 return;
             }
-            if (!validPointer(text, 0xACu) || !validPointer(shadow, 0xACu))
+            if (!validPointer(text, ent::kSize) || !validPointer(shadow, ent::kSize))
                 return;
             Store store{};
             readStore(data, store);
@@ -804,19 +810,19 @@ namespace kamite::style_presets
                 !pointMessage(kHintMessage, data + kHintText))
                 return;
             setNoDraw(text, false);
-            wr16(text + 0x90u, kListMessage);
-            wr16(shadow + 0x90u, kShadowMessage);
+            wr16(text + ent::kMsg, kListMessage);
+            wr16(shadow + ent::kMsg, kShadowMessage);
             const uint32_t name = part(waza, 0x25), entries = rd32(waza + 0x4u);
-            const uint32_t box = validPointer(entries, 0x4000u) ? entries + 57u * 0xACu : 0u;
+            const uint32_t box = validPointer(entries, 0x4000u) ? entries + 57u * ent::kSize : 0u;
             setNoDraw(name, true);
             setNoDraw(box, true);
-            g_hidName = validPointer(name, 0xACu) ? name : 0u;
-            g_hidBox = validPointer(box, 0xACu) ? box : 0u;
+            g_hidName = validPointer(name, ent::kSize) ? name : 0u;
+            g_hidBox = validPointer(box, ent::kSize) ? box : 0u;
             setNoDraw(part(waza, 0x26), true);
             setNoDraw(part(waza, 0x27), true);
             for (const uint32_t entry : {hintEntry, hintShadow})
-                if (validPointer(entry, 0xACu) && rd16(entry + 0x90u) == kBlankMessage)
-                    wr16(entry + 0x90u, kHintMessage);
+                if (validPointer(entry, ent::kSize) && rd16(entry + ent::kMsg) == kBlankMessage)
+                    wr16(entry + ent::kMsg, kHintMessage);
             g_listEntry = text & 0x1FFFFFFu;
             g_shadowEntry = shadow & 0x1FFFFFFu;
             g_listShown = true;
@@ -829,12 +835,12 @@ namespace kamite::style_presets
                 return;
             const uint32_t waza = GPR_U32(ctx, 4);
             const uint32_t text = part(waza, 0x23), shadow = part(waza, 0x24);
-            if (!validPointer(text, 0xACu) || !validPointer(shadow, 0xACu))
+            if (!validPointer(text, ent::kSize) || !validPointer(shadow, ent::kSize))
                 return;
-            wrFloat(text + 0x50u, kListX);
-            wrFloat(text + 0x54u, kListY);
-            wrFloat(shadow + 0x50u, kListX + 1.0f);
-            wrFloat(shadow + 0x54u, kListY + 1.0f);
+            wrFloat(text + ent::kDrawX, kListX);
+            wrFloat(text + ent::kDrawY, kListY);
+            wrFloat(shadow + ent::kDrawX, kListX + 1.0f);
+            wrFloat(shadow + ent::kDrawY, kListY + 1.0f);
         }
 
         // cIDBase_transText at 0x2AB1E0 ($s1 the entry, $s0 the font's draw state D_005E7510, its line spacing just
@@ -850,9 +856,9 @@ namespace kamite::style_presets
             if (entry != g_listEntry && entry != g_shadowEntry)
                 return;
             const uint32_t state = GPR_U32(ctx, 16);
-            const float zoom = rdFloat(state + 0x48u);
+            const float zoom = rdFloat(state + game::MessDrawFont::kZoomY);
             if (zoom > 0.05f && zoom < 4.0f)
-                wrFloat(state + 0x30u, (kLinePitch - kLineHeight * (zoom / 0.65f)) / zoom);
+                wrFloat(state + game::MessDrawFont::kCharGapY, (kLinePitch - kLineHeight * (zoom / 0.65f)) / zoom);
         }
 
         prompt_sheets::ArrowRect pieceRect(int piece)
@@ -933,14 +939,14 @@ namespace kamite::style_presets
         }
 
         // cMessDrawFont_draw at 0x2AFB30 (before lwc1 f1,0x88(s2); $s2 the font state, its +0x64 -> the code): the
-        // draw's own advance for an icon, $f2 = 32 (26 outside the US build), just loaded; the plus and the arrows
+        // draw's own advance for an icon, $f2 = 32 (26 when GameWork.language is 0, Japanese), just loaded; the plus and the arrows
         // advance by their width, so the arrow starts where the plus ends and the name follows the arrow by
         // kArrowTextGap.
         void onIconAdvance(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
             if (!g_ram || !drawingList())
                 return;
-            const uint32_t code = rd32(GPR_U32(ctx, 18) + 0x64u);
+            const uint32_t code = rd32(GPR_U32(ctx, 18) + game::MessDrawFont::kCursor);
             if (!validPointer(code))
                 return;
             const int piece = pieceOfCode(rd16(code));
@@ -1111,8 +1117,8 @@ namespace kamite::style_presets
             return false;
         // Placed here, after the layout's move put the entry where its data says (the top left corner).
         const float d = entry == g_hudShadow ? 1.0f : 0.0f;
-        wrFloat(entry + 0x50u, kHudX + d);
-        wrFloat(entry + 0x54u, kHudY + d);
+        wrFloat(entry + ent::kDrawX, kHudX + d);
+        wrFloat(entry + ent::kDrawY, kHudY + d);
         return true;
     }
 

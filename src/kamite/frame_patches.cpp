@@ -36,6 +36,7 @@
 #include "kamite/counter_finder.h"
 #include "kamite/pc_sampler.h"
 #include "kamite/log.h"
+#include "kamite/game_layout.h"
 #include "ps2_runtime_macros.h" // FPU_CVT_W_S (the recompiled CVT.W.S)
 #include "runtime/ps2_display_options.h"
 
@@ -47,7 +48,7 @@ namespace kamite
 {
     namespace
     {
-        constexpr uint32_t kFrameDivider = 0x747A09u;                                     // 1 = 60 frames/s
+        constexpr uint32_t kFrameDivider = game::GameWork::address(game::GameWork::kVblankDivider); // GameWork.unk569: 1 = 60 frames/s
         constexpr uint32_t kStickBytes[4] = {0x5E8146u, 0x5E8147u, 0x5E81C6u, 0x5E81C7u}; // left stick X/Y, two pads
         constexpr uint32_t kPadButtons = 0x5E8242u;                                        // 16-bit; 2 = L3
         bool g_fps60 = false;

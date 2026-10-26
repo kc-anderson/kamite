@@ -22,6 +22,7 @@
 // screen = its own centre (button prompts over things in the 3D view); else by the third its centre is in: the
 // screen's left edge, centre or right edge.
 #include "kamite/hud_layout.h"
+#include "kamite/game_layout.h"
 #include "kamite/log.h"
 #include "kamite/roulette_bar.h"
 #include "kamite/style_presets.h"
@@ -61,7 +62,7 @@ namespace kamite::hud
 
         constexpr uint32_t kScreenWidth = 0x3C1180u;
         constexpr uint32_t kScreenYOffset = 0x586B80u;
-        constexpr uint32_t kSubScrPointer = 0x3BD930u; // D_003BD930: the cSubScr (pause menu and its screens)
+        constexpr uint32_t kSubScrPointer = game::SubScr::kPointer; // D_003BD930: the cSubScr (pause menu and its screens)
         // The tutorial pop-up: cCockTutorial at the game object D_003BD6E8 + 0x1A20, its state byte at +0xB8 (1..4 while
         // its panel is drawn, ForwardIfStateActive_147460); decomp src/cod/001bf8c8.c.
         constexpr uint32_t kGameObject = 0x3BD6E8u, kTutorialState = 0x1A20u + 0xB8u;
@@ -70,6 +71,9 @@ namespace kamite::hud
         // an in-world screen like the tutorial pop-up, not a menu (counted as one, the picture went 4:3, Oct 25).
         constexpr uint32_t kJukeBoxTransReturn = 0x001F5EE4u;
         constexpr uint32_t kPlayerBar = 0xF0000001u, kRadar = 0xF0000002u, kRoulette = 0xF0000003u;
+
+        namespace ent = game::IDBaseEnt;
+        namespace idb = game::IDBase;
 
         Layout g_layout = Layout::Anchored;
 
@@ -394,21 +398,21 @@ namespace kamite::hud
                 // The F6 dump also lists every entry of each layout drawn (hidden ones too): index, kind (+0x88), flags
                 // (+0x2C; 0x08000000 = not drawn), colour set (+0x8B), message id (+0x90), draw position (+0x50/+0x54),
                 // for finding a spare text entry to carry a hint or an indicator.
-                const int32_t count = static_cast<int32_t>(read32(rdram, g_curLayout + 0xCu));
-                const uint32_t entries = read32(rdram, g_curLayout + 0x4u);
+                const int32_t count = static_cast<int32_t>(read32(rdram, g_curLayout + idb::kEntNum));
+                const uint32_t entries = read32(rdram, g_curLayout + idb::kEnt);
                 char line[160];
                 std::snprintf(line, sizeof(line), "layout %08X (caller %08X): %d entries at %08X", g_curLayout, g_idCaller, count, entries);
                 dump(line);
                 for (int32_t i = 0; entries != 0u && i < count && i < 512; ++i)
                 {
-                    const uint32_t e = entries + 0xACu * static_cast<uint32_t>(i);
+                    const uint32_t e = entries + ent::kSize * static_cast<uint32_t>(i);
                     float x, y;
-                    const uint32_t xb = read32(rdram, e + 0x50u), yb = read32(rdram, e + 0x54u);
+                    const uint32_t xb = read32(rdram, e + ent::kDrawX), yb = read32(rdram, e + ent::kDrawY);
                     std::memcpy(&x, &xb, sizeof(x));
                     std::memcpy(&y, &yb, sizeof(y));
                     std::snprintf(line, sizeof(line), "  entry %3d %08X kind %u flags %08X colour %u msg %04X pos %.1f,%.1f", i, e,
-                                  rdram[(e + 0x88u) & 0x01FFFFFFu], read32(rdram, e + 0x2Cu), rdram[(e + 0x8Bu) & 0x01FFFFFFu],
-                                  read32(rdram, e + 0x90u) & 0xFFFFu, x, y);
+                                  rdram[(e + ent::kKind) & 0x01FFFFFFu], read32(rdram, e + ent::kFlags), rdram[(e + ent::kColourSet) & 0x01FFFFFFu],
+                                  read32(rdram, e + ent::kMsg) & 0xFFFFu, x, y);
                     dump(line);
                 }
             }
@@ -427,13 +431,13 @@ namespace kamite::hud
             float fallback = 0.5f * width;
             if (g_last.find(layout) == g_last.end() && g_seen.find(layout) == g_seen.end() && g_known.find(layout) == g_known.end())
             {
-                const int32_t count = static_cast<int32_t>(read32(rdram, layout + 0xCu));
-                const uint32_t entries = read32(rdram, layout + 0x4u);
+                const int32_t count = static_cast<int32_t>(read32(rdram, layout + idb::kEntNum));
+                const uint32_t entries = read32(rdram, layout + idb::kEnt);
                 float x0 = 1e9f, x1 = -1e9f;
                 for (int32_t i = 0; entries != 0u && i < count && i < 512; ++i)
                 {
                     float x;
-                    const uint32_t bits = read32(rdram, entries + 0xACu * static_cast<uint32_t>(i) + 0x50u);
+                    const uint32_t bits = read32(rdram, entries + ent::kSize * static_cast<uint32_t>(i) + ent::kDrawX);
                     std::memcpy(&x, &bits, sizeof(x));
                     if (!std::isfinite(x) || x < -width || x > 2.0f * width)
                         continue;
@@ -588,7 +592,7 @@ namespace kamite::hud
         {
             const uint32_t subScr = read32(rdram, kSubScrPointer);
             if (subScr >= 0x100000u && subScr < PS2_RAM_SIZE - 0x100u)
-                subScreen = static_cast<int32_t>(read32(rdram, subScr + 0x48u)) >= 0;
+                subScreen = static_cast<int32_t>(read32(rdram, subScr + game::SubScr::kKind)) >= 0;
             // A tutorial pop-up is drawn over the game with a full-screen backing: it is part of the game view, not a
             // menu (counted as one, the picture went 4:3 and back and the health block landed in its 4:3 place, Oct 25).
             tutorial = tutorialUp(rdram);

@@ -12,6 +12,8 @@
 // image the game uploads, so texel (x, y) lives at payload byte inv32[addrPSMT8(0, 2, x, y) >> 2] * 4 + (addr & 3),
 // inv32 being the inverse of addrPSMCT32(0, 1, .) over 64x64 (port_prep/prompts/poc_patch_sheet.py proves it offline).
 
+#include "kamite/game_layout.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -21,7 +23,7 @@ namespace kamite::prompt_sheets
     // ---- where the sheets are (SLUS_215.03, US; checked in all five timeout_ram_*.bin dumps, 2026-10-17/18) ----
     // core_usa.bin (AFS entry 8) is read by the boot task func_0030D358 with cDvd_ReadAlloc; the pointer is stored at
     // D_007479F8 (0x8F0280 in every dump). The bytes in RAM match the disc.
-    constexpr uint32_t kCorePointer = 0x7479F8u;
+    constexpr uint32_t kCorePointer = game::GameWork::address(game::GameWork::kLangData); // GameWork.langData
     // Texture 0x18 of the system IDD = the text-icon sheet (func_002B1300 passes a1 = 0x18 to cIDManager_getTexAddr
     // 0x2ACE28). Record at core+0xBEAF0: TEX0 at +0x20 (= data - 0xC0), payload at +0xE0, CLUT 0x4100 after the
     // payload (16x16 CT32, CSM1). Payload sha256 prefix 4d625e757c635e93.

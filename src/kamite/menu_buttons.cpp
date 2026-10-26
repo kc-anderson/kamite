@@ -5,6 +5,7 @@
 #include "kamite/menu_buttons.h"
 #include "kamite/disc_files.h"
 #include "kamite/log.h"
+#include "kamite/game_layout.h"
 #include "runtime/ps2_cd_image.h"
 #include "runtime/ps2_pnach.h"
 
@@ -33,13 +34,13 @@ namespace kamite::menu_buttons
         // 0x100, L3, R3, start 0x800), 0x01 L2, 0x02 R2, 0x04 L1, 0x08 R1, 0x10 triangle, 0x20 circle, 0x40 cross,
         // 0x80 square. Command bit 28 is the menus' "OK", bit 29 their "Cancel" (the decomp's matched menus test
         // +0x1A0 & 0x10000000 with the confirm sound 0x15E and & 0x20000000 with the cancel sound 0x161). The table the
-        // game uses is 0x3C3E50 when the language word 0x747A0C is not 0 (the US release: OK = circle|cross, Cancel =
-        // triangle), 0x3C3D50 otherwise (OK = circle, Cancel = cross, the Japanese way).
+        // game uses is 0x3C3E50 when GameWork.language (0x747A0C) is not 0 or debugFlags has 0x800 (the US release: OK =
+        // circle|cross, Cancel = triangle), 0x3C3D50 otherwise (OK = circle, Cancel = cross, the Japanese way).
         constexpr uint32_t kTables[2] = {0x3C3D50u, 0x3C3E50u};
         constexpr uint32_t kOkEntry = 28u, kCancelEntry = 29u;
         constexpr uint32_t kDiscOk[2] = {0x20u, 0x60u}, kDiscCancel[2] = {0x40u, 0x10u};
         constexpr uint32_t kRawCircle = 0x20u, kRawCross = 0x40u;
-        constexpr uint32_t kCorePointer = 0x7479F8u; // *(u32*) = where core_usa.bin was loaded
+        constexpr uint32_t kCorePointer = game::GameWork::address(game::GameWork::kLangData); // GameWork.langData: where core_usa.bin was loaded
         constexpr uint32_t kRamBytes = 0x2000000u;
 
         // Glyph codes of the game's text (core_usa.bin, 16-bit).

@@ -3,6 +3,7 @@
 
 #include "kamite/function_hooks.h"
 #include "kamite/log.h"
+#include "kamite/game_layout.h"
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
 
@@ -12,9 +13,9 @@ namespace kamite::jukebox
 {
     namespace
     {
-        constexpr uint32_t kJukeBoxOpen = 0x7474B0u;  // JukeBox_Load's object pointer; 0 when the radio is closed
-        constexpr uint32_t kGameFlags = 0x747A78u;    // the game-state word
-        constexpr uint32_t kPlayerOff = 0xC0000000u;  // its bits that stop the player's Move (func_001F6C40 sets them)
+        constexpr uint32_t kJukeBoxOpen = game::GameWork::address(0x10u); // D_007474B0 (GameWork+0x10): JukeBox_Load's object, 0 when closed
+        constexpr uint32_t kGameFlags = game::GameWork::address(game::GameWork::kFlags5D8); // GameWork.flags5D8, the game-state word
+        constexpr uint32_t kPlayerOff = game::kFlags5D8PlayerOff; // its bits that stop the player's Move (func_001F6C40 sets them)
         constexpr uint32_t kPlayerMove = 0x100530u;   // the player's Move (vtable 0x41B6A0 + 0x54)
 
         GuestFunction g_move = nullptr;

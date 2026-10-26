@@ -34,6 +34,7 @@
 #include "kamite/modern_controls.h"
 #include "kamite/near_geometry.h"
 #include "kamite/log.h"
+#include "kamite/game_layout.h"
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h" // GPR_U32
 #include "runtime/gs/gs_pcsx2_backend.h"
@@ -268,7 +269,7 @@ namespace kamite
         // stripes of dither as its depth changed down the screen.
         // Only while the player camera's own logic runs (gameplay: not in cutscenes); the DLL turns the oval off by
         // itself when no frame brings one.
-        constexpr uint32_t kPlayerPointer = 0x747A94u;
+        constexpr uint32_t kPlayerPointer = game::GameWork::address(game::GameWork::kPlayerObj); // GameWork.playerObj
         std::atomic<bool> g_seeThrough{true};
         std::atomic<float> g_seeWidth{1.6f};     // metres, half-width
         std::atomic<float> g_seeHeight{2.2f};    // metres, half-height
