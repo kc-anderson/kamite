@@ -529,7 +529,7 @@ namespace kamite::style_presets
         constexpr float kArrowTextGap = 5.0f;                      // texels between the arrow and the style's name
         constexpr uint16_t kTriangleIcon = 1u, kPlus = 0x0Eu, kSpace = 0x10u, kNewLine = 0xA001u, kEnd = 0x8001u;
         constexpr uint16_t kColour = 0xB203u, kColourRestore = 0xB301u; // 0xB203 hi lo: A B G R (0x80 = full)
-        constexpr uint32_t kGold = 0x80106880u, kDim = 0x80484848u;
+        constexpr uint32_t kGold = 0x80106880u, kDim = 0x80343434u; // dim: darker than the cream (K, Oct 26)
 
         std::atomic<int> g_holding{-1}; // the pad filter: the direction held with Y, before it saves
         uint32_t g_listEntry = 0u;      // the entry the arrows are drawn for (EE thread)

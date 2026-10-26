@@ -2,6 +2,15 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026 (5)
+
+- **See-through spares the player's column:** nothing within 1 m of the player's feet's vertical line, up to above
+  his head, is dissolved. Arms and attachments drawn by the non-skinned renderers (Xavier's snake arm) reached
+  towards the camera nearer than him and were dissolved with the walls.
+- **Style indicator:** empty styles a darker grey, apart from the cream.
+- **Diagnostic: PS2X_PCSX2_SOFTWARE=1** under [Runtime] draws with PCSX2's software renderer (the GS's own
+  rasterisation, PS2 resolution), to tell whether the floor-shadow banding is in the PS2 image too.
+
 ## October 26, 2026 (4)
 
 - **Perspective shading fixed:** shadows vanished and some faces (the shop girl's) went grainy with it on. Draws

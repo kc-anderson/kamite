@@ -1166,6 +1166,7 @@ struct alignas(16) GSHWDrawConfig
 		GSVector4 SeeThroughM3;
 		GSVector4 SeeThroughEye;
 		GSVector4 SeeThroughMap;
+		GSVector4 SeeThroughPlayer; // the player's feet (xyz) and the squared radius of his column (w; < 0 = none)
 
 		__fi PSConstantBuffer()
 		{
