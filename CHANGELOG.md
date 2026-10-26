@@ -2,6 +2,19 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026 (2)
+
+- **Style indicator** moved next to the level meter's ring: the first letter now starts over the first roulette charge
+  (it was centred over all six charge slots, far out to the right with only two charges).
+- **Exit crash, properly:** the port now ends its process without the DLLs' unload (TerminateProcess after the log is
+  flushed). The first fix kept the GS renderer and device alive, and the texture cache then crashed handing its
+  palettes back to the device during the unload; the GS DLL now also leaves the texture cache alone if it is ever
+  unloaded at exit another way.
+- **Decals on precise depth:** a draw that writes no depth (a shadow or light laid on a surface) now always gets its
+  one-step lift. It was skipped whenever a vertex of the draw's batch lay past the 16-bit depth range, which happens
+  with the vertices of camera-crossing triangles the game culls: so whether such a decal striped depended on the
+  camera.
+
 ## October 26, 2026
 
 - **Style indicator in play:** the four style letters ("S E X Y"; a save's own names) stand above the roulette

@@ -5903,18 +5903,17 @@ void GSRendererHW::ApplyPreciseDepth()
 			m_conf.cb_vs.max_depth = m_conf.cb_vs.max_depth * 256u + 255u;
 		m_conf.ps.zfloor = false; // the fractions are the point
 	};
-	// A draw that gets no line keeps its integer depth; a tie draw still gets the top of its step.
+	// A draw that gets no line keeps its integer depth; a tie draw still gets the top of its step. Also when a vertex
+	// lies past the buffer's range: the batch's vertices include the ones its strips skip (ADC), and a camera-crossing
+	// triangle the game culls leaves wrapped depths near 2^24 there, so whether a decal kept its lift depended on the
+	// camera (Oct 26). A read-only draw is not clamped (GSRendererHW::SetupIA: clamping is for depth writes), so the
+	// scaled depth keeps the full value; 64-bit, as 0xFFFFFF * 256 + 256 is 2^32.
 	const auto integer_tie = [&]() {
 		if (!tie)
 			return;
-		for (u32 i = 0; i < n; i++)
-		{
-			if (m_conf.verts[i].XYZ.Z > 0xFFFFu)
-				return;
-		}
 		GSVertex* verts = own_vertices();
 		for (u32 i = 0; i < n; i++)
-			verts[i].XYZ.Z = std::min(verts[i].XYZ.Z * 256u + 256u, 16777215u);
+			verts[i].XYZ.Z = static_cast<u32>(std::min<u64>(static_cast<u64>(verts[i].XYZ.Z) * 256u + 256u, 0xFFFFFFFFull));
 		scaled();
 	};
 

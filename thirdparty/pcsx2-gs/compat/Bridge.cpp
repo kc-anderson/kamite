@@ -10,6 +10,7 @@
 #include "GS/Renderers/Common/GSRenderer.h"
 #include "GS/Renderers/DX11/GSDevice11.h"
 #include "GS/Renderers/HW/GSTextureReplacements.h"
+#include "GS/Renderers/HW/GSTextureCache.h" // g_texture_cache (DllMain)
 
 #include <algorithm>
 #include <cctype>
@@ -512,15 +513,19 @@ extern "C" __declspec(dllexport) void pcsx2gs_set_aspect(uint32_t mode)
         EmuConfig.CurrentAspectRatio = AspectRatioType::RAuto4_3_3_2; // the widescreen shape stays
 }
 
-// Process exit without a Close (the port leaves through std::_Exit after the runtime returns, and the GS thread is
-// gone by the time this DLL is detached): the renderer and the device are left to the OS instead of being destroyed
-// by the DLL's static destructors, whose order against the texture cache's own statics (the hash cache) is not
-// defined. ~GSTextureCache ran into a freed hash-cache entry that way (Oct 26: a crash on every close of the window).
+// Process exit without a Close: the GS objects are left to the OS instead of being destroyed by the DLL's static
+// destructors, whose order against each other is not defined. ~GSTextureCache ran into a freed hash-cache entry that
+// way, and with only the renderer and device left alive its palettes then handed their textures back to a device
+// already gone (Oct 26: a crash on every close of the window). The port now ends with TerminateProcess, which skips
+// this detach altogether; this stays for any other way out through ExitProcess. The texture cache goes first: it is
+// the one whose destructor reaches the others.
 #include <windows.h>
 BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID reserved)
 {
     if (reason == DLL_PROCESS_DETACH && reserved != nullptr) // the process is exiting (not a FreeLibrary)
     {
+        if (g_texture_cache)
+            (void)g_texture_cache.release();
         if (g_gs_renderer)
             (void)g_gs_renderer.release();
         if (g_gs_device)

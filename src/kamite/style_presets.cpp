@@ -625,7 +625,10 @@ namespace kamite::style_presets
         // more "<7d>" placeholder messages of bank 3. The layout is found by that shape every frame (cIDBase_move);
         // hud_layout's cIDBase_trans hook places the two entries right before they are drawn and anchors them to the
         // left edge with the level meter (onHudEntry), not with the money at the right.
-        constexpr float kHudX = 142.0f, kHudY = 348.0f, kHudScale = 0.65f;
+        // Centred 108: the first letter starts over the first charge slot (86.5; the six slots span 86.5..196.5), so
+        // the letters sit beside the meter's ring however many charges show (142, over the middle of the six slots,
+        // left them far from the ring with two charges: K, Oct 26). The text is about 44 units wide at 0.65.
+        constexpr float kHudX = 108.0f, kHudY = 348.0f, kHudScale = 0.65f;
         constexpr uint32_t kBeige = 0x80A0C8DCu; // A B G R
         uint32_t g_hudText = 0u, g_hudShadow = 0u; // the two entries (EE thread); 0 = not found
         bool g_hudShown = false;

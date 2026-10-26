@@ -91,6 +91,20 @@ void registerGeneratedVu1Programs(); // generated/vu1/vu1_programs.cpp (VU1 micr
 
 namespace
 {
+    // The end of the process (Oct 26): output flushed, then gone without the DLLs' unload. std::_Exit skips our own
+    // static destructors, but ExitProcess still detaches every DLL, and pcsx2gs.dll's statics (the renderer, the
+    // texture cache, the device) were torn down there in an order they do not survive: a crash on closing the window.
+    // Nothing in a DLL holds data that must reach the disk (saves are written when the game saves).
+    [[noreturn]] void endProcess(int code)
+    {
+        std::cout.flush();
+        std::fflush(nullptr);
+#if defined(_WIN32)
+        TerminateProcess(GetCurrentProcess(), static_cast<UINT>(code));
+#endif
+        std::_Exit(code);
+    }
+
     namespace fs = std::filesystem;
 
     // Exit codes, for scripted boots (build.py boot reads them).
@@ -289,12 +303,12 @@ namespace
                                    }
                                }
                                printStackTrace();
-                               std::_Exit(kExitCrash); });
+                               endProcess(kExitCrash); });
         std::signal(SIGABRT, [](int)
                     {
                         std::fprintf(stderr, "[crash] abort on thread %lu\n", GetCurrentThreadId());
                         printStackTrace();
-                        std::_Exit(kExitCrash); });
+                        endProcess(kExitCrash); });
     }
 
     // Hidden runs: nothing may appear on screen, not even Windows Error Reporting's "stopped working" dialog, the
@@ -310,7 +324,7 @@ namespace
             printStackTrace();
         std::fflush(stdout);
         std::fflush(stderr);
-        std::_Exit(kExitCrash);
+        endProcess(kExitCrash);
     }
 
     void installHiddenRunErrorHandling()
@@ -601,7 +615,7 @@ namespace
             std::fprintf(stderr, "[timelimit] still running 40 s after the time limit; hard exit with code %d\n", kExitTimeLimit);
             std::fflush(stdout);
             std::fflush(stderr);
-            std::_Exit(kExitTimeLimit);
+            endProcess(kExitTimeLimit);
         }).detach();
         std::thread([seconds, dump]() {
             std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
@@ -618,7 +632,7 @@ namespace
             KM_ERROR(Boot, "the runtime did not stop within 10 s of the time limit; exiting with code " << kExitTimeLimit);
             std::fflush(stdout);
             std::fflush(stderr);
-            std::_Exit(kExitTimeLimit);
+            endProcess(kExitTimeLimit);
         }).detach();
     }
 
@@ -899,7 +913,7 @@ int main(int argc, char *argv[])
 
     try
     {
-        // Never destroyed: the process ends with std::_Exit while it is alive, so the time-limit thread can always use it.
+        // Never destroyed: the process ends (endProcess) while it is alive, so the time-limit thread can always use it.
         PS2Runtime &runtime = *new PS2Runtime();
         g_capRuntime.store(&runtime);
 #if defined(_WIN32)
@@ -929,14 +943,14 @@ int main(int argc, char *argv[])
         {
             KM_ERROR(Boot, "runtime initialization failed");
             std::fflush(stdout);
-            std::_Exit(kExitInitFailed);
+            endProcess(kExitInitFailed);
         }
         KM_INFO(Boot, "runtime initialized; loading " << disc.bootElfPath.string());
         if (!runtime.loadELF(disc.bootElfPath.string()))
         {
             KM_ERROR(Boot, "failed to load " << disc.bootElfPath.string());
             std::fflush(stdout);
-            std::_Exit(kExitInitFailed);
+            endProcess(kExitInitFailed);
         }
         KM_INFO(Boot, "ELF loaded, entry 0x" << std::hex << runtime.cpu().pc);
         // PS2X_PNACH=<file>[;<file>...]: PCSX2 patches, patch=0 lines now (patch=1 lines at every vblank). Off by default.
@@ -996,13 +1010,13 @@ int main(int argc, char *argv[])
         std::cout.flush();
         std::fflush(stdout);
         std::fflush(stderr);
-        std::_Exit(code);
+        endProcess(code);
     }
     catch (const std::exception &e)
     {
         KM_ERROR(Boot, "fatal: " << e.what());
         std::cout.flush();
         std::fflush(stderr);
-        std::_Exit(kExitInitFailed);
+        endProcess(kExitInitFailed);
     }
 }
