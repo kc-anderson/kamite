@@ -64,6 +64,12 @@ namespace
     //   previous output). By default only writes in the last kMax*Latency positions: an earlier one is ready by the
     //   segment's end, and so is the older value the store would have replaced (written before the segment began, at
     //   least kMax*Latency cycles earlier), so every later stall check reads the same as with the store.
+    // - gLiveFast: folded FMACs of flag-live segments also use fmacFastN when the image has no status reader (see the
+    //   FMAC selection in Emitter::body). VU1_RECOMP_LIVE_FAST=0: only in dead-flag segments, as before.
+    const bool gLiveFast = [] { const char *v = std::getenv("VU1_RECOMP_LIVE_FAST"); return !(v && *v == '0'); }();
+    // - gObservable: segment FMACs whose MAC record no flag reader can see (compileUnit's observability analysis) use
+    //   fmacFastN and push no record, in images without a status reader. VU1_RECOMP_OBSERVABLE=0: off.
+    const bool gObservable = [] { const char *v = std::getenv("VU1_RECOMP_OBSERVABLE"); return !(v && *v == '0'); }();
     const bool gAllReady = [] { const char *v = std::getenv("VU1_RECOMP_ALL_READY"); return v && *v == '1'; }();
     constexpr uint64_t kVu0ExactTag = 0x5655304558414354ull; // "VU0EXACT"; same constant in ps2_vu1_core.cpp
     constexpr uint32_t kSegmentJoinLimit = 24u;
@@ -799,11 +805,16 @@ namespace
         // status flags the EE reads (CFC2 vi16); Urban Reign's VU0 skinning program underflows for real, and the plain
         // SSE operation cannot tell a flushed tiny result from an exact zero, so such images keep the exact FMACs.
         bool fastFmac = false;
+        // macObservable[i]: the MAC record of pair i's FMAC may be what a flag reader (or the program's end) sees; see
+        // the observability analysis in compileUnit. Where false (and the image has no status reader), the FMAC needs
+        // neither the exact range checks nor a record of its own.
+        std::vector<bool> macObservable;
         bool noSticky = false; // fmacFastN: fastFmac, no status reader in the image and not VU1_RECOMP_STICKY
         bool deadFlags = [] { const char *v = std::getenv("VU1_RECOMP_NO_DEAD_FLAGS"); return !(v && *v == '1'); }();
         // VU1_RECOMP_NO_SELF_LOOPS=1: re-enter self-looping segments through their label as before.
         bool disableSelfLoops = [] { const char *v = std::getenv("VU1_RECOMP_NO_SELF_LOOPS"); return v && *v == '1'; }();
         uint32_t selfLoops = 0u;
+        uint32_t unobservedFmacs = 0u;
 
         bool inBlock(uint32_t pc) const
         {
@@ -1107,12 +1118,30 @@ namespace
                 }
                 else if (known->collapsed.count(known->pos))
                 {
-                    if (known->flagsDead && fastFmac && noSticky)
+                    // A folded FMAC other than the segment's last one: its own MAC/status record is never observed (the
+                    // segment pushes one folded record, from its last folded FMAC, and has no flag reader inside), so
+                    // all it contributes is the sticky status bits. In an image without a status reader (noSticky)
+                    // those are not observable either, whether or not a MAC reader (FMAND/FMOR/FMEQ) follows the
+                    // segment: the plain SSE operation (fmacFastN) is enough there too, not only in dead-flag
+                    // segments (Oct 26: the casino's scenery program reads MAC flags after its transform segments,
+                    // which then ran every FMAC with the exact range checks; 45% of the VU thread was that program).
+                    // VU1_RECOMP_LIVE_FAST=0 keeps the previous rule.
+                    if (fastFmac && noSticky && (known->flagsDead || gLiveFast))
                         fmacValue = "fmacFastN" + up.fmacCall + ")";
                     else
                         fmacValue = std::string(known->flagsDead && fastFmac ? "fmacFastV" : "fmacV") + up.fmacCall +
                                     ", fAccZ, fAccS, fAccScalar)";
                 }
+            }
+            // An FMAC no reader can see (macObservable): the plain SSE operation, no record. Only in images without a
+            // status reader (noSticky), where the MAC register is all a record could show.
+            if (known && up.isFmac && gObservable && fastFmac && noSticky && p.pc / 8u < macObservable.size() &&
+                !macObservable[p.pc / 8u])
+            {
+                fmacValue = "fmacFastN" + up.fmacCall + ")";
+                fmacDecl = "__m128 un;";
+                fmacAfter.clear();
+                ++unobservedFmacs;
             }
             if (up.readsQ || up.generic)
                 out += "            syncQ(vu, ctx, cyc);\n";
@@ -1757,10 +1786,75 @@ namespace
         // An image's blocks were compiled seeing the zero pairs after its code: those are part of what they depend on.
         unit.end = isImage ? std::min(total, count + 2u) : knownEnd;
         unit.bytes.assign(code.begin() + unit.start * 8u, code.begin() + unit.end * 8u);
+        // MAC observability (Oct 26, the casino's VU1 load). A flag reader (FMAND/FMOR/FMEQ; FS* too) sees the record
+        // of the last FMAC whose result is ready, 4 cycles after it issued. An FMAC issued 4 pairs or more before the
+        // reader is certainly ready by then (a pair takes at least a cycle), so on that path it hides every FMAC
+        // before it. An FMAC's record can therefore only be seen if some path from just after it reaches a reader
+        // without passing a record-pushing FMAC 4 or more pairs before that reader. Backwards over the unit's control
+        // flow, each pair gets the set of distances (0, 1, 2, 3, 4+) to a reader along paths no FMAC hides; a reader
+        // (or a pair this analysis cannot follow: seed, generic upper op) is distance 0 and ends the search, the end of
+        // the program (after an E-bit delay slot) is a reader at infinite distance (the final MAC is the last FMAC's),
+        // and an FMAC drops "4+". With boundaryReaders, pairs outside [start, end) count as readers (the local variant
+        // of an upload's block, which may run with other code around it). The pairs this looks at are the ones
+        // blockReach covers, so the blocks' run-time checks stay valid. FMACs with dest 0 push no record.
+        const auto observability = [&](uint32_t start, uint32_t end, bool boundaryReaders)
+        {
+            constexpr uint8_t kFar = 1u << 4;
+            std::vector<uint8_t> pushes(total, 0u), stops(total, 0u), endsAfter(total, 0u);
+            for (uint32_t index = 0; index < total; ++index)
+            {
+                const Pair &p = emitter.pairs[index];
+                if (seed[index] || p.reserved || p.fallback)
+                {
+                    stops[index] = 1u;
+                    continue;
+                }
+                const RegViewProbe probe;
+                const UpperEmit up = upperEmit(p.d.upper);
+                if (up.generic)
+                    stops[index] = 1u;
+                pushes[index] = up.isFmac ? 1u : 0u;
+                if (index > 0u && emitter.pairs[index - 1u].d.eBit)
+                    endsAfter[index] = 1u;
+            }
+            const auto outside = [&](uint32_t index) { return index >= total || (boundaryReaders && (index < start || index >= end)); };
+            // One pair further: distance d -> d + 1 (bit d -> bit d + 1), 3 -> 4+, and 4+ stays (0x10 = kFar).
+            const auto shifted = [](uint8_t v) { return static_cast<uint8_t>(((v << 1) & 0x1Fu) | (v & 0x10u)); };
+            const auto after = [&](const std::vector<uint8_t> &dist, uint32_t index)
+            {
+                uint8_t v = endsAfter[index] ? kFar : 0u;
+                for (const uint32_t next : successors[index])
+                    v |= shifted(outside(next) ? 1u : dist[next]);
+                return v;
+            };
+            std::vector<uint8_t> dist(total, 0u);
+            for (bool changed = true; changed;)
+            {
+                changed = false;
+                for (uint32_t index = total; index-- > 0u;)
+                {
+                    uint8_t v = stops[index] ? 1u : after(dist, index);
+                    if (!stops[index] && pushes[index])
+                        v &= static_cast<uint8_t>(~kFar);
+                    if (v != dist[index])
+                    {
+                        dist[index] = v;
+                        changed = true;
+                    }
+                }
+            }
+            std::vector<bool> observable(total, true);
+            for (uint32_t index = start; index < end && index < total; ++index)
+                if (pushes[index])
+                    observable[index] = after(dist, index) != 0u;
+            return observable;
+        };
+
         // One block: emitted with the given flag liveness, checked at run time against pairs [checkStart, checkEnd).
         const auto emitBlock = [&](uint32_t start, uint32_t end, const std::vector<bool> &live, uint32_t checkStart,
                                    uint32_t checkEnd, bool suffixes) -> bool
         {
+            emitter.macObservable = observability(start, end, suffixes);
             emitter.first = start;
             emitter.last = end;
             emitter.usesTk = false;
@@ -1776,6 +1870,8 @@ namespace
                 body += emitter.emitSegment(segment);
             stats["known segments"] += static_cast<uint32_t>(emitter.segs.size());
             stats["self-looping segments"] += emitter.selfLoops;
+            stats["segment FMACs no reader sees"] += emitter.unobservedFmacs;
+            emitter.unobservedFmacs = 0u;
             std::ostringstream out;
             out << "    uint64_t cyc = ctx.cycle;\n    const uint64_t budget = ctx.budget;\n    const uint8_t *const mem = ctx.mem;\n";
             out << "    uint32_t epc = 0u;\n";

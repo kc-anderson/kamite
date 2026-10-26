@@ -4,6 +4,15 @@ Newest first. Each change is commented in the code where it was made.
 
 ## October 26, 2026 (2)
 
+- **VU1 microcode 44% faster (the casino):** the generator now leaves out the exact flag work for every FMAC whose
+  MAC flags no instruction can ever read. A new analysis follows the program's control flow from each FMAC: if every
+  path to a flag check (or to the program's end) passes a later FMAC at least four instructions before the check, that
+  later one is what the check sees, so the earlier one needs neither the exact range checks nor a flag record. Folded
+  FMACs inside a segment also skip the exact path when the program never reads the status register. On a traced
+  casino frame the VU1 work went from 174 to 105 million instructions (20.5 to 11.4 ms on the test machine); every
+  run of the frame gives bit-identical registers, VU memory and GIF output to before and to the interpreter.
+  VU1_RECOMP_OBSERVABLE=0 and VU1_RECOMP_LIVE_FAST=0 (set for `build.py vu`) bring back the previous code.
+- tools/vu/vu1_replay.cpp: an offline replay of F8 VU1 traces to check and time changes to the VU1 compiler.
 - **Style indicator** moved next to the level meter's ring: the first letter now starts over the first roulette charge
   (it was centred over all six charge slots, far out to the right with only two charges).
 - **Exit crash, properly:** the port now ends its process without the DLLs' unload (TerminateProcess after the log is
