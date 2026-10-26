@@ -3251,6 +3251,7 @@ const ID3DBlob* GSDevice12::GetTFXVertexShader(GSHWDrawConfig::VSSelector sel)
 	sm.AddMacro("VS_TME", sel.tme);
 	sm.AddMacro("VS_FST", sel.fst);
 	sm.AddMacro("VS_IIP", sel.iip);
+	sm.AddMacro("VS_PERSP_COLOR", sel.persp_color); // pcsx2gs (Kamite)
 	sm.AddMacro("VS_EXPAND", static_cast<int>(sel.expand));
 
 	const char* entry_point = (sel.expand != GSHWDrawConfig::VSExpand::None) ? "vs_main_expand" : "vs_main";
@@ -3333,6 +3334,7 @@ const ID3DBlob* GSDevice12::GetTFXPixelShader(const GSHWDrawConfig::PSSelector& 
 	sm.AddMacro("PS_ROV_COLOR", sel.rov_color);
 	sm.AddMacro("PS_ROV_DEPTH", static_cast<u32>(sel.rov_depth));
 	sm.AddMacro("PS_SEE_THROUGH", sel.see_through); // pcsx2gs (Kamite)
+	sm.AddMacro("PS_PERSP_COLOR", sel.persp_color); // pcsx2gs (Kamite)
 
 	ComPtr<ID3DBlob> ps(m_shader_cache.GetPixelShader(m_tfx_source, sm.GetPtr(), "ps_main"));
 	it = m_tfx_pixel_shaders.emplace(sel, std::move(ps)).first;

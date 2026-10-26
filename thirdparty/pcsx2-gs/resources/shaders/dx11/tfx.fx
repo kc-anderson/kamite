@@ -122,6 +122,14 @@
 #define PS_SEE_THROUGH 0
 #endif
 
+// pcsx2gs (Kamite): perspective shading (GSRendererHW::ApplyPerspectiveShading).
+#ifndef VS_PERSP_COLOR
+#define VS_PERSP_COLOR 0
+#endif
+#ifndef PS_PERSP_COLOR
+#define PS_PERSP_COLOR 0
+#endif
+
 #ifndef VS_EXPAND_NONE
 #define VS_EXPAND_NONE 0
 #define VS_EXPAND_POINT 1
@@ -1375,6 +1383,11 @@ PS_OUTPUT ps_main(PS_INPUT input)
 void ps_main(PS_INPUT input)
 #endif
 {
+#if PS_PERSP_COLOR
+	// Perspective shading: the vertex shader sent colour times Q; t.w is the interpolated Q.
+	input.c /= input.t.w;
+#endif
+
 #if PS_SEE_THROUGH
 	// Before any discard or depth flooring: the derivatives need every pixel of the quad, and the exact depth.
 	float3 see_world = SeeThroughWorld(input.p);
@@ -1758,6 +1771,11 @@ VS_OUTPUT vs_main(VS_INPUT input)
 	}
 
 	output.c = input.c;
+#if VS_PERSP_COLOR
+	// Perspective shading: the colour times Q (1/w), interpolated linearly like S and T, and divided by the
+	// interpolated Q in the pixel shader, as the texture coordinates are.
+	output.c *= input.q;
+#endif
 	output.t.z = input.f.r;
 
 	// Silence compiler warnings; should be optimized out when not needed.

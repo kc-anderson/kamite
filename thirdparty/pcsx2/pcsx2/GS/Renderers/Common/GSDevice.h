@@ -700,7 +700,7 @@ struct alignas(16) GSHWDrawConfig
 				u8 iip : 1;
 				u8 point_size : 1;		///< Set when points need to be expanded without VS expanding.
 				VSExpand expand : 3;
-				u8 _free : 1;
+				u8 persp_color : 1; ///< pcsx2gs (Kamite): vertex colour times Q, divided back per pixel (perspective shading)
 			};
 			u8 key;
 		};
@@ -815,6 +815,9 @@ struct alignas(16) GSHWDrawConfig
 
 				// pcsx2gs (Kamite): the see-through oval round the player (GSRendererHW::ApplySeeThrough)
 				u32 see_through : 1;
+				// pcsx2gs (Kamite): the vertex colour comes in times Q, divided by the interpolated Q here
+				// (GSRendererHW::ApplyPerspectiveShading)
+				u32 persp_color : 1;
 			};
 
 			struct

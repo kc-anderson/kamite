@@ -1998,6 +1998,7 @@ void GSDevice11::SetupVS(VSSelector sel, const GSHWDrawConfig::VSConstantBuffer*
 		sm.AddMacro("VS_TME", sel.tme);
 		sm.AddMacro("VS_FST", sel.fst);
 		sm.AddMacro("VS_IIP", sel.iip);
+		sm.AddMacro("VS_PERSP_COLOR", sel.persp_color); // pcsx2gs (Kamite)
 		sm.AddMacro("VS_EXPAND", static_cast<int>(sel.expand));
 
 		static constexpr const D3D11_INPUT_ELEMENT_DESC layout[] =
@@ -2110,6 +2111,7 @@ void GSDevice11::SetupPS(const PSSelector& sel, const GSHWDrawConfig::PSConstant
 		sm.AddMacro("PS_ROV_COLOR", sel.rov_color);
 		sm.AddMacro("PS_ROV_DEPTH", static_cast<u32>(sel.rov_depth));
 		sm.AddMacro("PS_SEE_THROUGH", sel.see_through); // pcsx2gs (Kamite)
+		sm.AddMacro("PS_PERSP_COLOR", sel.persp_color); // pcsx2gs (Kamite)
 
 		wil::com_ptr_nothrow<ID3D11PixelShader> ps = m_shader_cache.GetPixelShader(m_dev.get(), m_tfx_source, sm.GetPtr(), "ps_main");
 		i = m_ps.try_emplace(sel, std::move(ps)).first;

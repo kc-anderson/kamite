@@ -69,6 +69,7 @@ namespace kamite
         std::atomic<bool> g_enemyView{true};
         std::atomic<bool> g_depthOfField{true}; // [Video] DepthOfField (PS2X_PCSX2_DOF), the Graphics tab
         std::atomic<bool> g_preciseDepth{true}; // [Video] PreciseDepth (PS2X_PCSX2_PRECISE_DEPTH), the Graphics tab
+        std::atomic<bool> g_perspectiveShading{true}; // [Video] PerspectiveShading (PS2X_PCSX2_PERSPECTIVE_SHADING)
         float g_aspect = kNativeAspect;
         std::filesystem::path g_iniPath;
 
@@ -550,6 +551,7 @@ namespace kamite
             ini.setBool("Game", "EnemiesFollowView", g_enemyView.load());
             ini.setBool("Video", "DepthOfField", g_depthOfField.load());
             ini.setBool("Video", "PreciseDepth", g_preciseDepth.load());
+            ini.setBool("Video", "PerspectiveShading", g_perspectiveShading.load());
             ini.setBool("Video", "SeeThrough", g_seeThrough.load());
             ini.set("Video", "SeeThroughWidth", number(g_seeWidth.load()));
             ini.set("Video", "SeeThroughHeight", number(g_seeHeight.load()));
@@ -580,8 +582,10 @@ namespace kamite
             g_enemyView = ini.getBool("Game", "EnemiesFollowView", true);
             g_depthOfField = ini.getBool("Video", "DepthOfField", true);
             g_preciseDepth = ini.getBool("Video", "PreciseDepth", true);
+            g_perspectiveShading = ini.getBool("Video", "PerspectiveShading", true);
             loadExtras(ini);
             GSPcsx2Backend::SetOption("precise_depth", g_preciseDepth.load() ? "1" : "0");
+            GSPcsx2Backend::SetOption("perspective_shading", g_perspectiveShading.load() ? "1" : "0");
             GSPcsx2Backend::SetOption("dof", g_depthOfField.load() ? "1" : "0");
             setStatus("Back to the values in kamite.ini.");
         }
@@ -706,6 +710,16 @@ namespace kamite
             ui->text_disabled("The game's 16-bit depth is coarse in the distance, so surfaces that meet there cut into "
                               "each other in jagged, shifting slivers (on the PS2 too, under a pixel). On: the renderer "
                               "takes each surface's exact depth from its texture perspective instead. Off: as the PS2.");
+            int perspective = g_perspectiveShading.load() ? 1 : 0;
+            if (ui->checkbox("Perspective shading##perspshade", &perspective))
+            {
+                g_perspectiveShading = perspective != 0;
+                if (!GSPcsx2Backend::SetOption("perspective_shading", perspective ? "1" : "0"))
+                    setStatus("This pcsx2gs.dll cannot switch it while playing: build again.");
+            }
+            ui->text_disabled("The PS2 spreads a surface's lighting and shadows evenly across the screen instead of along "
+                              "the surface, so the floor's shading near the camera shifts, darker and lighter, as the "
+                              "camera turns. On: shading follows the surface like its texture does. Off: as the PS2.");
             {
                 uint64_t patched = 0, cut = 0, cutNear = 0, noStitch = 0;
                 nearGeometryStats(patched, cut, cutNear, noStitch);
@@ -758,6 +772,8 @@ namespace kamite
             g_enemyView = !(text && *text == '0');
             const char *precise = std::getenv("PS2X_PCSX2_PRECISE_DEPTH");
             g_preciseDepth = !(precise && *precise == '0'); // the DLL reads the same variable when it opens
+            const char *shading = std::getenv("PS2X_PCSX2_PERSPECTIVE_SHADING");
+            g_perspectiveShading = !(shading && *shading == '0'); // the DLL reads the same variable when it opens
             const char *dof = std::getenv("PS2X_PCSX2_DOF");
             g_depthOfField = !(dof && *dof == '0'); // the DLL reads the same variable when it opens
         }

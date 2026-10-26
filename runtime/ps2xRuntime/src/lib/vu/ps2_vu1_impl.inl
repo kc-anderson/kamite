@@ -1,5 +1,6 @@
 #pragma once
 
+#include <smmintrin.h> // SSE4.1: blendps / blendvps (blendDestK, vnorm)
 #include "ps2x/state_io.h"
 #include "runtime/ps2_vu1.h"
 #include "runtime/ps2_vu1_hooks.h"
@@ -2833,6 +2834,18 @@ struct VU1InterpreterAccess
         return _mm_or_ps(_mm_and_ps(mask, value), _mm_andnot_ps(mask, old));
     }
 
+    // blendDest with the lane mask known at compile time (the generated code's partial writes): one blendps.
+    template <uint32_t Dest>
+    static VU1_FORCE_INLINE __m128 blendDestK(__m128 old, __m128 value)
+    {
+        if constexpr (Dest == 0xFu)
+            return value;
+        else if constexpr (Dest == 0u)
+            return old;
+        else
+            return _mm_blend_ps(old, value, kRev4[Dest]);
+    }
+
     static VU1_FORCE_INLINE void storeDest(float *target, __m128 value, uint32_t dest)
     {
         if (dest == 0xFu)
@@ -2843,15 +2856,15 @@ struct VU1InterpreterAccess
 
     static VU1_FORCE_INLINE __m128 vnorm(__m128 value)
     {
+        // Exponent 0 -> signed zero, exponent 255 -> signed FLT_MAX; two blendvps (the and/andnot/or form took six
+        // more instructions on every load; Oct 26, same bits).
         const __m128i bits = _mm_castps_si128(value);
         const __m128i exponent = _mm_and_si128(bits, _mm_set1_epi32(0x7F800000));
-        const __m128i sign = _mm_and_si128(bits, _mm_set1_epi32(static_cast<int>(0x80000000u)));
-        const __m128i zero = _mm_cmpeq_epi32(exponent, _mm_setzero_si128());
-        const __m128i huge = _mm_cmpeq_epi32(exponent, _mm_set1_epi32(0x7F800000));
-        __m128i result = _mm_or_si128(_mm_andnot_si128(zero, bits), _mm_and_si128(zero, sign));
-        result = _mm_or_si128(_mm_andnot_si128(huge, result),
-                              _mm_and_si128(huge, _mm_or_si128(sign, _mm_set1_epi32(0x7F7FFFFF))));
-        return _mm_castsi128_ps(result);
+        const __m128 sign = _mm_castsi128_ps(_mm_and_si128(bits, _mm_set1_epi32(static_cast<int>(0x80000000u))));
+        const __m128 zero = _mm_castsi128_ps(_mm_cmpeq_epi32(exponent, _mm_setzero_si128()));
+        const __m128 huge = _mm_castsi128_ps(_mm_cmpeq_epi32(exponent, _mm_set1_epi32(0x7F800000)));
+        const __m128 result = _mm_blendv_ps(value, sign, zero);
+        return _mm_blendv_ps(result, _mm_or_ps(sign, _mm_castsi128_ps(_mm_set1_epi32(0x7F7FFFFF))), huge);
     }
 
     static VU1_FORCE_INLINE __m128 vfN(VU1Interpreter &vu, uint32_t reg)

@@ -233,6 +233,7 @@ private:
 
 	void EmulateZbuffer(const GSTextureCache::Target* ds);
 	void ApplyPreciseDepth(); // pcsx2gs (Kamite): depth from Q for perspective-textured draws
+	void ApplyPerspectiveShading(); // pcsx2gs (Kamite): vertex colour interpolated with perspective
 	void ApplySeeThrough(float rtscale); // pcsx2gs (Kamite): the see-through oval round the player
 	void EmulateAA1();
 	static void GetAlphaTestConfigPS(const u32 atst, const u8 aref, const bool invert_test, PS_ATST& ps_atst_out, float& aref_out);

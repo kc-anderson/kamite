@@ -2,6 +2,20 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026 (3)
+
+- **Perspective shading (new, on by default; [Video] PerspectiveShading, F2 > Graphics):** the floor's shadow near
+  the camera no longer goes darker and lighter as the camera turns. The PS2 interpolates vertex colours evenly across
+  the screen, not along the surface, and the scenery programs clip big floor triangles at the screen's guard band
+  with new vertices whose colours depend on where the edges fall, so the same patch of floor got a different shadow
+  strength from each viewpoint (the warehouse: 98 vs 69 at one pixel). Colours of perspective-textured Gouraud
+  triangles are now interpolated with perspective, like the textures, so a clipped piece shades as the whole
+  triangle would. PerspectiveShading=0 is the PS2's look.
+- **VU1: another 10% off** the casino's VU work (105 to 95 million instructions per frame, results identical): the
+  generated code writes partial registers with one blend instruction instead of three plus a table load, and the
+  normalisation of loaded values uses two blends instead of six logic operations.
+- **Style indicator** a little further left, so the letters, the charges and the bars step round the level ring.
+
 ## October 26, 2026 (2)
 
 - **VU1 microcode 44% faster (the casino):** the generator now leaves out the exact flag work for every FMAC whose

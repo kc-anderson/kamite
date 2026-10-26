@@ -248,7 +248,7 @@ namespace
         {
             gView.vfClean.insert(reg);
             gView.vfRawStored.erase(reg);
-            return n + " = " + (full ? raw : "blendDest(" + n + ", " + raw + ", " + dest + ")") + ";";
+            return n + " = " + (full ? raw : "blendDestK<" + dest + ">(" + n + ", " + raw + ")") + ";";
         }
         gView.vfClean.erase(reg);
         if (full)
@@ -258,7 +258,9 @@ namespace
         }
         gView.vfRawStored.erase(reg);
         const std::string oldRaw = clean ? n : (stored ? "_mm_loadu_ps(" + vfMem(reg) + ")" : r);
-        return r + " = blendDest(" + oldRaw + ", " + raw + ", " + dest + "); " + n + " = blendDest(" + n + ", " + norm + ", " + dest + ");";
+        // blendDestK: the lane mask as a template argument, one blendps (blendDest's and/andnot/or with a table mask
+        // cost three instructions and a load at every partial write; Oct 26).
+        return r + " = blendDestK<" + dest + ">(" + oldRaw + ", " + raw + "); " + n + " = blendDestK<" + dest + ">(" + n + ", " + norm + ");";
     }
 
     std::string writeFullV(uint32_t reg, const std::string &raw, const std::string &norm)
@@ -1195,8 +1197,8 @@ namespace
                         out += "            const __m128 uv = " + up.value + "; const __m128 un = " +
                                (up.normalize ? std::string("vnorm(uv)") : std::string("uv")) + ";\n";
                     out += lowerCode;
-                    out += "            " + writeFullV(d.upperVfShadowReg, "blendDest(shadowOld, uv, " + hx(up.dest) + ")",
-                                                  "blendDest(shadowOldN, un, " + hx(up.dest) + ")") + "\n";
+                    out += "            " + writeFullV(d.upperVfShadowReg, "blendDestK<" + hx(up.dest) + ">(shadowOld, uv)",
+                                                  "blendDestK<" + hx(up.dest) + ">(shadowOldN, un)") + "\n";
                 }
             }
             else

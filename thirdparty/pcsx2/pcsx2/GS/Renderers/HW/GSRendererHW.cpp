@@ -21,6 +21,7 @@ namespace pcsx2gs
 {
 	extern std::atomic<bool> g_drawDof;      // compat/Bridge.cpp: pcsx2gs_set_option("dof")
 	extern std::atomic<bool> g_preciseDepth; // compat/Bridge.cpp: pcsx2gs_set_option("precise_depth")
+	extern std::atomic<bool> g_perspectiveShading; // compat/Bridge.cpp: pcsx2gs_set_option("perspective_shading")
 	struct SeeThroughParams // the same as compat/Bridge.cpp's
 	{
 		float cx, cy, rx, ry, start, ramp, strength, soft;
@@ -6007,6 +6008,30 @@ void GSRendererHW::ApplyPreciseDepth()
 	scaled();
 }
 
+// pcsx2gs (Kamite): perspective shading. The GS interpolates vertex colour linearly across the screen (Gouraud) and
+// texture coordinates with perspective. A surface the game lights or shades by vertex colour therefore shows its
+// shading stretched toward the far end of each triangle, and the more so the larger the triangle is on screen. God
+// Hand's scenery programs clip their triangles at the guard band themselves and give the new vertices colours
+// interpolated in 3D, so the shading of the same patch of floor changes with where the clip edges fall, which is with
+// the camera: the warehouse floor's shadow layer went darker and lighter as the camera turned (Oct 26, gif_11198 /
+// gif_11382: alpha 98 vs 69 at the same pixel). With the colour interpolated like S/T (times Q at the vertices,
+// divided by the interpolated Q), a clipped piece shades exactly as the triangle it came from, from any viewpoint.
+// Only Gouraud triangles with perspective texturing (Q is the 1/w the projection gave); sprites, lines, flat
+// colour and 2D (FST) draws are left alone.
+void GSRendererHW::ApplyPerspectiveShading()
+{
+	if (!pcsx2gs::g_perspectiveShading.load(std::memory_order_relaxed))
+		return;
+	if (m_vt.m_primclass != GS_TRIANGLE_CLASS || !PRIM->IIP || !PRIM->TME || PRIM->FST || !m_conf.vs.iip || !m_conf.ps.iip ||
+		m_conf.vs.expand != GSHWDrawConfig::VSExpand::None || m_vt.m_eq.rgba == 0xFFFF)
+		return;
+	// Q of a perspective draw is positive; any other (a degenerate or behind-the-camera vertex) keeps it as it was.
+	if (!(m_vt.m_min.t.z > 0.0f) || !std::isfinite(m_vt.m_max.t.z))
+		return;
+	m_conf.vs.persp_color = 1;
+	m_conf.ps.persp_color = 1;
+}
+
 // pcsx2gs (Kamite): the see-through oval. The game gives, every frame, where the player is on screen, an oval round
 // him, the distance from the eye where hiding starts, and its camera (the eye, the inverse of its world-to-screen
 // matrix: camera.cpp). Every depth-tested triangle draw into the scene's 16-bit depth buffer gets the pixel shader's
@@ -9956,6 +9981,7 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 
 	SetupIA(rtscale, vs_scale_x, vs_scale_y, m_channel_shuffle_width != 0, no_rt);
 	ApplyPreciseDepth();
+	ApplyPerspectiveShading();
 	ApplySeeThrough(rtscale);
 
 	if (m_conf.ds && m_conf.ps.IsFeedbackLoopDepth() && !g_gs_device->Features().depth_feedback && !m_conf.ps.HasDepthROV())

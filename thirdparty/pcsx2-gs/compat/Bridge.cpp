@@ -406,6 +406,8 @@ extern "C" __declspec(dllexport) const Pcsx2GsApi *pcsx2gs_get_api(uint32_t vers
 //                      the next vsync (GSTextureReplacements::AddReplacementFile)
 //   dof=0/1            the game's depth-of-field composite drawn (1, the default) or skipped (GSRendererHW.cpp)
 //   precise_depth=0/1  depth from Q for perspective-textured draws (1, the default; GSRendererHW::ApplyPreciseDepth)
+//   perspective_shading=0/1  vertex colour interpolated with perspective (1, the default;
+//                      GSRendererHW::ApplyPerspectiveShading)
 //   see_through=0 | "cx cy rx ry start ramp strength soft ex ey ez mid m00 m01 .. m33"   the see-through oval round
 //                      the player, given every frame by the game (GSRendererHW::ApplySeeThrough): centre and radii in
 //                      GS pixels (primitive coordinates, the 2048 offset included); the distance from the eye (world
@@ -426,6 +428,12 @@ namespace pcsx2gs
     std::atomic<bool> g_preciseDepth{[]
     {
         const char *value = std::getenv("PS2X_PCSX2_PRECISE_DEPTH");
+        return !(value && *value == '0');
+    }()};
+    // Perspective shading (GSRendererHW::ApplyPerspectiveShading): PS2X_PCSX2_PERSPECTIVE_SHADING=0 turns it off.
+    std::atomic<bool> g_perspectiveShading{[]
+    {
+        const char *value = std::getenv("PS2X_PCSX2_PERSPECTIVE_SHADING");
         return !(value && *value == '0');
     }()};
 }
@@ -501,6 +509,8 @@ extern "C" __declspec(dllexport) void pcsx2gs_set_option(const char *key, const 
         pcsx2gs::g_drawDof.store(*value != '0', std::memory_order_relaxed);
     else if (std::strcmp(key, "precise_depth") == 0)
         pcsx2gs::g_preciseDepth.store(*value != '0', std::memory_order_relaxed);
+    else if (std::strcmp(key, "perspective_shading") == 0)
+        pcsx2gs::g_perspectiveShading.store(*value != '0', std::memory_order_relaxed);
 }
 
 // The aspect ratio while the game runs (0 = 4:3, 1 = 16:9, 2 = fill the window), read at every present: the port uses
