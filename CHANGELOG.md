@@ -2,6 +2,15 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026 (9)
+
+- **NPCs who lean on their counter (F2 menu, NPCs tab).** Walk up to a bystander, tick "Lean on the counter" and
+  set how far she bends at the waist, her hip sway, height, forward/sideways place and turn; changes show at once and
+  Save writes npc_poses.txt next to the exe. The lean is Quaternius' rail idle (Universal Animation Library 2, CC0)
+  retargeted to the game's women (tools/models/npc_rail.py); the legs and feet stay the game's own, placed by its leg
+  IK. Every NPC that starts one of the casino's shared idles gets a copy of its own to play, so leaning one does not
+  lean the others (the men share those idles). Nothing changes for an NPC that is not set.
+
 ## October 26, 2026 (8)
 
 - **Precise depth: the banded lights and shadows (likely the cause of the far-corner stripes too).** The alpha

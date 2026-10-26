@@ -27,6 +27,7 @@ namespace kamite::game
         inline constexpr uint32_t kLanguage = 0x56Cu;   // decomp: language (0 = Japanese)
         inline constexpr uint32_t kSaveFlags = 0x588u;  // decomp: pad588; ours: bit 0x200000 = Hard unlocked
         inline constexpr uint32_t kDebugFlags = 0x594u; // decomp: debugFlags
+        inline constexpr uint32_t kRoom = 0x5B0u;       // decomp: room (u16, the current room id)
         inline constexpr uint32_t kFlags5D8 = 0x5D8u;   // decomp: flags5D8 (bits: FLAGS5D8_* below, ours)
         inline constexpr uint32_t kFlags5E4 = 0x5E4u;   // decomp: flags5E4
         inline constexpr uint32_t kPlayerObj = 0x5F4u;  // decomp: playerObj
@@ -35,6 +36,15 @@ namespace kamite::game
     // GameWork.flags5D8 bits (ours).
     inline constexpr uint32_t kFlags5D8PlayerOff = 0xC0000000u; // the player's Move returns at once (func_001F6C40)
     inline constexpr uint32_t kFlags5D8KeyStop = 0x02000000u;   // the controls are off, the player still updates
+
+    // cGameObj, the base of the game's actors (cGameObj.h).
+    namespace GameObj
+    {
+        inline constexpr uint32_t kPos = 0x0F0u;        // decomp: pos (cVec *, the live position)
+        inline constexpr uint32_t kRot = 0x100u;        // decomp: rot[3] (rot[1], +0x104, is the heading)
+        inline constexpr uint32_t kMode = 0x2F4u;       // decomp: mode (with phase, step, stepArg after it)
+        inline constexpr uint32_t kMotionData = 0x304u; // decomp: motionData (the loaded model's data block)
+    }
 
     // cIDBase, the on-screen message and icon display object (cIDBase.h).
     namespace IDBase

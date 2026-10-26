@@ -32,6 +32,7 @@
 #include "kamite/frame_patches.h"
 #include "kamite/character_mods.h"
 #include "kamite/hud_layout.h"
+#include "kamite/npc_poses.h"
 #include "kamite/call_profile.h"
 #include "kamite/counter_finder.h"
 #include "kamite/pc_sampler.h"
@@ -248,6 +249,7 @@ namespace kamite
             counterfinder::onFrame(rdram);
             hud::onFrame(rdram);
             characters::onFrame(rdram);
+            npc_poses::onFrame(rdram);
             if (!g_fps60)
             {
                 restoreInjected(rdram);
