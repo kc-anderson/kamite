@@ -1384,8 +1384,11 @@ void ps_main(PS_INPUT input)
 #endif
 {
 #if PS_PERSP_COLOR
-	// Perspective shading: the vertex shader sent colour times Q; t.w is the interpolated Q.
-	input.c /= input.t.w;
+	// Perspective shading: the vertex shader sent colour times Q; t.w is the interpolated Q. The division leaves a
+	// colour that is the same at every vertex a few ulps under its value (128 -> 127.99998), and the GS truncates
+	// colours: a 1/1024 lift keeps such a channel exact (an alpha test against it passes as before) and moves no
+	// interpolated value by a visible amount.
+	input.c = input.c / input.t.w + (1.0f / 1024.0f);
 #endif
 
 #if PS_SEE_THROUGH

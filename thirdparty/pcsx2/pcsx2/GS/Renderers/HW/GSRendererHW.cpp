@@ -6030,6 +6030,10 @@ void GSRendererHW::ApplyPerspectiveShading()
 		return;
 	m_conf.vs.persp_color = 1;
 	m_conf.ps.persp_color = 1;
+	// The alpha test's second pass (EmulateAlphaTestSecondPass, set up before this) draws with the same vertex
+	// shader, so its pixel shader has to divide too: without it the second pass got the colour times Q, and the
+	// floor shadows vanished and alpha-tested faces went grainy (K, Oct 26).
+	m_conf.alpha_second_pass.ps.persp_color = 1;
 }
 
 // pcsx2gs (Kamite): the see-through oval. The game gives, every frame, where the player is on screen, an oval round
@@ -6057,6 +6061,7 @@ void GSRendererHW::ApplySeeThrough(float rtscale)
 	const float oy = static_cast<float>(m_context->XYOFFSET.OFY) / 16.0f;
 	const float scale = std::max(rtscale, 0.01f);
 	m_conf.ps.see_through = 1;
+	m_conf.alpha_second_pass.ps.see_through = 1; // same oval on the alpha test's second pass
 	m_conf.cb_ps.SeeThroughA = GSVector4((s.cx - ox) * scale, (s.cy - oy) * scale, 1.0f / (s.rx * scale), 1.0f / (s.ry * scale));
 	m_conf.cb_ps.SeeThroughB = GSVector4(s.start, 1.0f / std::max(s.ramp, 0.01f), std::clamp(s.strength, 0.0f, 1.0f),
 		1.0f / std::clamp(s.soft, 0.02f, 1.0f));

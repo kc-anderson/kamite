@@ -2,6 +2,19 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026 (4)
+
+- **Perspective shading fixed:** shadows vanished and some faces (the shop girl's) went grainy with it on. Draws
+  with an alpha test run a second pass with the same vertex shader, and that pass's pixel shader never got the
+  perspective flag, so it drew the colour times Q. Both passes divide now, and a colour that is the same at every
+  vertex comes out exact (it used to land a hair under, which a truncating GS turns into one step lower). The
+  see-through oval now also reaches the second pass.
+- **Even frame pacing:** the trace showed vblanks 15 to 18.5 ms apart (60 per second on average): the timed wait
+  woke up to ~2 ms late and the next frame caught up. The wait now ends 1.5 ms early and yields to the exact
+  deadline (PS2X_PACING_SPIN_US, 0 = the old wait), so each frame lasts the same.
+- **Style indicator:** saved styles show in the Techniques page's cream, not white (the colour was the on-screen
+  value, which the GS doubles).
+
 ## October 26, 2026 (3)
 
 - **Perspective shading (new, on by default; [Video] PerspectiveShading, F2 > Graphics):** the floor's shadow near

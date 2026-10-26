@@ -2626,9 +2626,31 @@ void EeScheduler::processDueDeadlines()
                 const bool gsBefore = gsInterruptUnseen();
                 const auto sleepStart = std::chrono::steady_clock::now();
                 ps2x::asyncvif::traceEvent('P');
-                m_eventCv.wait_until(lock, pacingDeadline, [this]()
-                                     { return !m_events.empty() || gsInterruptUnseen() ||
-                                              m_stopRequested.load(std::memory_order_acquire); });
+                const auto woken = [this]()
+                { return !m_events.empty() || gsInterruptUnseen() || m_stopRequested.load(std::memory_order_acquire); };
+                // Precise pacing (Oct 26): a timed wait on Windows wakes up to ~2 ms late, so the vblanks came 15 to
+                // 18.5 ms apart (the 2 ms catch-up evening the average out): uneven frames on a fixed-rate screen. The
+                // wait now ends PS2X_PACING_SPIN_US (default 1500) before the deadline and yields the rest away, so
+                // the vblank fires on time. 0 = the plain timed wait.
+                static const auto spin = []
+                {
+                    const char *v = std::getenv("PS2X_PACING_SPIN_US");
+                    const long us = v && *v ? std::strtol(v, nullptr, 10) : 1500L;
+                    return std::chrono::microseconds(std::clamp(us, 0L, 4000L));
+                }();
+                if (spin.count() == 0)
+                    m_eventCv.wait_until(lock, pacingDeadline, woken);
+                else
+                {
+                    if (pacingDeadline - spin > now)
+                        m_eventCv.wait_until(lock, pacingDeadline - spin, woken);
+                    while (!woken() && std::chrono::steady_clock::now() < pacingDeadline)
+                    {
+                        lock.unlock();
+                        std::this_thread::yield();
+                        lock.lock();
+                    }
+                }
                 ps2x::asyncvif::traceEvent('p', gsInterruptUnseen() ? 1u : 0u);
                 if (pacingStats)
                 {

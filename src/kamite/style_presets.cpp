@@ -636,13 +636,15 @@ namespace kamite::style_presets
         // round the ring (K, Oct 26: 142 over the middle of the six slots was far from the ring; 108, over the
         // first slot, wanted a little further left). The text is about 44 units wide at 0.65.
         constexpr float kHudX = 97.0f, kHudY = 348.0f, kHudScale = 0.65f;
-        constexpr uint32_t kBeige = 0x80A0C8DCu; // A B G R
+        // The cream of the Techniques page's lines, in the GS's colour scale (0x80 = full: the glyphs are white, so
+        // the colour is what shows). It was 0xDC 0xC8 0xA0, the on-screen value, which the GS doubles past full:
+        // white on screen (K, Oct 26).
+        constexpr uint32_t kBeige = 0x8050646Eu; // A B G R
         uint32_t g_hudText = 0u, g_hudShadow = 0u; // the two entries (EE thread); 0 = not found
         bool g_hudShown = false;
 
         std::vector<uint16_t> hudText(uint32_t data, const Store &store, bool colours)
         {
-            const int holding = g_holding.load(std::memory_order_relaxed);
             const bool blinkOn = (g_vblanks / 8u) % 2u == 0u;
             const bool flash = g_vblanks - g_lastAction.load(std::memory_order_relaxed) < 40u;
             std::vector<uint16_t> out;
@@ -652,9 +654,8 @@ namespace kamite::style_presets
                     out.push_back(kSpace);
                 const bool used = (store.used & (1u << slot)) != 0u;
                 uint32_t colour = kBeige;
-                if (slot == holding)
-                    colour = blinkOn ? kGold : kBeige; // held with the D-pad: blinks until it saves
-                else if (used && store.active == slot && equipped(data, store.styles[slot]))
+                // In play a d-pad tap only loads a style; saving is the Techniques screen's alone (padFilter).
+                if (used && store.active == slot && equipped(data, store.styles[slot]))
                     colour = (flash && !blinkOn) ? kBeige : kGold;
                 else if (!used)
                     colour = kDim;
