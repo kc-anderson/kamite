@@ -2,6 +2,15 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026 (10)
+
+- **NPC poses:** switching the lean on or off starts the NPC's idle again, so she no longer jerks about for a moment
+  going in or keeps her arms out coming back (the game keeps its place in each curve while a motion plays, and the two
+  motions' curves differ). Forward and sideways now reach 2 m, height 0.5 m.
+- **Style indicator** a touch right and up (99, 346.5 from 97, 348).
+- tools/models/export_glb.py: a game model as a rigged, textured .glb for animation tools (the bunny girl's three
+  colour sets were made with it).
+
 ## October 26, 2026 (9)
 
 - **NPCs who lean on their counter (F2 menu, NPCs tab).** Walk up to a bystander, tick "Lean on the counter" and

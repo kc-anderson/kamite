@@ -240,7 +240,7 @@ namespace kamite
             }
         }
 
-        void frameStart(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        void frameStart(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             pcsampler::noteMainContext(ctx);
             ++g_gameFrame;
@@ -249,7 +249,7 @@ namespace kamite
             counterfinder::onFrame(rdram);
             hud::onFrame(rdram);
             characters::onFrame(rdram);
-            npc_poses::onFrame(rdram);
+            npc_poses::onFrame(rdram, ctx, runtime);
             if (!g_fps60)
             {
                 restoreInjected(rdram);

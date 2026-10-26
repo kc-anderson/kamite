@@ -12,6 +12,7 @@ namespace kamite::npc_poses
 {
     // Before the game loop: the motion hook and the F2 tab. `exeDir` holds npc_poses.txt.
     void install(PS2Runtime &runtime, const std::filesystem::path &exeDir);
-    // Game frame start (frame_patches.cpp): applies edits, keeps turned NPCs turned, tracks the nearest one.
-    void onFrame(uint8_t *rdram);
+    // Game frame start (frame_patches.cpp): applies edits, starts a changed motion again, tracks the nearest NPC.
+    // The registers are the game's at that point; a motion restarted there runs on them and gets them back after.
+    void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
 }

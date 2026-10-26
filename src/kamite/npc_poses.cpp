@@ -86,6 +86,14 @@ namespace kamite::npc_poses
             float spawn[3] = {};
             std::vector<uint8_t> original; // its own idle, as the game has it
             bool dirty = true;
+            bool leaning = false;          // what the slot holds now
+            bool restart = false;          // the slot changed between the idle and the lean: start it again
+            // The motion start's other arguments, to start it again (a2 events, a3, t0, t1; f12..f14), and what
+            // tells the actor is still the one that started it.
+            uint32_t args[4] = {};
+            float fargs[3] = {};
+            uint32_t motionData = 0;
+            uint8_t mode = 0;
         };
 
         std::mutex g_mutex;
@@ -98,6 +106,7 @@ namespace kamite::npc_poses
         float g_nearestDistance = 0.0f;
         float g_player[3] = {};
         std::string g_status;
+        GuestFunction g_start = nullptr; // func_002A8578 as recompiled (the observer is in front of it)
 
         uint32_t read32(const uint8_t *rdram, uint32_t address)
         {
@@ -296,12 +305,19 @@ namespace kamite::npc_poses
             return nullptr;
         }
 
-        void writeSlot(uint8_t *rdram, Npc &npc)
+        // Writes the slot. Between the idle and the lean the motion's records differ (count, bones, keys), and the
+        // game keeps its place in each curve while a motion plays: the old place in the new curves made them jerk
+        // about, and back from the lean the arms stayed out. So a change of motion starts it again (onFrame).
+        void writeSlot(uint8_t *rdram, Npc &npc, bool starting)
         {
             const Pose *pose = poseFor(g_room, npc.spawn);
-            const std::vector<uint8_t> bytes = (pose && pose->lean) ? leanMotion(*pose) : npc.original;
+            const bool lean = pose && pose->lean;
+            const std::vector<uint8_t> bytes = lean ? leanMotion(*pose) : npc.original;
             if (bytes.size() <= kSlotSize)
                 std::memcpy(rdram + kSlotBase + kSlotSize * static_cast<uint32_t>(npc.slot), bytes.data(), bytes.size());
+            if (!starting && lean != npc.leaning)
+                npc.restart = true;
+            npc.leaning = lean;
             npc.dirty = false;
         }
 
@@ -362,7 +378,17 @@ namespace kamite::npc_poses
                 npc.dirty = true;
             }
             if (npc.dirty)
-                writeSlot(rdram, npc);
+                writeSlot(rdram, npc, true);
+            npc.args[0] = GPR_U32(ctx, 6);
+            npc.args[1] = GPR_U32(ctx, 7);
+            npc.args[2] = GPR_U32(ctx, 8);
+            npc.args[3] = GPR_U32(ctx, 9);
+            npc.fargs[0] = ctx->f[12];
+            npc.fargs[1] = ctx->f[13];
+            npc.fargs[2] = ctx->f[14];
+            npc.motionData = read32(rdram, actor + GameObj::kMotionData);
+            npc.mode = rdram[(actor + GameObj::kMode) & 0x01FFFFFFu];
+            npc.restart = false;
             SET_GPR_U32(ctx, 5, kSlotBase + kSlotSize * static_cast<uint32_t>(npc.slot));
         }
 
@@ -455,9 +481,9 @@ namespace kamite::npc_poses
                 };
                 slider("Bend at the waist##waist", pose.waist, -30.0f, 40.0f, "%.1f deg");
                 slider("Hip sway##sway", pose.sway, 0.0f, 300.0f, "%.0f%%");
-                slider("Height##height", pose.height, -0.3f, 0.3f, "%.3f m");
-                slider("Forward##forward", pose.forward, -0.6f, 0.6f, "%.3f m");
-                slider("Sideways (+ = her left)##side", pose.side, -0.6f, 0.6f, "%.3f m");
+                slider("Height##height", pose.height, -0.5f, 0.5f, "%.3f m");
+                slider("Forward##forward", pose.forward, -2.0f, 2.0f, "%.3f m");
+                slider("Sideways (+ = her left)##side", pose.side, -2.0f, 2.0f, "%.3f m");
                 slider("Turn (+ = to her left)##turn", pose.turn, -180.0f, 180.0f, "%.1f deg");
                 ui->end_disabled();
                 if (changed)
@@ -519,13 +545,15 @@ namespace kamite::npc_poses
             load();
         }
         const bool hooked = FunctionHooks::instance().observeEntry(kStartMotion, "npc_poses_start_motion", &onStartMotion);
+        if (hooked)
+            g_start = FunctionHooks::instance().original(kStartMotion);
         KM_INFO(Game, "NPC poses: " << g_poses.size() << " set in npc_poses.txt" << (hooked ? "" : " (could not hook the motion start)"));
 #if defined(KAMITE_HAS_GS_MENU)
         ps2x::menu::addPanel("NPCs", &drawPanel);
 #endif
     }
 
-    void onFrame(uint8_t *rdram)
+    void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         const uint16_t room = read16(rdram, GameWork::address(GameWork::kRoom));
@@ -536,8 +564,31 @@ namespace kamite::npc_poses
             return;
         }
         for (auto &[actor, npc] : g_npcs)
+        {
             if (npc.dirty)
-                writeSlot(rdram, npc);
+                writeSlot(rdram, npc, false);
+            if (!npc.restart || !g_start || !ctx || !runtime)
+                continue;
+            npc.restart = false;
+            // Only while the actor is still the one that started the idle and still in that state (not hit, not
+            // gone: its data block and state byte as they were).
+            if (!inRam(actor, 0x600) || read32(rdram, actor + GameObj::kMotionData) != npc.motionData ||
+                rdram[(actor + GameObj::kMode) & 0x01FFFFFFu] != npc.mode)
+                continue;
+            // The motion start called again with the arguments the game gave it, on a copy of the registers.
+            const R5900Context saved = *ctx;
+            SET_GPR_U32(ctx, 4, actor);
+            SET_GPR_U32(ctx, 5, kSlotBase + kSlotSize * static_cast<uint32_t>(npc.slot));
+            SET_GPR_U32(ctx, 6, npc.args[0]);
+            SET_GPR_U32(ctx, 7, npc.args[1]);
+            SET_GPR_U32(ctx, 8, npc.args[2]);
+            SET_GPR_U32(ctx, 9, npc.args[3]);
+            ctx->f[12] = npc.fargs[0];
+            ctx->f[13] = npc.fargs[1];
+            ctx->f[14] = npc.fargs[2];
+            g_start(rdram, ctx, runtime);
+            *ctx = saved;
+        }
         // The nearest NPC to Gene, by where each started its idle (the actors themselves are not read here: one
         // may have gone since).
         g_nearest = 0;

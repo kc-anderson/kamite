@@ -635,7 +635,7 @@ namespace kamite::style_presets
         // 86.5..196.5), just clear of the meter's ring at that height, so the letters, the charges and the bars step
         // round the ring (K, Oct 26: 142 over the middle of the six slots was far from the ring; 108, over the
         // first slot, wanted a little further left). The text is about 44 units wide at 0.65.
-        constexpr float kHudX = 97.0f, kHudY = 348.0f, kHudScale = 0.65f;
+        constexpr float kHudX = 99.0f, kHudY = 346.5f, kHudScale = 0.65f; // K: a touch right and up from 97, 348 (Oct 26)
         // The cream of the Techniques page's lines, in the GS's colour scale (0x80 = full: the glyphs are white, so
         // the colour is what shows). It was 0xDC 0xC8 0xA0, the on-screen value, which the GS doubles past full:
         // white on screen (K, Oct 26).
