@@ -46,6 +46,7 @@
 #endif
 
 #include <algorithm>
+#include <cstdlib>
 #include <chrono>
 #include <optional>
 #include <array>
@@ -72,6 +73,9 @@ namespace kamite::npc_poses
         constexpr uint32_t kSlotCount = (0x000FC000u - kSlotBase) / (2 * kSlotSize); // 15 posed NPCs, two halves each
         constexpr uint32_t kMaxMotion = 0x4000u;
         constexpr float kDeg = 3.14159265358979f / 180.0f;
+        // [Game] NpcPoses ("Better shop & casino poses" in the launcher): whether the poses play. Off, every NPC keeps
+        // the game's idle; the F2 tab can switch them on for the session to set them.
+        bool g_enabled = false;
 
         struct Pose
         {
@@ -89,6 +93,9 @@ namespace kamite::npc_poses
             float elbows = 0.0f;     // degrees, + = the forearms bent further forward
             float butt = 0.0f;       // degrees, + = the pelvis tipped forward (the bottom out)
             float amount = 100.0f;   // percent of the motion's own movement
+            float headRoll = 0.0f;   // degrees, + = the head tipped to her right
+            float legTurn = 0.0f;    // degrees, + = the feet turned round her middle to her left (she keeps facing)
+            float stance = 100.0f;   // percent of the feet's distance apart
         };
 
         // The motions a pose can play: the rail lean built in, and any MOT files in mods/npc_motions (made with
@@ -591,15 +598,19 @@ namespace kamite::npc_poses
             scale(m, 0, 1, s);
             for (int c = 3; c <= 5; ++c)
                 scale(m, 17, c, s);
-            // Turn: the hips' heading, and the feet's targets (constants here) turned round her middle.
-            const float a = p.turn * kDeg, ca = std::cos(a), sa = std::sin(a);
+            // Turn: the hips' heading, and the feet's targets (constants here) turned round her middle. Legs: the
+            // feet alone turned round her middle (the leg IK crosses or opens the legs; she keeps facing), and their
+            // distance apart.
+            const float a = p.turn * kDeg;
             shift(m, 0, 4, a);
+            const float stance = p.stance / 100.0f;
             for (int bone : {20, 24})
             {
-                const float x = constant(m, bone, 0), z = constant(m, bone, 2);
+                const float feet = a + p.legTurn * kDeg, ca = std::cos(feet), sa = std::sin(feet);
+                const float x = constant(m, bone, 0) * stance, z = constant(m, bone, 2);
                 setConstant(m, bone, 0, x * ca + z * sa);
                 setConstant(m, bone, 2, -x * sa + z * ca);
-                shift(m, bone, 4, a);
+                shift(m, bone, 4, feet);
             }
             for (int bone : {0, 20, 24})
             {
@@ -610,7 +621,7 @@ namespace kamite::npc_poses
             // The head (in the neck's space), the upper arms round the shoulders' side axis, the forearms round the
             // upper arms' up axis (a T-pose arm bends forward round it; + on the left is - on the right).
             // Always, even at 0, so the motion's records stay the same whatever the sliders say (edits in place).
-            preRotate(m, 4, mul(rotY(p.headYaw * kDeg), rotX(p.headPitch * kDeg)));
+            preRotate(m, 4, mul(rotY(p.headYaw * kDeg), mul(rotX(p.headPitch * kDeg), rotZ(p.headRoll * kDeg))));
             for (int bone : {6, 7, 12, 13})
                 preRotate(m, bone, rotX(-p.arms * kDeg));
             preRotate(m, 8, rotY(p.elbows * kDeg));
@@ -659,7 +670,7 @@ namespace kamite::npc_poses
             const Pose *pose = poseFor(g_room, npc.spawn);
             std::vector<uint8_t> bytes;
             std::string playing;
-            if (pose && pose->lean)
+            if (g_enabled && pose && pose->lean)
             {
                 bytes = leanMotion(*pose);
                 playing = motionFor(pose->motion) ? motionFor(pose->motion)->id : std::string();
@@ -813,6 +824,7 @@ namespace kamite::npc_poses
                 {
                     pose.motion = motion;
                     fields >> pose.headPitch >> pose.headYaw >> pose.arms >> pose.elbows >> pose.butt >> pose.amount;
+                    fields >> pose.headRoll >> pose.legTurn >> pose.stance; // added later still
                 }
                 g_poses.emplace_back(key, pose);
             }
@@ -826,14 +838,15 @@ namespace kamite::npc_poses
             out << "# Kamite's NPC poses (the F2 menu's NPCs tab writes this file).\r\n"
                    "# room (hex), where the NPC stands (x z, cm), lean (0/1), bend at the waist (degrees), hip sway (%),\r\n"
                    "# height (m), forward (m), sideways (m, + = her left), turn (degrees, + = to her left), motion,\r\n"
-                   "# head pitch and turn, arms raised, elbows bent, bottom out (degrees), amount of movement (%)\r\n";
+                   "# head pitch and turn, arms raised, elbows bent, bottom out (degrees), amount of movement (%),\r\n"
+                   "# head tilt, legs turned (degrees), feet apart (%)\r\n";
             for (const auto &[key, pose] : g_poses)
             {
                 char line[320];
-                std::snprintf(line, sizeof(line), "%s %d %.1f %.0f %.3f %.3f %.3f %.1f %s %.1f %.1f %.1f %.1f %.1f %.0f\r\n",
+                std::snprintf(line, sizeof(line), "%s %d %.1f %.0f %.3f %.3f %.3f %.1f %s %.1f %.1f %.1f %.1f %.1f %.0f %.1f %.1f %.0f\r\n",
                               keyText(key).c_str(), pose.lean ? 1 : 0, pose.waist, pose.sway, pose.height, pose.forward,
                               pose.side, pose.turn, pose.motion.c_str(), pose.headPitch, pose.headYaw, pose.arms, pose.elbows,
-                              pose.butt, pose.amount);
+                              pose.butt, pose.amount, pose.headRoll, pose.legTurn, pose.stance);
                 out << line;
             }
             return static_cast<bool>(out);
@@ -848,6 +861,14 @@ namespace kamite::npc_poses
                 return;
             }
             std::lock_guard<std::mutex> lock(g_mutex);
+            int enabled = g_enabled ? 1 : 0;
+            if (ui->checkbox("Better shop & casino poses##enabled", &enabled))
+            {
+                g_enabled = enabled != 0;
+                for (auto &[actor, npc] : g_npcs)
+                    npc.dirty = true; // each to its pose, or back to the game's idle
+            }
+            ui->text_disabled("For this session; the launcher's Gameplay tab keeps it. Off, NPCs play the game's idles.");
             ui->text_wrapped("Walk up to a bystander who stands at a counter (with \"Keep playing\" on), then set her "
                              "here. Changes show at once; Save keeps them in npc_poses.txt.");
             const auto it = g_npcs.find(g_nearest);
@@ -912,9 +933,12 @@ namespace kamite::npc_poses
                 slider("Turn (+ = to her left)##turn", pose.turn, -180.0f, 180.0f, "%.1f deg");
                 slider("Head: look down (+) / up (-)##hpitch", pose.headPitch, -60.0f, 60.0f, "%.1f deg");
                 slider("Head: turn (+ = to her left)##hyaw", pose.headYaw, -90.0f, 90.0f, "%.1f deg");
+                slider("Head: tilt (+ = to her right)##hroll", pose.headRoll, -45.0f, 45.0f, "%.1f deg");
                 slider("Arms: raise (+) / lower (-)##arms", pose.arms, -60.0f, 60.0f, "%.1f deg");
                 slider("Elbows: bend (+) / straighten (-)##elbows", pose.elbows, -60.0f, 60.0f, "%.1f deg");
                 slider("Bottom out (+) / in (-)##butt", pose.butt, -40.0f, 40.0f, "%.1f deg");
+                slider("Legs: turn the feet (+ = to her left)##legturn", pose.legTurn, -60.0f, 60.0f, "%.1f deg");
+                slider("Legs: feet apart##stance", pose.stance, 0.0f, 200.0f, "%.0f%%");
                 slider("Amount of movement##amount", pose.amount, 0.0f, 150.0f, "%.0f%%");
                 ui->end_disabled();
                 if (changed)
@@ -994,6 +1018,8 @@ namespace kamite::npc_poses
     void install(PS2Runtime &, const fs::path &exeDir)
     {
         g_file = exeDir / "npc_poses.txt";
+        if (const char *on = std::getenv("KAMITE_NPC_POSES"))
+            g_enabled = *on && *on != '0';
         g_motions.push_back(Motion{"rail", "Rail lean (Quaternius, built in)",
                                    std::vector<uint8_t>(std::begin(data::kRailLoop), std::end(data::kRailLoop))});
         {

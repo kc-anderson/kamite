@@ -44,6 +44,7 @@ namespace kamite::launcher
         constexpr Choice kHudLayouts[] = {{"16:9: HUD at the screen edges", "16:9"}, {"4:3: HUD where the PS2 had it", "4:3"}};
         constexpr Choice kMenuLayouts[] = {{"4:3: as on the PS2, with side bars", "4:3"}, {"Stretched to the screen", "stretch"}};
         constexpr Choice kRouletteTimers[] = {{"Normal", "normal"}, {"Double time", "double"}};
+        constexpr Choice kCameraShakes[] = {{"Full: as on the PS2", "100"}, {"Half", "50"}, {"Off", "0"}};
         constexpr Choice kPostEffects[] = {{"PS2 resolution (PCSX2's fix)", "ps2"}, {"Upscaled", "upscaled"}, {"No fix", "off"}};
         constexpr Choice kWindowModes[] = {{"Window", "window"}, {"Fullscreen (borderless)", "fullscreen"}, {"Maximized window", "maximized"}};
         constexpr Choice kFovs[] = {{"100%: as on the PS2", "100"}, {"110%", "110"}, {"120%", "120"}, {"130%", "130"},
@@ -1080,6 +1081,10 @@ namespace kamite::launcher
                                                                   "the edges join in as on the PS2. Off: the original angles.");
                             iniCheckbox(state, "On##enemyview", "Game", "EnemiesFollowView", true);
                         }
+                        settingLabel("Camera shake", "How much the camera shakes from hits, stomps and explosions.",
+                                     "F2 > Camera sets it to any amount while playing.");
+                        iniCombo(state, "##camshake", "Video", "CameraShake", "100",
+                                 [](const char *id, std::string &value) { return choiceCombo(id, kCameraShakes, value); });
                         settingLabel("Window", "How the game opens.", "F11 switches between window and fullscreen while "
                                                                       "playing.");
                         {
@@ -1149,13 +1154,10 @@ namespace kamite::launcher
                         iniCheckbox(state, "On##fps60", "Game", "Fps60", false);
                         settingLabel("L3 dash", "Clicking the left stick dashes (a quick double tap forward).");
                         iniCheckbox(state, "On##l3", "Game", "L3Dash", false);
-                        settingLabel("Roulette timer", "How long you have to pick a roulette move. Double time gives "
-                                                       "twice as long (the dial runs half as fast), at 30 and 60 FPS.");
-                        iniCombo(state, "##roulette", "Game", "RouletteTimer", "normal",
-                                 [](const char *id, std::string &value) { return choiceCombo(id, kRouletteTimers, value); });
-                        settingLabel("Unlock Hard", "Hard can be picked from the start instead of after a clear. Your "
-                                                    "save is not changed.");
-                        iniCheckbox(state, "On##hard", "Game", "UnlockHard", false);
+                        settingLabel("Style switching", "Save up to four sets of techniques as styles and swap "
+                                                        "between them in play with the d-pad (on the Techniques "
+                                                        "screen, hold Triangle / Y + d-pad to save one).");
+                        iniCheckbox(state, "On##styles", "Game", "StyleSwitching", false);
                         settingLabel("Control style", "Classic: as on the PS2. Modern: the right stick turns the camera "
                                                       "and Gene moves where you point; hold or toggle L1 for the "
                                                       "original controls, double-tap L1 for the quick turn.",
@@ -1176,9 +1178,21 @@ namespace kamite::launcher
                                        "F2 > Controls sets the sensitivity.");
                             iniCheckbox(state, "On##mousecamera", "Game", "MouseCamera", true);
                         }
+                        settingLabel("Roulette timer", "How long you have to pick a roulette move. Double time gives "
+                                                       "twice as long (the dial runs half as fast), at 30 and 60 FPS.");
+                        iniCombo(state, "##roulette", "Game", "RouletteTimer", "normal",
+                                 [](const char *id, std::string &value) { return choiceCombo(id, kRouletteTimers, value); });
                         settingLabel("Mute music", "Stage, boss, menu and minigame music plays silent. Cutscenes keep "
                                                    "their sound (their music and voices are one track).");
                         iniCheckbox(state, "On##music", "Sound", "MuteMusic", false);
+                        settingLabel("Better shop & casino poses", "The shop and casino girls lean on their counters "
+                                                                   "and tables in poses made for each, instead of the "
+                                                                   "game's standing idle.",
+                                     "F2 > NPCs sets them.");
+                        iniCheckbox(state, "On##npcposes", "Game", "NpcPoses", false);
+                        settingLabel("Unlock Hard", "Hard can be picked from the start instead of after a clear. Your "
+                                                    "save is not changed.");
+                        iniCheckbox(state, "On##hard", "Game", "UnlockHard", false);
                         ImGui::EndTable();
                     }
                     ImGui::EndTabItem();

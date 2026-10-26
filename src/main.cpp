@@ -404,6 +404,9 @@ namespace
         {"video", "fightfieldofview", "KAMITE_FIGHT_FOV"},
         {"video", "cameradistance", "KAMITE_CAMERA_DISTANCE"},
         {"video", "cameratilt", "KAMITE_CAMERA_TILT"},
+        {"video", "camerashake", "KAMITE_CAMERA_SHAKE"},
+        {"game", "styleswitching", "KAMITE_STYLE_SWITCHING"},
+        {"game", "npcposes", "KAMITE_NPC_POSES"},
         {"game", "enemiesfollowview", "KAMITE_ENEMY_VIEW"},
         {"game", "controlstyle", "KAMITE_CONTROL_STYLE"},
         {"game", "menubuttons", "KAMITE_MENU_BUTTONS"},
@@ -987,6 +990,7 @@ int main(int argc, char *argv[])
         kamite::installFramePatches(runtime);
         kamite::installGameOptions(runtime); // [Game] UnlockHard, [Sound] MuteMusic
         kamite::texture_slots::install(); // the per-frame texture slots reserve a texture's real VRAM footprint
+        kamite::installCameraShake(runtime); // [Video] CameraShake
         kamite::jukebox::install(runtime); // the shop's radio: Gene stays in the picture while it plays
         kamite::hangdump::setRuntime(&runtime);
         kamite::calltrace::installFromEnvironment(runtime);

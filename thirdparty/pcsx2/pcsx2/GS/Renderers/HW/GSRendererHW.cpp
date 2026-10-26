@@ -6041,9 +6041,16 @@ void GSRendererHW::ApplyPreciseDepth()
 	// pieces overlap) the later one meets the same plane at the same step and passes the tie. With fractions the two
 	// triangles differ by their rounding and half those pixels failed: the casino fence's floor shadow was cut away
 	// in patches that came and went with the camera (K, Oct 26; draw dumps 64599..64622: draw 6 lies over itself on
-	// 80,000 pixels). Such a draw keeps the PS2's whole steps (and their flooring), one step up so that it stays over
-	// the precise surface under it, as a tie draw does.
-	if (m_conf.alpha_test == GSHWDrawConfig::AlphaTestMode::PASS_THEN_FAIL && !tie)
+	// 80,000 pixels). Keeping such a draw at whole steps brought back the PS2's own banding against the precise floor
+	// under it (dumps 15502..15523). So it keeps its precise depth and its triangles are drawn in order: each a little
+	// higher than the one before (2/256 of a step, more than their rounding), so a later triangle wins the tie as on
+	// the PS2 and the draw stays within a step of its plane (draw 6 there: 13 triangles). A draw with more than 128
+	// triangles keeps whole steps, one up.
+	const bool pass_then_fail = m_conf.alpha_test == GSHWDrawConfig::AlphaTestMode::PASS_THEN_FAIL && !tie;
+	const u32 triangles = m_conf.nindices / 3;
+	const bool order_ties = pass_then_fail && m_conf.indices && triangles > 1 && triangles <= 128 &&
+							m_conf.nindices <= m_max_vertex_count;
+	if (pass_then_fail && !order_ties)
 	{
 		GSVertex* verts = own_vertices();
 		const u32 limit = std::min<u32>(m_conf.cb_vs.max_depth, 0xFFFFu); // 16-bit depth
@@ -6132,6 +6139,20 @@ void GSRendererHW::ApplyPreciseDepth()
 	{
 		const double z = (line->a + line->b * verts[i].RGBAQ.Q) * 256.0 + top;
 		verts[i].XYZ.Z = static_cast<u32>(std::clamp(z + 0.5, 0.0, 16777215.0));
+	}
+	if (order_ties)
+	{
+		// Every triangle its own three vertices, 2/256 of a step above the one before (see above).
+		const std::vector<GSVertex> shared(verts, verts + n);
+		const std::vector<u16> order(m_conf.indices, m_conf.indices + m_conf.nindices);
+		for (u32 i = 0; i < m_conf.nindices; i++)
+		{
+			GSVertex v = shared[order[i] < n ? order[i] : 0];
+			v.XYZ.Z = std::min<u32>(v.XYZ.Z + 2u * (i / 3u), 16777215u);
+			verts[i] = v;
+			const_cast<u16*>(m_conf.indices)[i] = static_cast<u16>(i);
+		}
+		m_conf.nverts = m_conf.nindices;
 	}
 	scaled();
 }

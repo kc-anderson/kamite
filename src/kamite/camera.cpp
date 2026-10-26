@@ -35,6 +35,7 @@
 #include "kamite/near_geometry.h"
 #include "kamite/log.h"
 #include "kamite/game_layout.h"
+#include "kamite/function_hooks.h"
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h" // GPR_U32
 #include "runtime/gs/gs_pcsx2_backend.h"
@@ -67,6 +68,7 @@ namespace kamite
         std::atomic<float> g_fightPercent{100.0f};
         std::atomic<float> g_closerPercent{100.0f};
         std::atomic<float> g_tiltDegrees{0.0f};
+        std::atomic<float> g_shakePercent{100.0f}; // [Video] CameraShake: how much of the game's camera shake shows
         std::atomic<bool> g_enemyView{true};
         std::atomic<bool> g_depthOfField{true}; // [Video] DepthOfField (PS2X_PCSX2_DOF), the Graphics tab
         std::atomic<bool> g_preciseDepth{true}; // [Video] PreciseDepth (PS2X_PCSX2_PRECISE_DEPTH), the Graphics tab
@@ -488,6 +490,35 @@ namespace kamite
         // Before c.lt.s $f0,$f1 in func_00262AA8 ($f1 = the level's lunge cone)
         void enemyLunge(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { ctx->f[1] = scaledCone(ctx->f[1], enemyDistance(rdram, ctx)); }
 
+        // ---- Camera shake -----------------------------------------------------------------------------------------
+
+        // cCamera_update adds each of the camera's two shake channels (cCamVib at camera+0x254 and +0x268: amplitude,
+        // speed, decay, phase, frames left) to its angles as amplitude * sin(phase); cCamera_stepVib, before it, decays
+        // the amplitude and moves the phase on. The amplitudes are scaled for the update only and put back after it,
+        // so the shake's own course (its decay and length) is the game's.
+        constexpr uint32_t kCameraUpdate = 0x138740u;
+        constexpr uint32_t kShakeChannels[] = {0x254u, 0x268u};
+        PS2Runtime::RecompiledFunction g_cameraUpdate = nullptr;
+
+        void cameraUpdateWithShake(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const float scale = g_shakePercent.load(std::memory_order_relaxed) / 100.0f;
+            const uint32_t camera = GPR_U32(ctx, 4) & (PS2_RAM_SIZE - 1u);
+            const bool scaled = scale != 1.0f && camera + 0x280u <= PS2_RAM_SIZE;
+            float amplitude[2] = {};
+            if (scaled)
+                for (int i = 0; i < 2; ++i)
+                {
+                    std::memcpy(&amplitude[i], rdram + camera + kShakeChannels[i], 4);
+                    const float less = amplitude[i] * scale;
+                    std::memcpy(rdram + camera + kShakeChannels[i], &less, 4);
+                }
+            g_cameraUpdate(rdram, ctx, runtime);
+            if (scaled)
+                for (int i = 0; i < 2; ++i)
+                    std::memcpy(rdram + camera + kShakeChannels[i], &amplitude[i], 4);
+        }
+
         // ---- Settings in kamite.ini ------------------------------------------------------------------------------
 
         float envValue(const char *name, float fallback, float low, float high)
@@ -549,6 +580,7 @@ namespace kamite
             ini.set("Video", "FightFieldOfView", number(g_fightPercent.load()));
             ini.set("Video", "CameraDistance", number(g_closerPercent.load()));
             ini.set("Video", "CameraTilt", number(g_tiltDegrees.load()));
+            ini.set("Video", "CameraShake", number(g_shakePercent.load()));
             ini.setBool("Game", "EnemiesFollowView", g_enemyView.load());
             ini.setBool("Video", "DepthOfField", g_depthOfField.load());
             ini.setBool("Video", "PreciseDepth", g_preciseDepth.load());
@@ -580,6 +612,7 @@ namespace kamite
             g_fightPercent = iniValue(ini, "Video", "FightFieldOfView", 100.0f, 50.0f, 200.0f);
             g_closerPercent = iniValue(ini, "Video", "CameraDistance", 100.0f, 0.0f, 100.0f);
             g_tiltDegrees = iniValue(ini, "Video", "CameraTilt", 0.0f, -30.0f, 30.0f);
+            g_shakePercent = iniValue(ini, "Video", "CameraShake", 100.0f, 0.0f, 100.0f);
             g_enemyView = ini.getBool("Game", "EnemiesFollowView", true);
             g_depthOfField = ini.getBool("Video", "DepthOfField", true);
             g_preciseDepth = ini.getBool("Video", "PreciseDepth", true);
@@ -632,6 +665,8 @@ namespace kamite
             ui->text_disabled("0% = stays where it was (the view looks zoomed out); 100% = Gene keeps his size.");
             slider(ui, "Camera tilt##tilt", g_tiltDegrees, -15.0f, 30.0f, "%.1f deg");
             ui->text_disabled("How much the camera rises and looks down at Gene at the field of view above.");
+            slider(ui, "Camera shake##shake", g_shakePercent, 0.0f, 100.0f, "%.0f%%");
+            ui->text_disabled("How much of the game's camera shake (hits, stomps, explosions) shows. 0% = none.");
 
             ui->separator_text("Enemies");
             int follow = g_enemyView.load() ? 1 : 0;
@@ -758,6 +793,14 @@ namespace kamite
         return g_iniPath;
     }
 
+    void installCameraShake(PS2Runtime &runtime)
+    {
+        if (!runtime.hasFunction(kCameraUpdate) || !(g_cameraUpdate = runtime.lookupFunction(kCameraUpdate)) ||
+            !FunctionHooks::instance().replace(kCameraUpdate, "cCamera_update (camera shake)", &cameraUpdateWithShake,
+                                               ReplacementStatus::Native, "[Video] CameraShake scales the camera's shake"))
+            KM_WARN(Game, "camera: cCamera_update 0x138740 is not hookable; the camera shakes in full");
+    }
+
     void installCamera(float aspect)
     {
         g_aspect = aspect;
@@ -768,6 +811,7 @@ namespace kamite
         g_fightPercent = envValue("KAMITE_FIGHT_FOV", 100.0f, 50.0f, 200.0f);
         g_closerPercent = envValue("KAMITE_CAMERA_DISTANCE", 100.0f, 0.0f, 100.0f);
         g_tiltDegrees = envValue("KAMITE_CAMERA_TILT", 0.0f, -30.0f, 30.0f);
+        g_shakePercent = envValue("KAMITE_CAMERA_SHAKE", 100.0f, 0.0f, 100.0f);
         {
             const char *text = std::getenv("KAMITE_ENEMY_VIEW");
             g_enemyView = !(text && *text == '0');

@@ -1132,6 +1132,13 @@ namespace kamite::style_presets
 
     void install(PS2Runtime &runtime)
     {
+        // [Game] StyleSwitching ("Style switching" in the launcher, off by default): without it nothing here is
+        // installed and g_ram stays empty, which the entry points the other modules call check first.
+        if (const char *on = std::getenv("KAMITE_STYLE_SWITCHING"); !on || !*on || *on == '0')
+        {
+            KM_INFO(Game, "style switching: off ([Game] StyleSwitching=0)");
+            return;
+        }
         g_ram = runtime.memory().getRDRAM();
         if (!g_ram)
             return;

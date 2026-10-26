@@ -2,6 +2,21 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026 (14)
+
+- **Precise depth: the casino fence's floor shadow** no longer bands. The pass-then-fail draws whose triangles lie
+  over each other now keep their precise depth (whole steps had brought back the PS2's banding against the precise
+  floor beneath) and draw their triangles in order, each 2/256 of a step above the one before, so a later triangle
+  still wins the tie as on the PS2. Draws of more than 128 triangles keep the whole steps.
+- **Camera shake** ([Video] CameraShake, launcher: Video): full, half or off, or any amount from F2 > Camera. The
+  game's shake keeps its course; only how far the camera moves is scaled.
+- **Launcher, Gameplay:** Style switching is now a setting ([Game] StyleSwitching, off by default; off, the port
+  leaves the d-pad, the Techniques screen and the HUD as the game has them). New: Better shop & casino poses
+  ([Game] NpcPoses, off by default; F2 > NPCs can switch it on for the session while setting poses). Roulette timer
+  moved under Control style, Unlock Hard to the bottom.
+- **NPC poses:** head tilt, the legs turned without turning her (the leg IK crosses or opens them) and how far apart
+  the feet stand. npc_poses.txt gains three columns at the end; older lines still load.
+
 ## October 26, 2026 (13)
 
 - **NPC poses:** two more motions ship with the port in resources/npc_motions, from K's own animations:
