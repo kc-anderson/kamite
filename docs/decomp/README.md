@@ -10,6 +10,7 @@ Kamite uses the matching decompilation (LucasPicoli/god-hand-decomp) and does no
 |---|---|
 | `issue-camera-eye-target.md` | cCamera's `eye` (0x200) and `target` (0x210) are swapped (sceVu0CameraMatrix's arguments). To post. |
 | `issue-player-mode5.md` | `UpdateBossPhase_10B780` is entry 5 of the player's mode table, not a boss routine. To post. |
+| `issue-preview-disc.md` | Findings from the 2006-06-21 preview disc: the game's own names for the flag words at 0x747A78/80/84 and 89 export names retail lacks. To post (K's call: a findings issue, not a correction). |
 | `findings.md` | What Kamite knows that the decomp doesn't name yet, with how sure we are. |
 
 To post an issue, go to github.com/LucasPicoli/god-hand-decomp → Issues → New issue, and paste the title and body from the file after its "Before you post it" checks. No setup or build is needed.

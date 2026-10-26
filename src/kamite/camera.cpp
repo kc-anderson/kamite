@@ -345,8 +345,9 @@ namespace kamite
         }
 
         // The game hides whole walls and pillars that come between the camera and Gene (func_00307B28: rays from the
-        // camera to him, every mesh hit hidden for the frame). The oval replaces that: while it is on, the meshes stay
-        // (toml patch at 0x308650, flag "keep_walls"), and they dissolve round him instead.
+        // camera to him, every mesh hit hidden for the frame; the game skips it while STP_CAMTHRU, game::Stp::kCamThru,
+        // is set). The oval replaces that: while it is on, the meshes stay (toml patch at 0x308650, flag
+        // "keep_walls"), and they dissolve round him instead.
         bool g_keepWallsSet = false, g_keepWalls = false;
         void updateKeepWalls()
         {

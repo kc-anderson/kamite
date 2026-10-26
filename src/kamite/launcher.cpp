@@ -1184,14 +1184,14 @@ namespace kamite::launcher
                         settingLabel("Mute music", "Stage, boss, menu and minigame music plays silent. Cutscenes keep "
                                                    "their sound (their music and voices are one track).");
                         iniCheckbox(state, "On##music", "Sound", "MuteMusic", false);
-                        settingLabel("Better shop & casino poses", "The shop and casino girls lean on their counters "
-                                                                   "and tables in poses made for each, instead of the "
-                                                                   "game's standing idle.",
-                                     "F2 > NPCs sets them.");
-                        iniCheckbox(state, "On##npcposes", "Game", "NpcPoses", false);
                         settingLabel("Unlock Hard", "Hard can be picked from the start instead of after a clear. Your "
                                                     "save is not changed.");
                         iniCheckbox(state, "On##hard", "Game", "UnlockHard", false);
+                        settingLabel("Better shop & casino poses", "The shop and casino girls lean on their counters "
+                                                                   "and tables in poses made for each, instead of the "
+                                                                   "game's standing idle.",
+                                     "F2 > NPCs sets the poses.");
+                        iniCheckbox(state, "On##npcposes", "Game", "NpcPoses", false);
                         ImGui::EndTable();
                     }
                     ImGui::EndTabItem();

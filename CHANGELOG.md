@@ -2,6 +2,18 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026 (15)
+
+- **NPC poses:** "Legs: turn" swings the legs round her middle while her feet keep pointing where she faces (before,
+  the feet turned with them). It reaches 100 degrees each way: past 90 the feet pass each other and the legs cross.
+- **Launcher, Gameplay:** Better shop & casino poses is the last setting; the F2 > NPCs tab no longer has its own
+  switch (it says when the poses are off).
+- **F2 > Debug** (a dev tool): hide parts of the picture with the game's own display switches (Gene, his coat,
+  enemies, objects, stage, effects, shadows, screen filters, HUD, action prompt...), and jump to any room's jump
+  point through the game's door jump (the jump table the game keeps on the disc; the developers' names in English).
+- The game's flag words have their own names now (src/kamite/game_layout.h: game::Stp, Dsp, Sta), from the debug
+  menu of a 2006 preview disc; docs/decomp/issue-preview-disc.md has the findings for the decomp.
+
 ## October 26, 2026 (14)
 
 - **Precise depth: the casino fence's floor shadow** no longer bands. The pass-then-fail draws whose triangles lie

@@ -22,6 +22,7 @@
 #include "kamite/radar_glow.h"
 #include "kamite/style_presets.h"
 #include "kamite/npc_poses.h"
+#include "kamite/debug_tools.h"
 #include "kamite/texture_slots.h"
 #include "kamite/jukebox.h"
 #include "kamite/hd_textures.h"
@@ -985,6 +986,7 @@ int main(int argc, char *argv[])
         kamite::radar_glow::install(runtime.memory().getRDRAM()); // Modern: the radar glows while the original controls are in effect
         kamite::style_presets::install(runtime); // style presets: d-pad swaps in play, the Techniques screen's list and Y + d-pad
         kamite::npc_poses::install(runtime, exeDir); // NPCs who lean on their counter (F2: NPCs; npc_poses.txt)
+        kamite::debug_tools::install(runtime); // F2: Debug (the game's display switches, room jump; dev-only)
         kamite::installMovieWatchdog(runtime); // sweep R3: ending/movie-list movie polls cannot spin forever
         // 60 FPS mode, L3 dash, and the game-frame count for the F3 overlay (a hook at the top of the main loop).
         kamite::installFramePatches(runtime);

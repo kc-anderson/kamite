@@ -28,14 +28,90 @@ namespace kamite::game
         inline constexpr uint32_t kSaveFlags = 0x588u;  // decomp: pad588; ours: bit 0x200000 = Hard unlocked
         inline constexpr uint32_t kDebugFlags = 0x594u; // decomp: debugFlags
         inline constexpr uint32_t kRoom = 0x5B0u;       // decomp: room (u16, the current room id)
-        inline constexpr uint32_t kFlags5D8 = 0x5D8u;   // decomp: flags5D8 (bits: FLAGS5D8_* below, ours)
-        inline constexpr uint32_t kFlags5E4 = 0x5E4u;   // decomp: flags5E4
+        inline constexpr uint32_t kFlags5D8 = 0x5D8u;   // decomp: flags5D8; the preview's STP group (Stp:: below)
+        inline constexpr uint32_t kFlagsDsp = 0x5E0u;   // the preview's DSP group (Dsp:: below)
+        inline constexpr uint32_t kFlags5E4 = 0x5E4u;   // decomp: flags5E4; the preview's STA group (Sta:: below)
+        inline constexpr uint32_t kRoomJumpTable = 0x5A4u; // D_00747A44: the loaded etc/debugres/RoomJmpTbl.dat
         inline constexpr uint32_t kPlayerObj = 0x5F4u;  // decomp: playerObj
         inline constexpr uint32_t address(uint32_t field) { return kAddress + field; }
     }
-    // GameWork.flags5D8 bits (ours).
-    inline constexpr uint32_t kFlags5D8PlayerOff = 0xC0000000u; // the player's Move returns at once (func_001F6C40)
-    inline constexpr uint32_t kFlags5D8KeyStop = 0x02000000u;   // the controls are off, the player still updates
+    // The game's flag words, named by the 2006-06-21 preview disc's debug "Flag Edit" table (its .data 0x384808:
+    // group name, bit names, word, bit count). Bit i of a group is 0x80000000 >> (i % 32) in word i / 32. The retail
+    // words sit where the preview's do (right below ZeroMat); the names agree with what the decomp and the port worked
+    // out on their own (STP_EM = the decomp's "enemies skip their update", STP_KEY = our key stop, STA EVENT = "a
+    // cutscene is running", STA_WORLD_SLOW = its slow-mo, STA SOFT_EVENT = our casino/dog-race soft event, and the
+    // door jump sets STP_CAM / VIB / ACTBTN / SCEAT and DSP_ACTBTN). A bit with no name was unnamed in the preview.
+    namespace Stp // GameWork.flags5D8 (0x747A78; word 2 at 0x747A7C): "stop" - a part of the game is not updated
+    {
+        inline constexpr uint32_t kPl = 0x80000000u;          // STP_PL
+        inline constexpr uint32_t kEm = 0x40000000u;          // STP_EM: enemies skip their update
+        inline constexpr uint32_t kOm = 0x20000000u;          // STP_OM
+        inline constexpr uint32_t kEff = 0x10000000u;         // STP_EFF
+        inline constexpr uint32_t kScr = 0x08000000u;         // STP_SCR
+        inline constexpr uint32_t kVib = 0x04000000u;         // STP_VIB
+        inline constexpr uint32_t kKey = 0x02000000u;         // STP_KEY: the controls are off, the player still updates
+        inline constexpr uint32_t kPad2 = 0x01000000u;        // STP_PAD2
+        inline constexpr uint32_t kCam = 0x00800000u;         // STP_CAM: the camera stays where it is
+        inline constexpr uint32_t kActBtn = 0x00400000u;      // STP_ACTBTN
+        inline constexpr uint32_t kCamThru = 0x00200000u;     // STP_CAMTHRU: the hide-model manager (func_00307B28) is skipped
+        inline constexpr uint32_t kSceAt = 0x00100000u;       // STP_SCEAT
+        inline constexpr uint32_t kMess = 0x00080000u;        // STP_MESS
+        inline constexpr uint32_t kCockpit = 0x00040000u;     // STP_COCKPIT
+        inline constexpr uint32_t kObj = 0x00020000u;         // STP_OBJ
+        inline constexpr uint32_t kSce = 0x00010000u;         // STP_SCE
+        inline constexpr uint32_t kDeflicker = 0x00008000u;   // STP_DEFLICKER
+        inline constexpr uint32_t kWorldLight = 0x00004000u;  // STP_WORLD_LIGHT
+        inline constexpr uint32_t kTime = 0x00002000u;        // STP_TIME
+        inline constexpr uint32_t kShadowChkLine = 0x00001000u; // STP_SHADOWCHKLINE
+        inline constexpr uint32_t kSeRenew = 0x00000040u;     // STP_SE_RENEW
+        inline constexpr uint32_t kPlayKey = 0x00000020u;     // STP_PLAYKEY
+        inline constexpr uint32_t kPlStopKey = 0x00000010u;   // STP_PLSTOPKEY
+        inline constexpr uint32_t kSubScr2 = 0x00100000u;     // STP_SUBSCR, in word 2 (0x747A7C)
+    }
+    namespace Dsp // GameWork +0x5E0 (0x747A80): "display" - a part of the game is drawn
+    {
+        inline constexpr uint32_t kPl = 0x80000000u;          // DSP_PL: Gene
+        inline constexpr uint32_t kEm = 0x40000000u;          // DSP_EM: enemies
+        inline constexpr uint32_t kOm = 0x20000000u;          // DSP_OM: objects (om)
+        inline constexpr uint32_t kEff = 0x10000000u;         // DSP_EFF: effects
+        inline constexpr uint32_t kScr = 0x08000000u;         // DSP_SCR: the stage
+        inline constexpr uint32_t kFilter = 0x04000000u;      // DSP_FILTER: the screen filters (classCFILTER_TAG_Filter_main)
+        inline constexpr uint32_t kCock = 0x02000000u;        // DSP_COCK: the HUD ("cockpit")
+        inline constexpr uint32_t kEmitter = 0x01000000u;     // DSP_EMITTER
+        inline constexpr uint32_t kObj = 0x00800000u;         // DSP_OBJ (IsTargetVisible_14B470)
+        inline constexpr uint32_t kKage = 0x00400000u;        // DSP_KAGE: shadows (cObjBase_KageDraw)
+        inline constexpr uint32_t kPl01 = 0x00200000u;        // DSP_PL01: Gene's coat (pl01)
+        inline constexpr uint32_t kActBtn = 0x00100000u;      // DSP_ACTBTN: the action-button prompt
+        inline constexpr uint32_t kWorldLight = 0x00080000u;  // DSP_WORLD_LIGHT
+        inline constexpr uint32_t kNpcHpBar = 0x00040000u;    // DSP_NPC_HPBAR (no reader left in retail)
+    }
+    namespace Sta // GameWork.flags5E4 (0x747A84; word 2 at 0x747A88): "state"
+    {
+        inline constexpr uint32_t kCockpit = 0x80000000u;     // COCKPIT
+        inline constexpr uint32_t kScenario = 0x40000000u;    // SCENARIO (cScenario_isEventStartOk: events locked out)
+        inline constexpr uint32_t kEvent = 0x20000000u;       // EVENT: a cutscene is running
+        inline constexpr uint32_t kTalk = 0x10000000u;        // TALK
+        inline constexpr uint32_t kSubScr = 0x08000000u;      // SUBSCR
+        inline constexpr uint32_t kRoomJump = 0x02000000u;    // ROOMJUMP: a door jump is running (cDoor_setDoorJump)
+        inline constexpr uint32_t kSuspend = 0x01000000u;     // STA_SUSPEND
+        inline constexpr uint32_t kStageStartJump = 0x00800000u; // STA_STAGE_START_JUMP
+        inline constexpr uint32_t kLvMaxFix = 0x00400000u;    // STA_LV_MAX_FIX
+        inline constexpr uint32_t kReleaseEm = 0x00100000u;   // RELEASE_EM
+        inline constexpr uint32_t kEvent2 = 0x00080000u;      // STA_EVENT2
+        inline constexpr uint32_t kWorldSlow = 0x00020000u;   // STA_WORLD_SLOW: slow motion
+        inline constexpr uint32_t kDoorJump = 0x00008000u;    // STA_DOOR_JUMP
+        inline constexpr uint32_t kTitle = 0x00004000u;       // STA_TITLE
+        inline constexpr uint32_t kMovie = 0x00002000u;       // (unnamed in the preview) a movie plays (decomp MOVIE_SYS_PLAYING)
+        inline constexpr uint32_t kSescrOff = 0x00000800u;    // SESCR_OFF
+        inline constexpr uint32_t kWipe = 0x00000080u;        // WIPE
+        inline constexpr uint32_t kSoftEvent = 0x00000040u;   // SOFT_EVENT: a scripted soft event (casino slots, dog race)
+        inline constexpr uint32_t kRoomJumpNoWipe = 0x00000020u; // ROOMJUMP_NOWIPE
+        inline constexpr uint32_t kSoftEventCancel = 0x00000010u; // SOFT EVENT CANCEL
+        inline constexpr uint32_t kSceMovieCancel = 0x00000004u;  // SCE MOVIE CANCEL
+    }
+    // GameWork.flags5D8 bits the port uses (ours, before the names above).
+    inline constexpr uint32_t kFlags5D8PlayerOff = Stp::kPl | Stp::kEm; // the player's Move returns at once (func_001F6C40)
+    inline constexpr uint32_t kFlags5D8KeyStop = Stp::kKey;             // the controls are off, the player still updates
 
     // cGameObj, the base of the game's actors (cGameObj.h).
     namespace GameObj
@@ -106,6 +182,9 @@ namespace kamite::game
     static_assert(GameWork::address(GameWork::kDebugFlags) == 0x747A34u);
     static_assert(GameWork::address(GameWork::kFlags5D8) == 0x747A78u);
     static_assert(GameWork::address(GameWork::kFlags5E4) == 0x747A84u);
+    static_assert(GameWork::address(GameWork::kFlagsDsp) == 0x747A80u);
+    static_assert(GameWork::address(GameWork::kRoomJumpTable) == 0x747A44u);
+    static_assert(kFlags5D8PlayerOff == 0xC0000000u && kFlags5D8KeyStop == 0x02000000u);
     static_assert(GameWork::address(GameWork::kPlayerObj) == 0x747A94u);
     static_assert(GameWork::address(GameWork::kLangData) == 0x7479F8u);
     static_assert(GameWork::address(0x10u) == 0x7474B0u);

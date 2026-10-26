@@ -74,7 +74,7 @@ namespace kamite::npc_poses
         constexpr uint32_t kMaxMotion = 0x4000u;
         constexpr float kDeg = 3.14159265358979f / 180.0f;
         // [Game] NpcPoses ("Better shop & casino poses" in the launcher): whether the poses play. Off, every NPC keeps
-        // the game's idle; the F2 tab can switch them on for the session to set them.
+        // the game's idle (the F2 tab still edits npc_poses.txt and says the poses are off).
         bool g_enabled = false;
 
         struct Pose
@@ -94,7 +94,8 @@ namespace kamite::npc_poses
             float butt = 0.0f;       // degrees, + = the pelvis tipped forward (the bottom out)
             float amount = 100.0f;   // percent of the motion's own movement
             float headRoll = 0.0f;   // degrees, + = the head tipped to her right
-            float legTurn = 0.0f;    // degrees, + = the feet turned round her middle to her left (she keeps facing)
+            float legTurn = 0.0f;    // degrees, + = the legs turned round her middle to her left (she and her feet keep
+                                     // facing); past 90 they cross
             float stance = 100.0f;   // percent of the feet's distance apart
         };
 
@@ -598,19 +599,20 @@ namespace kamite::npc_poses
             scale(m, 0, 1, s);
             for (int c = 3; c <= 5; ++c)
                 scale(m, 17, c, s);
-            // Turn: the hips' heading, and the feet's targets (constants here) turned round her middle. Legs: the
-            // feet alone turned round her middle (the leg IK crosses or opens the legs; she keeps facing), and their
-            // distance apart.
+            // Turn: the hips' heading, and the feet's targets (constants here) turned round her middle, the feet
+            // pointing the new way. Legs: the feet's places alone turned round her middle (the leg IK swings the legs
+            // round; she keeps facing), the feet still pointing where she faces; past 90 degrees they pass each other
+            // and the legs cross. And their distance apart.
             const float a = p.turn * kDeg;
             shift(m, 0, 4, a);
             const float stance = p.stance / 100.0f;
             for (int bone : {20, 24})
             {
-                const float feet = a + p.legTurn * kDeg, ca = std::cos(feet), sa = std::sin(feet);
+                const float place = a + p.legTurn * kDeg, ca = std::cos(place), sa = std::sin(place);
                 const float x = constant(m, bone, 0) * stance, z = constant(m, bone, 2);
                 setConstant(m, bone, 0, x * ca + z * sa);
                 setConstant(m, bone, 2, -x * sa + z * ca);
-                shift(m, bone, 4, feet);
+                shift(m, bone, 4, a);
             }
             for (int bone : {0, 20, 24})
             {
@@ -861,14 +863,9 @@ namespace kamite::npc_poses
                 return;
             }
             std::lock_guard<std::mutex> lock(g_mutex);
-            int enabled = g_enabled ? 1 : 0;
-            if (ui->checkbox("Better shop & casino poses##enabled", &enabled))
-            {
-                g_enabled = enabled != 0;
-                for (auto &[actor, npc] : g_npcs)
-                    npc.dirty = true; // each to its pose, or back to the game's idle
-            }
-            ui->text_disabled("For this session; the launcher's Gameplay tab keeps it. Off, NPCs play the game's idles.");
+            if (!g_enabled)
+                ui->text_colored(0xFF60C0FFu, "Better shop & casino poses is off (launcher: Gameplay), so the poses set "
+                                              "here don't play.");
             ui->text_wrapped("Walk up to a bystander who stands at a counter (with \"Keep playing\" on), then set her "
                              "here. Changes show at once; Save keeps them in npc_poses.txt.");
             const auto it = g_npcs.find(g_nearest);
@@ -937,7 +934,7 @@ namespace kamite::npc_poses
                 slider("Arms: raise (+) / lower (-)##arms", pose.arms, -60.0f, 60.0f, "%.1f deg");
                 slider("Elbows: bend (+) / straighten (-)##elbows", pose.elbows, -60.0f, 60.0f, "%.1f deg");
                 slider("Bottom out (+) / in (-)##butt", pose.butt, -40.0f, 40.0f, "%.1f deg");
-                slider("Legs: turn the feet (+ = to her left)##legturn", pose.legTurn, -60.0f, 60.0f, "%.1f deg");
+                slider("Legs: turn (+ = to her left; past 90 they cross)##legturn", pose.legTurn, -100.0f, 100.0f, "%.1f deg");
                 slider("Legs: feet apart##stance", pose.stance, 0.0f, 200.0f, "%.0f%%");
                 slider("Amount of movement##amount", pose.amount, 0.0f, 150.0f, "%.0f%%");
                 ui->end_disabled();
