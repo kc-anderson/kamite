@@ -1,0 +1,9 @@
+headers: name GameWork's pad words and frame divider
+
+GameWork 0x00-0x0C are the four pad words func_0031B560 fills each
+frame: the buttons held, last frame's, pressed ((held ^ old) & held,
+the existing padBtn) and released ((held ^ old) & old). 0x569 is the
+number of vblanks a game frame waits for: the main loop in func_0030AC40
+spins until the vblank count D_00753D80 reaches it (2 at boot, set by
+func_0030B298; 1 runs the game at 60 frames a second). KeyStop sets
+bit 0x02000000 of flags5D8.
