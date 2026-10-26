@@ -22,7 +22,8 @@
 //   turn                bone 0's y rotation, with the feet's targets turned round her middle
 // Since the slot is the motion the game plays, an edit is written into it and shows at once.
 //
-// Motions: the rail idle built in, and MOT files in mods/npc_motions (tools/models/npc_motion.py makes them from a
+// Motions: the rail idle built in, MOT files in resources/npc_motions (shipped: K's own table_tease and
+// counter_idle, from his own animations) and mods/npc_motions (tools/models/npc_motion.py makes them from a
 // .blend / .fbx / .glb; the file's name is the motion's id). On top of the motion: the head (pitch, turn), the upper
 // arms (raised round the shoulders' side axis) and the forearms (bent round the upper arms' up axis) are turned in
 // front of the motion's own rotation, every frame (preRotate resamples those curves); bottom out tips the pelvis;
@@ -67,8 +68,8 @@ namespace kamite::npc_poses
 
         constexpr uint32_t kStartMotion = 0x002A8578u; // func_002A8578: (actor, motion, events, ...)
         constexpr uint32_t kSlotBase = 0x00084000u;
-        constexpr uint32_t kSlotSize = 0x2000u;                                      // one motion
-        constexpr uint32_t kSlotCount = (0x000FC000u - kSlotBase) / (2 * kSlotSize); // 30 NPCs, two halves each
+        constexpr uint32_t kSlotSize = 0x4000u;                                      // one motion
+        constexpr uint32_t kSlotCount = (0x000FC000u - kSlotBase) / (2 * kSlotSize); // 15 posed NPCs, two halves each
         constexpr uint32_t kMaxMotion = 0x4000u;
         constexpr float kDeg = 3.14159265358979f / 180.0f;
 
@@ -107,9 +108,9 @@ namespace kamite::npc_poses
 
         struct Npc
         {
-            int slot = -1;
+            int slot = -1;                 // its slot while it is posed, -1 while it plays the game's own idle
             float spawn[3] = {};
-            std::vector<uint8_t> original; // its own idle, as the game has it
+            uint32_t original = 0;         // the game's idle it started (its address in the game's data)
             bool dirty = true;
             std::string playing;           // what the slot holds now: "" for its own idle, else the motion's id
             int half = 0;                  // which of its two halves the game plays
@@ -441,17 +442,12 @@ namespace kamite::npc_poses
         {
             Rec rec;
             rec.bone = bone;
-            const float lo = *std::min_element(v.begin(), v.end()), hi = *std::max_element(v.begin(), v.end());
-            if (hi - lo < 1e-4f)
-            {
-                rec.channel = component;
-                rec.constant = 0.5f * (lo + hi);
-                return rec;
-            }
+            // Always a curve, never a constant, even when it does not move: the motion's records stay the same
+            // whatever the sliders say (edits in place).
             rec.channel = static_cast<uint8_t>(0x10 | component);
             const int n = static_cast<int>(v.size());
             std::vector<int> frames;
-            const int every = std::max(3, n / 40); // a long motion keeps its slot size in hand
+            const int every = std::max(3, n / 24); // a long motion keeps its slot size in hand
             for (int f = 0; f < n - 1; f += every)
                 frames.push_back(f);
             frames.push_back(n - 1);
@@ -640,7 +636,7 @@ namespace kamite::npc_poses
         // Writes the slot. Between the idle and the lean the motion's records differ (count, bones, keys), and the
         // game keeps its place in each curve while a motion plays: the old place in the new curves made them jerk
         // about, and back from the lean the arms stayed out. So a change of motion starts it again (onFrame).
-        uint32_t slotAddress(const Npc &npc)
+        uint32_t slotAddress(const Npc &npc) // valid while npc.slot >= 0
         {
             return kSlotBase + 2u * kSlotSize * static_cast<uint32_t>(npc.slot) + kSlotSize * static_cast<uint32_t>(npc.half);
         }
@@ -667,28 +663,57 @@ namespace kamite::npc_poses
             {
                 bytes = leanMotion(*pose);
                 playing = motionFor(pose->motion) ? motionFor(pose->motion)->id : std::string();
-            }
-            if (bytes.empty() || bytes.size() > kSlotSize)
-            {
-                bytes = npc.original;
-                playing.clear();
-            }
-            if (bytes.size() <= kSlotSize)
+                if (bytes.size() > kSlotSize)
                 {
-                // The game keeps its place in each curve of a playing motion, and starting the same motion again
-                // is ignored, so a motion whose records changed (another motion, or the slider that resampled a
-                // bone) goes to the other half and is started there; a change of values only is written in place.
-                // A finished edit (the slider let go) moves too, so it shows from a clean start whatever it changed.
-                const std::vector<uint8_t> layout = tableLayout(bytes);
-                if (!starting && (layout != npc.layout || playing != npc.playing || npc.commit))
-                {
-                    npc.half ^= 1;
-                    npc.restart = true;
+                    g_status = "That motion with these settings is too large for a slot.";
+                    bytes.clear();
                 }
-                npc.commit = false;
-                npc.layout = layout;
-                std::memcpy(rdram + slotAddress(npc), bytes.data(), bytes.size());
             }
+            if (!bytes.empty() && npc.slot < 0)
+            {
+                const auto free = std::find(g_slotUsed.begin(), g_slotUsed.end(), false);
+                if (free == g_slotUsed.end())
+                {
+                    g_status = "All slots are posed in this room: no more NPCs can be.";
+                    bytes.clear();
+                }
+                else
+                {
+                    *free = true;
+                    npc.slot = static_cast<int>(free - g_slotUsed.begin());
+                    npc.half = 0;
+                    npc.layout.clear();
+                    npc.restart = !starting;
+                }
+            }
+            if (bytes.empty())
+            {
+                // Its own idle again: back to the game's motion, the slot free for another.
+                if (npc.slot >= 0)
+                {
+                    g_slotUsed[npc.slot] = false;
+                    npc.slot = -1;
+                    npc.restart = !starting;
+                }
+                npc.playing.clear();
+                npc.layout.clear();
+                npc.commit = false;
+                npc.dirty = false;
+                return;
+            }
+            // The game keeps its place in each curve of a playing motion, and starting the same motion again is
+            // ignored, so a motion whose records changed (another motion) goes to the other half and is started
+            // there; values only are written in place while a slider is held. A finished edit (the slider let go)
+            // moves too, so it shows from a clean start whatever it changed.
+            const std::vector<uint8_t> layout = tableLayout(bytes);
+            if (!starting && !npc.restart && !npc.layout.empty() && (layout != npc.layout || playing != npc.playing || npc.commit))
+            {
+                npc.half ^= 1;
+                npc.restart = true;
+            }
+            npc.commit = false;
+            npc.layout = layout;
+            std::memcpy(rdram + slotAddress(npc), bytes.data(), bytes.size());
             npc.playing = playing;
             npc.dirty = false;
         }
@@ -728,27 +753,19 @@ namespace kamite::npc_poses
             auto it = g_npcs.find(actor);
             if (it != g_npcs.end() && std::hypot(here[0] - it->second.spawn[0], here[2] - it->second.spawn[2]) > 1.0f)
             {
-                g_slotUsed[it->second.slot] = false; // a new actor in the old one's memory
+                if (it->second.slot >= 0)
+                    g_slotUsed[it->second.slot] = false; // a new actor in the old one's memory
                 g_npcs.erase(it);
                 it = g_npcs.end();
             }
             if (it == g_npcs.end())
             {
-                const auto free = std::find(g_slotUsed.begin(), g_slotUsed.end(), false);
-                if (free == g_slotUsed.end())
-                    return;
                 Npc npc;
-                npc.slot = static_cast<int>(free - g_slotUsed.begin());
-                *free = true;
                 std::copy(here, here + 3, npc.spawn);
                 it = g_npcs.emplace(actor, std::move(npc)).first;
             }
             Npc &npc = it->second;
-            if (npc.original.size() != length || fnv(npc.original.data(), length) != hash)
-            {
-                npc.original.assign(bytes, bytes + length); // its idle (19 and 29 alternate)
-                npc.dirty = true;
-            }
+            npc.original = motion; // its idle (19 and 29 alternate)
             if (npc.dirty)
                 writeSlot(rdram, npc, true);
             npc.args[0] = GPR_U32(ctx, 6);
@@ -761,7 +778,8 @@ namespace kamite::npc_poses
             npc.motionData = read32(rdram, actor + GameObj::kMotionData);
             npc.mode = rdram[(actor + GameObj::kMode) & 0x01FFFFFFu];
             npc.restart = false;
-            SET_GPR_U32(ctx, 5, slotAddress(npc));
+            if (npc.slot >= 0)
+                SET_GPR_U32(ctx, 5, slotAddress(npc));
         }
 
         std::string keyText(const Key &k)
@@ -979,12 +997,17 @@ namespace kamite::npc_poses
         g_motions.push_back(Motion{"rail", "Rail lean (Quaternius, built in)",
                                    std::vector<uint8_t>(std::begin(data::kRailLoop), std::end(data::kRailLoop))});
         {
+            // The port's own (resources/npc_motions, shipped with it) and the player's (mods/npc_motions; a file
+            // there with the same name replaces the port's).
             std::error_code error;
+            std::map<std::string, fs::path> byName;
+            for (const fs::path &folder : {exeDir / "resources" / "npc_motions", exeDir / "mods" / "npc_motions"})
+                for (const auto &entry : fs::directory_iterator(folder, error))
+                    if (entry.is_regular_file(error) && entry.path().extension() == ".mot")
+                        byName[entry.path().stem().string()] = entry.path();
             std::vector<fs::path> files;
-            for (const auto &entry : fs::directory_iterator(exeDir / "mods" / "npc_motions", error))
-                if (entry.is_regular_file(error) && entry.path().extension() == ".mot")
-                    files.push_back(entry.path());
-            std::sort(files.begin(), files.end());
+            for (const auto &[name, path] : byName)
+                files.push_back(path);
             for (const fs::path &file : files)
             {
                 std::ifstream in(file, std::ios::binary);
@@ -1037,7 +1060,13 @@ namespace kamite::npc_poses
             // The motion start called again with the arguments the game gave it, on a copy of the registers.
             const R5900Context saved = *ctx;
             SET_GPR_U32(ctx, 4, actor);
-            SET_GPR_U32(ctx, 5, slotAddress(npc));
+            const uint32_t start = npc.slot >= 0 ? slotAddress(npc) : npc.original;
+            if (!start)
+            {
+                *ctx = saved;
+                continue;
+            }
+            SET_GPR_U32(ctx, 5, start);
             SET_GPR_U32(ctx, 6, npc.args[0]);
             SET_GPR_U32(ctx, 7, npc.args[1]);
             SET_GPR_U32(ctx, 8, npc.args[2]);

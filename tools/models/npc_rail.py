@@ -127,7 +127,7 @@ def retarget(clip, nframes, hip_pitch_to_waist=True):
 # --- MOT writer ---
 def tohalf(x):
     """PlatinumGames half (sign 1, exp 6 bias 47, mantissa 9), round to nearest; returns (bits, decoded)."""
-    if x==0: return 0,0.0
+    if x==0 or abs(x)<2.0**-45: return 0,0.0   # below the format's smallest step
     best=None
     s=1 if x<0 else 0; a=abs(x)
     e=math.floor(math.log2(a)); 
@@ -170,7 +170,7 @@ def fit_channel(v, loop, tol):
         if f==0: return v[1]-v[0]
         if f==n-1: return v[-1]-v[-2]
         return (v[f+1]-v[f-1])/2
-    keys=[0,n-1]
+    keys=sorted(set(list(range(0,n-1,200))+[n-1]))   # keys at most 255 frames apart (a u8 step)
     while True:
         k=sorted(keys); vals=[];tin=[];tout=[]
         rec=build(v,k,slope)

@@ -2,14 +2,15 @@
 armature's action to the game's 30-bone woman's skeleton and writes a MOT for mods/npc_motions/ (npc_poses.cpp).
 
     python -I tools/models/npc_motion.py <animation file> <rig: custom|mixamo|ual> <extracted em/ema5.dat> <out.mot>
-        [--slow 1.5] [--smooth 2] [--frames a:b]
+        [--slow 1.5] [--smooth 2] [--frames a:b] [--tolerance 0.004] [--pelvis 1.0] [--head-forward]
 
 Needs Blender's Python module (pip install bpy), numpy and scipy. The upper body, the hips and the pelvis's wiggle
 come from the animation; the legs and feet are the bunny girl's idle (ema5.dat motion 19), placed by the game's leg
 IK, so any bend of the source's pelvis becomes the waist's (the port's "Bottom out" tips the pelvis back). Each
 bone's world rotation relative to the source's rest pose is carried over to the game's T-pose, with the rest bone
 directions aligned (an A-pose rest works). --slow stretches it (1.5 = two thirds the speed), --smooth is a Gaussian
-over the rotations in frames. Left/right follow the source's own (the game's bones 5-10 are her right side).
+over the rotations in frames, --tolerance the curves' largest error (radians; larger = a smaller file), --pelvis scales
+the hips' travel and the pelvis's wiggle, --head-forward takes out the neck's and head's mean turn. Left/right follow the source's own (the game's bones 5-10 are her right side).
 Only motions you may share go into the repo; the rest stay in your own mods folder.
 """
 import math, os, struct, sys
@@ -111,7 +112,7 @@ def retarget(names, rest, anim, rig, bones, slow=1.5, sigma=2.0):
 # --- MOT writer ---
 def tohalf(x):
     """PlatinumGames half (sign 1, exp 6 bias 47, mantissa 9), round to nearest; returns (bits, decoded)."""
-    if x==0: return 0,0.0
+    if x==0 or abs(x)<2.0**-45: return 0,0.0   # below the format's smallest step
     best=None
     s=1 if x<0 else 0; a=abs(x)
     e=math.floor(math.log2(a)); 
@@ -154,7 +155,7 @@ def fit_channel(v, loop, tol):
         if f==0: return v[1]-v[0]
         if f==n-1: return v[-1]-v[-2]
         return (v[f+1]-v[f-1])/2
-    keys=[0,n-1]
+    keys=sorted(set(list(range(0,n-1,200))+[n-1]))   # keys at most 255 frames apart (a u8 step)
     while True:
         k=sorted(keys); vals=[];tin=[];tout=[]
         rec=build(v,k,slope)
@@ -200,7 +201,26 @@ def write_mot(frames, loop, records):
     table+=struct.pack('<BBHII',127,255,65535,0,0)
     return b'mtb3'+struct.pack('<HBB',frames,n,loop)+table+blobs
 # --- build ---
-def build_motion(seq, ema5, MAP, tol=0.004):
+def upright(seq):
+    """The hips' mean tilt moved into the waist and their mean heading dropped: the legs (the bunny girl's idle,
+    placed by the game's leg IK) stand under her facing forward, the upper body leans as the source's did."""
+    L0 = [Rot.from_euler('xyz', s[0][0]) for s in seq]
+    M = Rot.from_quat(np.mean([q.as_quat() * (1 if q.as_quat()[3] >= 0 else -1) for q in L0], axis=0))
+    # The mean heading is dropped (she faces forward; the port's Turn sets where), its tilt kept in the waist.
+    f = M.apply([0.0, 0.0, 1.0])
+    unturn = Rot.from_euler('y', -np.arctan2(f[0], f[2]))
+    prev = None
+    for s, l0 in zip(seq, L0):
+        n0 = M.inv() * l0
+        n1 = n0.inv() * unturn * l0 * Rot.from_euler('xyz', s[0][1])
+        s[0][0] = n0.as_euler('xyz')
+        e1 = n1.as_euler('xyz')
+        if prev is not None:
+            e1 = prev + (e1 - prev + np.pi) % (2 * np.pi) - np.pi
+        s[0][1] = e1
+        prev = e1
+
+def build_motion(seq, ema5, MAP, tol=0.004, pelvis=1.0, head_forward=False):
     fc=len(seq)
     ents=dat_read(open(ema5,'rb').read()); idle=ents[19][1]; M=Mot(idle)
     ANIM=set(MAP)-{0}
@@ -215,13 +235,15 @@ def build_motion(seq, ema5, MAP, tol=0.004):
         vals=np.array([r.sample(f*M.frame_count/fc) for f in range(fc)])
         recs.append((r.bone,r.component,r.flags,fit_channel(vals,True,tol)))
     base=np.array([0.0,1.117,0.0])
-    hp=np.array([s[1] for s in seq])+base
+    hp=np.array([s[1] for s in seq])
+    hp=(hp-hp.mean(0))*pelvis+hp.mean(0)+base   # --pelvis: how much of the hips' travel
     for c in range(3): recs.append((0,c,0,fit_channel(hp[:,c],True,0.002)))
     r0=np.array([s[0][0] for s in seq])
     for c in range(3): recs.append((0,3+c,0,fit_channel(r0[:,c],True,tol)))
     for b in sorted(ANIM):
         arr=np.array([s[0][b] for s in seq])
-        if b==17: arr=arr-arr.mean(0)   # the pelvis: only its wiggle (the bend is the waist's); "Bottom out" tips it
+        if b==17: arr=(arr-arr.mean(0))*pelvis   # the pelvis: only its wiggle (the bend is the waist's), times --pelvis
+        if head_forward and b in (3,4): arr[:,1]-=arr[:,1].mean()   # --head-forward: the neck and head's mean turn taken out
         for c in range(3): recs.append((b,3+c,0,fit_channel(arr[:,c],True,tol)))
     recs.sort(key=lambda r:(r[0] if r[0]!=255 else -1,r[1]))
     return write_mot(fc,1,recs), seq
@@ -230,13 +252,19 @@ if __name__ == '__main__':
     args = sys.argv[1:]
     opt = lambda k, d: (args.pop(args.index(k) + 1), args.remove(k))[0] if k in args else d
     slow = float(opt('--slow', 1.5)); sigma = float(opt('--smooth', 2.0)); fr = opt('--frames', None)
+    tol = float(opt('--tolerance', 0.004)); pelvis = float(opt('--pelvis', 1.0))
+    head_forward = '--head-forward' in args
+    if head_forward: args.remove('--head-forward')
     src, rig, ema5, out = args[:4]
     names, rest, anim, fps = dump(os.path.abspath(src), tuple(int(x) for x in fr.split(':')) if fr else None)
     if fps != 30:
         print('note: the source runs at %d frames/s; the game at 30 (--slow %.3f keeps its speed)' % (fps, 30.0 / fps))
     bones = game_skeleton(ema5)
     seq = retarget(names, rest, anim, RIGS[rig], bones, slow, sigma)
-    mot, _ = build_motion(seq, ema5, RIGS[rig]['bones'])
+    upright(seq)
+    mot, _ = build_motion(seq, ema5, RIGS[rig]['bones'], tol, pelvis, head_forward)
+    if len(mot) > 0x3000:
+        print('warning: %d bytes; the port takes up to 16384 with its own adjustments on top: try a larger --tolerance or less --slow' % len(mot))
     Mot(mot)
     open(out, 'wb').write(mot)
     print('%s: %d frames, %d bytes' % (out, len(seq), len(mot)))

@@ -2,6 +2,17 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026 (13)
+
+- **NPC poses:** two more motions ship with the port in resources/npc_motions, from K's own animations:
+  table_tease (bent over a table, hips swaying) and counter_idle (hands on a low counter). Only posed NPCs now take a
+  slot (16 KB halves, 15 posed NPCs a room); the others keep playing the game's idle untouched, and an NPC set back to
+  its own idle gets the game's motion again. Resampled curves never become constants, so a motion's records stay the
+  same at any slider value.
+- tools/models/npc_motion.py: --tolerance, --pelvis (how much hip travel and pelvis wiggle), --head-forward (the
+  neck's and head's mean turn taken out); the hips' mean tilt goes into the waist and their mean heading is dropped
+  (the legs stand under her, Turn sets where she faces); keys at most 255 frames apart; tiny values encode as zero.
+
 ## October 26, 2026 (12)
 
 - **Precise depth: the casino fence's floor shadow** no longer comes and goes in patches. A draw with the alpha
