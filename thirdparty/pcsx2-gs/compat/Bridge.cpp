@@ -511,3 +511,20 @@ extern "C" __declspec(dllexport) void pcsx2gs_set_aspect(uint32_t mode)
     if (mode == 0u && g_customAspect > 0.0f)
         EmuConfig.CurrentAspectRatio = AspectRatioType::RAuto4_3_3_2; // the widescreen shape stays
 }
+
+// Process exit without a Close (the port leaves through std::_Exit after the runtime returns, and the GS thread is
+// gone by the time this DLL is detached): the renderer and the device are left to the OS instead of being destroyed
+// by the DLL's static destructors, whose order against the texture cache's own statics (the hash cache) is not
+// defined. ~GSTextureCache ran into a freed hash-cache entry that way (Oct 26: a crash on every close of the window).
+#include <windows.h>
+BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID reserved)
+{
+    if (reason == DLL_PROCESS_DETACH && reserved != nullptr) // the process is exiting (not a FreeLibrary)
+    {
+        if (g_gs_renderer)
+            (void)g_gs_renderer.release();
+        if (g_gs_device)
+            (void)g_gs_device.release();
+    }
+    return TRUE;
+}

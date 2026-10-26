@@ -46,7 +46,12 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <vector>
+
+// xxHash, header only (PCSX2's copy): the microcode's content hash for the analysis cache.
+#define XXH_INLINE_ALL
+#include "../../thirdparty/pcsx2/3rdparty/include/xxhash.h"
 
 namespace kamite
 {
@@ -149,11 +154,15 @@ namespace kamite
             g_programLayout.fill(0u);
             g_programPatched.fill(false);
             findPrograms(code, pairs);
-            for (uint32_t i = 0; i < pairs; ++i)
-                if (g_patchedPair[i])
-                    for (uint32_t j = 0; j < pairs; ++j)
-                        if (g_program[j] == g_program[i])
-                            g_programPatched[j] = true;
+            {
+                static std::array<bool, kPairs> patchedProgram; // by the program's first pair
+                patchedProgram.fill(false);
+                for (uint32_t i = 0; i < pairs; ++i)
+                    if (g_patchedPair[i])
+                        patchedProgram[g_program[i]] = true;
+                for (uint32_t j = 0; j < pairs; ++j)
+                    g_programPatched[j] = patchedProgram[g_program[j]];
+            }
             // Skinned renderers (characters, the coat chains): bone indices read from the vertex with ilw, then the
             // matrices fetched through them (lq with that register as the base): 2fed58 (3 bones: ilw.y/z/w
             // vi15/vi12/vi13,3(vi04); lq vf15..18,0..3(vi15)), 2fe488 and its family, 302078. The stage renderers
@@ -186,6 +195,8 @@ namespace kamite
             // The layout of each patched renderer, from the code before its XGKICK (any register) in its own program:
             // the nearest "iaddiu vi05,vi04,K" (output = input + K) and "iaddiu vi04,vi04,S" (one vertex every S
             // qwords). 304bb8's S sits 19 pairs before the kick, so no fixed window: the whole program.
+            static std::array<uint32_t, kPairs> programLayout; // by the program's first pair
+            programLayout.fill(0u);
             for (uint32_t i = 0; i < pairs; ++i)
             {
                 uint32_t lo, up;
@@ -210,15 +221,57 @@ namespace kamite
                 if (!s || !k)
                     continue;
                 const uint32_t layout = k | (s << 16);
-                for (uint32_t j = 0; j < pairs; ++j)
-                    if (g_program[j] == g_program[i])
-                    {
-                        if (g_programLayout[j] && g_programLayout[j] != layout)
-                            KM_WARN(Game, "near geometry: program at pair 0x" << std::hex << g_program[i] << " has kicks with different layouts (0x"
-                                                                             << g_programLayout[j] << " and 0x" << layout << ")" << std::dec);
-                        g_programLayout[j] = layout;
-                    }
+                uint32_t &known = programLayout[g_program[i]];
+                if (known && known != layout)
+                    KM_WARN(Game, "near geometry: program at pair 0x" << std::hex << g_program[i] << " has kicks with different layouts (0x"
+                                                                     << known << " and 0x" << layout << ")" << std::dec);
+                known = layout;
             }
+            for (uint32_t j = 0; j < pairs; ++j)
+                g_programLayout[j] = programLayout[g_program[j]];
+        }
+
+        // The analysis per microcode image: the game re-uploads its handful of renderer programs over and over (the
+        // casino: hundreds of uploads a frame), and the analysis took a quarter of the VU1 thread's time there (Oct
+        // 26). Keyed by the content of the whole micro memory after the patch, so an image seen before gets its tables
+        // back by a copy.
+        struct Analysis
+        {
+            uint64_t hash = 0;
+            std::array<bool, kPairs> patchedPair{};
+            std::array<uint32_t, kPairs> programLayout{};
+            std::array<bool, kPairs> programPatched{};
+            std::array<uint16_t, kPairs> program{};
+            std::array<bool, kPairs> programSkinned{};
+        };
+        std::vector<std::unique_ptr<Analysis>> g_analyses; // VU1 thread only
+        std::atomic<uint64_t> g_analysisHits{0}, g_analysisMisses{0};
+
+        void analyseCached(uint8_t *code, uint32_t codeSize)
+        {
+            const uint64_t hash = XXH3_64bits(code, codeSize);
+            for (const auto &a : g_analyses)
+                if (a->hash == hash && a->patchedPair == g_patchedPair)
+                {
+                    g_programLayout = a->programLayout;
+                    g_programPatched = a->programPatched;
+                    g_program = a->program;
+                    g_programSkinned = a->programSkinned;
+                    g_analysisHits.fetch_add(1, std::memory_order_relaxed);
+                    return;
+                }
+            analyse(code, codeSize);
+            g_analysisMisses.fetch_add(1, std::memory_order_relaxed);
+            if (g_analyses.size() >= 64u)
+                g_analyses.erase(g_analyses.begin());
+            auto a = std::make_unique<Analysis>();
+            a->hash = hash;
+            a->patchedPair = g_patchedPair;
+            a->programLayout = g_programLayout;
+            a->programPatched = g_programPatched;
+            a->program = g_program;
+            a->programSkinned = g_programSkinned;
+            g_analyses.push_back(std::move(a));
         }
 
         void uploadHook(uint8_t *code, uint32_t codeSize, uint32_t byteAddress, uint32_t size)
@@ -248,7 +301,7 @@ namespace kamite
                 if (g_patched.fetch_add(1, std::memory_order_relaxed) < 8u)
                     KM_TRACE(Game, "near geometry: renderer clip test patched at pair 0x" << std::hex << i << std::dec);
             }
-            analyse(code, codeSize);
+            analyseCached(code, codeSize);
         }
 
         // ---- 2. The PATH1 filter --------------------------------------------------------------------------------
@@ -776,7 +829,8 @@ namespace kamite
                                                 << " of them matched to their input (stitch flags); triangles cut: "
                                                 << g_cut.load() << " at the screen's edges, " << g_cutNear.load()
                                                 << " at the camera; " << g_noStitch.load()
-                                                << " reaching behind it without stitch flags");
+                                                << " reaching behind it without stitch flags; microcode analyses: "
+                                                << g_analysisHits.load() << " from the cache, " << g_analysisMisses.load() << " fresh");
             if (!out.tag)
             {
                 extra.clear();

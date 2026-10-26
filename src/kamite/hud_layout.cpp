@@ -449,16 +449,36 @@ namespace kamite::hud
 
         // cIDBase_trans, before an entry is drawn: $a1 = the entry (noted for the F6 dump; the roulette's hint bar is
         // laid out again here, roulette_bar.h).
+        bool g_entryOverride = false; // g_ctx replaced for one entry (the style indicator); put back at the next
+        Context g_savedCtx;
+
         void idEntry(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             g_entry = GPR_U32(ctx, 5) & 0x01FFFFFFu;
             style_presets::noteEntry(g_entry); // the Techniques screen's style list draws arrows for its own entry
             roulette_bar::onEntry(rdram, g_curLayout, g_entry);
+            if (g_entryOverride)
+            {
+                g_ctx = g_savedCtx;
+                g_entryOverride = false;
+            }
+            // The style indicator rides in the money display's layout but belongs with the level meter at the left
+            // edge: its own group, anchored there, so its draws neither follow the money nor widen its extent.
+            if (style_presets::onHudEntry(g_entry) && g_wide && !menuNow())
+            {
+                const float width = screenWidth(rdram);
+                g_savedCtx = g_ctx;
+                // The left-edge anchor the level meter gets (a wide group in the left third), not this text's own
+                // narrow extent (which would hold it where it is while the meter moves).
+                g_ctx = Context{true, g_entry, anchorFromExtent(0.0f, 0.2f * width, width)};
+                g_entryOverride = true;
+            }
         }
 
         void idEnd(uint8_t *, R5900Context *, PS2Runtime *)
         {
             style_presets::noteEntry(0u);
+            g_entryOverride = false;
             g_idCaller = 0u;
             g_inIdTrans = false;
             g_ctx = g_region == Region::Forced ? g_regionCtx : g_region == Region::Inherit ? g_lastEntry : Context{};

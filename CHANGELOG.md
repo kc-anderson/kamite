@@ -4,6 +4,23 @@ Newest first. Each change is commented in the code where it was made.
 
 ## October 26, 2026
 
+- **Style indicator in play:** the four style letters ("S E X Y"; a save's own names) stand above the roulette
+  charges, right of the level meter, in the Techniques list's colours: the loaded style gold, the saved ones cream,
+  empty ones dim grey; the loaded letter blinks a moment after a swap, a letter held with the D-pad blinks until it
+  saves. Shown once a style exists. The text rides in two spare entries of the money display's layout and keeps with
+  the level meter at the left edge in widescreen. The "Style X" corner notices are gone (only "No save data in memory
+  yet" remains).
+- **Casino speed:** the VU1 microcode analysis for the near-geometry filter ran again for every upload (several
+  hundred a frame in the casino; a quarter of the VU thread's time) and is now cached by the microcode's content, and
+  the analysis itself no longer searches the program for each branch. The "near geometry:" log line reports the
+  cache's hits and misses.
+- **No crash on closing the window:** the GS renderer's caches are left to the process on exit instead of being torn
+  down in the DLL's unload (the main program ends with `_Exit`, and the DLL's statics went in the wrong order).
+- **Floor-light stripes, second try:** draws that leave the depth buffer alone are given one whole depth step (not
+  all but one unit) in front of the geometry they lie on, which is what the PS2's own coarse depth gives them; the
+  first version's smaller offset left the stripes and made some shadows change with the camera's position.
+- Diagnostics: the glow probe ("[glow]" lines) is removed (its finding is fixed); `KAMITE_PC_SAMPLE_ALL=1` samples
+  every thread of the process (the VU, GIF and GS threads too), not only the game thread.
 - **Floor light no longer falls into stripes in the distance** (the warehouse's floor shadow "banding"): the floor's
   light layer is a decal that keeps the depth buffer untouched through the alpha test (every pixel fails, frame buffer
   only), and the precise-depth code only recognised decals that do it through ZMSK, so against the floor's exact depth

@@ -431,14 +431,9 @@ namespace kamite::style_presets
                     std::snprintf(text, sizeof(text), "Style %c loaded%s.", g_letters[slot],
                                   skipped ? " (moves this save does not own left out)" : "");
                 }
-                // The corner notice (the screen's list shows it too; in play it is the only sign for now).
-                if (data && slot >= 0 && slot < kStyles && request >= 10 && (store.used & (1u << slot)))
-                {
-                    char notice[32];
-                    std::snprintf(notice, sizeof(notice), "Style %c", g_letters[slot]);
-                    ps2x::menu::notify(notice, 1.2f);
-                }
-                else if (data)
+                // No corner notice (Oct 26): the HUD indicator and the screen's list show the result; the one case
+                // neither can, a save with no save data in memory, still gets a word.
+                if (!data)
                     ps2x::menu::notify(std::string(text, std::strlen(text) - 1u), 1.5f);
                 std::lock_guard<std::mutex> lock(g_mutex);
                 g_status = text;
@@ -515,6 +510,8 @@ namespace kamite::style_presets
         constexpr uint32_t kMessageBankPointer = 0x3C23A4u; // *(*(u32 *)0x3C23A4 + 0xC) = the message bank
         constexpr uint16_t kListMessage = 0x30C4u, kShadowMessage = 0x30FEu, kHintMessage = 0x30FFu, kBlankMessage = 0x30D0u;
         constexpr uint32_t kListText = 0x1000u, kShadowText = 0x1100u, kHintText = 0x1200u; // in the save record's unused tail
+        constexpr uint32_t kHudText = 0x1300u, kHudShadowText = 0x1400u;                  // the in-play indicator's strings
+        constexpr uint16_t kHudMessage = 0x3041u, kHudShadowMessage = 0x3042u;            // two more "<7d>" placeholders of bank 3
         constexpr float kListX = 311.0f, kListY = 56.5f; // the block is centred here (align 3): the names' right end and the top line stay put
         // Line pitch: a new line moves down by the line's height (the tallest code: a letter, 41 x the scale = 26.8 at
         // 0.65; icons are 32 x the scale) + state+0x30 x state+0x48. The game's +0x30 at this scale gives ~22 (K: right).
@@ -620,6 +617,45 @@ namespace kamite::style_presets
             return true;
         }
 
+        // ---- the in-play indicator ----
+        // The style letters in the HUD (K, Oct 26): "S E X Y" above the roulette charges, right of the level meter,
+        // the loaded style gold, the others cream, empty ones dim grey; blinks like the list right after a swap. The
+        // text is carried by the money display's two spare text entries (cCockMoney's layout: 6 entries, the last
+        // two text entries (kind 2) with message 0, at 16,14, never drawn: the text and its shadow), pointed at two
+        // more "<7d>" placeholder messages of bank 3. The layout is found by that shape every frame (cIDBase_move);
+        // hud_layout's cIDBase_trans hook places the two entries right before they are drawn and anchors them to the
+        // left edge with the level meter (onHudEntry), not with the money at the right.
+        constexpr float kHudX = 142.0f, kHudY = 348.0f, kHudScale = 0.65f;
+        constexpr uint32_t kBeige = 0x80A0C8DCu; // A B G R
+        uint32_t g_hudText = 0u, g_hudShadow = 0u; // the two entries (EE thread); 0 = not found
+        bool g_hudShown = false;
+
+        std::vector<uint16_t> hudText(uint32_t data, const Store &store, bool colours)
+        {
+            const int holding = g_holding.load(std::memory_order_relaxed);
+            const bool blinkOn = (g_vblanks / 8u) % 2u == 0u;
+            const bool flash = g_vblanks - g_lastAction.load(std::memory_order_relaxed) < 40u;
+            std::vector<uint16_t> out;
+            for (int slot = 0; slot < kStyles; ++slot)
+            {
+                if (slot > 0)
+                    out.push_back(kSpace);
+                const bool used = (store.used & (1u << slot)) != 0u;
+                uint32_t colour = kBeige;
+                if (slot == holding)
+                    colour = blinkOn ? kGold : kBeige; // held with the D-pad: blinks until it saves
+                else if (used && store.active == slot && equipped(data, store.styles[slot]))
+                    colour = (flash && !blinkOn) ? kBeige : kGold;
+                else if (!used)
+                    colour = kDim;
+                if (colours)
+                    out.insert(out.end(), {kColour, static_cast<uint16_t>(colour >> 16), static_cast<uint16_t>(colour & 0xFFFFu)});
+                out.push_back(glyph(g_letters[slot]));
+            }
+            out.push_back(kEnd);
+            return out;
+        }
+
         // Four lines: [Y] + arrow  Style S. The style's words take its colour: gold when loaded (blinking for a
         // moment after a load or a save), blinking gold while Y + its direction is held, dim when empty.
         std::vector<uint16_t> listText(uint32_t data, const Store &store, bool colours)
@@ -671,12 +707,64 @@ namespace kamite::style_presets
             wr32(entry + 0x2Cu, hidden ? (flags | kNoDraw) : (flags & ~kNoDraw));
         }
 
+        // The money display's layout (cCockMoney): the indicator goes into its two spare text entries.
+        bool isHudLayout(uint32_t layout, uint32_t &text, uint32_t &shadow)
+        {
+            if (!validPointer(layout, 0x10u) || rd32(layout + 0xCu) != 6u)
+                return false;
+            const uint32_t entries = rd32(layout + 0x4u);
+            if (!validPointer(entries, 6u * 0xACu))
+                return false;
+            text = entries + 4u * 0xACu;
+            shadow = entries + 5u * 0xACu;
+            for (const uint32_t e : {text, shadow})
+            {
+                const uint16_t msg = rd16(e + 0x90u);
+                if (g_ram[(e + 0x88u) & 0x1FFFFFFu] != 2u || (msg != 0u && msg != kHudMessage && msg != kHudShadowMessage))
+                    return false;
+            }
+            return true;
+        }
+
+        void hudIndicator(uint32_t layout)
+        {
+            uint32_t text, shadow;
+            if (!isHudLayout(layout, text, shadow))
+                return;
+            const uint32_t data = dataPointer();
+            Store store{};
+            const bool show = data && readStore(data, store) && store.used != 0u;
+            g_hudText = text;
+            g_hudShadow = shadow;
+            if (!show)
+            {
+                g_hudShown = false;
+                setNoDraw(text, true);
+                setNoDraw(shadow, true);
+                return;
+            }
+            writeText(data + kHudText, hudText(data, store, true));
+            writeText(data + kHudShadowText, hudText(data, store, false));
+            if (!pointMessage(kHudMessage, data + kHudText) || !pointMessage(kHudShadowMessage, data + kHudShadowText))
+                return;
+            for (const uint32_t e : {text, shadow})
+            {
+                wr16(e + 0x90u, e == text ? kHudMessage : kHudShadowMessage);
+                g_ram[(e + 0x89u) & 0x1FFFFFFu] = 0u; // align: the block centred on its position
+                wrFloat(e + 0x58u, kHudScale);
+                wrFloat(e + 0x5Cu, kHudScale);
+                setNoDraw(e, false);
+            }
+            g_hudShown = true;
+        }
+
         // cIDBase_move entry (every layout, every frame; EE thread): for the Techniques screen's layout, after its
         // update set this frame's entries and before they are placed, the list goes in (or the group is given back).
         void onLayoutMove(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
             if (!g_ram)
                 return;
+            hudIndicator(GPR_U32(ctx, 4));
             const uint32_t subScr = rd32(kSubScrPointer);
             if (!validPointer(subScr, 0x1000u) || GPR_U32(ctx, 4) != wazaScreen(subScr))
                 return;
@@ -1010,6 +1098,18 @@ namespace kamite::style_presets
     void noteEntry(uint32_t entry)
     {
         g_drawingEntry = entry & 0x1FFFFFFu;
+    }
+
+    bool onHudEntry(uint32_t entry)
+    {
+        entry &= 0x1FFFFFFu;
+        if (!g_ram || !g_hudShown || (entry != g_hudText && entry != g_hudShadow))
+            return false;
+        // Placed here, after the layout's move put the entry where its data says (the top left corner).
+        const float d = entry == g_hudShadow ? 1.0f : 0.0f;
+        wrFloat(entry + 0x50u, kHudX + d);
+        wrFloat(entry + 0x54u, kHudY + d);
+        return true;
     }
 
     void install(PS2Runtime &runtime)
