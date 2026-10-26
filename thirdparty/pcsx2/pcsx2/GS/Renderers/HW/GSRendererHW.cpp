@@ -27,7 +27,6 @@ namespace pcsx2gs
 		float cx, cy, rx, ry, start, ramp, strength, soft;
 		float eye[3], mid;
 		float inverse[16]; // row-major
-		float player[3], column;
 	};
 	bool GetSeeThrough(SeeThroughParams& out); // compat/Bridge.cpp: pcsx2gs_set_option("see_through")
 }
@@ -6073,8 +6072,6 @@ void GSRendererHW::ApplySeeThrough(float rtscale)
 	m_conf.cb_ps.SeeThroughEye = GSVector4(s.eye[0], s.eye[1], s.eye[2], s.mid);
 	// Render-target pixel -> GS primitive coordinates; shader depth -> integer depth (VS: Z * 2^-32).
 	m_conf.cb_ps.SeeThroughMap = GSVector4(1.0f / scale, ox, oy, 4294967296.0f);
-	// The player's column: x, feet y, z, radius squared (negative: none).
-	m_conf.cb_ps.SeeThroughPlayer = GSVector4(s.player[0], s.player[1], s.player[2], s.column > 0.0f ? s.column * s.column : -1.0f);
 }
 
 void GSRendererHW::EmulateZbuffer(const GSTextureCache::Target* ds)

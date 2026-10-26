@@ -270,7 +270,6 @@ namespace kamite
         // Only while the player camera's own logic runs (gameplay: not in cutscenes); the DLL turns the oval off by
         // itself when no frame brings one.
         constexpr uint32_t kPlayerPointer = game::GameWork::address(game::GameWork::kPlayerObj); // GameWork.playerObj
-        constexpr float kPlayerColumn = 1.0f; // see-through: the player's column, radius (world units, metres)
         std::atomic<bool> g_seeThrough{true};
         std::atomic<float> g_seeWidth{1.6f};     // metres, half-width
         std::atomic<float> g_seeHeight{2.2f};    // metres, half-height
@@ -434,12 +433,6 @@ namespace kamite
                                        g_seeSoftness.load(std::memory_order_relaxed) / 100.0f, eye[0], eye[1], eye[2], centre[1]);
             for (int i = 0; i < 16 && length > 0 && length < static_cast<int>(sizeof(text)); ++i)
                 length += std::snprintf(text + length, sizeof(text) - static_cast<size_t>(length), " %.9g", inverse[i]);
-            // The player's column (Oct 26): nothing within kPlayerColumn of his feet's vertical line, from his feet to
-            // above his head, dissolves. Arms, weapons and attachments drawn by the non-skinned renderers (Xavier's
-            // snake arm) reach towards the camera nearer than him and were dissolved with the walls (K).
-            if (length > 0 && length < static_cast<int>(sizeof(text)))
-                length += std::snprintf(text + length, sizeof(text) - static_cast<size_t>(length), " %.5f %.5f %.5f %.3f",
-                                        centre[0], centre[1] - 0.95f, centre[2], kPlayerColumn);
             if (!g_seeSent)
                 KM_TRACE(Game, "see-through on: " << text);
             g_seeSent = GSPcsx2Backend::SetOption("see_through", text);

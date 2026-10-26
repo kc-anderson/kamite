@@ -299,7 +299,6 @@ cbuffer cb1
 	float4 SeeThroughM3;
 	float4 SeeThroughEye; // pcsx2gs: the eye (xyz), the player's middle height (w)
 	float4 SeeThroughMap; // pcsx2gs: 1 / render scale, XYOFFSET x, y, 2^32
-	float4 SeeThroughPlayer; // pcsx2gs: the player's feet (xyz), his column's radius squared (w, < 0 = none)
 };
 
 #if PS_SEE_THROUGH
@@ -326,13 +325,8 @@ bool SeeThroughHides(float4 p, float3 world, float3 dx, float3 dy)
 	float3 n = cross(dx, dy);
 	float len = length(n);
 	bool ground = len > 0.0f && abs(n.y) > 0.6f * len && world.y < SeeThroughEye.w;
-	// The player's column: what is this close to his vertical line, feet to above the head, is him or on him (an arm,
-	// a weapon reaching towards the camera), drawn by renderers the port cannot tell from the stage's.
-	float2 fromPlayer = world.xz - SeeThroughPlayer.xz;
-	bool onPlayer = dot(fromPlayer, fromPlayer) < SeeThroughPlayer.w && world.y > SeeThroughPlayer.y - 0.3f &&
-	                world.y < SeeThroughPlayer.y + 2.5f;
 	uint2 cell = uint2(p.xy) & 3u;
-	return !ground && !onPlayer && radial * nearer * SeeThroughB.z > (bayer[cell.y * 4u + cell.x] + 0.5f) / 16.0f;
+	return !ground && radial * nearer * SeeThroughB.z > (bayer[cell.y * 4u + cell.x] + 0.5f) / 16.0f;
 }
 #endif
 

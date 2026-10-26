@@ -494,12 +494,26 @@ namespace ps2x::asyncvif
         }
     }
 
+    std::atomic<double> s_vu1ScaleRequest{-1.0}; // setVu1TimingScale before or after setVu1Timing; < 0 = none
+
+    void setVu1TimingScale(double scale)
+    {
+        if (std::getenv("PS2X_VU1_TIMING") || !(scale > 0.0))
+            return;
+        s_vu1ScaleRequest.store(scale, std::memory_order_relaxed);
+        Vu1Timing &timing = vu1Timing();
+        if (timing.enabled)
+            timing.scale = scale;
+    }
+
     void setVu1Timing(Vu1TimingHooks hooks)
     {
         Vu1Timing &timing = vu1Timing();
         timing = Vu1Timing{};
         timing.hooks = std::move(hooks);
         double scale = 1.0;
+        if (const double requested = s_vu1ScaleRequest.load(std::memory_order_relaxed); requested > 0.0)
+            scale = requested;
         if (const char *value = std::getenv("PS2X_VU1_TIMING"))
             scale = std::atof(value);
         timing.scale = scale;

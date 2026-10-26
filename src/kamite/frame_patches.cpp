@@ -38,6 +38,7 @@
 #include "kamite/log.h"
 #include "kamite/game_layout.h"
 #include "ps2_runtime_macros.h" // FPU_CVT_W_S (the recompiled CVT.W.S)
+#include "runtime/ps2_async_vif.h"
 #include "runtime/ps2_display_options.h"
 
 #include <cstdlib>
@@ -391,6 +392,10 @@ namespace kamite
     {
         counterfinder::install(runtime);
         g_fps60 = envOn("KAMITE_FPS60");
+        // 60 FPS: the emulated VU1 gets half the time per program (ps2_async_vif.h setVu1TimingScale), so a view the
+        // PS2 itself draws in two fields still fits one.
+        if (g_fps60)
+            ps2x::asyncvif::setVu1TimingScale(0.5);
         g_l3Dash = envOn("KAMITE_L3_DASH");
         ps2xRegisterHostHook("km_frame_start", &frameStart);
         characters::installProbe();

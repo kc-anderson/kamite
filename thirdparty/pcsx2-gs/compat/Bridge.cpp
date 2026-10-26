@@ -190,13 +190,7 @@ namespace
         pcsx2gs::SetFolders(params->resources ? params->resources : "", params->cache ? params->cache : "");
 
         Pcsx2Config::GSOptions options;
-        // PS2X_PCSX2_SOFTWARE=1 (diagnostic): PCSX2's software renderer, which rasterises like the GS itself, at the
-        // PS2's resolution. For telling whether an image fault is the PS2's own or the hardware renderer's; none of
-        // the port's GS enhancements (see-through, precise depth, perspective shading) run in it.
-        const char *software = std::getenv("PS2X_PCSX2_SOFTWARE");
-        const GSRendererType renderer = software && *software == '1' ? GSRendererType::SW : GSRendererType::DX11;
-        options.Renderer = renderer;
-        options.SWExtraThreads = 4;
+        options.Renderer = GSRendererType::DX11;
         options.UpscaleMultiplier = std::max(1.0f, params->scale);
         options.AspectRatio = params->stretch ? AspectRatioType::Stretch : AspectRatioType::R4_3;
         ApplyGameFixes(options);
@@ -213,7 +207,7 @@ namespace
         const GSVSyncMode vsync = params->vsync == 1u ? GSVSyncMode::FIFO
                                   : params->vsync == 2u ? GSVSyncMode::Mailbox
                                                         : GSVSyncMode::Disabled;
-        if (!GSopen(options, renderer, g_regs, vsync, false))
+        if (!GSopen(options, GSRendererType::DX11, g_regs, vsync, false))
         {
             std::fprintf(stderr, "[pcsx2-gs] GSopen failed\n");
             return 0;
@@ -451,7 +445,6 @@ namespace pcsx2gs
         float cx, cy, rx, ry, start, ramp, strength, soft;
         float eye[3], mid;
         float inverse[16]; // row-major
-        float player[3], column; // the player's feet (world) and the radius round them that never dissolves; 0 = none
     };
     // texture_add (any thread) -> added on the GS thread at the next vsync.
     std::mutex g_textureAddMutex;
@@ -482,16 +475,12 @@ extern "C" __declspec(dllexport) void pcsx2gs_set_option(const char *key, const 
     if (std::strcmp(key, "see_through") == 0)
     {
         pcsx2gs::SeeThroughParams p{};
-        float *f[32] = {&p.cx, &p.cy, &p.rx, &p.ry, &p.start, &p.ramp, &p.strength, &p.soft, &p.eye[0], &p.eye[1], &p.eye[2], &p.mid};
+        float *f[28] = {&p.cx, &p.cy, &p.rx, &p.ry, &p.start, &p.ramp, &p.strength, &p.soft, &p.eye[0], &p.eye[1], &p.eye[2], &p.mid};
         for (int i = 0; i < 16; i++)
             f[12 + i] = &p.inverse[i];
-        f[28] = &p.player[0];
-        f[29] = &p.player[1];
-        f[30] = &p.player[2];
-        f[31] = &p.column;
         int read = 0;
         const char *at = value;
-        for (; read < 32; read++)
+        for (; read < 28; read++)
         {
             char *end = nullptr;
             const float v = std::strtof(at, &end);
@@ -500,9 +489,7 @@ extern "C" __declspec(dllexport) void pcsx2gs_set_option(const char *key, const 
             *f[read] = v;
             at = end;
         }
-        if (read < 32)
-            p.column = 0.0f; // an older port: no player column
-        const bool on = read >= 28 && p.rx > 0.5f && p.ry > 0.5f && p.strength > 0.0f && p.ramp > 0.0f;
+        const bool on = read == 28 && p.rx > 0.5f && p.ry > 0.5f && p.strength > 0.0f && p.ramp > 0.0f;
         if (on)
         {
             std::lock_guard<std::mutex> lock(pcsx2gs::g_seeThroughMutex);

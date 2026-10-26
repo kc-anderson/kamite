@@ -53,6 +53,11 @@ namespace ps2x::asyncvif
     };
 
     void setVu1Timing(Vu1TimingHooks hooks);
+    // How long a VU1 program keeps the guest waiting, in EE cycles per VU1 cycle (PS2X_VU1_TIMING, default 1). The
+    // port's 60 FPS mode halves it: the game then asks twice the PS2's work per second of the emulated VU1, which
+    // (at 1) could not finish the casino's heaviest views in one field and dropped them to 30 frames a second while
+    // the real VU work took 12 of the 16.7 ms (Oct 26 trace). PS2X_VU1_TIMING, when set, wins.
+    void setVu1TimingScale(double scale);
     void vu1Kick();
     bool vu1Busy(PS2Memory &memory);
 

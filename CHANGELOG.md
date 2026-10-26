@@ -4,12 +4,14 @@ Newest first. Each change is commented in the code where it was made.
 
 ## October 26, 2026 (5)
 
-- **See-through spares the player's column:** nothing within 1 m of the player's feet's vertical line, up to above
-  his head, is dissolved. Arms and attachments drawn by the non-skinned renderers (Xavier's snake arm) reached
-  towards the camera nearer than him and were dissolved with the walls.
+- **Casino: the 30 FPS view is back to 60.** At the top of the stairs, looking at the balconies, the game ran every
+  frame twice: its VU1 work took 12 of the 16.7 ms on the PC, but the port also keeps the game waiting as long as
+  the PS2's VU1 would need (the MTVU timing model, which keeps the game in step with its own hardware), and there
+  that is more than one field. The trace showed the emulated VU1 still busy at every vblank, so the game held each
+  frame for two. The 60 FPS mode asks the VU1 for twice the PS2's work per second, so it now gives the emulated
+  VU1 half the time per program (as PCSX2's 60 FPS patches need its EE/VU overclock); the real VU work is still
+  waited for. PS2X_VU1_TIMING overrides it.
 - **Style indicator:** empty styles a darker grey, apart from the cream.
-- **Diagnostic: PS2X_PCSX2_SOFTWARE=1** under [Runtime] draws with PCSX2's software renderer (the GS's own
-  rasterisation, PS2 resolution), to tell whether the floor-shadow banding is in the PS2 image too.
 
 ## October 26, 2026 (4)
 
