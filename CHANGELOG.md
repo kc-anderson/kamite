@@ -2,6 +2,14 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026
+
+- **Floor light no longer falls into stripes in the distance** (the warehouse's floor shadow "banding"): the floor's
+  light layer is a decal that keeps the depth buffer untouched through the alpha test (every pixel fails, frame buffer
+  only), and the precise-depth code only recognised decals that do it through ZMSK, so against the floor's exact depth
+  it passed or failed by rows where the depth steps are coarse. Such draws now get the top of their depth step like the
+  others, and pass wherever the PS2 let them. (pcsx2gs.dll)
+
 ## October 25, 2026 (night, 3)
 
 - **Style list:** the plus now touches its arrow and the name follows the arrow closely (the text draw's own icon

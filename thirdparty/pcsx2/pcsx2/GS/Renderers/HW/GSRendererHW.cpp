@@ -5878,8 +5878,10 @@ void GSRendererHW::ApplyPreciseDepth()
 	// integer depth and passes GEQUAL on the tie. Against precise depths that tie is gone: the surface holds its exact
 	// depth, the decal its own (computed from other vertices, or the floored integer when it gets none), and it passes
 	// or fails pixel by pixel (the beam shadows on the town's walls flickered). Draws that do not write depth are given
-	// the top of their integer step instead (+255/256), so they pass wherever the PS2 let them.
-	const bool tie = m_cached_ctx.ZBUF.ZMSK != 0 && m_cached_ctx.TEST.ZTST == ZTST_GEQUAL;
+	// the top of their integer step instead (+255/256), so they pass wherever the PS2 let them. "Does not write depth"
+	// includes the alpha-test trick (ATE with ATST NEVER and AFAIL FB_ONLY / RGB_ONLY: the warehouse floor's light
+	// layer, which fell into stripes where the floor was far enough for the step to show; Oct 26), not only ZMSK.
+	const bool tie = !m_cached_ctx.DepthWrite() && m_cached_ctx.TEST.ZTST == ZTST_GEQUAL;
 
 	// Work on the draw's own copy of the vertices (m_vertex->buff keeps the game's, strips carry over from it).
 	const auto own_vertices = [this, n]() {
