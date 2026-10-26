@@ -534,6 +534,7 @@ namespace kamite::style_presets
         std::atomic<int> g_holding{-1}; // the pad filter: the direction held with Y, before it saves
         uint32_t g_listEntry = 0u;      // the entry the arrows are drawn for (EE thread)
         uint32_t g_shadowEntry = 0u;    // its shadow entry (same text, icons not drawn): gets the same line pitch
+        uint32_t g_hintEntry = 0u, g_hintShadow = 0u; // the save hint's entries: its plus is the list's piece too
         uint32_t g_drawingEntry = 0u;   // the cIDBase entry being drawn (hud_layout's hook)
         bool g_listShown = false;       // this frame's list is on (the screen's draw places it)
         uint32_t g_hidName = 0u, g_hidBox = 0u; // entries hidden by us, shown again when the picker opens
@@ -703,8 +704,11 @@ namespace kamite::style_presets
 
         std::vector<uint16_t> hintText()
         {
+            // "[Y] Hold + D-Pad: Save Style", the plus the list's own (K, Oct 26).
             std::vector<uint16_t> out{kTriangleIcon};
-            append(out, "Hold D-Pad: Save Style");
+            append(out, "Hold ");
+            out.push_back(kPlusCode);
+            append(out, " D-Pad: Save Style");
             out.push_back(kEnd);
             return out;
         }
@@ -794,7 +798,7 @@ namespace kamite::style_presets
                 if (g_hidBox)
                     setNoDraw(g_hidBox, false);
                 g_hidName = g_hidBox = 0u;
-                g_listEntry = g_shadowEntry = 0u;
+                g_listEntry = g_shadowEntry = g_hintEntry = g_hintShadow = 0u;
                 for (const uint32_t entry : {hintEntry, hintShadow})
                     if (validPointer(entry, ent::kSize) && rd16(entry + ent::kMsg) == kHintMessage)
                         wr16(entry + ent::kMsg, kBlankMessage);
@@ -826,6 +830,8 @@ namespace kamite::style_presets
                     wr16(entry + ent::kMsg, kHintMessage);
             g_listEntry = text & 0x1FFFFFFu;
             g_shadowEntry = shadow & 0x1FFFFFFu;
+            g_hintEntry = validPointer(hintEntry, ent::kSize) ? hintEntry & 0x1FFFFFFu : 0u;
+            g_hintShadow = validPointer(hintShadow, ent::kSize) ? hintShadow & 0x1FFFFFFu : 0u;
             g_listShown = true;
         }
 
@@ -875,7 +881,7 @@ namespace kamite::style_presets
         void onIconDraw(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
             g_pendingArrow = -1;
-            if (!g_ram || !g_listEntry || g_drawingEntry != g_listEntry)
+            if (!g_ram || !g_listEntry || (g_drawingEntry != g_listEntry && g_drawingEntry != g_hintEntry))
                 return;
             const uint16_t code = rd16(GPR_U32(ctx, 16));
             int arrow = code == kPlusCode ? kPlusPiece : -1;
@@ -915,7 +921,8 @@ namespace kamite::style_presets
         // over them: it gets the same widths, so its letters sit under the text's).
         bool drawingList()
         {
-            return g_listEntry && (g_drawingEntry == g_listEntry || g_drawingEntry == g_shadowEntry);
+            return g_listEntry && (g_drawingEntry == g_listEntry || g_drawingEntry == g_shadowEntry ||
+                                   (g_hintEntry && (g_drawingEntry == g_hintEntry || g_drawingEntry == g_hintShadow)));
         }
 
         int pieceOfCode(uint16_t code)

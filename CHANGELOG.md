@@ -2,6 +2,22 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026 (12)
+
+- **Precise depth: the casino fence's floor shadow** no longer comes and goes in patches. A draw with the alpha
+  test's pass-then-fail emulation (the pixels that pass first, with depth, then the ones that fail, colour only) whose
+  own triangles overlap (that floor layer lies over itself on 80,000 pixels) lost its ties to rounding: such draws
+  keep the PS2's whole depth steps (and its flooring), one step up so they stay over the precise surface beneath.
+- **NPC poses: every setting now shows, on every motion, without twitching or stuck arms.** Each NPC's motion has
+  two halves: a change that alters the motion's records (another motion, the lean on or off) goes to the other half
+  and starts there (the game ignored a restart of the same motion and kept its place in the old curves); slider moves
+  are written in place while held and start the motion cleanly when let go (or half a second after the last wheel
+  or arrow step). The head, arm and elbow curves are always resampled so a motion's records never change with the
+  sliders. 30 NPCs per room.
+- **F2 menu sliders** step with the mouse wheel over them and with left/right (keyboard or d-pad) while focused;
+  Shift ten times, Ctrl a tenth.
+- **Techniques screen:** the save hint reads "[Y] Hold + D-Pad: Save Style" with the list's plus.
+
 ## October 26, 2026 (11)
 
 - **NPC poses: a choice of motion and more to set.** The NPCs tab has a Motion list (the built-in rail lean and any

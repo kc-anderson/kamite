@@ -6035,6 +6035,23 @@ void GSRendererHW::ApplyPreciseDepth()
 		return;
 	}
 
+	// The alpha test's pass-then-fail emulation (EmulateAlphaTestSecondPass) draws the pixels that pass first, with
+	// their depth, and then the ones that fail, colour only, against that depth. On the PS2 the draw goes triangle by
+	// triangle at whole depth steps, so where its own triangles lie over each other (a floor layer whose shadow
+	// pieces overlap) the later one meets the same plane at the same step and passes the tie. With fractions the two
+	// triangles differ by their rounding and half those pixels failed: the casino fence's floor shadow was cut away
+	// in patches that came and went with the camera (K, Oct 26; draw dumps 64599..64622: draw 6 lies over itself on
+	// 80,000 pixels). Such a draw keeps the PS2's whole steps (and their flooring), one step up so that it stays over
+	// the precise surface under it, as a tie draw does.
+	if (m_conf.alpha_test == GSHWDrawConfig::AlphaTestMode::PASS_THEN_FAIL && !tie)
+	{
+		GSVertex* verts = own_vertices();
+		const u32 limit = std::min<u32>(m_conf.cb_vs.max_depth, 0xFFFFu); // 16-bit depth
+		for (u32 i = 0; i < n; i++)
+			verts[i].XYZ.Z = std::min<u32>(verts[i].XYZ.Z + 1u, limit);
+		return;
+	}
+
 	double sq = 0.0, sz = 0.0, sqq = 0.0, sqz = 0.0;
 	u32 zlo = 0xFFFFFFFFu, zhi = 0;
 	for (u32 i = 0; i < n; i++)

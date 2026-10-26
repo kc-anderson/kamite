@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <vector>
 
 #include "Config.h"
@@ -137,10 +139,44 @@ namespace
     }
     void UiBeginDisabled(int disabled) { ImGui::BeginDisabled(disabled != 0); }
     void UiEndDisabled() { ImGui::EndDisabled(); }
+    // A slider also steps with the mouse wheel over it and with left/right (keys or d-pad) while it has the focus:
+    // one step is the last shown digit's 5 (5 at "%.0f" is 1), Shift ten times that, Ctrl a tenth (K, Oct 26).
     int UiSliderFloat(const char *label, float *value, float min, float max, const char *format)
     {
+        const char *fmt = format ? format : "%.2f";
         float v = value ? *value : 0.0f;
-        const bool changed = ImGui::SliderFloat(label, &v, min, max, format ? format : "%.2f");
+        bool changed = ImGui::SliderFloat(label, &v, min, max, fmt);
+        if (!ImGui::IsItemActive() && !ImGui::IsItemDeactivated())
+        {
+            int decimals = 2;
+            if (const char *dot = std::strchr(fmt, '.'))
+                decimals = std::max(0, std::atoi(dot + 1));
+            float step = decimals == 0 ? 1.0f : 5.0f * std::pow(10.0f, static_cast<float>(-decimals));
+            const ImGuiIO &io = ImGui::GetIO();
+            if (io.KeyShift)
+                step *= 10.0f;
+            if (io.KeyCtrl)
+                step *= 0.1f;
+            int ticks = 0;
+            if (ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY) && io.MouseWheel != 0.0f)
+                ticks += io.MouseWheel > 0.0f ? 1 : -1;
+            if (ImGui::IsItemFocused())
+            {
+                if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight))
+                    ++ticks;
+                if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadLeft))
+                    --ticks;
+            }
+            if (ticks != 0)
+            {
+                const float stepped = std::clamp(std::round((v + ticks * step) / step) * step, min, max);
+                if (stepped != v)
+                {
+                    v = stepped;
+                    changed = true;
+                }
+            }
+        }
         if (value)
             *value = v;
         return changed ? 1 : 0;

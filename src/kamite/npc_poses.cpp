@@ -45,6 +45,8 @@
 #endif
 
 #include <algorithm>
+#include <chrono>
+#include <optional>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -65,8 +67,8 @@ namespace kamite::npc_poses
 
         constexpr uint32_t kStartMotion = 0x002A8578u; // func_002A8578: (actor, motion, events, ...)
         constexpr uint32_t kSlotBase = 0x00084000u;
-        constexpr uint32_t kSlotSize = 0x2000u;
-        constexpr uint32_t kSlotCount = (0x000FC000u - kSlotBase) / kSlotSize; // 60
+        constexpr uint32_t kSlotSize = 0x2000u;                                      // one motion
+        constexpr uint32_t kSlotCount = (0x000FC000u - kSlotBase) / (2 * kSlotSize); // 30 NPCs, two halves each
         constexpr uint32_t kMaxMotion = 0x4000u;
         constexpr float kDeg = 3.14159265358979f / 180.0f;
 
@@ -110,7 +112,10 @@ namespace kamite::npc_poses
             std::vector<uint8_t> original; // its own idle, as the game has it
             bool dirty = true;
             std::string playing;           // what the slot holds now: "" for its own idle, else the motion's id
-            bool restart = false;          // the slot changed between the idle and the lean: start it again
+            int half = 0;                  // which of its two halves the game plays
+            std::vector<uint8_t> layout;   // the playing motion's record table (curves' key counts and places)
+            bool restart = false;          // the motion moved to the other half: start it again from there
+            bool commit = false;           // an edit is finished: start the motion again so it surely shows
             // The motion start's other arguments, to start it again (a2 events, a3, t0, t1; f12..f14), and what
             // tells the actor is still the one that started it.
             uint32_t args[4] = {};
@@ -129,6 +134,8 @@ namespace kamite::npc_poses
         float g_nearestDistance = 0.0f;
         float g_player[3] = {};
         std::string g_status;
+        bool g_dragging = false; // a slider of the NPCs tab was held last frame
+        std::optional<std::chrono::steady_clock::time_point> g_stepCommit; // when the last slider steps count as done
         GuestFunction g_start = nullptr; // func_002A8578 as recompiled (the observer is in front of it)
 
         uint32_t read32(const uint8_t *rdram, uint32_t address)
@@ -606,16 +613,12 @@ namespace kamite::npc_poses
             }
             // The head (in the neck's space), the upper arms round the shoulders' side axis, the forearms round the
             // upper arms' up axis (a T-pose arm bends forward round it; + on the left is - on the right).
-            if (p.headPitch != 0.0f || p.headYaw != 0.0f)
-                preRotate(m, 4, mul(rotY(p.headYaw * kDeg), rotX(p.headPitch * kDeg)));
-            if (p.arms != 0.0f)
-                for (int bone : {6, 7, 12, 13})
-                    preRotate(m, bone, rotX(-p.arms * kDeg));
-            if (p.elbows != 0.0f)
-            {
-                preRotate(m, 8, rotY(p.elbows * kDeg));
-                preRotate(m, 14, rotY(-p.elbows * kDeg));
-            }
+            // Always, even at 0, so the motion's records stay the same whatever the sliders say (edits in place).
+            preRotate(m, 4, mul(rotY(p.headYaw * kDeg), rotX(p.headPitch * kDeg)));
+            for (int bone : {6, 7, 12, 13})
+                preRotate(m, bone, rotX(-p.arms * kDeg));
+            preRotate(m, 8, rotY(p.elbows * kDeg));
+            preRotate(m, 14, rotY(-p.elbows * kDeg));
             return m;
         }
 
@@ -637,6 +640,24 @@ namespace kamite::npc_poses
         // Writes the slot. Between the idle and the lean the motion's records differ (count, bones, keys), and the
         // game keeps its place in each curve while a motion plays: the old place in the new curves made them jerk
         // about, and back from the lean the arms stayed out. So a change of motion starts it again (onFrame).
+        uint32_t slotAddress(const Npc &npc)
+        {
+            return kSlotBase + 2u * kSlotSize * static_cast<uint32_t>(npc.slot) + kSlotSize * static_cast<uint32_t>(npc.half);
+        }
+
+        // The record table without the constants' values: what has to stay the same for an edit in place.
+        std::vector<uint8_t> tableLayout(const std::vector<uint8_t> &m)
+        {
+            if (m.size() < 8)
+                return {};
+            const uint32_t n = m[6];
+            std::vector<uint8_t> t(m.begin() + 4, m.begin() + std::min<size_t>(m.size(), 8 + 12 * n));
+            for (uint32_t i = 0; i < n && 4 + 12 * i + 12 <= t.size(); ++i)
+                if ((t[4 + 12 * i + 1] & 0xF0) == 0x00)
+                    std::fill(t.begin() + 4 + 12 * i + 8, t.begin() + 4 + 12 * i + 12, 0);
+            return t;
+        }
+
         void writeSlot(uint8_t *rdram, Npc &npc, bool starting)
         {
             const Pose *pose = poseFor(g_room, npc.spawn);
@@ -653,9 +674,21 @@ namespace kamite::npc_poses
                 playing.clear();
             }
             if (bytes.size() <= kSlotSize)
-                std::memcpy(rdram + kSlotBase + kSlotSize * static_cast<uint32_t>(npc.slot), bytes.data(), bytes.size());
-            if (!starting && playing != npc.playing)
-                npc.restart = true;
+                {
+                // The game keeps its place in each curve of a playing motion, and starting the same motion again
+                // is ignored, so a motion whose records changed (another motion, or the slider that resampled a
+                // bone) goes to the other half and is started there; a change of values only is written in place.
+                // A finished edit (the slider let go) moves too, so it shows from a clean start whatever it changed.
+                const std::vector<uint8_t> layout = tableLayout(bytes);
+                if (!starting && (layout != npc.layout || playing != npc.playing || npc.commit))
+                {
+                    npc.half ^= 1;
+                    npc.restart = true;
+                }
+                npc.commit = false;
+                npc.layout = layout;
+                std::memcpy(rdram + slotAddress(npc), bytes.data(), bytes.size());
+            }
             npc.playing = playing;
             npc.dirty = false;
         }
@@ -728,7 +761,7 @@ namespace kamite::npc_poses
             npc.motionData = read32(rdram, actor + GameObj::kMotionData);
             npc.mode = rdram[(actor + GameObj::kMode) & 0x01FFFFFFu];
             npc.restart = false;
-            SET_GPR_U32(ctx, 5, kSlotBase + kSlotSize * static_cast<uint32_t>(npc.slot));
+            SET_GPR_U32(ctx, 5, slotAddress(npc));
         }
 
         std::string keyText(const Key &k)
@@ -816,11 +849,13 @@ namespace kamite::npc_poses
                 ui->separator_text("Nearest NPC");
                 ui->text(line);
                 bool changed = false;
+                bool dragging = false, settled = false, stepped = false; // a slider held; a final change; a step
                 int lean = pose.lean ? 1 : 0;
                 if (ui->checkbox("Play a pose motion##lean", &lean))
                 {
                     pose.lean = lean != 0;
                     changed = true;
+                    settled = true;
                 }
                 ui->begin_disabled(!pose.lean);
                 {
@@ -837,12 +872,19 @@ namespace kamite::npc_poses
                     {
                         pose.motion = g_motions[current].id;
                         changed = true;
+                        settled = true;
                     }
                 }
                 const auto slider = [&](const char *label, float &value, float low, float high, const char *format) {
                     ui->set_next_width(340.0f);
                     if (ui->slider_float(label, &value, low, high, format))
+                    {
                         changed = true;
+                        if (!ui->is_item_active())
+                            stepped = true; // a step from the keys / wheel (or typed)
+                    }
+                    if (ui->is_item_active())
+                        dragging = true;
                 };
                 slider("Bend at the waist##waist", pose.waist, -30.0f, 40.0f, "%.1f deg");
                 slider("Hip sway##sway", pose.sway, 0.0f, 300.0f, "%.0f%%");
@@ -868,8 +910,31 @@ namespace kamite::npc_poses
                         }
                     if (!stored)
                         g_poses.emplace_back(key, pose);
-                    for (auto &[actor, npc] : g_npcs)
+                }
+                // Only the NPCs this pose is for. While a slider is held its values go in place; when it is let go
+                // (or the change was final at once) the motion starts again from the other half (writeSlot).
+                // Steps (wheel, arrows) come one after another: they count as let go half a second after the last.
+                const auto now = std::chrono::steady_clock::now();
+                if (stepped)
+                    g_stepCommit = now + std::chrono::milliseconds(500);
+                const bool stepsDone = g_stepCommit && now >= *g_stepCommit;
+                if (stepsDone)
+                    g_stepCommit.reset();
+                const bool released = (g_dragging && !dragging) || stepsDone;
+                g_dragging = dragging;
+                for (auto &[actor, npc] : g_npcs)
+                {
+                    Key k;
+                    poseFor(g_room, npc.spawn, &k);
+                    if (k.room != key.room || k.x != key.x || k.z != key.z)
+                        continue;
+                    if (changed)
                         npc.dirty = true;
+                    if ((changed && settled) || released)
+                    {
+                        npc.dirty = true;
+                        npc.commit = true;
+                    }
                 }
                 if (found && ui->button("Forget this NPC##forget"))
                 {
@@ -972,7 +1037,7 @@ namespace kamite::npc_poses
             // The motion start called again with the arguments the game gave it, on a copy of the registers.
             const R5900Context saved = *ctx;
             SET_GPR_U32(ctx, 4, actor);
-            SET_GPR_U32(ctx, 5, kSlotBase + kSlotSize * static_cast<uint32_t>(npc.slot));
+            SET_GPR_U32(ctx, 5, slotAddress(npc));
             SET_GPR_U32(ctx, 6, npc.args[0]);
             SET_GPR_U32(ctx, 7, npc.args[1]);
             SET_GPR_U32(ctx, 8, npc.args[2]);
