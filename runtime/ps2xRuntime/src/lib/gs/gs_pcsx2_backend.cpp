@@ -390,6 +390,10 @@ bool GSPcsx2Backend::EnsureOpen()
         {"PS2X_PCSX2_ASPECT", "aspect", nullptr},
         {"PS2X_PCSX2_NATIVE_SCALING", "native_scaling", nullptr},     // post effects: ps2 (the game's fix) / upscaled / off
         {"PS2X_PCSX2_HALF_PIXEL_OFFSET", "half_pixel_offset", nullptr}, // dev: 0..5, the game's fix is 2
+        // Performance experiments (Oct 26, the casino): the GS thread's cost per draw and per texture upload.
+        {"PS2X_PCSX2_GPU_PALETTE", "gpu_palette", nullptr},                   // 1: 4/8-bit textures converted on the GPU
+        {"PS2X_PCSX2_TEXTURE_PRELOADING", "texture_preloading", nullptr},     // 0 none, 1 partial, 2 full (the default)
+        {"PS2X_PCSX2_PARTIAL_INVALIDATION", "partial_invalidation", nullptr}, // 0: PCSX2's "disable partial invalidation" hack
     };
     std::string options;
     for (const auto &option : kOptions)

@@ -165,6 +165,12 @@ namespace
                 else
                     options.UserHacks_NativeScaling = static_cast<GSNativeScaling>(std::clamp(value, 0, 4));
             }
+            else if (key == "gpu_palette")
+                options.GPUPaletteConversion = value != 0;
+            else if (key == "texture_preloading")
+                options.TexturePreloading = static_cast<TexturePreloadingLevel>(std::clamp(value, 0, 2));
+            else if (key == "partial_invalidation")
+                options.UserHacks_DisablePartialInvalidation = value == 0;
             else if (key == "half_pixel_offset")
                 options.UserHacks_HalfPixelOffset = static_cast<GSHalfPixelOffset>(std::clamp(value, 0, 5)); // 2 = the game's fix
         }
