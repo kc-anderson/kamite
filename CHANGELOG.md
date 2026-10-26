@@ -2,6 +2,12 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026 (16)
+
+- **NPC poses:** three takes on the counter idle to choose from in F2 > NPCs (Motion): counter_idle_slow (the same,
+  slower), counter_idle_calm (the quick back-and-forth calmed to a third, with a slow sway from side to side) and
+  counter_idle_calm_slow (both). New tool: tools/models/mot_rework.py (slow, calm and sway an existing motion).
+
 ## October 26, 2026 (15)
 
 - **NPC poses:** "Legs: turn" swings the legs round her middle while her feet keep pointing where she faces (before,
