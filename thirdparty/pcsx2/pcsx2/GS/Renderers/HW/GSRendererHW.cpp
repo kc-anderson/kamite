@@ -5924,17 +5924,25 @@ void GSRendererHW::ApplyPreciseDepth()
 		return;
 	}
 
+	// A vertex past the buffer's range or behind the camera (Q <= 0) belongs only to triangles the strips skip (ADC):
+	// the scenery renderers send whole batches with the skipped corners in them. Those vertices are left out of the
+	// fit and keep their depth; the drawn triangles get the line like any other. They used to send the whole batch
+	// back to integer depth, so a floor came out in bands, some batches precise and some integer, and the shadow and
+	// light layers drawn over it passed on one kind and failed on the other (the far corner's stripes, Oct 26; with
+	// Precise depth off they were gone).
+	const auto usable = [](const GSVertex& v) {
+		const float q = v.RGBAQ.Q;
+		return v.XYZ.Z <= 0xFFFFu && q > 0.0f && std::isfinite(q);
+	};
 	double sq = 0.0, sz = 0.0, sqq = 0.0, sqz = 0.0;
-	u32 zlo = 0xFFFFFFFFu, zhi = 0;
+	u32 zlo = 0xFFFFFFFFu, zhi = 0, used = 0;
 	for (u32 i = 0; i < n; i++)
 	{
 		const GSVertex& v = m_conf.verts[i];
 		const float q = v.RGBAQ.Q;
-		if (v.XYZ.Z > 0xFFFFu || !(q > 0.0f) || !std::isfinite(q))
-		{
-			integer_tie();
-			return;
-		}
+		if (!usable(v))
+			continue;
+		++used;
 		sq += q;
 		sz += v.XYZ.Z;
 		sqq += static_cast<double>(q) * q;
@@ -5942,11 +5950,16 @@ void GSRendererHW::ApplyPreciseDepth()
 		zlo = std::min(zlo, v.XYZ.Z);
 		zhi = std::max(zhi, v.XYZ.Z);
 	}
-	const auto fits = [this, n](double a, double b) {
+	if (used < 3)
+	{
+		integer_tie();
+		return;
+	}
+	const auto fits = [this, n, &usable](double a, double b) {
 		for (u32 i = 0; i < n; i++)
 		{
 			const GSVertex& v = m_conf.verts[i];
-			if (std::abs(static_cast<double>(v.XYZ.Z) - (a + b * v.RGBAQ.Q)) > 1.0)
+			if (usable(v) && std::abs(static_cast<double>(v.XYZ.Z) - (a + b * v.RGBAQ.Q)) > 1.0)
 				return false;
 		}
 		return true;
@@ -5954,7 +5967,7 @@ void GSRendererHW::ApplyPreciseDepth()
 
 	// Its own line, when its depths span enough to tell.
 	double own_a = 0.0, own_b = 0.0;
-	const bool own = zhi - zlo >= 64 && FitLine(n, sq, sz, sqq, sqz, own_a, own_b) && fits(own_a, own_b);
+	const bool own = zhi - zlo >= 64 && FitLine(used, sq, sz, sqq, sqz, own_a, own_b) && fits(own_a, own_b);
 
 	DepthLine* line = nullptr;
 	for (DepthLine& candidate : s_depth_lines)
@@ -5990,7 +6003,7 @@ void GSRendererHW::ApplyPreciseDepth()
 	}
 	if (own)
 	{
-		line->n += n;
+		line->n += used;
 		line->sq += sq;
 		line->sz += sz;
 		line->sqq += sqq;
@@ -6002,6 +6015,12 @@ void GSRendererHW::ApplyPreciseDepth()
 	const double top = tie ? 256.0 : 0.0;
 	for (u32 i = 0; i < n; i++)
 	{
+		if (!usable(verts[i]))
+		{
+			// Not on a drawn triangle: kept, in the scaled units.
+			verts[i].XYZ.Z = static_cast<u32>(std::min<u64>(static_cast<u64>(verts[i].XYZ.Z) * 256u + static_cast<u64>(top), 0xFFFFFFFFull));
+			continue;
+		}
 		const double z = (line->a + line->b * verts[i].RGBAQ.Q) * 256.0 + top;
 		verts[i].XYZ.Z = static_cast<u32>(std::clamp(z + 0.5, 0.0, 16777215.0));
 	}

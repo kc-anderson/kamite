@@ -2,6 +2,19 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026 (6)
+
+- **See-through leaves characters alone again:** which packets may dissolve is now decided per XGKICK from the
+  code that leads to it (the stage renderers with their own clipper: yes; the renderers whose clip test the port
+  patches, characters and simple objects: no). It was decided per "program", and the game's renderers share a top
+  and continuation branches, so one group could hold the stage renderers and a character's: the class then followed
+  whichever character programs were loaded (Xavier dissolved when seen from above), and the "skinned" test also
+  missed renderers that fetch no per-vertex matrices.
+- **Precise depth: the far corner's stripes.** A scenery batch with a corner behind the camera (the strips skip
+  those triangles) fell back to the PS2's integer depth as a whole, so a floor came out in bands, some precise and
+  some integer, and the shadow and light layers over it passed on one kind and failed on the other. The skipped
+  corners are now left out and the drawn triangles get the precise depth like the rest.
+
 ## October 26, 2026 (5)
 
 - **Casino: the 30 FPS view is back to 60.** At the top of the stairs, looking at the balconies, the game ran every

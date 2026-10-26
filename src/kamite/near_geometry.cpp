@@ -78,6 +78,7 @@ namespace kamite
         std::array<bool, kPairs> g_programPatched{};    // part of a program with a patched clip test
         std::array<uint16_t, kPairs> g_program{};       // the program each pair belongs to (its lowest pair)
         std::array<bool, kPairs> g_programSkinned{};    // fetches matrices per vertex: a character renderer
+        std::array<bool, kPairs> g_kickStage{};         // an XGKICK (and the pair after it) of a stage renderer
 
         // A program is the code one renderer runs: the stretches between [E] bits (an end bit, then its delay slot)
         // united by the direct branches between them. The [E] bits alone are not a boundary: a renderer's vertex loop
@@ -143,6 +144,100 @@ namespace kamite
                 g_program[i] = static_cast<uint16_t>(find(i));
         }
 
+        // What each XGKICK draws, for the see-through oval (path1Filter's class): the stage, or anything else. The
+        // stage is drawn by the big renderers with their own clipper (gif_13533); characters, their coats and the
+        // simple objects by the renderers whose clip test is patched here. Decided per kick from the code that leads
+        // to it (followed backwards: fall-through, branches and their delay slots, not into calls or past an [E] or
+        // another kick), not from the program groups above: the game's renderers share a top and continuation
+        // branches, so a group can hold the stage renderers and a character's together, and the class then followed
+        // whichever character programs were loaded (K, Oct 26: Xavier dissolved from above; the skinned test also
+        // missed his rigid renderer, which fetches no per-vertex matrices). A kick reached from no patched clip test is
+        // the stage's.
+        void findStageKicks(const uint8_t *code, uint32_t pairs)
+        {
+            g_kickStage.fill(false);
+            static std::array<uint32_t, kPairs> lo, up;
+            for (uint32_t i = 0; i < pairs; ++i)
+            {
+                std::memcpy(&lo[i], code + i * 8u, 4u);
+                std::memcpy(&up[i], code + i * 8u + 4u, 4u);
+            }
+            const auto isKick = [&](uint32_t i) { return (lo[i] & 0xFFFF07FFu) == 0x800006FCu && !(up[i] >> 31); };
+            // Predecessors: a pair runs after the one before it unless that one is an [E]'s delay slot, a jump's
+            // delay slot or the [E] pair's slot itself; a branch's delay slot continues at its target (b, conditional),
+            // after the call (bal) or nowhere known (jr, jalr).
+            static std::array<std::vector<uint16_t>, kPairs> pred;
+            for (uint32_t i = 0; i < pairs; ++i)
+                pred[i].clear();
+            for (uint32_t i = 0; i < pairs; ++i)
+            {
+                const auto add = [&](uint32_t to) {
+                    if (to < pairs)
+                        pred[to].push_back(static_cast<uint16_t>(i));
+                };
+                if ((up[i] >> 30) & 1u)
+                {
+                    add(i + 1u); // the [E]'s delay slot, then the program ends
+                    continue;
+                }
+                if (i > 0u && ((up[i - 1u] >> 30) & 1u))
+                    continue; // the [E]'s delay slot: nothing after it
+                if (i > 0u && !(up[i - 1u] >> 31))
+                {
+                    const uint32_t prevLo = lo[i - 1u], op = prevLo >> 25;
+                    const bool branch = op == 0x20u || op == 0x21u || op == 0x28u || op == 0x29u || (op >= 0x2Cu && op <= 0x2Fu);
+                    if (branch || op == 0x24u || op == 0x25u)
+                    {
+                        // i is a delay slot
+                        if (op == 0x24u || op == 0x25u)
+                            continue; // jr / jalr
+                        int32_t imm = static_cast<int32_t>(prevLo & 0x7FFu);
+                        if (imm & 0x400)
+                            imm -= 0x800;
+                        const uint32_t target = static_cast<uint32_t>(static_cast<int32_t>(i) + imm) & (kPairs - 1u);
+                        if (op == 0x21u)
+                            add(i + 1u); // bal: a call, back after the slot
+                        else if (op == 0x20u)
+                            add(target);
+                        else
+                        {
+                            add(target);
+                            add(i + 1u);
+                        }
+                        continue;
+                    }
+                }
+                add(i + 1u);
+            }
+            static std::vector<uint8_t> seen;
+            static std::vector<uint16_t> stack;
+            seen.assign(pairs, 0u);
+            for (uint32_t k = 0; k < pairs; ++k)
+            {
+                if (!isKick(k))
+                    continue;
+                std::fill(seen.begin(), seen.end(), 0u);
+                stack.assign(1u, static_cast<uint16_t>(k));
+                seen[k] = 1u;
+                bool patched = false;
+                while (!stack.empty() && !patched)
+                {
+                    const uint32_t x = stack.back();
+                    stack.pop_back();
+                    patched = g_patchedPair[x];
+                    for (const uint16_t p : pred[x])
+                        if (!seen[p] && !(p != k && isKick(p)))
+                        {
+                            seen[p] = 1u;
+                            stack.push_back(p);
+                        }
+                }
+                g_kickStage[k] = !patched;
+                if (k + 1u < pairs)
+                    g_kickStage[k + 1u] = !patched; // the interpreter may report the pc after the kick
+            }
+        }
+
         // Only the renderers whose clip test was patched: their packets are matched to their input (stitch flags).
         // The big renderers clip by themselves (the PS2's own near-plane and screen clipper): a triangle they skip
         // (ADC) is drawn by them again as a clipped fan, so it must stay skipped. Dump gif_1652 (Oct 2026): a floor
@@ -188,6 +283,7 @@ namespace kamite
                 for (uint32_t i = 0; i < pairs; ++i)
                     g_programSkinned[i] = (ilwTargets[g_program[i]] & lqBases[g_program[i]]) != 0u;
             }
+            findStageKicks(code, pairs);
             auto pair = [code](uint32_t i, uint32_t &lo, uint32_t &up) {
                 std::memcpy(&lo, code + i * 8u, 4u);
                 std::memcpy(&up, code + i * 8u + 4u, 4u);
@@ -243,6 +339,7 @@ namespace kamite
             std::array<bool, kPairs> programPatched{};
             std::array<uint16_t, kPairs> program{};
             std::array<bool, kPairs> programSkinned{};
+            std::array<bool, kPairs> kickStage{};
         };
         std::vector<std::unique_ptr<Analysis>> g_analyses; // VU1 thread only
         std::atomic<uint64_t> g_analysisHits{0}, g_analysisMisses{0};
@@ -257,6 +354,7 @@ namespace kamite
                     g_programPatched = a->programPatched;
                     g_program = a->program;
                     g_programSkinned = a->programSkinned;
+                    g_kickStage = a->kickStage;
                     g_analysisHits.fetch_add(1, std::memory_order_relaxed);
                     return;
                 }
@@ -271,6 +369,7 @@ namespace kamite
             a->programPatched = g_programPatched;
             a->program = g_program;
             a->programSkinned = g_programSkinned;
+            a->kickStage = g_kickStage;
             g_analyses.push_back(std::move(a));
         }
 
@@ -599,8 +698,8 @@ namespace kamite
         thread_local bool t_primKnown = false;
 
         // What a packet draws, for the GS's see-through oval (pcsx2gs GSState::GIFRegHandlerNOP, ApplySeeThrough):
-        // 0 = a skinned renderer (characters, their coats and chains), 1 = everything else (the stage, objects,
-        // effects). Told to the GS by a NOP write carrying "KMSE" (nothing to the PS2) in front of the first packet of
+        // 1 = the stage (a kick of the big renderers with their own clipper, findStageKicks), 0 = anything else
+        // (characters, their coats and chains, the simple objects). Told to the GS by a NOP write carrying "KMSE" (nothing to the PS2) in front of the first packet of
         // each run of one class: Gene's arms reaching towards the camera and the enemies between it and him were
         // dissolved as "nearer than Gene", and they are what the oval is there to show (K, Oct 2026). The first
         // try keyed on the patched renderers instead; gif_13533 showed the walls are drawn by the big renderers (their
@@ -623,7 +722,7 @@ namespace kamite
                          uint32_t kickPc, std::vector<uint8_t> &before, std::vector<uint8_t> &extra)
         {
             const uint32_t pair = (kickPc / 8u) % kPairs;
-            markClass(before, g_programSkinned[pair] ? 0u : 1u);
+            markClass(before, g_kickStage[pair] ? 1u : 0u);
             // The other renderers (the big ones, 2D, effects) are left as the PS2 has them: their clip tests were not
             // changed, and the big ones redraw what they skip as clipped fans of their own. By the XGKICK's own address:
             // the start of the VU1 run is not enough (the renderers end with [E] and a branch back to their top, and
