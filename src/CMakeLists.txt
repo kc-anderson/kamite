@@ -252,11 +252,14 @@ add_executable(kamite ${KAMITE_HOST_SOURCES} "${KAMITE_MODULE_INDEX}")
 if(KAMITE_MODULE_LIBRARIES)
     target_link_libraries(kamite PRIVATE ${KAMITE_MODULE_LIBRARIES})
 endif()
-# The port's own resources (resources/images/logo.png: the launcher's logo) next to the exe, merged into the resources/
-# folder pcsx2gs.dll also fills (shaders, OSD font).
-add_custom_command(TARGET kamite POST_BUILD
+# The port's own resources (resources/images/logo.png: the launcher's logo, npc_motions, prompts) next to the exe,
+# merged into the resources/ folder pcsx2gs.dll also fills (shaders, OSD font). A target of its own that runs at every
+# build of kamite (the build script builds --target kamite): as a POST_BUILD step it ran only when kamite.exe was
+# linked again, so a change to resources/ alone never reached the build (Oct 26: the counter idle takes).
+add_custom_target(kamite_resources
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/resources" "$<TARGET_FILE_DIR:kamite>/resources"
     COMMENT "Copying the port's resources")
+add_dependencies(kamite kamite_resources)
 target_include_directories(kamite PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_BINARY_DIR}/kamite_generated"

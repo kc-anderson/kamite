@@ -2,6 +2,15 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026 (17)
+
+- **Precise depth: the casino fence's floor shadow** no longer breaks into shards. The shadow is its own mesh, up to
+  a sixth of a depth step under the floor it lies on (the PS2 rounds both to the same step); its triangles now start
+  a little above the floor and keep climbing through the frame, so a second shadow layer still lands on the first,
+  never a whole step up.
+- **Build:** the port's resources/ folder (motions, prompts, images) is copied at every build, not only when
+  kamite.exe is linked again; a change to resources/ alone (the counter idle takes) now reaches the play folder.
+
 ## October 26, 2026 (16)
 
 - **NPC poses:** three takes on the counter idle to choose from in F2 > NPCs (Motion): counter_idle_slow (the same,

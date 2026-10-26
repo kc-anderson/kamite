@@ -5934,6 +5934,8 @@ namespace
 	};
 	DepthLine s_depth_lines[4];
 	u32 s_depth_frame = 0xFFFFFFFFu;
+	// Pass-then-fail draws laid on a surface (ApplyPreciseDepth, order_ties): their triangles so far this frame.
+	u32 s_order_tris = 0;
 
 	bool FitLine(double n, double sq, double sz, double sqq, double sqz, double& a, double& b)
 	{
@@ -5956,6 +5958,7 @@ void GSRendererHW::ApplyPreciseDepth()
 	if (frame != s_depth_frame)
 	{
 		s_depth_frame = frame;
+		s_order_tris = 0;
 		for (DepthLine& line : s_depth_lines)
 		{
 			double a, b;
@@ -6046,6 +6049,10 @@ void GSRendererHW::ApplyPreciseDepth()
 	// higher than the one before (2/256 of a step, more than their rounding), so a later triangle wins the tie as on
 	// the PS2 and the draw stays within a step of its plane (draw 6 there: 13 triangles). A draw with more than 128
 	// triangles keeps whole steps, one up.
+	// The lift starts 32/256 above the plane and counts on through the frame (Oct 26, dumps 3236..3284): the fence's
+	// shadow is its own mesh, up to 17/256 of a step below the floor it lies on (the PS2 rounds both to the same
+	// step), so its first triangles, lifted by 0 and 2/256, lost to the floor in shards that changed every frame; and
+	// a second shadow layer drawn after the first must still come out above it. Capped at 224/256, under a step.
 	const bool pass_then_fail = m_conf.alpha_test == GSHWDrawConfig::AlphaTestMode::PASS_THEN_FAIL && !tie;
 	const u32 triangles = m_conf.nindices / 3;
 	const bool order_ties = pass_then_fail && m_conf.indices && triangles > 1 && triangles <= 128 &&
@@ -6142,13 +6149,17 @@ void GSRendererHW::ApplyPreciseDepth()
 	}
 	if (order_ties)
 	{
-		// Every triangle its own three vertices, 2/256 of a step above the one before (see above).
+		// Every triangle its own three vertices, 2/256 of a step above the one before, from 32/256 above the plane,
+		// counted through the frame (see above).
 		const std::vector<GSVertex> shared(verts, verts + n);
 		const std::vector<u16> order(m_conf.indices, m_conf.indices + m_conf.nindices);
+		const u32 first = s_order_tris;
+		s_order_tris += m_conf.nindices / 3u;
 		for (u32 i = 0; i < m_conf.nindices; i++)
 		{
 			GSVertex v = shared[order[i] < n ? order[i] : 0];
-			v.XYZ.Z = std::min<u32>(v.XYZ.Z + 2u * (i / 3u), 16777215u);
+			const u32 lift = std::min<u32>(32u + 2u * (first + i / 3u), 224u);
+			v.XYZ.Z = std::min<u32>(v.XYZ.Z + lift, 16777215u);
 			verts[i] = v;
 			const_cast<u16*>(m_conf.indices)[i] = static_cast<u16>(i);
 		}
