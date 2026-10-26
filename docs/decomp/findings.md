@@ -7,8 +7,8 @@ Things Kamite knows about the game that the decomp (at beb2575f) doesn't name, w
 - **cIDBaseEnt.b89 (0x89) = text alignment.** cIDBase_transText (0x2AB0B8) turns it into cMessDrawFont_setDrawPos's `alignFlags` (bit 0 centre X, bit 1 centre Y): 0 → 3 (centred both ways), 1..4 → 0 (top left), anything else → 1 (centred X). 0x2AB0D8..FC, the value goes to `$a1` at 0x2AB1E8. Name: `align`, with a comment giving the mapping.
 - **cMessDrawFont.unk2C[0] / unk2C[1] (0x2C / 0x30) = letter and line spacing.** The decomp's own bodies already use them that way: 002b0908.c adds `unk2C[0] * zoomX` after each character, 00172490.c adds `unk2C[1] * zoomY` per line. Name: `gap[2]` or `charGap` / `lineGap`.
 - **func_0030AC40 = the main loop.** Calls the frame's update and draw and waits (0x30ADD8..EC) until the vblank count D_00753D80 reaches GameWork+0x569, the vblanks-per-frame byte (2 at boot, func_0030B298; 1 = 60 frames a second).
-
 - **GameWork pad words (0x00-0x0C):** func_0031B560 copies the held word (0x00) to 0x04 and writes 0x08 = (held ^ old) & held (pressed; the decomp's `padBtn`) and 0x0C = (held ^ old) & old (released), 0x31B884..A4. **KeyStop** (0x31AFA0) sets flags5D8 bit 0x02000000.
+
 ## Observed in the port (not traced in full)
 
 - **cIDBaseEnt.b8B (0x8B):** text and icon entries pass it to func_002AB9A8 (0x2AB0E0, 0x2AB348), which picks the colour set (set 1 draws black: the shadow entries use it); sprite entries use it as the texture number minus 1 (0x2AB3A8: `cIDManager_getTexAddr(..., b8A, b8B + 1)`). So the name depends on the kind; `texOrColorNo` or leave it.
