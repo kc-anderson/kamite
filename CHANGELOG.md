@@ -19,7 +19,7 @@ Newest first. Each change is commented in the code where it was made.
 
 ## October 26, 2026 (13)
 
-- **NPC poses:** two more motions ship with the port in resources/npc_motions, from K's own animations:
+- **NPC poses:** two new motions ship with the port in resources/npc_motions:
   table_tease (bent over a table, hips swaying) and counter_idle (hands on a low counter). Only posed NPCs now take a
   slot (16 KB halves, 15 posed NPCs a room); the others keep playing the game's idle untouched, and an NPC set back to
   its own idle gets the game's motion again. Resampled curves never become constants, so a motion's records stay the
@@ -51,8 +51,8 @@ Newest first. Each change is commented in the code where it was made.
   elbows bent, bottom out, and the amount of the motion's own movement. The head, arm and elbow settings turn the bone
   in front of the motion's own rotation, every frame (the curves are resampled), so they work on any motion.
   npc_poses.txt keeps the new values after the old ones (older lines still load). Slots are now 8 KB (60 NPCs).
-- tools/models/npc_motion.py: an NPC pose motion from a .blend / .fbx / .glb animation (custom, Mixamo and
-  Quaternius rigs), with smoothing and slowing.
+- tools/models/npc_motion.py: an NPC pose motion from a .blend / .fbx / .glb animation (Mixamo, Quaternius
+  and other rigs), with smoothing and slowing.
 
 ## October 26, 2026 (10)
 
