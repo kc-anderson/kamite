@@ -8,8 +8,9 @@ Newest first. Each change is commented in the code where it was made.
   over each other now keep their precise depth (whole steps had brought back the PS2's banding against the precise
   floor beneath) and draw their triangles in order, each 2/256 of a step above the one before, so a later triangle
   still wins the tie as on the PS2. Draws of more than 128 triangles keep the whole steps.
-- **Camera shake** ([Video] CameraShake, launcher: Video): full, half or off, or any amount from F2 > Camera. The
-  game's shake keeps its course; only how far the camera moves is scaled.
+- **Steady idle camera** ([Video] SteadyIdleCamera, off by default; launcher: Video, and F2 > Camera): while Gene
+  stands idle, the camera no longer rocks and shakes with his stomps. The player camera sees him where his idle began
+  (moving off half a metre or turning 20 degrees sets a new place), and its shake is left out while he idles.
 - **Launcher, Gameplay:** Style switching is now a setting ([Game] StyleSwitching, off by default; off, the port
   leaves the d-pad, the Techniques screen and the HUD as the game has them). New: Better shop & casino poses
   ([Game] NpcPoses, off by default; F2 > NPCs can switch it on for the session while setting poses). Roulette timer

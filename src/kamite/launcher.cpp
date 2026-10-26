@@ -44,7 +44,6 @@ namespace kamite::launcher
         constexpr Choice kHudLayouts[] = {{"16:9: HUD at the screen edges", "16:9"}, {"4:3: HUD where the PS2 had it", "4:3"}};
         constexpr Choice kMenuLayouts[] = {{"4:3: as on the PS2, with side bars", "4:3"}, {"Stretched to the screen", "stretch"}};
         constexpr Choice kRouletteTimers[] = {{"Normal", "normal"}, {"Double time", "double"}};
-        constexpr Choice kCameraShakes[] = {{"Full: as on the PS2", "100"}, {"Half", "50"}, {"Off", "0"}};
         constexpr Choice kPostEffects[] = {{"PS2 resolution (PCSX2's fix)", "ps2"}, {"Upscaled", "upscaled"}, {"No fix", "off"}};
         constexpr Choice kWindowModes[] = {{"Window", "window"}, {"Fullscreen (borderless)", "fullscreen"}, {"Maximized window", "maximized"}};
         constexpr Choice kFovs[] = {{"100%: as on the PS2", "100"}, {"110%", "110"}, {"120%", "120"}, {"130%", "130"},
@@ -1081,10 +1080,10 @@ namespace kamite::launcher
                                                                   "the edges join in as on the PS2. Off: the original angles.");
                             iniCheckbox(state, "On##enemyview", "Game", "EnemiesFollowView", true);
                         }
-                        settingLabel("Camera shake", "How much the camera shakes from hits, stomps and explosions.",
-                                     "F2 > Camera sets it to any amount while playing.");
-                        iniCombo(state, "##camshake", "Video", "CameraShake", "100",
-                                 [](const char *id, std::string &value) { return choiceCombo(id, kCameraShakes, value); });
+                        settingLabel("Steady idle camera", "While Gene stands idle, the camera stops rocking and "
+                                                           "shaking with his stomps.",
+                                     "F2 > Camera switches it while playing.");
+                        iniCheckbox(state, "On##steadyidle", "Video", "SteadyIdleCamera", false);
                         settingLabel("Window", "How the game opens.", "F11 switches between window and fullscreen while "
                                                                       "playing.");
                         {

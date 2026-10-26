@@ -68,7 +68,6 @@ namespace kamite
         std::atomic<float> g_fightPercent{100.0f};
         std::atomic<float> g_closerPercent{100.0f};
         std::atomic<float> g_tiltDegrees{0.0f};
-        std::atomic<float> g_shakePercent{100.0f}; // [Video] CameraShake: how much of the game's camera shake shows
         std::atomic<bool> g_enemyView{true};
         std::atomic<bool> g_depthOfField{true}; // [Video] DepthOfField (PS2X_PCSX2_DOF), the Graphics tab
         std::atomic<bool> g_preciseDepth{true}; // [Video] PreciseDepth (PS2X_PCSX2_PRECISE_DEPTH), the Graphics tab
@@ -492,29 +491,91 @@ namespace kamite
 
         // ---- Camera shake -----------------------------------------------------------------------------------------
 
-        // cCamera_update adds each of the camera's two shake channels (cCamVib at camera+0x254 and +0x268: amplitude,
-        // speed, decay, phase, frames left) to its angles as amplitude * sin(phase); cCamera_stepVib, before it, decays
-        // the amplitude and moves the phase on. The amplitudes are scaled for the update only and put back after it,
-        // so the shake's own course (its decay and length) is the game's.
+        // Steady camera while Gene stands idle ([Video] SteadyIdleCamera, off by default). His idle stomps about:
+        // the player camera follows his position and rotation (cPlCamera_update 0x139FA8: the look point is his
+        // position plus an offset turned by his rotation, eased toward), so the view rocked with him, and the stomps
+        // start the camera's shake. While he is idle (mode 0, phase 0 or 10: IsStateByteIdle_10B5F0) the camera's
+        // update sees him where his idle started (his position and rotation put back after it), and the player camera
+        // shows no shake. Should he really move off (half a metre) or turn (20 degrees), that becomes the new place.
+        constexpr uint32_t kPlCameraUpdate = 0x139FA8u;
         constexpr uint32_t kCameraUpdate = 0x138740u;
-        constexpr uint32_t kShakeChannels[] = {0x254u, 0x268u};
+        constexpr uint32_t kShakeChannels[] = {0x254u, 0x268u}; // cCamVib: amplitude, speed, decay, phase, frames left
+        PS2Runtime::RecompiledFunction g_plCameraUpdate = nullptr;
         PS2Runtime::RecompiledFunction g_cameraUpdate = nullptr;
+        std::atomic<bool> g_steadyIdle{false};
+        bool g_holding = false;
+        float g_heldPos[3] = {};
+        float g_heldRot[3] = {};
 
-        void cameraUpdateWithShake(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        uint32_t idlePlayer(const uint8_t *rdram)
         {
-            const float scale = g_shakePercent.load(std::memory_order_relaxed) / 100.0f;
+            if (!g_steadyIdle.load(std::memory_order_relaxed))
+                return 0;
+            uint32_t player;
+            std::memcpy(&player, rdram + kPlayerPointer, sizeof(player));
+            player &= PS2_RAM_SIZE - 1u;
+            if (player == 0 || player + 0x300u > PS2_RAM_SIZE)
+                return 0;
+            const uint8_t mode = rdram[player + game::GameObj::kMode], phase = rdram[player + game::GameObj::kMode + 1u];
+            return mode == 0 && (phase == 0 || phase == 10) ? player : 0;
+        }
+
+        void plCameraUpdateSteady(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const uint32_t player = idlePlayer(rdram);
+            uint32_t pos = 0;
+            if (player)
+            {
+                std::memcpy(&pos, rdram + player + game::GameObj::kPos, sizeof(pos));
+                pos &= PS2_RAM_SIZE - 1u;
+                if (pos == 0 || pos + 12u > PS2_RAM_SIZE)
+                    pos = 0;
+            }
+            if (!pos)
+            {
+                g_holding = false;
+                g_plCameraUpdate(rdram, ctx, runtime);
+                return;
+            }
+            float now[3], rot[3];
+            std::memcpy(now, rdram + pos, sizeof(now));
+            std::memcpy(rot, rdram + player + game::GameObj::kRot, sizeof(rot));
+            const float dx = now[0] - g_heldPos[0], dz = now[2] - g_heldPos[2];
+            float turn = rot[1] - g_heldRot[1];
+            while (turn > kPi)
+                turn -= 2.0f * kPi;
+            while (turn < -kPi)
+                turn += 2.0f * kPi;
+            if (!g_holding || dx * dx + dz * dz > 0.25f || std::fabs(turn) > 20.0f * kDegToRad)
+            {
+                std::memcpy(g_heldPos, now, sizeof(now));
+                std::memcpy(g_heldRot, rot, sizeof(rot));
+                g_holding = true;
+            }
+            std::memcpy(rdram + pos, g_heldPos, sizeof(g_heldPos));
+            std::memcpy(rdram + player + game::GameObj::kRot, g_heldRot, sizeof(g_heldRot));
+            g_plCameraUpdate(rdram, ctx, runtime);
+            std::memcpy(rdram + pos, now, sizeof(now));
+            std::memcpy(rdram + player + game::GameObj::kRot, rot, sizeof(rot));
+        }
+
+        // cCamera_update adds the camera's two shake channels to its angles as amplitude * sin(phase): for the player
+        // camera while Gene is idle, the amplitudes are zero for the update and put back after it (the shake's own
+        // course, its decay and length, stays the game's).
+        void cameraUpdateSteady(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
             const uint32_t camera = GPR_U32(ctx, 4) & (PS2_RAM_SIZE - 1u);
-            const bool scaled = scale != 1.0f && camera + 0x280u <= PS2_RAM_SIZE;
+            const bool still = camera != 0 && camera == (g_playerCamera.load(std::memory_order_relaxed) & (PS2_RAM_SIZE - 1u)) &&
+                               camera + 0x280u <= PS2_RAM_SIZE && idlePlayer(rdram) != 0;
             float amplitude[2] = {};
-            if (scaled)
+            if (still)
                 for (int i = 0; i < 2; ++i)
                 {
                     std::memcpy(&amplitude[i], rdram + camera + kShakeChannels[i], 4);
-                    const float less = amplitude[i] * scale;
-                    std::memcpy(rdram + camera + kShakeChannels[i], &less, 4);
+                    std::memset(rdram + camera + kShakeChannels[i], 0, 4);
                 }
             g_cameraUpdate(rdram, ctx, runtime);
-            if (scaled)
+            if (still)
                 for (int i = 0; i < 2; ++i)
                     std::memcpy(rdram + camera + kShakeChannels[i], &amplitude[i], 4);
         }
@@ -580,7 +641,7 @@ namespace kamite
             ini.set("Video", "FightFieldOfView", number(g_fightPercent.load()));
             ini.set("Video", "CameraDistance", number(g_closerPercent.load()));
             ini.set("Video", "CameraTilt", number(g_tiltDegrees.load()));
-            ini.set("Video", "CameraShake", number(g_shakePercent.load()));
+            ini.setBool("Video", "SteadyIdleCamera", g_steadyIdle.load());
             ini.setBool("Game", "EnemiesFollowView", g_enemyView.load());
             ini.setBool("Video", "DepthOfField", g_depthOfField.load());
             ini.setBool("Video", "PreciseDepth", g_preciseDepth.load());
@@ -612,7 +673,7 @@ namespace kamite
             g_fightPercent = iniValue(ini, "Video", "FightFieldOfView", 100.0f, 50.0f, 200.0f);
             g_closerPercent = iniValue(ini, "Video", "CameraDistance", 100.0f, 0.0f, 100.0f);
             g_tiltDegrees = iniValue(ini, "Video", "CameraTilt", 0.0f, -30.0f, 30.0f);
-            g_shakePercent = iniValue(ini, "Video", "CameraShake", 100.0f, 0.0f, 100.0f);
+            g_steadyIdle = ini.getBool("Video", "SteadyIdleCamera", false);
             g_enemyView = ini.getBool("Game", "EnemiesFollowView", true);
             g_depthOfField = ini.getBool("Video", "DepthOfField", true);
             g_preciseDepth = ini.getBool("Video", "PreciseDepth", true);
@@ -665,8 +726,10 @@ namespace kamite
             ui->text_disabled("0% = stays where it was (the view looks zoomed out); 100% = Gene keeps his size.");
             slider(ui, "Camera tilt##tilt", g_tiltDegrees, -15.0f, 30.0f, "%.1f deg");
             ui->text_disabled("How much the camera rises and looks down at Gene at the field of view above.");
-            slider(ui, "Camera shake##shake", g_shakePercent, 0.0f, 100.0f, "%.0f%%");
-            ui->text_disabled("How much of the game's camera shake (hits, stomps, explosions) shows. 0% = none.");
+            int steady = g_steadyIdle.load() ? 1 : 0;
+            if (ui->checkbox("Steady camera while Gene idles##steadyidle", &steady))
+                g_steadyIdle = steady != 0;
+            ui->text_disabled("The camera stops rocking and shaking with his idle's stomps (handy for posing NPCs).");
 
             ui->separator_text("Enemies");
             int follow = g_enemyView.load() ? 1 : 0;
@@ -793,12 +856,16 @@ namespace kamite
         return g_iniPath;
     }
 
-    void installCameraShake(PS2Runtime &runtime)
+    void installSteadyIdleCamera(PS2Runtime &runtime)
     {
+        if (!runtime.hasFunction(kPlCameraUpdate) || !(g_plCameraUpdate = runtime.lookupFunction(kPlCameraUpdate)) ||
+            !FunctionHooks::instance().replace(kPlCameraUpdate, "cPlCamera_update (steady idle camera)", &plCameraUpdateSteady,
+                                               ReplacementStatus::Native, "[Video] SteadyIdleCamera: Gene held still for the camera"))
+            KM_WARN(Game, "camera: cPlCamera_update 0x139FA8 is not hookable; the camera rocks with Gene's idle");
         if (!runtime.hasFunction(kCameraUpdate) || !(g_cameraUpdate = runtime.lookupFunction(kCameraUpdate)) ||
-            !FunctionHooks::instance().replace(kCameraUpdate, "cCamera_update (camera shake)", &cameraUpdateWithShake,
-                                               ReplacementStatus::Native, "[Video] CameraShake scales the camera's shake"))
-            KM_WARN(Game, "camera: cCamera_update 0x138740 is not hookable; the camera shakes in full");
+            !FunctionHooks::instance().replace(kCameraUpdate, "cCamera_update (steady idle camera)", &cameraUpdateSteady,
+                                               ReplacementStatus::Native, "[Video] SteadyIdleCamera: no shake while Gene idles"))
+            KM_WARN(Game, "camera: cCamera_update 0x138740 is not hookable; the camera shakes with Gene's idle");
     }
 
     void installCamera(float aspect)
@@ -811,7 +878,10 @@ namespace kamite
         g_fightPercent = envValue("KAMITE_FIGHT_FOV", 100.0f, 50.0f, 200.0f);
         g_closerPercent = envValue("KAMITE_CAMERA_DISTANCE", 100.0f, 0.0f, 100.0f);
         g_tiltDegrees = envValue("KAMITE_CAMERA_TILT", 0.0f, -30.0f, 30.0f);
-        g_shakePercent = envValue("KAMITE_CAMERA_SHAKE", 100.0f, 0.0f, 100.0f);
+        {
+            const char *steady = std::getenv("KAMITE_STEADY_IDLE_CAMERA");
+            g_steadyIdle = steady && *steady && *steady != '0';
+        }
         {
             const char *text = std::getenv("KAMITE_ENEMY_VIEW");
             g_enemyView = !(text && *text == '0');

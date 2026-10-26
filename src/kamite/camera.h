@@ -11,9 +11,9 @@ namespace kamite
     // install; the F2 menu's Camera tab changes them while playing and can save them back to kamite.ini.
     // aspect = the picture's width / height (widescreen.cpp).
     void installCamera(float aspect);
-    // [Video] CameraShake (percent, 0 = none) scales the game's camera shake; F2 > Camera changes it. After the
-    // function hooks are attached (main.cpp).
-    void installCameraShake(PS2Runtime &runtime);
+    // [Video] SteadyIdleCamera (0/1, default 0): the player camera neither rocks nor shakes with Gene's idle; F2 >
+    // Camera changes it. After the function hooks are attached (main.cpp).
+    void installSteadyIdleCamera(PS2Runtime &runtime);
 
     // kamite.ini, for the F2 menu's Save / Revert (main.cpp, before installWidescreen).
     void setCameraIniPath(const std::filesystem::path &path);
