@@ -2,6 +2,15 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 26, 2026 (8)
+
+- **Precise depth: the banded lights and shadows (likely the cause of the far-corner stripes too).** The alpha
+  test's second pass, which draws the pixels that fail the alpha test (a light's glow, the soft edge of a shadow),
+  kept PCSX2's depth flooring when precise depth turned it off for the first pass, so those pixels lost their
+  fractions and failed against the surface under them in bands along the depth: the cut-off light strips on the
+  casino front and the town's awnings, the floor's shadow banding. Found with the draw dump.
+- The draw dump now writes its pictures (the GS library's PNG saving was a stub) and adds _scene.png.
+
 ## October 26, 2026 (7)
 
 - **Diagnostic: Shift+F10 draw dump.** Every draw of the next frame as PCSX2's GPU renderer gets it (after the

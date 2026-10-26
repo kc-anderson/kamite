@@ -6008,6 +6008,12 @@ void GSRendererHW::ApplyPreciseDepth()
 		if (m_conf.cb_vs.max_depth != 0xFFFFFFFFu)
 			m_conf.cb_vs.max_depth = m_conf.cb_vs.max_depth * 256u + 255u;
 		m_conf.ps.zfloor = false; // the fractions are the point
+		// The alpha test's second pass (EmulateAlphaTestSecondPass, set up before this) copied the pixel shader
+		// with its depth flooring still on: it floored this draw's depths back to whole steps, so the pixels it
+		// draws (an alpha-tested light's glow, the soft edge of a shadow) lost the depth test against the surface
+		// they lie on wherever that surface's depth had a fraction, in bands along the depth: the cut-off lights on
+		// the casino front and in the town, the floor's shadow banding (K, Oct 26; draw dump 44798).
+		m_conf.alpha_second_pass.ps.zfloor = false;
 	};
 	// A draw that gets no line keeps its integer depth; a tie draw still gets the top of its step. Also when a vertex
 	// lies past the buffer's range: the batch's vertices include the ones its strips skip (ADC), and a camera-crossing
