@@ -25,6 +25,8 @@
 #include "kamite/debug_tools.h"
 #include "kamite/texture_slots.h"
 #include "kamite/jukebox.h"
+#include "kamite/message_guard.h"
+#include "kamite/bone_tweaks.h"
 #include "kamite/hd_textures.h"
 #include "kamite/call_trace.h"
 #include "kamite/default_ini.h" // generated from kamite.ini by src/CMakeLists.txt
@@ -388,6 +390,7 @@ namespace
         {"game", "unlockhard", "KAMITE_UNLOCK_HARD"},
         {"sound", "mutemusic", "KAMITE_MUTE_MUSIC"},
         {"mods", "character", "KAMITE_CHARACTER"},
+        {"mods", "backwardknees", "KAMITE_BACKWARD_KNEES"},
         {"run", "headless", "KAMITE_HEADLESS"},
         {"run", "timelimitseconds", "KAMITE_TIME_LIMIT_SECONDS"},
         {"run", "dumpontimelimit", "KAMITE_DUMP_ON_TIME_LIMIT"},
@@ -994,6 +997,8 @@ int main(int argc, char *argv[])
         kamite::texture_slots::install(); // the per-frame texture slots reserve a texture's real VRAM footprint
         kamite::installSteadyIdleCamera(runtime); // [Video] SteadyIdleCamera
         kamite::jukebox::install(runtime); // the shop's radio: Gene stays in the picture while it plays
+        kamite::message_guard::install(runtime); // an empty message text no longer hangs the text measurer
+        kamite::bone_tweaks::install(runtime);   // [Mods] BackwardKnees: the player's knees mirrored at draw time
         kamite::hangdump::setRuntime(&runtime);
         // Shift+F8: the hang dump (guest threads, PCs, waits; every host stack) into the log, and the EE RAM as
         // hang_ram.bin next to the exe, for a game sitting at 0 FPS.

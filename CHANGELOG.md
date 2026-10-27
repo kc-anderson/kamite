@@ -2,6 +2,14 @@
 
 Newest first, one line per change; the code comments say how.
 
+## October 27, 2026 (3)
+
+- Fixed the game hanging at 0 FPS when loading a save from the options menu after a save state load (an empty
+  message text sent the text measurer off into memory; such a text now ends at once).
+- Mods: Backward knees (launcher, Mods; F2 > Debug while playing): the character's knees mirrored as he is drawn,
+  for Xavier. Experimental.
+- F2 > Debug shows which hand meshes the game is drawing (fist / open / grab).
+
 ## October 27, 2026 (2)
 
 - NPC poses: Butt wiggle (the pelvis undulation, on any motion) and Hip sway (the hips side to side) are separate

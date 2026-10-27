@@ -18,6 +18,7 @@
 // module is on the retail disc are listed (the table also has the developers' test rooms). The landing point's story
 // flags are not set: saving after a jump can leave the save in a state the game never makes.
 #include "kamite/debug_tools.h"
+#include "kamite/bone_tweaks.h"
 #include "kamite/disc_files.h"
 #include "kamite/game_layout.h"
 #include "kamite/log.h"
@@ -92,6 +93,7 @@ namespace kamite::debug_tools
         int g_selected = 0;                 // UI thread
         std::mutex g_statusMutex;
         std::string g_status;
+        std::string g_hands;
         PS2Runtime::RecompiledFunction g_jump = nullptr;
         uint16_t g_room = 0xFFFFu;          // the room Gene is in (game thread writes)
 
@@ -287,6 +289,16 @@ namespace kamite::debug_tools
             if (hide && ui->button("Show everything##showall"))
                 g_hide.store(0);
 
+            ui->separator_text("Model");
+            int knees = bone_tweaks::backwardKnees() ? 1 : 0;
+            if (ui->checkbox("Backward knees (Xavier; launcher: Mods)##knees", &knees))
+                bone_tweaks::setBackwardKnees(knees != 0);
+            {
+                std::lock_guard<std::mutex> lock(g_statusMutex);
+                ui->text(g_hands.c_str());
+            }
+            ui->text_disabled("The hand meshes the game shows now (the fist, open hand and grab shapes it swaps).");
+
             ui->separator_text("Room jump");
             if (g_points.empty())
             {
@@ -328,6 +340,15 @@ namespace kamite::debug_tools
     void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         std::memcpy(&g_room, rdram + GameWork::address(GameWork::kRoom), 2);
+        {
+            static uint32_t frames = 0;
+            if (++frames % 6u == 0u)
+            {
+                std::string hands = "Hand meshes shown: " + bone_tweaks::handNodes(rdram);
+                std::lock_guard<std::mutex> lock(g_statusMutex);
+                g_hands = std::move(hands);
+            }
+        }
         // Display switches.
         const uint32_t address = GameWork::address(GameWork::kFlagsDsp);
         const uint32_t hide = g_hide.load(std::memory_order_relaxed);
