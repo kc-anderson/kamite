@@ -241,18 +241,19 @@ for i,(n,t) in sorted(textures.items()):
     print('HD',n,big.shape[1],'x',big.shape[0],'->',name)
 open(OUT+'/xavier_textures.tm3','wb').write(tm)
 print('scr',len(scr),'tm3',len(tm))
-GROW_MAX=int(os.environ.get('XAVIER_GROW_MAX',256*1024))
-# The replacement pl00.dat must not be larger than the game's (character_mods leaves a bigger file out and the game
-# shows Gene with Xavier's loincloth: Oct 27). The merge as build_characters.py does it, against GENE_PL00.
-try:
-    import json as _json
-    _spec=_json.load(open(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),'..','assets','characters','xavier','character.json')))['files']['pl/pl00.dat']
-    _game=open(os.environ['GENE_PL00'],'rb').read()
-    _merged=merge_model(_game, scr, tm, trim={k:(tuple(v['axis']),v['min']) for k,v in _spec.get('trim',{}).items()})
-    # Larger than the game's file is fine since the port grows the archive (character_mods growFile); the load then
-    # needs that much more of the game's heap (logged in game: 'character: loading pl/pl00.dat ... largest free
-    # block'). Keep the growth modest until those numbers are in.
-    print('merged pl00.dat', len(_merged), 'of', len(_game), '(%+d bytes)' % (len(_merged)-len(_game)))
-    if len(_merged)>len(_game)+GROW_MAX: raise SystemExit('TOO LARGE: more than %d bytes over the game\'s file' % GROW_MAX)
-except KeyError as e:
-    print('merge size check skipped:', e)
+# The size check: the merge exactly as the build does it (build_characters.merge_file), against GENE_PL00. The game
+# reads pl/pl00.dat into a buffer of PLAYER_BUFFER bytes (heap A, 0x30D7A8); the port allocates a larger one for a
+# larger file, out of heap A's free room (about 145 KB in a RAM dump of Oct 27), so the growth over the buffer is
+# capped at XAVIER_GROW_MAX until the in-game line 'character: pl/pl00.dat buffer ... largest free block' says more.
+PLAYER_BUFFER=0x1E6800
+GROW_MAX=int(os.environ.get('XAVIER_GROW_MAX',64*1024))
+ROOT=os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0,os.path.join(ROOT,'tools','models'))
+from build_characters import merge_file
+_folder=os.path.join(ROOT,'assets','characters','xavier')
+_how=json.load(open(os.path.join(_folder,'character.json')))['files']['pl/pl00.dat']
+_game=open(os.environ['GENE_PL00'],'rb').read()
+_merged,_=merge_file(_game,_folder,_how,scr,tm)
+_over=len(_merged)-PLAYER_BUFFER
+print('merged pl00.dat', len(_merged), 'bytes: the game\'s file %+d, its buffer %+d' % (len(_merged)-len(_game), _over))
+if _over>GROW_MAX: raise SystemExit('TOO LARGE: %d bytes over the game\'s buffer (XAVIER_GROW_MAX %d)' % (_over, GROW_MAX))

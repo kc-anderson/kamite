@@ -26,17 +26,12 @@
               1.508,
               -0.034
             ]
-          },
-          "paint": {
-            "textures": [
-              "pl0004",
-              "pl0004a"
-            ],
-            "fur": "pl0001",
-            "start": 0.284,
-            "length": 0.07
           }
         }
+      },
+      "overlay": {
+        "pl0004": "arm/pl0004_fur.png",
+        "pl0004a": "arm/pl0004a_fur.png"
       }
     },
     "pl/pl01.dat": {

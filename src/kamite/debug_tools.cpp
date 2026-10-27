@@ -290,9 +290,6 @@ namespace kamite::debug_tools
                 g_hide.store(0);
 
             ui->separator_text("Model");
-            int knees = bone_tweaks::backwardKnees() ? 1 : 0;
-            if (ui->checkbox("Backward knees (Xavier; launcher: Mods)##knees", &knees))
-                bone_tweaks::setBackwardKnees(knees != 0);
             if (ui->version >= 3u)
             {
                 using bone_tweaks::Tune;
@@ -302,11 +299,6 @@ namespace kamite::debug_tools
                     if (ui->slider_float(label, &v, lo, hi, fmt))
                         bone_tweaks::setTuning(t, v);
                 };
-                if (knees)
-                {
-                    slider("Knees: swing home from (thigh back)##ke1", Tune::KneeEaseStart, 0.0f, 120.0f, "%.0f deg");
-                    slider("Knees: fully home at##ke2", Tune::KneeEaseEnd, 10.0f, 180.0f, "%.0f deg");
-                }
                 if (bone_tweaks::hasHair())
                 {
                     slider("Hair: stiffness##hk", Tune::HairStiffness, 1.0f, 200.0f, "%.0f");

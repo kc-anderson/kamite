@@ -24,17 +24,12 @@ namespace kamite::bone_tweaks
         constexpr uint32_t kTransCallSite = 0x0014A4C0u; // the return address of its first call in cModel_Trans
         constexpr uint32_t kPartsFirst = 0x144u, kPartNext = 0x144u, kPartMtx = 0x80u, kPartNum = 0x2B4u;
         constexpr uint32_t kMeshHead = 0x25Cu, kNodeNext = 0x404u, kNodeFlags = 0x380u, kNodeInfo = 0x414u, kInfoName = 0x8u;
-        constexpr int kLegs[2][3] = {{18, 19, 20}, {22, 23, 24}}; // thigh, shin, foot: right, left
-        constexpr float kStraight = 0.01f;                        // metres the knee must be off the hip-ankle line
-
-        std::atomic<bool> g_knees{false};
-        std::atomic<float> g_kneeEase[2] = {45.0f, 100.0f}; // degrees of mirrored thigh-back where the knee starts / ends swinging home
         struct Saved
         {
             uint32_t address = 0;
             std::array<float, 16> original{}, mirrored{};
         };
-        Saved g_saved[6]; // the thighs and shins, the two hair bones
+        Saved g_saved[2]; // the two hair bones
         bool g_applied = false;
 
         uint32_t rd32(const uint8_t *rdram, uint32_t a) { uint32_t v; std::memcpy(&v, rdram + (a & 0x01FFFFFFu), 4); return v; }
@@ -57,22 +52,6 @@ namespace kamite::bone_tweaks
                     r[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j];
             return r;
         }
-        // The least rotation taking unit vector a onto unit vector b (Rodrigues).
-        Mat between(const Vec &a, const Vec &b)
-        {
-            const Vec k = cross(a, b);
-            const float c = dot(a, b);
-            Mat r{1, 0, 0, 0, 1, 0, 0, 0, 1};
-            if (c < -0.9999f)
-                return r; // opposite: not reached for a knee (the mirror never turns a bone right round)
-            const Mat kx{0, -k[2], k[1], k[2], 0, -k[0], -k[1], k[0], 0};
-            const Mat kx2 = mul(kx, kx);
-            const float f = 1.0f / (1.0f + c);
-            for (int i = 0; i < 9; ++i)
-                r[i] += kx[i] + kx2[i] * f;
-            return r;
-        }
-
         // The game's matrix: rows are the bone's axes (row vectors), row 3 the position.
         struct Bone
         {
@@ -107,72 +86,6 @@ namespace kamite::bone_tweaks
             return i;
         }
 
-        void mirrorKnees(uint8_t *rdram)
-        {
-            uint32_t parts[32];
-            if (playerParts(rdram, parts) < 26)
-                return;
-            // Already mirrored this frame (a second pack of the same matrices): leave them.
-            if (g_applied && g_saved[0].address == parts[18])
-            {
-                Bone now = readBone(rdram, parts[18]);
-                if (std::memcmp(now.m.data(), g_saved[0].mirrored.data(), 64) == 0)
-                    return;
-            }
-            int saved = 0;
-            // The pelvis: its side axis (row 0, her left) tells sideways from forward, its up (row 1) and forward
-            // (row 2) measure how far back a thigh would point.
-            const Bone pelvis = readBone(rdram, parts[17]);
-            const Vec side{pelvis.m[0], pelvis.m[1], pelvis.m[2]}, up{pelvis.m[4], pelvis.m[5], pelvis.m[6]},
-                fwd{pelvis.m[8], pelvis.m[9], pelvis.m[10]};
-            const float e1 = g_kneeEase[0].load(std::memory_order_relaxed), e2 = g_kneeEase[1].load(std::memory_order_relaxed);
-            for (int li = 0; li < 2; ++li)
-            {
-                const auto &leg = kLegs[li];
-                Bone thigh = readBone(rdram, parts[leg[0]]), shin = readBone(rdram, parts[leg[1]]), foot = readBone(rdram, parts[leg[2]]);
-                const Vec hip = thigh.pos(), knee = shin.pos(), ankle = foot.pos();
-                const Vec axis = unit(sub(ankle, hip));
-                const Vec v = sub(knee, hip);
-                const Vec par = mulf(axis, dot(v, axis));
-                const Vec sideP = unit(sub(side, mulf(axis, dot(side, axis)))); // the side axis across the leg
-                const Vec out = li == 0 ? mulf(sideP, -1.0f) : sideP;             // outward: her right leg goes -x
-                const Vec whole = sub(v, par);
-                const Vec perp = sub(whole, mulf(sideP, dot(whole, sideP)));    // the forward part
-                g_saved[saved].address = parts[leg[0]];
-                g_saved[saved].original = thigh.m;
-                g_saved[saved + 1].address = parts[leg[1]];
-                g_saved[saved + 1].original = shin.m;
-                if (length(perp) > kStraight && length(axis) > 0.5f)
-                {
-                    // The knee on its circle round the hip-ankle line (fixed bone lengths, feet and hips stay): psi
-                    // from the forward direction towards the outward side. The original knee is at psi0, the mirror
-                    // (forward offset flipped, sideways kept) at pi - psi0. A deep bend mirrored points the thigh far
-                    // back past what the hip's skin can take (the sprint slide, kicks, crouches: Oct 27); from e1 to
-                    // e2 degrees of that, the knee swings from the mirror round the outward side back to the
-                    // original, smoothly, so deep bends keep the game's own knee.
-                    const Vec u = unit(perp);
-                    const float r = length(whole);
-                    const float psi0 = std::atan2(dot(whole, out), dot(whole, u)), psim = 3.14159265f - psi0;
-                    const Vec centre = add(hip, par);
-                    auto at = [&](float psi) { return add(centre, add(mulf(u, r * std::cos(psi)), mulf(out, r * std::sin(psi)))); };
-                    const Vec th = unit(sub(at(psim), hip));
-                    const float back = -std::atan2(dot(th, fwd), -dot(th, up)) * 57.2957795f; // degrees behind straight down
-                    float t = std::clamp((back - e1) / std::max(1.0f, e2 - e1), 0.0f, 1.0f);
-                    t = t * t * (3.0f - 2.0f * t);
-                    const Vec knee2 = at(psim - t * (psim - psi0));
-                    const Mat q1 = between(unit(sub(knee, hip)), unit(sub(knee2, hip)));
-                    const Mat q2 = between(unit(sub(ankle, knee)), unit(sub(ankle, knee2)));
-                    thigh.set(mul(q1, thigh.rot()), hip);
-                    shin.set(mul(q2, shin.rot()), knee2);
-                    writeBone(rdram, parts[leg[0]], thigh);
-                    writeBone(rdram, parts[leg[1]], shin);
-                }
-                g_saved[saved].mirrored = thigh.m;
-                g_saved[saved + 1].mirrored = shin.m;
-                saved += 2;
-            }
-            g_applied = true;
-        }
 
         Mat axisAngle(const Vec &k, float a)
         {
@@ -307,10 +220,10 @@ namespace kamite::bone_tweaks
             }
             if (hair.back.bone >= 0)
                 placeHinged(rdram, parts, bind, hair.back.bone, 4, Vec{hair.back.pivot[0], hair.back.pivot[1], hair.back.pivot[2]},
-                            g_strands[0].q, g_saved[4]);
+                            g_strands[0].q, g_saved[0]);
             if (hair.side.bone >= 0)
                 placeHinged(rdram, parts, bind, hair.side.bone, 4, Vec{hair.side.pivot[0], hair.side.pivot[1], hair.side.pivot[2]},
-                            g_strands[1].q, g_saved[5]);
+                            g_strands[1].q, g_saved[1]);
         }
 
         void onGetMeshPtr(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
@@ -320,8 +233,6 @@ namespace kamite::bone_tweaks
             const uint32_t model = GPR_U32(ctx, 4);
             if (model != rd32(rdram, GameWork::address(GameWork::kPlayerObj)))
                 return;
-            if (g_knees.load(std::memory_order_relaxed))
-                mirrorKnees(rdram);
             if (characters::hair().back.bone < 0 && characters::hair().side.bone < 0)
                 return;
             uint32_t parts[32];
@@ -335,8 +246,6 @@ namespace kamite::bone_tweaks
 
     void install(PS2Runtime &runtime)
     {
-        const char *knees = std::getenv("KAMITE_BACKWARD_KNEES");
-        g_knees.store(knees && *knees && std::strcmp(knees, "0") != 0);
         if (!runtime.hasFunction(kGetMeshPtr))
             return;
         FunctionHooks::instance().observeEntry(kGetMeshPtr, "bone_tweaks_pack", &onGetMeshPtr);
@@ -345,8 +254,8 @@ namespace kamite::bone_tweaks
         g_tune[1].store(h.damping);
         g_tune[2].store(h.gravity);
         g_tune[3].store(h.wind);
-        KM_INFO(Game, "bone tweaks: backward knees " << (g_knees.load() ? "on" : "off") << " ([Mods] BackwardKnees; F2 > Debug)"
-                                                     << (hasHair() ? "; hair on" : ""));
+        if (hasHair())
+            KM_INFO(Game, "bone tweaks: hair on");
     }
 
     void onFrame(uint8_t *rdram, R5900Context *, PS2Runtime *)
@@ -366,22 +275,17 @@ namespace kamite::bone_tweaks
         }
     }
 
-    bool backwardKnees() { return g_knees.load(std::memory_order_relaxed); }
     bool hasHair() { return characters::hair().back.bone >= 0 || characters::hair().side.bone >= 0; }
     float tuning(Tune which)
     {
         const int i = static_cast<int>(which);
-        return i < 4 ? g_tune[i].load(std::memory_order_relaxed) : g_kneeEase[i - 4].load(std::memory_order_relaxed);
+        return g_tune[i].load(std::memory_order_relaxed);
     }
     void setTuning(Tune which, float value)
     {
         const int i = static_cast<int>(which);
-        if (i < 4)
-            g_tune[i].store(value, std::memory_order_relaxed);
-        else
-            g_kneeEase[i - 4].store(value, std::memory_order_relaxed);
+        g_tune[i].store(value, std::memory_order_relaxed);
     }
-    void setBackwardKnees(bool on) { g_knees.store(on, std::memory_order_relaxed); }
 
     std::string handNodes(const uint8_t *rdram)
     {

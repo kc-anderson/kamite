@@ -476,10 +476,6 @@ namespace kamite::characters
 
     namespace
     {
-        // cDvd_ReadAlloc(a0 cDvd, a1 path, a2 void **out, a3 cHeap *): the game loads a file into a heap block of its
-        // size. For a replaced file, the heap's room is logged (cHeap {+0 first block, +4 size}; block {+0 heap,
-        // +4 prev, +8 next, +0xC free bytes after it, +0x10 used}), so a larger replacement can be checked against
-        // the space the game has for it.
         // The replaced file a cDvd read names (a1), or none.
         const std::pair<const std::string, std::pair<uint32_t, uint32_t>> *replacedRead(const uint8_t *rdram, R5900Context *ctx)
         {
@@ -499,48 +495,61 @@ namespace kamite::characters
             return it == g_replaced.end() ? nullptr : &*it;
         }
 
-        void onReadAlloc(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        // The player's files are read (cDvd_ReadToBuffer, func_0030D5C8 at 0x30D98C / 0x30D9D4) into two buffers the
+        // game allocates from heap A (0x754200) through 0x30EE08 (a0 size, a1 alignment, a2 cHeap): 0x1E6800 bytes for
+        // pl/pl00.dat at 0x30D7A8 (the largest costume, pl11, is 973 sectors) and 0x19800 for pl/pl01.dat at
+        // 0x30D7C8; the pointers sit at 0x752C38 / 0x752C3C. A replacement larger than its buffer gets a larger one
+        // (whole sectors), so the read does not run past it. cHeap {+0 first block, +4 size}; block {+8 next,
+        // +0xC free bytes after it}.
+        struct PlayerBuffer
         {
-            const auto *it = replacedRead(rdram, ctx);
-            if (!it)
-                return;
-            // t1 = a size the caller asks for instead of the file's (0 = the file's): never smaller than the
-            // replacement, or the block would be too small and the read cut short.
-            const uint32_t asked = GPR_U32(ctx, 9);
-            if (asked != 0u && asked < it->second.second)
-            {
-                ctx->r[9] = _mm_set_epi64x(_mm_extract_epi64(ctx->r[9], 1), static_cast<int64_t>(static_cast<int32_t>(it->second.second)));
-                KM_INFO(Game, "character: " << it->first << " was asked for with " << asked << " bytes (ra 0x" << std::hex
-                                            << GPR_U32(ctx, 31) << std::dec << "); now " << it->second.second);
-            }
-            static std::map<std::string, int> logged;
-            if (++logged[it->first] > 3)
-                return;
-            const uint32_t heap = GPR_U32(ctx, 7) & 0x01FFFFFFu;
-            if (heap == 0u || heap + 8u > PS2_RAM_SIZE)
-            {
-                KM_INFO(Game, "character: " << it->first << " loads without a heap (a3 0)");
-                return;
-            }
-            const uint32_t size = r32(rdram, heap + 4u);
-            uint32_t block = r32(rdram, heap) & 0x01FFFFFFu, largest = 0, total = 0, blocks = 0;
-            while (block && block + 0x14u <= PS2_RAM_SIZE && blocks < 4096u)
+            uint32_t ra;
+            const char *file;
+            uint32_t gameSize;
+        };
+        constexpr PlayerBuffer kPlayerBuffers[] = {{0x0030D7B0u, "pl/pl00.dat", 0x1E6800u}, {0x0030D7D0u, "pl/pl01.dat", 0x19800u}};
+
+        void heapRoom(uint8_t *rdram, uint32_t heap, uint32_t &largest, uint32_t &total)
+        {
+            largest = total = 0u;
+            uint32_t block = r32(rdram, heap) & 0x01FFFFFFu;
+            for (uint32_t n = 0; block && block + 0x14u <= PS2_RAM_SIZE && n < 4096u; ++n)
             {
                 const uint32_t freeBytes = r32(rdram, block + 0xCu);
                 largest = std::max(largest, freeBytes);
                 total += freeBytes;
-                ++blocks;
                 block = r32(rdram, block + 8u) & 0x01FFFFFFu;
             }
-            const uint32_t need = it->second.second, game = it->second.first;
-            const bool fits = largest >= need + 0x40u;
-            if (fits)
-                KM_INFO(Game, "character: loading " << it->first << " (" << need << " bytes, the game's " << game << ") into heap 0x"
-                                                    << std::hex << heap << std::dec << " of " << size << " bytes: largest free block "
-                                                    << largest << ", " << total << " free in " << blocks << " blocks");
-            else
-                KM_WARN(Game, "character: " << it->first << " (" << need << " bytes) may not fit heap 0x" << std::hex << heap << std::dec
-                                            << ": largest free block " << largest << " of " << size << " (" << total << " free)");
+        }
+
+        void onHeapAlloc(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            if (g_replaced.empty())
+                return;
+            const uint32_t ra = GPR_U32(ctx, 31), asked = GPR_U32(ctx, 4);
+            for (const PlayerBuffer &b : kPlayerBuffers)
+            {
+                if (ra != b.ra || asked != b.gameSize)
+                    continue;
+                const auto it = g_replaced.find(b.file);
+                if (it == g_replaced.end())
+                    return;
+                const uint32_t need = (it->second.second + 0x7FFu) & ~0x7FFu;
+                if (need <= asked)
+                    return;
+                ctx->r[4] = _mm_set_epi64x(_mm_extract_epi64(ctx->r[4], 1), static_cast<int64_t>(static_cast<int32_t>(need)));
+                const uint32_t heap = GPR_U32(ctx, 6) & 0x01FFFFFFu;
+                uint32_t largest = 0u, total = 0u;
+                if (heap != 0u && heap + 8u <= PS2_RAM_SIZE)
+                    heapRoom(rdram, heap, largest, total);
+                if (largest >= need + 0x40u)
+                    KM_INFO(Game, "character: " << b.file << " buffer " << asked << " -> " << need << " bytes (heap 0x" << std::hex << heap
+                                                << std::dec << ": largest free block " << largest << ", " << total << " free, before it)");
+                else
+                    KM_WARN(Game, "character: " << b.file << " needs a " << need << "-byte buffer; heap 0x" << std::hex << heap << std::dec
+                                                << " has " << largest << " in its largest free block (" << total << " free)");
+                return;
+            }
         }
     }
 
@@ -569,7 +578,7 @@ namespace kamite::characters
 
     void installLoadWatch()
     {
-        FunctionHooks::instance().observeEntry(0x00200CB0u, "character_load_watch", &onReadAlloc);
+        FunctionHooks::instance().observeEntry(0x0030EE08u, "character_player_buffer", &onHeapAlloc);
         FunctionHooks::instance().observeEntry(0x00200B88u, "character_load_watch_buffer", &onReadToBuffer);
     }
 

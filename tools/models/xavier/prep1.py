@@ -32,13 +32,16 @@ ARM_CUT=0.5; PAD_RADIAL=1.16; PAD_AXIAL=1.05
 # stay inside the loincloth. Hair: every strip pushed out along its normals by HAIR_LIFT, plus up to HAIR_STAGGER
 # more for the outer strips (ordered by distance from the head); both 0 now: lifting showed the strips' transparent
 # undersides from the front and did not end the z-fighting (which the port's compressed depth range causes, see the
-# status doc). HAIR_SHORTEN raises the hair below the ears towards them at the back of the head only (1 = as
-# modelled; 0.9 = the back hair below ear level 10% shorter); HAIR_FLARE pushes the hair below the ears back from the neck by that much (metres),
+# status doc). HAIR_SHORTEN raises the hair below the ears towards them all round the head (1 = as modelled; 0.85 =
+# the hair below ear level 15% shorter, so the tips stay off the shoulders); HAIR_FLARE pushes the hair below the ears back from the neck by that much (metres),
 # scaled by how far below the ears it is. All overridable from the environment for variants.
 def _env(n,d): return float(os.environ.get(n,d))
 BUTT_SCALE=_env('XAVIER_BUTT_SCALE',0.945)
 HAIR_LIFT=_env('XAVIER_HAIR_LIFT',0.0); HAIR_STAGGER=_env('XAVIER_HAIR_STAGGER',0.0)
-HAIR_SHORTEN=_env('XAVIER_HAIR_SHORTEN',0.9); HAIR_FLARE=_env('XAVIER_HAIR_FLARE',0.0)
+HAIR_SHORTEN=_env('XAVIER_HAIR_SHORTEN',0.85); HAIR_FLARE=_env('XAVIER_HAIR_FLARE',0.0)
+# The hair's middle layer: the two strips just behind the ears, between the side strands and the back mass, hanging
+# below ear level (they showed between the layers in game, K Oct 27). XAVIER_HAIR_MID=1 keeps them.
+HAIR_MID=os.environ.get('XAVIER_HAIR_MID','0')!='0'
 HAIR_EAR_Z=1.62   # ear level, Blender z (game y) after scaling to Gene's height
 BOOT=os.environ.get('XAVIER_BOOT','1')!='0'   # the shoe skinned to the foot bone alone (see the weights loop)
 MOUTH=os.environ.get('XAVIER_MOUTH','1')!='0' # the mouth interior kept, on the face texture's bottom strip
@@ -247,6 +250,16 @@ for name in names:
                     for h in e.link_faces:
                         if h.index not in seen: st.append(h)
             strips.append(comp)
+        if not HAIR_MID:
+            def mid(comp):
+                P=np.array([tuple(v.co) for f in comp for v in f.verts]); c=P.mean(0)
+                return 0.03<abs(c[0])<0.09 and -0.03<c[1]<0.0 and P[:,2].min()<HAIR_EAR_Z
+            gone=[comp for comp in strips if mid(comp)]
+            strips=[comp for comp in strips if not any(comp is g for g in gone)]
+            if gone:
+                bmesh.ops.delete(bm,geom=[f for comp in gone for f in comp],context='FACES')
+                bmesh.ops.delete(bm,geom=[v for v in bm.verts if not v.link_faces],context='VERTS')
+                print('HAIR: middle layer (%d strips, %d faces) dropped'%(len(gone),sum(len(c) for c in gone)))
         strips.sort(key=lambda comp: np.mean([np.linalg.norm(np.array(f.calc_center_median())-head) for f in comp]))
         vn={}  # vertex -> outward direction: the mean normal of its faces (vertices are not shared between strips)
         for rank,comp in enumerate(strips):
@@ -263,8 +276,7 @@ for name in names:
             for v in bm.verts:
                 below=HAIR_EAR_Z-v.co.z
                 if below<=0: continue
-                back=min(1.0,max(0.0,(v.co.y+0.02)/0.06))  # 1 at the back of the head (y > 0.04), 0 at the sides/front
-                v.co.z=HAIR_EAR_Z-below*(1.0-(1.0-HAIR_SHORTEN)*back)
+                v.co.z=HAIR_EAR_Z-below*HAIR_SHORTEN
                 v.co.y+=HAIR_FLARE*min(1.0,below/lowest)*(1 if v.co.y>0 else 0.3)  # mostly the back of the hair
         bm.to_mesh(me); bm.free()
     # delete right arm & mouth interior

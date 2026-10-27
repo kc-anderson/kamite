@@ -1286,11 +1286,6 @@ namespace kamite::launcher
                             state.ini.set("Mods", "Character", list[static_cast<size_t>(picked)].id);
                         if (!list[static_cast<size_t>(picked)].credit.empty())
                             ImGui::TextColored(kTextDim, "%s", list[static_cast<size_t>(picked)].credit.c_str());
-                        settingLabel("Backward knees", "The character's knees bend backwards (Xavier's own legs): "
-                                                       "each knee is mirrored as he is drawn, feet and hips as the "
-                                                       "game moves them. Experimental; looks wrong on Gene.",
-                                     "F2 > Debug switches it while playing.");
-                        iniCheckbox(state, "On##knees", "Mods", "BackwardKnees", false);
                         ImGui::EndTable();
                     }
                     ImGui::EndTabItem();

@@ -1,65 +1,117 @@
-"""Triangle list -> the game's strip vertex buffers (flags: 0x8000 = no triangle, 0/1 = triangle winding)."""
+"""Triangle list -> the game's strip vertex buffers (flags: 0x8000 = no triangle, 0/1 = triangle winding).
+
+Each triangle carries its own winding flag, so a strip may cross the edge between its last two vertices whatever the
+winding. Strips are grown both ways from a start triangle (the unused triangle with the fewest free neighbours, so
+stranded triangles are taken first), from whichever of its three edges gives the longest strip. A strip costs its
+triangle count + 2 vertices. swaps=True also lets a strip turn onto the other free edge of its last triangle by
+re-sending the third-last vertex as a no-triangle vertex (1 vertex instead of a 2-vertex restart); the game's own
+models never send a single no-triangle vertex, so it is off unless asked for."""
 from collections import defaultdict
 
-def stripify(tris):
-    """tris: list of (a,b,c) unique-vertex ids with the wanted winding. Returns list of strips [ [ids...] ]."""
-    edge_tris=defaultdict(list)
-    for t,(a,b,c) in enumerate(tris):
-        for e in ((a,b),(b,c),(c,a)): edge_tris[frozenset(e)].append(t)
-    used=[False]*len(tris)
-    def neighbors(t):
-        a,b,c=tris[t]; out=[]
-        for e in ((a,b),(b,c),(c,a)):
-            for u in edge_tris[frozenset(e)]:
-                if u!=t and not used[u]: out.append(u)
-        return out
-    strips=[]
-    order=sorted(range(len(tris)), key=lambda t: len(neighbors(t)))
-    for start in order:
-        if used[start]: continue
-        # choose the starting edge giving the longest strip (try 3 rotations)
-        best=None
-        for r in range(3):
-            a,b,c=tris[start][r:]+tris[start][:r]
-            seq=[a,b,c]; mark=[start]; used[start]=True
-            while True:
-                p,q=seq[-2],seq[-1]
-                cand=None
-                for u in edge_tris[frozenset((p,q))]:
-                    if not used[u]:
-                        cand=u; break
-                if cand is None: break
-                x=[v for v in tris[cand] if v!=p and v!=q]
-                if len(x)!=1: break
-                seq.append(x[0]); used[cand]=True; mark.append(cand)
-            for m in mark: used[m]=False
-            if best is None or len(mark)>len(best[1]): best=(seq,mark)
-        for m in best[1]: used[m]=True
-        strips.append(best[0])
+
+def stripify(tris, swaps=False, tries=40):
+    """tris: list of (a,b,c) unique-vertex ids with the wanted winding. Returns strips, each a list of
+    (vertex id, makes_triangle); the first two entries of a strip never make a triangle. The greedy pass is run
+    'tries' times with ties broken at random (seeded, so the output is the same every run); the fewest vertices win."""
+    import random
+    best = None
+    for k in range(max(1, tries)):
+        strips = _stripify(tris, swaps, random.Random(k) if k else None)
+        cost = sum(len(s) for s in strips)
+        if best is None or cost < best[0]:
+            best = (cost, strips)
+    return best[1]
+
+
+def _stripify(tris, swaps, rng):
+    edge_tris = defaultdict(list)
+    for t, (a, b, c) in enumerate(tris):
+        for e in ((a, b), (b, c), (c, a)):
+            edge_tris[frozenset(e)].append(t)
+    used = [False] * len(tris)
+
+    def across(t, p, q):
+        for u in edge_tris[frozenset((p, q))]:
+            if u != t and not used[u]:
+                x = [v for v in tris[u] if v != p and v != q]
+                if len(x) == 1:
+                    return u, x[0]
+        return None
+
+    def degree(t):
+        a, b, c = tris[t]
+        return sum(1 for e in ((a, b), (b, c), (c, a)) for u in edge_tris[frozenset(e)] if u != t and not used[u])
+
+    def grow(seq, t, allow_swaps):
+        """Extend seq (its last three entries are triangle t) forward, marking what it takes; returns those."""
+        taken = []
+        while True:
+            nxt = across(t, seq[-2][0], seq[-1][0])
+            if nxt is None and allow_swaps:
+                nxt = across(t, seq[-3][0], seq[-1][0])
+                if nxt is not None:
+                    seq.append((seq[-3][0], False))
+            if nxt is None:
+                return taken
+            t, x = nxt
+            used[t] = True
+            taken.append(t)
+            seq.append((x, True))
+
+    def build(start, rot, keep):
+        a, b, c = tris[start][rot:] + tris[start][:rot]
+        used[start] = True
+        back = [(c, False), (b, False), (a, True)]
+        took_b = grow(back, start, False)
+        seq = _reverse(back)                       # ... a, b, c: ends with the start triangle
+        took_f = grow(seq, start, swaps)
+        if not keep:
+            for u in took_b + took_f + [start]:
+                used[u] = False
+        return seq, 1 + len(took_b) + len(took_f)
+
+    strips = []
+    left = set(range(len(tris)))
+    while left:
+        if rng is None:
+            start = min(left, key=degree)
+        else:
+            d = {t: degree(t) for t in left}; m = min(d.values())
+            start = rng.choice(sorted(t for t in left if d[t] == m))
+        rots = [0, 1, 2]
+        if rng is not None:
+            rng.shuffle(rots)
+        best = max(rots, key=lambda r: (lambda s, n: (n, -len(s)))(*build(start, r, False)))
+        seq, _ = build(start, best, True)
+        strips.append(seq)
+        left = {t for t in left if not used[t]}
     return strips
 
-def winding_flag(tri_set_orient, a, b, c):
-    """flag 0 if (a,b,c) has the wanted orientation, 1 if (b,a,c) has it."""
-    return 0 if tri_set_orient((a,b,c)) else 1
 
-def build_buffers(tris, max_verts=1000):
+def _reverse(back):
+    """A strip without swaps grown backwards, turned round: every entry from the third on makes a triangle."""
+    verts = [v for v, _ in back][::-1]
+    return [(v, i >= 2) for i, v in enumerate(verts)]
+
+
+def build_buffers(tris, max_verts=1000, swaps=False):
     """Returns list of buffers: each [(vid, flag)] with flags 0x8000/0/1, keeping each buffer <= max_verts."""
-    want=set()
-    for a,b,c in tris: want.add((a,b,c)); want.add((b,c,a)); want.add((c,a,b))
-    bufs=[]; cur=[]
-    for s in stripify(tris):
-        # split long strips into chunks that fit
-        i=0
-        while i < len(s)-2:
-            room=max_verts-len(cur)
-            if room < 3:
-                bufs.append(cur); cur=[]; room=max_verts
-            seg=s[i:i+room]
-            out=[(seg[0],0x8000),(seg[1],0x8000)]
-            for k in range(2,len(seg)):
-                a,b,c=seg[k-2],seg[k-1],seg[k]
-                out.append((c, 0 if (a,b,c) in want else 1))
-            cur+=out
-            i+=len(seg)-2
-    if cur: bufs.append(cur)
+    want = set()
+    for a, b, c in tris:
+        want.add((a, b, c)); want.add((b, c, a)); want.add((c, a, b))
+    bufs = []; cur = []
+    for s in stripify(tris, swaps):
+        if len(cur) + 3 > max_verts:
+            bufs.append(cur); cur = []
+        last = []   # the last two vertices sent; a buffer split restarts the strip from them
+        for v, makes in s:
+            if makes:
+                if len(cur) + 1 > max_verts:
+                    bufs.append(cur); cur = [(last[0], 0x8000), (last[1], 0x8000)]
+                cur.append((v, 0 if (last[0], last[1], v) in want else 1))
+            else:
+                cur.append((v, 0x8000))
+            last = (last + [v])[-2:]
+    if cur:
+        bufs.append(cur)
     return bufs

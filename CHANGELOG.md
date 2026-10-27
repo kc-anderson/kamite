@@ -2,6 +2,16 @@
 
 Newest first, one line per change; the code comments say how.
 
+## October 27, 2026 (9)
+
+- Fixed a larger character file overflowing the game's player buffer on every load.
+- Xavier: the snake's head at full detail, with its painted eyes, fangs, teeth and forked tongue.
+- Xavier: his own teeth show when he talks or shouts.
+- Xavier: hand-painted fur where the gauntlet arm meets his shoulder.
+- Xavier: shorter hair without its middle layer; the back hair no longer swings into his neck and necklace.
+- Removed Backward knees.
+- Smaller character models (better triangle strips).
+
 ## October 27, 2026 (8)
 
 - Fixed the crash on Play with a character larger than the game's file (one of the game's disc read paths did not
@@ -20,8 +30,6 @@ Newest first, one line per change; the code comments say how.
   tunes them).
 - Xavier: the snake's mouth closes to touching instead of biting through itself; the tongue stays between the jaws.
 - Xavier: the loincloth no longer spreads wide while walking.
-- Backward knees: deep bends (the sprint slide, crouches, high kicks) swing the knee home smoothly instead of folding
-  the thigh far back; F2 > Debug tunes where.
 
 ## October 27, 2026 (5)
 
@@ -32,7 +40,6 @@ Newest first, one line per change; the code comments say how.
 ## October 27, 2026 (4)
 
 - Fixed the save-menu hang after a save state load for real (the first fix used the wrong end code).
-- Backward knees: the knees now point outward and back (only the forward bend flips).
 - Xavier: his boot is one piece (the upper no longer trails the shin); his jaw, lips and tongue follow Gene's jaw,
   so his mouth opens when Gene talks, with the mouth interior back; the snake shuts its mouth while Gene makes a
   fist. His loincloth panels sit 2 cm further from his body (XAVIER_LOIN_OUT).
@@ -41,8 +48,6 @@ Newest first, one line per change; the code comments say how.
 
 - Fixed the game hanging at 0 FPS when loading a save from the options menu after a save state load (an empty
   message text sent the text measurer off into memory; such a text now ends at once).
-- Mods: Backward knees (launcher, Mods; F2 > Debug while playing): the character's knees mirrored as he is drawn,
-  for Xavier. Experimental.
 - F2 > Debug shows which hand meshes the game is drawing (fist / open / grab).
 
 ## October 27, 2026 (2)
