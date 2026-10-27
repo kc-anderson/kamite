@@ -15,8 +15,9 @@ struct R5900Context;
 // position (+0xE0). cModel_Trans (0x14A3E8) runs the object's calc virtual, then packs the meshes: its first
 // cModel_getMeshPtr call (0x14B6F8 from 0x14A4C0) is the moment the matrices are final and not yet packed.
 //
-// Backward knees ([Mods] BackwardKnees, launcher: Mods; for Xavier): each knee is mirrored through the hip-ankle line, the thigh and
-// shin turned by the least rotation that takes them to the mirrored knee, the foot untouched; every motion the game
+// Backward knees ([Mods] BackwardKnees, launcher: Mods; for Xavier): each knee's forward offset from the hip-ankle
+// line is flipped (its sideways offset, knees out, is kept: the pelvis's side axis tells which is which), the thigh
+// and shin turned by the least rotation that takes them to the new knee, the foot untouched; every motion the game
 // plays keeps its feet and hips, the legs bend the other way.
 namespace kamite::bone_tweaks
 {

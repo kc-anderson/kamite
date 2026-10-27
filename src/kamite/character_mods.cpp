@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -106,6 +107,31 @@ namespace kamite::characters
         }
     }
 
+    namespace
+    {
+        HingedBone g_snakeJaw;
+
+        void readSnakeJaw(const fs::path &folder)
+        {
+            IniFile ini;
+            if (!ini.load(folder / "character.ini") || ini.get("SnakeJaw", "Bone").empty())
+                return;
+            HingedBone h;
+            h.bone = std::atoi(ini.get("SnakeJaw", "Bone").c_str());
+            h.parent = std::atoi(ini.get("SnakeJaw", "Parent").c_str());
+            if (std::sscanf(ini.get("SnakeJaw", "Pivot").c_str(), "%f %f %f", &h.pivot[0], &h.pivot[1], &h.pivot[2]) != 3 ||
+                std::sscanf(ini.get("SnakeJaw", "Axis").c_str(), "%f %f %f", &h.axis[0], &h.axis[1], &h.axis[2]) != 3)
+                return;
+            h.closed = static_cast<float>(std::atof(ini.get("SnakeJaw", "Closed", "0").c_str()) * 3.14159265358979 / 180.0);
+            if (h.bone < 0 || h.bone > 31 || h.parent < 0 || h.parent > 31)
+                return;
+            g_snakeJaw = h;
+            KM_INFO(Boot, "character: snake jaw on bone " << h.bone << " under " << h.parent << ", closes " << ini.get("SnakeJaw", "Closed", "0") << " degrees");
+        }
+    }
+
+    const HingedBone &snakeJaw() { return g_snakeJaw; }
+
     void install(const fs::path &exeDir)
     {
         registerTextures(exeDir);
@@ -120,6 +146,7 @@ namespace kamite::characters
             KM_WARN(Boot, "character '" << id << "': no folder " << utf8(folder) << "; playing as Gene");
             return;
         }
+        readSnakeJaw(folder);
         if (!disc_files::open())
         {
             KM_WARN(Boot, "character '" << id << "': the disc image has no file archive / path table; playing as Gene");

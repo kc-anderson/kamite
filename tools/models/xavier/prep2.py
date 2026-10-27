@@ -18,8 +18,20 @@ def tri(o):
     bm=bmesh.new(); bm.from_mesh(o.data); bmesh.ops.triangulate(bm,faces=bm.faces[:]); bm.to_mesh(o.data); bm.free()
 
 budget={'XavierBody':0.5,'XavierHair':0.55,'XavierNecklace':0.6,'XavierShoulderPad':1.0,'Xaviersnakeeyes':1.0,'XavierEyeR':0.03,'XavierEyesL':0.03}
+MOUTH_KEEP=0.08   # the mouth interior (prep1's 'mouthdec' group) keeps this share of its faces (an interior, seen
+                  # through a half-open mouth); the rest of the body keeps its own budget ratio as before
 for n,r in budget.items():
-    o=obj(n); tri(o); decimate(o,r); print('DEC',n,len(o.data.polygons))
+    o=obj(n); tri(o)
+    if 'mouthdec' in o.vertex_groups:
+        gi=o.vertex_groups['mouthdec'].index
+        inside=sum(1 for p in o.data.polygons if all(any(g.group==gi and g.weight>0.5 for g in o.data.vertices[v].groups) for v in p.vertices))
+        total=len(o.data.polygons); body=total-inside; mouth=int(inside*MOUTH_KEEP)
+        m=o.modifiers.new('decmouth','DECIMATE'); m.ratio=(body+mouth)/total; m.use_collapse_triangulate=True
+        m.vertex_group='mouthdec'; m.vertex_group_factor=10.0
+        bpy.context.view_layer.objects.active=o; bpy.ops.object.modifier_apply(modifier='decmouth')
+        print('DEC mouth', n, inside, 'of', total, 'faces ->', len(o.data.polygons))
+        r=(body*r+mouth)/len(o.data.polygons)   # the body's share decimated as without the mouth
+    decimate(o,r); print('DEC',n,len(o.data.polygons))
 
 images={}
 def img_array(name):
@@ -36,14 +48,14 @@ for n in budget:
     o=obj(n); me=o.data
     me.calc_loop_triangles() if hasattr(me,'calc_loop_triangles') else None
     uvl=me.uv_layers.active.data
-    vg={g.index:int(g.name) for g in o.vertex_groups}
+    vg={g.index:int(g.name) for g in o.vertex_groups if g.name.isdigit()}
     cl=me.attributes.get('cloth')
     for p in me.polygons:
         mat=o.material_slots[p.material_index].material.name
         corners=[]
         for li in p.loop_indices:
             l=me.loops[li]; v=me.vertices[l.vertex_index]
-            w=sorted([(vg[g.group],g.weight) for g in v.groups if g.weight>0.0005], key=lambda x:-x[1])[:3]
+            w=sorted([(vg[g.group],g.weight) for g in v.groups if g.weight>0.0005 and g.group in vg], key=lambda x:-x[1])[:3]
             corners.append(dict(key=(n,l.vertex_index), pos=tuple(v.co), nrm=tuple(v.normal), uv=tuple(uvl[li].uv), w=w, cloth=(cl.data[l.vertex_index].value if cl else 0.0)))
         faces.append(dict(obj=n,mat=mat,c=corners))
 print('faces',len(faces))

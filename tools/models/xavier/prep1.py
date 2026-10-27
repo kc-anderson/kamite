@@ -40,6 +40,9 @@ BUTT_SCALE=_env('XAVIER_BUTT_SCALE',0.945)
 HAIR_LIFT=_env('XAVIER_HAIR_LIFT',0.0); HAIR_STAGGER=_env('XAVIER_HAIR_STAGGER',0.0)
 HAIR_SHORTEN=_env('XAVIER_HAIR_SHORTEN',0.9); HAIR_FLARE=_env('XAVIER_HAIR_FLARE',0.0)
 HAIR_EAR_Z=1.62   # ear level, Blender z (game y) after scaling to Gene's height
+BOOT=os.environ.get('XAVIER_BOOT','1')!='0'   # the shoe skinned to the foot bone alone (see the weights loop)
+MOUTH=os.environ.get('XAVIER_MOUTH','1')!='0' # the mouth interior kept, on the face texture's bottom strip
+MOUTH_V=0.38                                  # the strip: v in [0, MOUTH_V) of XavierFace.png (face_mouth.py pastes it)
 Rarm=['def_arm_0.R','def_arm_1.R','def_arm_1_bridge.R','def_arm_1_elbow_dc_0.R','def_hand_0.R']+['def_finger_%d_%d'%(i,j) for i in range(5) for j in range(3)]
 
 def bonepos(n):
@@ -116,8 +119,13 @@ def group_xform(n):
     return 'T0'
 
 # Gene bone for each Xavier deform group
+JAW=('def_jaw_0_master','def_lips_1_lower.L','def_lips_1_lower.R','def_lips_1_lower_stretch.L','def_lips_1_lower_stretch.R',
+     'def_lips_front_lower','def_tongue_0','def_tongue_1','def_tongue_2')   # Gene's jaw (bone 26): opens when he talks
+SNAKE_JAW=('def_snake_jaw_0','def_snake_jaw_1','def_snake_jaw_2','def_snake_tongue_0','def_snake_tongue_1','def_snake_tongue_2')
 def gene_bone(n, pos=None):
     if n in ('def_pelvis_0','def_loincloth_front','def_loincloth_back') or n.startswith('def_butt'): return 17
+    if n in JAW: return 26
+    if n in SNAKE_JAW: return 31   # unused by the game (a head child); the port moves it with the fist (bone_tweaks)
     if n.startswith('def_waist') or n in ('def_spine_0','def_spine_1'): return 1
     if n=='def_chest_0': return 2
     if n=='def_neck_0': return 3
@@ -162,8 +170,19 @@ for name in names:
         if tot<=0: ws=[('def_head_0',1.0)]; tot=1.0
         acc=np.zeros(3); p4=np.append(P[i],1)
         for n,w in ws:
+            acc+=w/tot*(xf[group_xform(n)]@p4)[:3]
+        # The boot is one piece: a vertex of the shoe (any foot or toe weight) gives its shin weight to the foot bone,
+        # so the upper no longer trails the shin while the sole follows the foot (the "platform sole", K, Oct 27).
+        # The rest position above keeps the original groups (the shin and foot transforms differ above the ankle).
+        if BOOT:
+            shoe=[n for n,_ in ws if n.startswith('def_foot_0.') or n.startswith('def_toe_0.')]
+            if shoe:
+                side=shoe[0][-1]
+                shin=[(n,w) for n,w in ws if n.startswith('def_leg_1') and n.endswith('.'+side)]
+                if shin:
+                    ws=[(n,w) for n,w in ws if (n,w) not in shin]+[('def_foot_0.'+side, sum(w for _,w in shin))]
+        for n,w in ws:
             w/=tot
-            acc+=w*(xf[group_xform(n)]@p4)[:3]
             gb=gene_bone(n)
             if gb=='snake0':
                 d=snake_t-snake_h; t=np.clip(np.dot(P[i]-snake_h,d)/np.dot(d,d),0,1)
@@ -241,8 +260,22 @@ for name in names:
     kill=[]
     if name=='XavierBody':
         mouth=[i for i,s in enumerate(ob.material_slots) if s.material and s.material.name=='mouth']
-        killf=[f for f in bm.faces if f.material_index in mouth]
-        bmesh.ops.delete(bm,geom=killf,context='FACES')
+        head=[i for i,s in enumerate(ob.material_slots) if s.material and s.material.name=='head']
+        if MOUTH and mouth and head:
+            # The mouth interior stays (the jaw is Gene's bone 26 now): its faces become 'head' faces whose UVs
+            # squeeze the mouth texture into the face texture's unused bottom strip (the face uses v >= 0.407).
+            uvl=bm.loops.layers.uv.active
+            dl=bm.verts.layers.deform.verify()
+            mg=new.vertex_groups.new(name='mouthdec').index   # prep2 decimates these harder (an interior)
+            for f in bm.faces:
+                if f.material_index in mouth:
+                    f.material_index=head[0]
+                    for l in f.loops:
+                        l[uvl].uv=(l[uvl].uv[0], l[uvl].uv[1]*MOUTH_V)
+                        l.vert[dl][mg]=1.0
+        else:
+            killf=[f for f in bm.faces if f.material_index in mouth]
+            bmesh.ops.delete(bm,geom=killf,context='FACES')
         bm.verts.ensure_lookup_table()
         # Xavier keeps his own shoulder and the top of his upper arm (skinned to Gene's arm bones, so the joint bends
         # like his own skin); the rest of the arm goes, and Gene's gauntlet arm comes out of the upper arm's end.
@@ -278,6 +311,27 @@ for name in names:
     bm.to_mesh(me); bm.free()
     out_objs.append(new)
     print('OBJ',name,'verts',len(me.vertices),'faces',len(me.polygons))
+
+# The snake's jaw hinge for the port (assets/characters/xavier/character.ini [SnakeJaw]): the hinge point and axis in
+# the game's bind space relative to bone 16 (the left hand; the game's bind rotations are identity), and the angle
+# that closes the mouth (the jaw's direction turned onto the head's). bone_tweaks.cpp turns bone 31's matrix by it
+# when Gene's fist mesh (LH_01) is shown.
+def snakejaw():
+    M=xf['snakehead']; Rm=M[:3,:3]/k
+    jh,jt=X('def_snake_jaw_0'); hh,ht=X('def_snake_head_0')
+    tf=lambda p: (M@np.append(p,1))[:3]
+    piv=tf(jh); jd=Rm@(jt-jh); hd=Rm@(ht-hh)
+    jd/=np.linalg.norm(jd); hd/=np.linalg.norm(hd)
+    ax=np.cross(jd,hd); ax/=np.linalg.norm(ax)          # turning the jaw about it brings it onto the head
+    gape=float(np.degrees(np.arccos(np.clip(np.dot(jd,hd),-1,1))))
+    game=lambda v: (v[0],v[2],-v[1])                     # Blender (x, y, z) -> game (x, z, -y)
+    rel=game(piv-G[16]); axg=game(ax)
+    print('[SnakeJaw]')
+    print('Bone=31\nParent=16')
+    print('Pivot=%.4f %.4f %.4f' % tuple(rel))
+    print('Axis=%.4f %.4f %.4f' % tuple(axg))
+    print('Gape=%.1f' % gape)
+snakejaw()
 
 # drop the original Xavier objects/rig from the scene
 for o in list(bpy.data.objects):

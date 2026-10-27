@@ -27,6 +27,16 @@ namespace kamite::characters
     // hardware renderer (PS2X_PCSX2_TEXTURE_EXTRA), so the character draws at full resolution.
     void install(const std::filesystem::path &exeDir);
 
+    // character.ini [SnakeJaw] of the chosen character (Xavier): a jaw skinned to a spare bone that the port turns
+    // about a hinge in its parent bone's bind space when the fist hand mesh shows (bone_tweaks). bone < 0: none.
+    struct HingedBone
+    {
+        int bone = -1, parent = -1;
+        float pivot[3] = {}, axis[3] = {};
+        float closed = 0.0f; // radians the bone turns about the axis when the fist shows
+    };
+    const HingedBone &snakeJaw();
+
     // Diagnostics for the cloth attachment (Gene's coat, object 0x101 parented to his bone 17 by the player's init at
     // 0x108068): the hook at 0x108088 remembers the player and the coat, and onFrame logs their bone matrices once
     // a few seconds later ([cloth] lines), to work out how an attached model's root is placed.

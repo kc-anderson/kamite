@@ -14,7 +14,7 @@ namespace kamite::message_guard
         constexpr uint32_t kSetMessage = 0x002AF590u;   // cMessDrawFont_setMessage(drawer, id)
         constexpr uint32_t kMessageManager = 0x003C23A4u; // cMessage: 16 bank pointers; id >> 12 picks the bank
         constexpr uint32_t kEmptyCodes = 0x40u;         // codes checked: a real text never has 64 zero codes
-        constexpr uint16_t kPageEnd = 0xA001u;
+        constexpr uint16_t kPageEnd = 0x8001u; // the game's own strings end with it; cMessCommon_isPageEndCode takes 0x80xx (0xA0xx only ends a line: measurePage then walked on)
         std::set<uint32_t> g_reported;
 
         uint32_t rd32(const uint8_t *rdram, uint32_t a) { uint32_t v; std::memcpy(&v, rdram + (a & 0x01FFFFFFu), 4); return v; }

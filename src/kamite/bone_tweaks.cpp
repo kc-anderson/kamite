@@ -1,4 +1,5 @@
 #include "kamite/bone_tweaks.h"
+#include "kamite/character_mods.h"
 #include "kamite/function_hooks.h"
 #include "kamite/game_layout.h"
 #include "kamite/log.h"
@@ -7,6 +8,7 @@
 
 #include <array>
 #include <atomic>
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -30,8 +32,10 @@ namespace kamite::bone_tweaks
             uint32_t address = 0;
             std::array<float, 16> original{}, mirrored{};
         };
-        Saved g_saved[4]; // the thighs and shins
+        Saved g_saved[5]; // the thighs and shins, and the snake's jaw bone
         bool g_applied = false;
+        float g_jaw = 0.0f;          // the snake jaw's angle now (radians), eased towards open / closed
+        uint32_t g_fistNode = 0;     // the LH_01 mesh node, once found
 
         uint32_t rd32(const uint8_t *rdram, uint32_t a) { uint32_t v; std::memcpy(&v, rdram + (a & 0x01FFFFFFu), 4); return v; }
         bool inRam(uint32_t a, uint32_t size = 4u) { a &= 0x01FFFFFFu; return a >= 0x100000u && a + size <= 0x02000000u; }
@@ -116,20 +120,27 @@ namespace kamite::bone_tweaks
                     return;
             }
             int saved = 0;
+            // The pelvis's side axis: the knee's sideways offset (knees out) is kept, only its forward offset flips.
+            const Bone pelvis = readBone(rdram, parts[17]);
+            const Vec side{pelvis.m[0], pelvis.m[1], pelvis.m[2]};
             for (const auto &leg : kLegs)
             {
                 Bone thigh = readBone(rdram, parts[leg[0]]), shin = readBone(rdram, parts[leg[1]]), foot = readBone(rdram, parts[leg[2]]);
                 const Vec hip = thigh.pos(), knee = shin.pos(), ankle = foot.pos();
                 const Vec axis = unit(sub(ankle, hip));
                 const Vec v = sub(knee, hip);
-                const Vec par = mulf(axis, dot(v, axis)), perp = sub(v, par);
+                const Vec par = mulf(axis, dot(v, axis));
+                const Vec sideP = unit(sub(side, mulf(axis, dot(side, axis)))); // the side axis across the leg
+                const Vec whole = sub(v, par);
+                const Vec lateral = mulf(sideP, dot(whole, sideP));
+                const Vec perp = sub(whole, lateral); // the forward part: this is what mirrors
                 g_saved[saved].address = parts[leg[0]];
                 g_saved[saved].original = thigh.m;
                 g_saved[saved + 1].address = parts[leg[1]];
                 g_saved[saved + 1].original = shin.m;
                 if (length(perp) > kStraight && length(axis) > 0.5f)
                 {
-                    const Vec knee2 = add(hip, sub(par, perp));
+                    const Vec knee2 = add(hip, sub(add(par, lateral), perp));
                     const Mat q1 = between(unit(sub(knee, hip)), unit(sub(knee2, hip)));
                     const Mat q2 = between(unit(sub(ankle, knee)), unit(sub(ankle, knee2)));
                     thigh.set(mul(q1, thigh.rot()), hip);
@@ -144,14 +155,97 @@ namespace kamite::bone_tweaks
             g_applied = true;
         }
 
+        Mat axisAngle(const Vec &k, float a)
+        {
+            const float c = std::cos(a), s = std::sin(a), t = 1 - c;
+            return {t * k[0] * k[0] + c, t * k[0] * k[1] - s * k[2], t * k[0] * k[2] + s * k[1],
+                    t * k[0] * k[1] + s * k[2], t * k[1] * k[1] + c, t * k[1] * k[2] - s * k[0],
+                    t * k[0] * k[2] - s * k[1], t * k[1] * k[2] + s * k[0], t * k[2] * k[2] + c};
+        }
+        Vec applyRot(const Mat &m, const Vec &v)
+        {
+            return {m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]};
+        }
+
+        // Gene's fist mesh LH_01 is shown (the game swaps hand meshes by node visibility; Xavier keeps the nodes empty).
+        bool fistShown(const uint8_t *rdram, uint32_t model)
+        {
+            auto nodeIs = [&](uint32_t node, const char *name) {
+                const uint32_t info = rd32(rdram, node + kNodeInfo);
+                return inRam(info, 0x10u) && std::memcmp(rdram + ((info + kInfoName) & 0x01FFFFFFu), name, 6) == 0;
+            };
+            if (!inRam(g_fistNode, 0x418u) || !nodeIs(g_fistNode, "LH_01"))
+            {
+                g_fistNode = 0;
+                uint32_t node = rd32(rdram, model + kMeshHead);
+                for (int i = 0; i < 64 && inRam(node, 0x418u) && !g_fistNode; ++i, node = rd32(rdram, node + kNodeNext))
+                    if (nodeIs(node, "LH_01"))
+                        g_fistNode = node;
+                if (!g_fistNode)
+                    return false;
+            }
+            return (rd32(rdram, g_fistNode + kNodeFlags) & 1u) == 0u;
+        }
+
+        // The snake's jaw: its bone (31, a head child the game never moves) placed under the hand (bone 16) with the
+        // jaw turned about its hinge: shut while the fist mesh shows, open otherwise, eased over a few frames. The
+        // game skins with mtx * (bind pose)^-1 and the bind rotations are identity, so for a vertex p (bind space):
+        // world = R16 (pivot + R (p - GW16 - pivot)) + t16 = A (p - GW31) + b with A = R16 R, b = R16 (R (d - pivot) + pivot) + t16,
+        // d = GW31 - GW16 (bind positions, the part offsets summed up the chain).
+        void placeSnakeJaw(uint8_t *rdram, uint32_t model, const uint32_t parts[32], int count)
+        {
+            const characters::HingedBone &jaw = characters::snakeJaw();
+            if (jaw.bone < 0 || jaw.bone >= count || jaw.parent >= count)
+                return;
+            const float target = fistShown(rdram, model) ? jaw.closed : 0.0f;
+            const float rate = std::max(0.02f, jaw.closed / 6.0f);
+            g_jaw += std::clamp(target - g_jaw, -rate, rate);
+            Vec bind[32];
+            for (int i = 0; i < count; ++i)
+            {
+                float t[3];
+                std::memcpy(t, rdram + ((parts[i] + 0xE0u) & 0x01FFFFFFu), 12);
+                const uint32_t parent = rd32(rdram, parts[i] + 0x148u);
+                int pi = -1;
+                for (int j = 0; j < i; ++j)
+                    if (parts[j] == parent)
+                        pi = j;
+                bind[i] = pi >= 0 ? add(bind[pi], Vec{t[0], t[1], t[2]}) : Vec{t[0], t[1], t[2]};
+            }
+            const Bone hand = readBone(rdram, parts[jaw.parent]);
+            Bone bone = readBone(rdram, parts[jaw.bone]);
+            Saved &s = g_saved[4];
+            if (!(g_applied && s.address == parts[jaw.bone] && std::memcmp(bone.m.data(), s.mirrored.data(), 64) == 0))
+            {
+                s.address = parts[jaw.bone];
+                s.original = bone.m;
+            }
+            const Vec pivot{jaw.pivot[0], jaw.pivot[1], jaw.pivot[2]}, axis = unit(Vec{jaw.axis[0], jaw.axis[1], jaw.axis[2]});
+            const Mat r = axisAngle(axis, g_jaw), r16 = hand.rot();
+            const Vec d = sub(bind[jaw.bone], bind[jaw.parent]);
+            const Vec b = add(applyRot(r16, add(applyRot(r, sub(d, pivot)), pivot)), hand.pos());
+            bone.set(mul(r16, r), b);
+            writeBone(rdram, parts[jaw.bone], bone);
+            s.mirrored = bone.m;
+            g_applied = true;
+        }
+
         void onGetMeshPtr(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
-            if (!g_knees.load(std::memory_order_relaxed) || GPR_U32(ctx, 31) != kTransCallSite)
+            if (GPR_U32(ctx, 31) != kTransCallSite)
                 return;
             const uint32_t model = GPR_U32(ctx, 4);
             if (model != rd32(rdram, GameWork::address(GameWork::kPlayerObj)))
                 return;
-            mirrorKnees(rdram);
+            if (g_knees.load(std::memory_order_relaxed))
+                mirrorKnees(rdram);
+            if (characters::snakeJaw().bone >= 0)
+            {
+                uint32_t parts[32];
+                const int count = playerParts(rdram, parts);
+                if (count == 32)
+                    placeSnakeJaw(rdram, model, parts, count);
+            }
         }
     }
 
@@ -162,7 +256,8 @@ namespace kamite::bone_tweaks
         if (!runtime.hasFunction(kGetMeshPtr))
             return;
         FunctionHooks::instance().observeEntry(kGetMeshPtr, "bone_tweaks_pack", &onGetMeshPtr);
-        KM_INFO(Game, "bone tweaks: backward knees " << (g_knees.load() ? "on" : "off") << " ([Mods] BackwardKnees; F2 > Debug)");
+        KM_INFO(Game, "bone tweaks: backward knees " << (g_knees.load() ? "on" : "off") << " ([Mods] BackwardKnees; F2 > Debug)"
+                                                     << (characters::snakeJaw().bone >= 0 ? "; snake jaw on" : ""));
     }
 
     void onFrame(uint8_t *rdram, R5900Context *, PS2Runtime *)

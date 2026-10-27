@@ -2,6 +2,14 @@
 
 Newest first, one line per change; the code comments say how.
 
+## October 27, 2026 (4)
+
+- Fixed the save-menu hang after a save state load for real (the first fix used the wrong end code).
+- Backward knees: the knees now point outward and back (only the forward bend flips).
+- Xavier: his boot is one piece (the upper no longer trails the shin); his jaw, lips and tongue follow Gene's jaw,
+  so his mouth opens when Gene talks, with the mouth interior back; the snake shuts its mouth while Gene makes a
+  fist.
+
 ## October 27, 2026 (3)
 
 - Fixed the game hanging at 0 FPS when loading a save from the options menu after a save state load (an empty
