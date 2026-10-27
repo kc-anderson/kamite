@@ -2,6 +2,11 @@
 
 Newest first, one line per change; the code comments say how.
 
+## October 27, 2026 (8)
+
+- Fixed the crash on Play with a character larger than the game's file (one of the game's disc read paths did not
+  see the grown archive).
+
 ## October 27, 2026 (7)
 
 - Character models may be larger than the game's file (the port grows the disc archive the game sees; the image

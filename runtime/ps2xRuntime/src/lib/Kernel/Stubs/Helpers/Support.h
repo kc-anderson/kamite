@@ -209,7 +209,7 @@ namespace
             return false;
         }
 
-        totalSectorsOut = g_cdImageSizeBytes / static_cast<uint64_t>(kCdSectorSize);
+        totalSectorsOut = (g_cdImageSizeBytes + PS2DiscOverlay::insertedBytes()) / static_cast<uint64_t>(kCdSectorSize);
         return true;
     }
 
@@ -506,6 +506,21 @@ namespace
             }
 
             const uint64_t offset = static_cast<uint64_t>(lbn) * kCdSectorSize;
+            // The image as the game sees it (PS2CdImage: the overlay's patches and inserted bytes, which move every
+            // later byte; a raw read here missed the insertion and every file after a grown one read as garbage).
+            if (PS2CdImage::instance().ensureOpenFromIoPaths())
+            {
+                std::memset(dst, 0, byteCount);
+                const uint64_t total = PS2CdImage::instance().sizeBytes();
+                const size_t count = offset >= total ? 0u : static_cast<size_t>(std::min<uint64_t>(byteCount, total - offset));
+                if (count != 0u && !PS2CdImage::instance().read(offset, dst, count))
+                {
+                    g_lastCdError = -1;
+                    return false;
+                }
+                g_lastCdError = 0;
+                return true;
+            }
             if (!readHostRange(cdImage, offset, dst, byteCount))
                 return false;
             PS2DiscOverlay::apply(offset, dst, byteCount);
