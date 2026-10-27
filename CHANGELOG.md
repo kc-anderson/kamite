@@ -8,7 +8,7 @@ Newest first, one line per change; the code comments say how.
 - Backward knees: the knees now point outward and back (only the forward bend flips).
 - Xavier: his boot is one piece (the upper no longer trails the shin); his jaw, lips and tongue follow Gene's jaw,
   so his mouth opens when Gene talks, with the mouth interior back; the snake shuts its mouth while Gene makes a
-  fist.
+  fist. His loincloth panels sit 2 cm further from his body (XAVIER_LOIN_OUT).
 
 ## October 27, 2026 (3)
 

@@ -42,6 +42,7 @@ HAIR_SHORTEN=_env('XAVIER_HAIR_SHORTEN',0.9); HAIR_FLARE=_env('XAVIER_HAIR_FLARE
 HAIR_EAR_Z=1.62   # ear level, Blender z (game y) after scaling to Gene's height
 BOOT=os.environ.get('XAVIER_BOOT','1')!='0'   # the shoe skinned to the foot bone alone (see the weights loop)
 MOUTH=os.environ.get('XAVIER_MOUTH','1')!='0' # the mouth interior kept, on the face texture's bottom strip
+LOIN_OUT=_env('XAVIER_LOIN_OUT',0.02)         # metres the loincloth panels move out from the body (clipping, K Oct 27)
 MOUTH_V=0.38                                  # the strip: v in [0, MOUTH_V) of XavierFace.png (face_mouth.py pastes it)
 Rarm=['def_arm_0.R','def_arm_1.R','def_arm_1_bridge.R','def_arm_1_elbow_dc_0.R','def_hand_0.R']+['def_finger_%d_%d'%(i,j) for i in range(5) for j in range(3)]
 
@@ -163,7 +164,7 @@ for name in names:
     P=np.array([tuple(mw@Vector(c)) for c in co])
     gname={g.index:g.name for g in ob.vertex_groups}
     newP=np.zeros_like(P); gw=[dict() for _ in range(nv)]; rsum=np.zeros(nv)
-    cloth=np.zeros(nv); butt=np.zeros(nv)
+    cloth=np.zeros(nv); butt=np.zeros(nv); front=np.zeros(nv)
     for i,v in enumerate(me.vertices):
         ws=[(gname[g.group],g.weight) for g in v.groups if gname.get(g.group) in deform and g.weight>0]
         tot=sum(w for _,w in ws)
@@ -192,8 +193,14 @@ for name in names:
                 gw[i][gb]=gw[i].get(gb,0)+w
             if n in Rarm: rsum[i]+=w
             if n in ('def_loincloth_front','def_loincloth_back'): cloth[i]+=w
+            if n=='def_loincloth_front': front[i]+=w
             if n.startswith('def_butt'): butt[i]+=w
         newP[i]=acc
+    if name=='XavierBody' and LOIN_OUT:
+        # The loincloth panels a little further from the body (front panel forward, back panel back, Blender -y is
+        # forward), by their cloth weight: they ride Gene's coat-tail chains, which do not keep them off his skin.
+        for i in range(nv):
+            if cloth[i]>0: newP[i][1]-=LOIN_OUT*(front[i]-(cloth[i]-front[i]))
     new=bpy.data.objects.new('X_'+name, me)
     bpy.context.scene.collection.objects.link(new)
     if new.data.shape_keys: new.shape_key_clear()
