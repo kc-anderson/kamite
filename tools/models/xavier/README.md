@@ -20,7 +20,10 @@ pillow`), numpy and Pillow:
    shin), the mouth interior is kept on the face texture's unused bottom strip (XAVIER_MOUTH=0 drops it as before) with
    its UVs squeezed there, the jaw, lower lips and tongue ride Gene's jaw bone 26 (his talking opens the mouth), and the
    snake's jaw and tongue ride the spare bone 31, which the port turns shut while Gene's fist mesh shows
-   (bone_tweaks.cpp; prep1 prints the `[SnakeJaw]` hinge lines for character.ini). After prep1, run
+   (bone_tweaks.cpp; prep1 prints the `[SnakeJaw]` hinge lines for character.ini, Closed = the angle where the
+   jaw first meets the head, measured on the mesh; the tongue rides jaw and head half and half). The hair rides spare
+   bones 29 (back) and 30 (both side strands), which the port swings (prep1 prints `[Hair]`). encode_xavier hangs each
+   loincloth panel on the mean of its two coat chains (XAVIER_LOIN_SPREAD=1 for the old spread across them). After prep1, run
    `python -I tools/models/xavier/face_mouth.py <work>/textures` (pastes the mouth texture into the strip).
 2. `prep2.py`: decimated to Gene's budget (the mouth interior to 8% of its faces first), the body atlas split into UV-island groups (fur by colour, the rest by place);
    the two loincloth panels are their own group.

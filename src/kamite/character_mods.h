@@ -37,6 +37,22 @@ namespace kamite::characters
     };
     const HingedBone &snakeJaw();
 
+    // character.ini [Hair]: strands on spare head bones that the port swings (bone_tweaks). bone < 0: none.
+    struct HairStrand
+    {
+        int bone = -1;
+        float pivot[3] = {}, dir[3] = {}; // relative to the head bone (4), game bind space; dir = root to tip at rest
+        float length = 0.2f;
+        bool hinge = false;               // true: swings only about the head's side axis (two strands, one bone)
+    };
+    struct Hair
+    {
+        HairStrand back, side;
+        float stiffness = 40.0f, damping = 5.0f, gravity = 0.6f, wind = 1.2f;
+        float backForward = 8.0f, backBack = 40.0f, backSide = 25.0f, sideSwing = 20.0f; // degrees
+    };
+    const Hair &hair();
+
     // Diagnostics for the cloth attachment (Gene's coat, object 0x101 parented to his bone 17 by the player's init at
     // 0x108068): the hook at 0x108088 remembers the player and the coat, and onFrame logs their bone matrices once
     // a few seconds later ([cloth] lines), to work out how an attached model's root is placed.

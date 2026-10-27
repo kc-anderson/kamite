@@ -130,7 +130,48 @@ namespace kamite::characters
         }
     }
 
+    namespace
+    {
+        Hair g_hair;
+
+        bool vec3(const std::string &text, float out[3]) { return std::sscanf(text.c_str(), "%f %f %f", &out[0], &out[1], &out[2]) == 3; }
+
+        void readHair(const fs::path &folder)
+        {
+            IniFile ini;
+            if (!ini.load(folder / "character.ini") || ini.get("Hair", "BackBone").empty())
+                return;
+            Hair h;
+            auto strand = [&](const char *prefix, HairStrand &s, bool hinge) {
+                const std::string p(prefix);
+                s.bone = std::atoi(ini.get("Hair", p + "Bone", "-1").c_str());
+                s.length = static_cast<float>(std::atof(ini.get("Hair", p + "Length", "0.2").c_str()));
+                s.hinge = hinge;
+                if (s.bone < 0 || s.bone > 31 || !vec3(ini.get("Hair", p + "Pivot"), s.pivot) || !vec3(ini.get("Hair", p + "Dir"), s.dir))
+                    s.bone = -1;
+            };
+            strand("Back", h.back, false);
+            strand("Side", h.side, true);
+            auto num = [&](const char *key, float &v) {
+                const std::string t = ini.get("Hair", key);
+                if (!t.empty())
+                    v = static_cast<float>(std::atof(t.c_str()));
+            };
+            num("Stiffness", h.stiffness);
+            num("Damping", h.damping);
+            num("Gravity", h.gravity);
+            num("Wind", h.wind);
+            num("BackForward", h.backForward);
+            num("BackBack", h.backBack);
+            num("BackSide", h.backSide);
+            num("SideSwing", h.sideSwing);
+            g_hair = h;
+            KM_INFO(Boot, "character: hair on bones " << h.back.bone << " and " << h.side.bone);
+        }
+    }
+
     const HingedBone &snakeJaw() { return g_snakeJaw; }
+    const Hair &hair() { return g_hair; }
 
     void install(const fs::path &exeDir)
     {
@@ -147,6 +188,7 @@ namespace kamite::characters
             return;
         }
         readSnakeJaw(folder);
+        readHair(folder);
         if (!disc_files::open())
         {
             KM_WARN(Boot, "character '" << id << "': the disc image has no file archive / path table; playing as Gene");

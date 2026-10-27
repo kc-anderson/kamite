@@ -2,6 +2,15 @@
 
 Newest first, one line per change; the code comments say how.
 
+## October 27, 2026 (6)
+
+- Xavier: hair physics (the back hair and side strands swing with his head, gravity and a gusting wind; F2 > Debug
+  tunes them).
+- Xavier: the snake's mouth closes to touching instead of biting through itself; the tongue stays between the jaws.
+- Xavier: the loincloth no longer spreads wide while walking.
+- Backward knees: deep bends (the sprint slide, crouches, high kicks) swing the knee home smoothly instead of folding
+  the thigh far back; F2 > Debug tunes where.
+
 ## October 27, 2026 (5)
 
 - Xavier shows up again (the Oct 27 (4) model was 17 KB larger than the game's file and was left out: Gene with

@@ -122,10 +122,13 @@ def group_xform(n):
 # Gene bone for each Xavier deform group
 JAW=('def_jaw_0_master','def_lips_1_lower.L','def_lips_1_lower.R','def_lips_1_lower_stretch.L','def_lips_1_lower_stretch.R',
      'def_lips_front_lower','def_tongue_0','def_tongue_1','def_tongue_2')   # Gene's jaw (bone 26): opens when he talks
-SNAKE_JAW=('def_snake_jaw_0','def_snake_jaw_1','def_snake_jaw_2','def_snake_tongue_0','def_snake_tongue_1','def_snake_tongue_2')
+SNAKE_JAW=('def_snake_jaw_0','def_snake_jaw_1','def_snake_jaw_2')
+SNAKE_TONGUE=('def_snake_tongue_0','def_snake_tongue_1','def_snake_tongue_2')   # half jaw, half head: between them
+HAIR={'def_hair_back':29,'def_hair.L':30,'def_hair.R':30}   # spare head bones the port swings (bone_tweaks hair)
 def gene_bone(n, pos=None):
     if n in ('def_pelvis_0','def_loincloth_front','def_loincloth_back') or n.startswith('def_butt'): return 17
     if n in JAW: return 26
+    if n in HAIR: return HAIR[n]
     if n in SNAKE_JAW: return 31   # unused by the game (a head child); the port moves it with the fist (bone_tweaks)
     if n.startswith('def_waist') or n in ('def_spine_0','def_spine_1'): return 1
     if n=='def_chest_0': return 2
@@ -189,6 +192,8 @@ for name in names:
                 d=snake_t-snake_h; t=np.clip(np.dot(P[i]-snake_h,d)/np.dot(d,d),0,1)
                 t2=np.clip((t-0.3)/0.6,0,1)
                 gw[i][14]=gw[i].get(14,0)+w*(1-t2); gw[i][15]=gw[i].get(15,0)+w*t2
+            elif n in SNAKE_TONGUE:
+                gw[i][31]=gw[i].get(31,0)+w*0.5; gw[i][16]=gw[i].get(16,0)+w*0.5
             else:
                 gw[i][gb]=gw[i].get(gb,0)+w
             if n in Rarm: rsum[i]+=w
@@ -338,7 +343,44 @@ def snakejaw():
     print('Pivot=%.4f %.4f %.4f' % tuple(rel))
     print('Axis=%.4f %.4f %.4f' % tuple(axg))
     print('Gape=%.1f' % gape)
+    # Closed: the angle at which the jaw's upper surface first meets the head's lower surface (vertices binned by
+    # their distance from the hinge axis and along it; the smallest angular gap among the bins both share).
+    body=[o for o in out_objs if o.name=='X_XavierBody'][0]
+    gi={g.name:g.index for g in body.vertex_groups}
+    e1=jd-ax*np.dot(ax,jd); e1/=np.linalg.norm(e1); e2=np.cross(ax,e1)
+    jaw=[]; head=[]
+    for v in body.data.vertices:
+        w={g.group:g.weight for g in v.groups}
+        d=np.array(v.co)-piv
+        if np.linalg.norm(d)>0.09: continue
+        a=np.degrees(np.arctan2(np.dot(d,e2),np.dot(d,e1))); rad=np.hypot(np.dot(d,e1),np.dot(d,e2)); z=np.dot(d,ax)
+        if w.get(gi['31'],0)>0.6: jaw.append((rad,z,a))
+        elif w.get(gi['16'],0)>0.6 and -40<a<gape+60: head.append((rad,z,a))
+    rmax=max(r for r,_,_ in jaw); gaps=[]
+    for r0 in np.arange(0.3*rmax, rmax, 0.006):
+        for z0 in np.arange(-0.03,0.03,0.006):
+            J=[a for r,z,a in jaw if r0<=r<r0+0.006 and z0<=z<z0+0.006]
+            H=[a for r,z,a in head if r0<=r<r0+0.006 and z0<=z<z0+0.006]
+            if J and H and min(H)>max(J): gaps.append(min(H)-max(J))
+    closed=min(gaps) if gaps else gape*0.5
+    print('Closed=%.1f' % closed)
 snakejaw()
+
+def hair():
+    # The hair's pivots for the port (character.ini [Hair]): the back hair swings about its root on bone 29, the two
+    # side strands about the line through their roots on bone 30. Game bind space, relative to the head (bone 4).
+    M=xf['T0']; tf=lambda p: (M@np.append(p,1))[:3]
+    game=lambda v: (v[0],v[2],-v[1])
+    bh,bt=X('def_hair_back'); lh,lt=X('def_hair.L'); rh,rt=X('def_hair.R')
+    bp=tf(bh); btip=tf(bt); sp=(tf(lh)+tf(rh))/2; stip=(tf(lt)+tf(rt))/2
+    print('[Hair]')
+    print('BackBone=29\nBackPivot=%.4f %.4f %.4f' % tuple(game(bp-G[4])))
+    print('BackDir=%.4f %.4f %.4f' % tuple(game((btip-bp)/np.linalg.norm(btip-bp))))
+    print('BackLength=%.4f' % np.linalg.norm(btip-bp))
+    print('SideBone=30\nSidePivot=%.4f %.4f %.4f' % tuple(game(sp-G[4])))
+    print('SideDir=%.4f %.4f %.4f' % tuple(game((stip-sp)/np.linalg.norm(stip-sp))))
+    print('SideLength=%.4f' % np.linalg.norm(stip-sp))
+hair()
 
 # drop the original Xavier objects/rig from the scene
 for o in list(bpy.data.objects):

@@ -136,10 +136,14 @@ CW=[]
 for bn in _m['bones']:
     p_=bn['parent']; base=CW[p_] if p_>=0 else (0,0,0); CW.append(tuple(base[j]+bn['t'][j] for j in range(3)))
 COAT_TEX=[nm for nm,_,_ in tm3_read([d for t,d,o in dat_read(_b) if t=='TM3'][0])].index('pl0003')
+LOIN_SPREAD=float(os.environ.get('XAVIER_LOIN_SPREAD','0'))
 def coat_weights(p):
     x,y,z=p
     l,r=(1,21) if z>0 else (16,36)
     t=min(1,max(0,(x-CW[l][0])/(CW[r][0]-CW[l][0])))
+    # Each panel follows the mean of its two chains (XAVIER_LOIN_SPREAD 0): the chains swing apart with the legs, and
+    # a panel spread across both widened with them while walking (K, Oct 27). 1 = the old spread across the chains.
+    t=0.5+(t-0.5)*LOIN_SPREAD
     top=CW[l][1]
     if y>=top: k=None
     else:

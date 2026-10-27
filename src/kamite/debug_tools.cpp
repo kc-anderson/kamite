@@ -293,6 +293,29 @@ namespace kamite::debug_tools
             int knees = bone_tweaks::backwardKnees() ? 1 : 0;
             if (ui->checkbox("Backward knees (Xavier; launcher: Mods)##knees", &knees))
                 bone_tweaks::setBackwardKnees(knees != 0);
+            if (ui->version >= 3u)
+            {
+                using bone_tweaks::Tune;
+                auto slider = [&](const char *label, Tune t, float lo, float hi, const char *fmt) {
+                    float v = bone_tweaks::tuning(t);
+                    ui->set_next_width(300.0f);
+                    if (ui->slider_float(label, &v, lo, hi, fmt))
+                        bone_tweaks::setTuning(t, v);
+                };
+                if (knees)
+                {
+                    slider("Knees: swing home from (thigh back)##ke1", Tune::KneeEaseStart, 0.0f, 120.0f, "%.0f deg");
+                    slider("Knees: fully home at##ke2", Tune::KneeEaseEnd, 10.0f, 180.0f, "%.0f deg");
+                }
+                if (bone_tweaks::hasHair())
+                {
+                    slider("Hair: stiffness##hk", Tune::HairStiffness, 1.0f, 200.0f, "%.0f");
+                    slider("Hair: damping##hc", Tune::HairDamping, 0.0f, 30.0f, "%.1f");
+                    slider("Hair: gravity##hg", Tune::HairGravity, 0.0f, 2.0f, "%.2f");
+                    slider("Hair: wind##hw", Tune::HairWind, 0.0f, 10.0f, "%.1f");
+                    ui->text_disabled("Hair values go in mods/characters/xavier/character.ini [Hair] to keep them.");
+                }
+            }
             {
                 std::lock_guard<std::mutex> lock(g_statusMutex);
                 ui->text(g_hands.c_str());
