@@ -1,7 +1,7 @@
 import os
 WORK=os.environ.get('XAVIER_WORK','xavier_work')
 # Blender: stage1 -> decimated, material-grouped meshes + textures, dumped as JSON for encoding.
-import bpy, bmesh, sys, json, math, os, itertools
+import bpy, bmesh, sys, json, math, os
 import numpy as np
 from mathutils import Vector
 OUT=WORK
@@ -20,12 +20,13 @@ def tri(o):
 budget={'XavierBody':0.5,'XavierHair':0.55,'XavierNecklace':0.6,'XavierShoulderPad':1.0,'Xaviersnakeeyes':0.5,'XavierEyeR':0.03,'XavierEyesL':0.03}
 # The snake's eyes are painted into the body texture (K's XavierDiffuse.png: unpack_textures.py), so their spheres go (XAVIER_SNAKE_EYES=geometry
 # keeps them). The snake head (stored four times: encode_xavier) keeps the body's ratio (SNAKE_KEEP 1); its teeth and
-# tongue are taken out of the body before the decimation (snake_bits): each tooth becomes a three-sided pyramid
-# (its root and tip kept), the tongue keeps TONGUE_KEEP of its faces.
+# tongue are taken out of the body before the decimation (snake_bits): each tooth becomes one flat two-sided
+# triangle, the tongue is left out.
 if os.environ.get('XAVIER_SNAKE_EYES','paint')!='geometry':
     del budget['Xaviersnakeeyes']
 SNAKE_KEEP=float(os.environ.get('XAVIER_SNAKE_KEEP','1'))
-TONGUE_KEEP=float(os.environ.get('XAVIER_TONGUE_KEEP','0.5'))
+SNAKE_TOOTH_WIDTH=float(os.environ.get('XAVIER_SNAKE_TOOTH_WIDTH','1.6'))    # the flat tooth's half-width / the cone's radius
+SNAKE_TOOTH_LENGTH=float(os.environ.get('XAVIER_SNAKE_TOOTH_LENGTH','1.3'))  # the flat tooth's length / the cone's
 
 def components(bm, faces):
     seen=set(); out=[]
@@ -43,8 +44,8 @@ def components(bm, faces):
     return out
 
 def snake_bits():
-    """Moves the snake's teeth and tongue (the small separate parts of the body mesh on the snake's bones) into their
-    own object X_XavierSnakeBits: the teeth as pyramids, the tongue decimated to TONGUE_KEEP. Returns its name."""
+    """Moves the snake's teeth (the small separate parts of the body mesh on the snake's bones) into their own object
+    X_XavierSnakeBits as flat two-sided triangles; the tongue (the largest such part) is dropped. Returns its name."""
     o=obj('XavierBody')
     ids=[g.index for g in o.vertex_groups if g.name in ('16','31')]
     bm=bmesh.new(); bm.from_mesh(o.data); bm.faces.ensure_lookup_table(); bm.verts.ensure_lookup_table()
@@ -62,9 +63,14 @@ def snake_bits():
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
     bm.faces.ensure_lookup_table(); bm.verts.ensure_lookup_table()
     uvl=bm.loops.layers.uv.active
+    two=bm.faces.layers.int.new('twosided')   # before any face is held: a new layer invalidates them
+    dl=bm.verts.layers.deform.active
+    bm.faces.ensure_lookup_table()
     comps=sorted(components(bm, bm.faces), key=len)
-    comps.pop()   # the largest part: the tongue
-    teeth=0
+    tongue=comps.pop()   # the largest part: the tongue, left out (it showed through the shut jaw, K Oct 27)
+    bmesh.ops.delete(bm, geom=tongue, context='FACES')
+    # each tooth: its cone's axis (root to tip), root centre and radius
+    info=[]
     for c in comps:
         vs=list(set(v for f in c for v in f.verts))
         P=np.array([tuple(v.co) for v in vs]); m=P.mean(0)
@@ -75,128 +81,118 @@ def snake_bits():
         lo=(t<t.min()+0.2*span).sum(); hi=(t>t.max()-0.2*span).sum()
         if lo<hi: ax=-ax; t=-t
         tip=vs[int(np.argmax(t))]
-        # the root: the three vertices of the root half that span the widest triangle (the tooth's full base)
-        # the root: the three vertices of the root half that span the widest triangle (the tooth's full base)
-        root=[i for i in range(len(vs)) if t[i]<t.min()+0.5*span]
-        area=lambda a,b,c: np.linalg.norm(np.cross(P[b]-P[a],P[c]-P[a]))
-        ring=[vs[i] for i in max(itertools.combinations(root,3), key=lambda abc: area(*abc))]
-        uv={v:v.link_loops[0][uvl].uv.copy() for v in ring+[tip]}
+        root=[i for i in range(len(vs)) if t[i]<t.min()+0.35*span]
+        rc=P[root].mean(0)
+        rad=float(np.mean([np.linalg.norm((P[i]-rc)-ax*((P[i]-rc)@ax)) for i in root]))
+        info.append((c,vs,P,ax,tip,root,rc,rad))
+    centres=np.array([i[6] for i in info])
+    lengths=np.array([float((np.array(i[4].co)-i[6])@i[3]) for i in info]); fang=np.median(lengths)*1.5
+    teeth=0
+    for k,(c,vs,P,ax,tip,root,rc,rad) in enumerate(info):
+        L=float((np.array(tip.co)-rc)@ax)
+        # one flat triangle along its row (its plane holds the tooth's axis and the line through its two nearest
+        # neighbours; the fangs facing the sides), wider and longer than the cone, its base sunk into the gum; drawn from both sides
+        # (encode_xavier: 'twosided')
+        d=np.linalg.norm(centres-rc,axis=1); d[k]=np.inf
+        n1,n2=np.argsort(d)[:2]
+        row=centres[n1]-centres[n2] if np.linalg.norm(centres[n1]-centres[n2])>d[n1] else centres[n1]-rc
+        tn=row-ax*(row@ax)
+        if L>fang or np.linalg.norm(tn)<1e-9:
+            tn=np.cross(ax,(0.0,1.0,0.0))   # the fangs stand apart from the rows: facing the head's sides (+-y)
+        tn/=np.linalg.norm(tn)
+        base=rc-ax*L*0.15
+        pts=[base-tn*rad*SNAKE_TOOTH_WIDTH, base+tn*rad*SNAKE_TOOTH_WIDTH, rc+ax*L*SNAKE_TOOTH_LENGTH]
+        src=[vs[min(root,key=lambda i: np.linalg.norm(P[i]-pts[0]))], vs[min(root,key=lambda i: np.linalg.norm(P[i]-pts[1]))], tip]
+        new_v=[]
+        for p_,sv in zip(pts,src):
+            nv=bm.verts.new(p_)
+            for g,w in sv[dl].items(): nv[dl][g]=w
+            new_v.append((nv,sv.link_loops[0][uvl].uv.copy()))
         mat=c[0].material_index
-        bmesh.ops.delete(bm, geom=c, context='FACES_ONLY')
-        for a,b in ((ring[0],ring[1]),(ring[1],ring[2]),(ring[2],ring[0])):
-            n=np.cross(np.array(b.co)-np.array(a.co),np.array(tip.co)-np.array(a.co))
-            out=(np.array(a.co)+np.array(b.co))/2-(m+ax*(((np.array(a.co)+np.array(b.co))/2-m)@ax))
-            f=bm.faces.new((a,b,tip) if n@out>=0 else (b,a,tip)); f.material_index=mat
-            for l in f.loops: l[uvl].uv=uv[l.vert]
+        bmesh.ops.delete(bm, geom=c, context='FACES')
+        f=bm.faces.new([v for v,_ in new_v]); f.material_index=mat; f[two]=1
+        for l,(v,u) in zip(f.loops,new_v): l[uvl].uv=u
         teeth+=1
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
     bm.to_mesh(bits.data); bm.free()
-    tri(bits)
-    total=len(bits.data.polygons)
-    tg=bits.vertex_groups.new(name='tonguedec')
-    # the tongue: the vertices of the parts that are not teeth (a tooth is 3 triangles now)
-    tv=set()
-    bm=bmesh.new(); bm.from_mesh(bits.data); bm.faces.ensure_lookup_table()
-    for c in components(bm, bm.faces):
-        if len(c)>3: tv|=set(v.index for f in c for v in f.verts)
-    tongue_faces=sum(1 for c in components(bm,bm.faces) if len(c)>3 for f in c)
-    bm.free()
-    for i in tv: tg.add([i],1.0,'REPLACE')
-    if TONGUE_KEEP<1 and tongue_faces:
-        m=bits.modifiers.new('dectongue','DECIMATE'); m.ratio=(total-tongue_faces*(1-TONGUE_KEEP))/total; m.use_collapse_triangulate=True
-        m.vertex_group='tonguedec'; m.vertex_group_factor=10.0
-        bpy.context.view_layer.objects.active=bits; bpy.ops.object.modifier_apply(modifier='dectongue')
-    print('SNAKE BITS: %d teeth as pyramids, tongue %d -> %d faces, %d faces in all' % (teeth, tongue_faces, len(bits.data.polygons)-3*teeth, len(bits.data.polygons)))
+    print('SNAKE BITS: %d teeth as two-sided triangles, the tongue (%d faces) left out' % (teeth, len(tongue)))
     return 'XavierSnakeBits'
 
 def mouth_teeth():
-    """Moves Xavier's own teeth (the white parts of the mouth interior: prep1's 'mouthdec' faces whose texture is the
-    tooth white of XavierFace.png's bottom strip) into an object X_XavierTeeth, each tooth rebuilt as a band of three
-    quads: the front, the biting edge and the back (6 triangles; the sides stay open, so the teeth read as separate).
-    Each tooth keeps its place, size (TOOTH_WIDTH of its width) and bone; the gum and the rest of the interior keep
-    MOUTH_KEEP of their faces. Returns the object's name."""
+    """Xavier's own teeth (the white parts of the mouth interior: prep1's 'mouthdec' faces whose texture is the tooth
+    white of XavierFace.png's bottom strip; 30 separate teeth, ~2,000 triangles) replaced by two curved bands, K's
+    call (Oct 27): the upper row a band behind the upper lip, the lower row one below the lower lip, each across the
+    front of its row's arch (TOOTH_SPAN), following the arch's curve, front faces only, textured with the tooth strip
+    face_mouth.py paints (gum at the root, teeth with gaps). Upper band on the head (bone 4), lower on the jaw (26).
+    Moved TOOTH_SHIFT towards the opening between the lips and TOOTH_FORWARD forward, since the model keeps its teeth
+    well inside the lips. Returns the new object's name."""
     o=obj('XavierBody')
     if 'mouthdec' not in o.vertex_groups: return None
     gi=o.vertex_groups['mouthdec'].index
     from PIL import Image
-    T=np.asarray(Image.open(os.path.join(TEX,'XavierFace.png')).convert('RGB')).astype(int); TH,TW=T.shape[:2]
+    # the tooth white in the unmodified mouth texture (face_mouth.py paints its tooth strip over the old teeth's art)
+    T=np.asarray(Image.open(os.path.join(TEX,'MouthTexture1.png')).convert('RGB')).astype(int); TH,TW=T.shape[:2]
     bm=bmesh.new(); bm.from_mesh(o.data); bm.faces.ensure_lookup_table(); bm.verts.ensure_lookup_table()
     dl=bm.verts.layers.deform.active; uvl=bm.loops.layers.uv.active
     def white(f):
-        u=np.mean([l[uvl].uv[0] for l in f.loops]); v=np.mean([l[uvl].uv[1] for l in f.loops])
+        u=np.mean([l[uvl].uv[0] for l in f.loops]); v=np.mean([l[uvl].uv[1] for l in f.loops])/MOUTH_V
         return T[int(np.clip((1-v)*TH,0,TH-1)),int(np.clip(u*TW,0,TW-1))].min()>200
     tooth=[f for f in bm.faces if all(v[dl].get(gi,0)>0.5 for v in f.verts) and white(f)]
-    ts=set(f.index for f in tooth); seen=set(); comps=[]
+    if not tooth: bm.free(); return None
+    g4,g26=o.vertex_groups['4'].index,o.vertex_groups['26'].index
+    rows={True:[],False:[]}   # upper (head), lower (jaw): the teeth's vertices
     for f in tooth:
-        if f.index in seen: continue
-        st=[f]; c=[]
-        while st:
-            g=st.pop()
-            if g.index in seen: continue
-            seen.add(g.index); c.append(g)
-            for e in g.edges:
-                for h in e.link_faces:
-                    if h.index in ts and h.index not in seen: st.append(h)
-        comps.append(c)
-    comps=[c for c in comps if len(c)>=8]       # crumbs of white elsewhere in the interior stay where they are
-    if not comps: bm.free(); return None
-    allp=np.array([tuple(v.co) for c in comps for f in c for v in f.verts])
-    centre=np.array((0.0, allp[:,1].max()+0.02))  # behind the arch (Blender -y is the front)
+        for v in f.verts:
+            rows[v[dl].get(g4,0)>=v[dl].get(g26,0)].append(np.array(tuple(v.co)))
+    mat=tooth[0].material_index
+    bmesh.ops.delete(bm, geom=tooth, context='FACES')
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+    bm.to_mesh(o.data); bm.free()
     me=bpy.data.meshes.new('XavierTeeth'); teeth=bpy.data.objects.new('X_XavierTeeth', me)
     bpy.context.scene.collection.objects.link(teeth)
     for g in o.vertex_groups: teeth.vertex_groups.new(name=g.name)
     for sl in o.material_slots: teeth.data.materials.append(sl.material)
     tb=bmesh.new(); tdl=tb.verts.layers.deform.verify(); tuv=tb.loops.layers.uv.new()
-    built=0
-    for c in comps:
-        vs=list(set(v for f in c for v in f.verts))
-        P=np.array([tuple(v.co) for v in vs]); m=P.mean(0)
-        r=np.array((m[0]-centre[0], m[1]-centre[1], 0.0)); r/=np.linalg.norm(r)    # out of the arch (towards the lips)
-        t=np.cross((0,0,1),r); z=np.array((0,0,1.0))
-        lt,lr,lz=(P-m)@t,(P-m)@r,(P-m)@z
-        w=(lt.max()-lt.min())*TOOTH_WIDTH/2
-        upper=sum(v[dl].get(o.vertex_groups['4'].index,0) for v in vs)>sum(v[dl].get(o.vertex_groups['26'].index,0) for v in vs)
-        root,edge=(lz.max(),lz.min()) if upper else (lz.min(),lz.max())
-        front,back=lr.max()+TOOTH_FORWARD,lr.min()+TOOTH_FORWARD
-        # towards the lips' opening: the upper row down, the lower row up
-        root,edge=(root-TOOTH_SHIFT,edge-TOOTH_SHIFT) if upper else (root+TOOTH_SHIFT,edge+TOOTH_SHIFT)
-        # corners: front-root, front-edge, back-edge, back-root, at both sides (-w, +w)
-        prof=[(front,root),(front,edge),(back,edge),(back,root)]
-        def near(p):
-            return vs[int(np.argmin(np.linalg.norm(P-p,axis=1)))]
-        ring=[]
-        for k,(rr,zz) in enumerate(prof):
-            row=[]
-            for side in (-w,w):
-                p=m+t*side+r*rr+z*zz
-                src=near(p)
-                nv=tb.verts.new(p)
-                for g,wt in src[dl].items(): nv[tdl][g]=wt
-                row.append((nv,src.link_loops[0][uvl].uv.copy()))
-            ring.append(row)
-        for k in range(3):
-            (a,ua),(b,ub)=ring[k]; (c_,uc),(d,ud)=ring[k+1]
-            f=tb.faces.new((a,c_,d,b))
-            # wind outwards: front faces +r, the edge away from the root, back faces -r
-            out=(r if k==0 else -r if k==2 else z*(-1 if upper else 1))
-            n=np.cross(np.array(c_.co)-np.array(a.co),np.array(b.co)-np.array(a.co))
-            if n@out<0: f.normal_flip()
-            f.material_index=c[0].material_index
-            uvs={a:ua,b:ub,c_:uc,d:ud}
+    for upper,P in rows.items():
+        if len(P)<8: continue
+        P=np.array(P)
+        # the arch's front edge: per slice of x the frontmost point (Blender -y is the front), fitted y = a x^2 + c
+        xs=np.linspace(P[:,0].min(),P[:,0].max(),12); fx=[]; fy=[]
+        for x0,x1 in zip(xs[:-1],xs[1:]):
+            m=(P[:,0]>=x0)&(P[:,0]<=x1)
+            if m.any(): fx.append((x0+x1)/2); fy.append(P[m,1].min())
+        A=np.vstack([np.array(fx)**2,np.ones(len(fx))]).T; a,c=np.linalg.lstsq(A,np.array(fy),rcond=None)[0]
+        half=TOOTH_SPAN/2
+        root,edge=(P[:,2].max(),P[:,2].min()) if upper else (P[:,2].min(),P[:,2].max())
+        d=-TOOTH_SHIFT if upper else TOOTH_SHIFT
+        root+=d; edge+=d
+        bone=g4 if upper else g26
+        N=8; cols=[]
+        for k in range(N+1):
+            x=-half+2*half*k/N; y=a*x*x+c-TOOTH_FORWARD*(1-(x/half)**2); col=[]   # forward in the middle, the ends on the arch (they showed at the corners of the shut mouth)
+            for z,vv in ((root,0.0),(edge,1.0)):
+                nv=tb.verts.new((x,y,z)); nv[tdl][bone]=1.0
+                col.append((nv,(k/N, MOUTH_V*(1-TOOTH_STRIP*vv))))
+            cols.append(col)
+        for k in range(N):
+            (r0,u0),(e0,w0)=cols[k]; (r1,u1),(e1,w1)=cols[k+1]
+            f=tb.faces.new((r0,e0,e1,r1))
+            f.normal_update()
+            if f.normal.y>0: f.normal_flip()   # facing out of the mouth (-y)
+            f.material_index=mat
+            uvs={r0:u0,e0:w0,r1:u1,e1:w1}
             for l in f.loops: l[tuv].uv=uvs[l.vert]
-        built+=1
     tb.to_mesh(me); tb.free()
-    bmesh.ops.delete(bm, geom=[f for c in comps for f in c], context='FACES')
-    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
-    bm.to_mesh(o.data); bm.free()
-    print('TEETH: %d teeth as bands (%d triangles)' % (built, 6*built))
+    print('TEETH: %d tooth triangles replaced by two bands (%d triangles)' % (len(tooth), len(me.polygons)*2))
     return 'XavierTeeth'
 
-TOOTH_WIDTH=float(os.environ.get('XAVIER_TOOTH_WIDTH','0.85'))
+TOOTH_SPAN=float(os.environ.get('XAVIER_TOOTH_SPAN','0.04'))    # metres across the front of each row
+TOOTH_STRIP=52/512   # the tooth strip's height in the mouth texture (face_mouth.py)
+MOUTH_V=0.38         # the mouth texture's share of XavierFace.png's height (prep1, face_mouth.py)
 # The model's teeth sit well inside the lips (only ~4 mm of the upper row can show): TOOTH_SHIFT moves both rows
 # towards the opening between the lips, TOOTH_FORWARD towards the lips (metres).
 TOOTH_SHIFT=float(os.environ.get('XAVIER_TOOTH_SHIFT','0.005'))
-TOOTH_FORWARD=float(os.environ.get('XAVIER_TOOTH_FORWARD','0.003'))
+TOOTH_FORWARD=float(os.environ.get('XAVIER_TOOTH_FORWARD','0.001'))
 if os.environ.get('XAVIER_SNAKE_TEETH','pyramids')=='pyramids':
     tri(obj('XavierBody'))
     _bits=snake_bits()
@@ -251,7 +247,7 @@ for n in budget:
     me.calc_loop_triangles() if hasattr(me,'calc_loop_triangles') else None
     uvl=me.uv_layers.active.data
     vg={g.index:int(g.name) for g in o.vertex_groups if g.name.isdigit()}
-    cl=me.attributes.get('cloth')
+    cl=me.attributes.get('cloth'); ts=me.attributes.get('twosided')
     for p in me.polygons:
         mat=o.material_slots[p.material_index].material.name
         corners=[]
@@ -259,7 +255,7 @@ for n in budget:
             l=me.loops[li]; v=me.vertices[l.vertex_index]
             w=sorted([(vg[g.group],g.weight) for g in v.groups if g.weight>0.0005 and g.group in vg], key=lambda x:-x[1])[:3]
             corners.append(dict(key=(n,l.vertex_index), pos=tuple(v.co), nrm=tuple(v.normal), uv=tuple(uvl[li].uv), w=w, cloth=(cl.data[l.vertex_index].value if cl else 0.0)))
-        faces.append(dict(obj=n,mat=mat,c=corners))
+        faces.append(dict(obj=n,mat=mat,c=corners,ts=bool(ts and ts.data[p.index].value)))
 print('faces',len(faces))
 
 # ---- split the body atlas into colour groups by UV island

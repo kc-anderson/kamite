@@ -197,7 +197,9 @@ def emit(node, mat, fl, shut=None):
                     if pct[s_]>0: j[s_+1]=b*4; ww[s_]=pct[s_]
                 verts.append(dict(pos=tuple(float(x) for x in pos),nrm=tuple(max(-127,min(127,int(round(x*127)))) for x in n),uv=(max(-32768,min(32767,u)),max(-32768,min(32767,v))),wt=(tuple(j),tuple(ww))))
             t.append(ids[k])
-        if len(set(t))==3: tris.append(tuple(t))
+        if len(set(t))==3:
+            tris.append(tuple(t))
+            if f.get('ts'): tris.append((t[1],t[0],t[2]))   # two-sided (the snake's flat teeth): its back face too
     for buf in build_buffers(tris, 900):
         vb=dict(pos=[verts[i]['pos'] for i,_ in buf],flags=[fl_ for _,fl_ in buf],nrm=[verts[i]['nrm'] for i,_ in buf],
                 uv=[verts[i]['uv'] for i,_ in buf],col=[(128,128,128,128)]*len(buf),wt=[verts[i]['wt'] for i,_ in buf],mat=COAT_TEX if node=='COAT' else idx,extra=bytes(8))

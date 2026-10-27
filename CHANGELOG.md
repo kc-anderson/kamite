@@ -5,8 +5,9 @@ Newest first, one line per change; the code comments say how.
 ## October 27, 2026 (9)
 
 - Fixed a larger character file overflowing the game's player buffer on every load.
-- Xavier: the snake's head at full detail, with its painted eyes, fangs, teeth and forked tongue.
-- Xavier: his own teeth show when he talks or shouts.
+- Xavier: the snake's head at full detail, with its painted eyes and bolder teeth and fangs; no tongue (it showed
+  through the shut jaw).
+- Xavier: rows of upper and lower teeth show when he talks or shouts.
 - Xavier: hand-painted fur where the gauntlet arm meets his shoulder.
 - Xavier: shorter hair without its middle layer; the back hair no longer swings into his neck and necklace.
 - Removed Backward knees.

@@ -19,11 +19,15 @@ environment variable, for trying variants.
    middle layer behind the ears is dropped (`XAVIER_HAIR_MID=1` keeps it), the hair below ear level is
    `XAVIER_HAIR_SHORTEN` (0.85) of its length all round; also `XAVIER_BUTT_SCALE`, `XAVIER_LOIN_OUT`,
    `XAVIER_HAIR_LIFT` / `_STAGGER` / `_FLARE`. Then `python -I face_mouth.py <work>/textures` (the mouth texture into
-   the face's bottom strip).
-2. `prep2.py`: the small parts rebuilt before decimation, so they keep their shape: the snake's 63 teeth as
-   three-sided pyramids (root and tip kept) and its tongue at `XAVIER_TONGUE_KEEP` (0.5); Xavier's 30 teeth as bands
-   (front, biting edge, back: 6 triangles each), moved `XAVIER_TOOTH_SHIFT` (5 mm) towards the lips' opening and
-   `XAVIER_TOOTH_FORWARD` (3 mm) forward, since the model keeps them hidden inside the lips. Then decimated to
+   the face's bottom strip, with the tooth strip painted over its old tooth shapes: rows 0-52 of the 512-row mouth
+   texture, gum at the top).
+2. `prep2.py`: the small parts rebuilt before decimation, so they keep their shape: each of the snake's 63 teeth
+   becomes one flat two-sided triangle along its row (the fangs facing the head's sides), `XAVIER_SNAKE_TOOTH_WIDTH`
+   (1.6) and `_LENGTH` (1.3) times the original cone; the snake's tongue is left out (it showed through the shut
+   jaw). Xavier's own 30 teeth become two curved bands, the upper behind the upper lip and the lower below the lower
+   lip, `XAVIER_TOOTH_SPAN` (4 cm) across the front of the arch, `XAVIER_TOOTH_SHIFT` (5 mm) towards the lips'
+   opening and `XAVIER_TOOTH_FORWARD` (1 mm) forward in the middle (the model keeps its teeth hidden inside the lips),
+   textured with the tooth strip face_mouth.py paints (`TOOTH_STRIP_PNG` for a hand-painted one). Then decimated to
    Gene's budget (the rest of the mouth interior to `XAVIER_MOUTH_KEEP`, 8%; the snake head at the body's ratio,
    `XAVIER_SNAKE_KEEP` 1), the body atlas split into UV-island groups; the loincloth panels are their own group.
 3. `encode_xavier.py`: 4-bit 16-colour TIM3 textures in exactly the game's slots (Gene's names, sizes and order; the
