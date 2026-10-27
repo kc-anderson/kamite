@@ -568,9 +568,16 @@ namespace kamite::characters
             if (asked != 0u && asked < it->second.second)
                 KM_WARN(Game, "character: " << it->first << " read into a buffer with " << asked << " bytes asked; the replacement is "
                                             << it->second.second << " (cut short)");
-            else if (used != 0u && used < it->second.second)
-                KM_ERROR(Game, "character: " << it->first << " (" << it->second.second << " bytes) read into a buffer of " << used
-                                             << " bytes (ra 0x" << std::hex << GPR_U32(ctx, 31) << std::dec << "): too small");
+            else if (used > 0x20u && used - 0x20u < it->second.second)
+            {
+                // Too small (a save state made with a build whose file was smaller, Oct 27): the read is cut to the
+                // buffer (t0 = bytes to read) so it cannot run past it into the next heap block, which hung the game.
+                const uint32_t room = (used - 0x20u) & ~0x7FFu;
+                ctx->r[8] = _mm_set_epi64x(_mm_extract_epi64(ctx->r[8], 1), static_cast<int64_t>(static_cast<int32_t>(room)));
+                KM_ERROR(Game, "character: " << it->first << " (" << it->second.second << " bytes) does not fit the game's buffer of "
+                                             << (used - 0x20u) << " bytes (ra 0x" << std::hex << GPR_U32(ctx, 31) << std::dec
+                                             << "); read cut to " << room << ". Was a save state made with another build? Restart the game.");
+            }
             else
                 KM_INFO(Game, "character: " << it->first << " read into a buffer (ra 0x" << std::hex << GPR_U32(ctx, 31) << std::dec << ")");
         }

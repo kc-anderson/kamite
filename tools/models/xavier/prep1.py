@@ -2,6 +2,7 @@ import os
 WORK=os.environ.get('XAVIER_WORK','xavier_work')
 # Blender: Xavier -> Gene skeleton (rest pose), right arm removed. Saves <work>/xavier_stage1.blend
 import bpy, bmesh, sys, math
+def _envf(n,d): return float(os.environ.get(n,d))
 import numpy as np
 from mathutils import Vector, Matrix
 sys.path.insert(0,os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0,os.path.join(os.path.dirname(os.path.abspath(__file__)),'..'))
@@ -26,7 +27,7 @@ names=['XavierBody','XavierHair','XavierNecklace','XavierShoulderPad','Xaviersna
 # Right arm: Xavier's is cut at ARM_CUT along the upper arm (0 shoulder, 1 elbow); the gauntlet arm (Gene's GH_00 /
 # GHA_00, trimmed to start inside the cut: character.json) continues from there. The shoulder pad is scaled by
 # PAD_RADIAL around the upper arm and PAD_AXIAL along it.
-ARM_CUT=0.5; PAD_RADIAL=1.16; PAD_AXIAL=1.05
+ARM_CUT=0.5; PAD_RADIAL=_envf('XAVIER_PAD_RADIAL',1.0); PAD_AXIAL=_envf('XAVIER_PAD_AXIAL',1.0)   # 1 = the model's own pad (K's fur seam texture hides the join now)
 # The cut's open ring is capped (a disc of fur), so nothing shows through the stump around the gauntlet arm.
 # Butt: the cheeks scaled towards the pelvis by BUTT_SCALE (1 = as modelled; 0.945 after two rounds in game), weighted by the butt bones, so they
 # stay inside the loincloth. Hair: every strip pushed out along its normals by HAIR_LIFT, plus up to HAIR_STAGGER
@@ -46,6 +47,11 @@ HAIR_EAR_Z=1.62   # ear level, Blender z (game y) after scaling to Gene's height
 BOOT=os.environ.get('XAVIER_BOOT','1')!='0'   # the shoe skinned to the foot bone alone (see the weights loop)
 MOUTH=os.environ.get('XAVIER_MOUTH','1')!='0' # the mouth interior kept, on the face texture's bottom strip
 LOIN_OUT=_env('XAVIER_LOIN_OUT',0.02)         # metres the loincloth panels move out from the body (clipping, K Oct 27)
+# Xavier carries his chest and belly in front of his spine: his chest's front is ~3.5 cm ahead of Gene's and his
+# back ~3.5 cm ahead of Gene's back, so Gene's arms (the bicep-tap taunt) reach into it and the kick-me sign, placed
+# for Gene's back, hangs off his. TORSO_BACK moves every vertex back by that much times its spine + chest weight
+# (Gene's bones 1 and 2), so the neck, shoulders, arms and hips stay where they are.
+TORSO_BACK=_env('XAVIER_TORSO_BACK',0.02)
 MOUTH_V=0.38                                  # the strip: v in [0, MOUTH_V) of XavierFace.png (face_mouth.py pastes it)
 Rarm=['def_arm_0.R','def_arm_1.R','def_arm_1_bridge.R','def_arm_1_elbow_dc_0.R','def_hand_0.R']+['def_finger_%d_%d'%(i,j) for i in range(5) for j in range(3)]
 
@@ -204,6 +210,10 @@ for name in names:
             if n=='def_loincloth_front': front[i]+=w
             if n.startswith('def_butt'): butt[i]+=w
         newP[i]=acc
+    if TORSO_BACK:
+        for i in range(nv):
+            w=gw[i].get(1,0)+gw[i].get(2,0)
+            if w>0: newP[i][1]+=TORSO_BACK*min(1.0,w)   # Blender +y is his back
     if name=='XavierBody' and LOIN_OUT:
         # The loincloth panels a little further from the body (front panel forward, back panel back, Blender -y is
         # forward), by their cloth weight: they ride Gene's coat-tail chains, which do not keep them off his skin.

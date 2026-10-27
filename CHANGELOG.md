@@ -2,6 +2,13 @@
 
 Newest first, one line per change; the code comments say how.
 
+## October 27, 2026 (10)
+
+- Fixed the game hanging when a save was loaded after a save state with a character mod.
+- Xavier fits the game's own memory for the player model again.
+- Xavier: his chest sits further back (his arms clear it in the taunts); his shoulder pad is its own size again.
+- Xavier: his body texture at full resolution.
+
 ## October 27, 2026 (9)
 
 - Fixed a larger character file overflowing the game's player buffer on every load.

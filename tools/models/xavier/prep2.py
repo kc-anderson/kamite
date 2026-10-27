@@ -24,13 +24,13 @@ budget={'XavierBody':0.5,'XavierHair':0.55,'XavierNecklace':0.6,'XavierShoulderP
 # triangle, the two fangs thin pyramids; the other front teeth and the tongue are left out.
 if os.environ.get('XAVIER_SNAKE_EYES','paint')!='geometry':
     del budget['Xaviersnakeeyes']
-SNAKE_KEEP=float(os.environ.get('XAVIER_SNAKE_KEEP','1'))
+SNAKE_KEEP=float(os.environ.get('XAVIER_SNAKE_KEEP','0.7'))
 SNAKE_TOOTH_WIDTH=float(os.environ.get('XAVIER_SNAKE_TOOTH_WIDTH','1.6'))    # the flat tooth's half-width / the cone's radius
 SNAKE_TOOTH_LENGTH=float(os.environ.get('XAVIER_SNAKE_TOOTH_LENGTH','1.3'))  # the flat tooth's length / the cone's
 FANG_WIDTH=float(os.environ.get('XAVIER_FANG_WIDTH','1.5'))   # the fang pyramids' base radius / the cone's
 FANG_IN=float(os.environ.get('XAVIER_FANG_IN','0.005'))       # metres the fangs move towards the head's middle (inside the lip)
-# The back hair (bone 29) is drawn from both sides: its cards' undersides showed as holes from some angles.
-HAIR_BACK_TWOSIDED=os.environ.get('XAVIER_HAIR_BACK_TWOSIDED','1')!='0'
+# XAVIER_HAIR_BACK_TWOSIDED=1 draws the back hair (bone 29) from both sides (its cards' undersides show as gaps from some angles).
+HAIR_BACK_TWOSIDED=os.environ.get('XAVIER_HAIR_BACK_TWOSIDED','0')!='0'   # off: it costs ~7 KB
 
 def components(bm, faces):
     seen=set(); out=[]

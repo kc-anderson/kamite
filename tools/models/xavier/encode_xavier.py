@@ -65,7 +65,7 @@ def raster_mask(shape, tris_px):
 # Full-resolution copies of each slot (the same layout, HD_SCALE times bigger or less where the source has less
 # detail), saved under the PCSX2 replacement name of the in-game texture: the game keeps its 16-colour textures and the
 # renderer draws these in their place (runtime: the character's textures folder is a replacement folder).
-HD_MAX=2048
+HD_MAX=4096   # the body atlas is 2048 wide in a 256x512 slot: 2048 capped it at half its width
 def hd_scale(TW,TH,parts_src):
     need=max(max(cw/rw,ch/rh) for cw,ch,rw,rh in parts_src) if parts_src else 1
     s=1
@@ -244,11 +244,11 @@ for i,(n,t) in sorted(textures.items()):
 open(OUT+'/xavier_textures.tm3','wb').write(tm)
 print('scr',len(scr),'tm3',len(tm))
 # The size check: the merge exactly as the build does it (build_characters.merge_file), against GENE_PL00. The game
-# reads pl/pl00.dat into a buffer of PLAYER_BUFFER bytes (heap A, 0x30D7A8); the port allocates a larger one for a
-# larger file, out of heap A's free room (about 145 KB in a RAM dump of Oct 27), so the growth over the buffer is
-# capped at XAVIER_GROW_MAX until the in-game line 'character: pl/pl00.dat buffer ... largest free block' says more.
+# reads pl/pl00.dat into a buffer of PLAYER_BUFFER bytes it allocates once (heap A, 0x30D7A8). The port can grow that
+# buffer for a larger file, but a save state keeps the buffer of the build it was made with, and a larger file then
+# overran it (the game hung, Oct 27). So the file must fit the game's own buffer: XAVIER_GROW_MAX (bytes over it) is 0.
 PLAYER_BUFFER=0x1E6800
-GROW_MAX=int(os.environ.get('XAVIER_GROW_MAX',64*1024))
+GROW_MAX=int(os.environ.get('XAVIER_GROW_MAX',0))
 ROOT=os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0,os.path.join(ROOT,'tools','models'))
 from build_characters import merge_file

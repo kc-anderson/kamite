@@ -268,6 +268,32 @@ def trim_mdb(mdb, axis, minimum, tint=None, inset=None):
             vbs.append(out)
     return dict(vbs=vbs or empty_mdb(0)['vbs'], hdr=mdb['hdr'])
 
+def restrip_mdb(mdb):
+    """The node's vertex buffers stripped again (strip.py): identical vertices (all their data equal) merged first, so
+    strips can run across the places the original strips repeated a vertex. Same triangles, same windings, same
+    buffers per material; returns the original when that is not smaller."""
+    from strip import build_buffers
+    vbs=[]
+    for vb in mdb['vbs']:
+        keys=[k for k in ('pos','nrm','uv','col','wt') if vb.get(k) is not None]
+        uniq={}; first=[]
+        def vid(i):
+            key=tuple(vb[k][i] for k in keys)
+            if key not in uniq: uniq[key]=len(first); first.append(i)
+            return uniq[key]
+        tris=[]
+        for a,b,c in strip_tris(vb['flags']):
+            t=(vid(a),vid(b),vid(c))
+            if len(set(t))==3: tris.append(t)
+        if not tris: continue
+        for buf in build_buffers(tris, 1000):
+            out=dict(vb); out['flags']=[f for _,f in buf]
+            for k in keys: out[k]=[vb[k][first[i]] for i,_ in buf]
+            vbs.append(out)
+    if not vbs or sum(len(v['flags']) for v in vbs)>=sum(len(v['flags']) for v in mdb['vbs']):
+        return mdb
+    return dict(mdb, vbs=vbs)
+
 def merge_model(game_dat, mod_scr, mod_tm3, keep=KEEP, append_textures=True, trim=None, replace=None):
     """The game's file with the mod's nodes (by name; 'keep' nodes stay the game's, any other node is drawn as nothing)
     and textures (by name; new names are appended unless append_textures is False). trim: {node: (axis, minimum[,
@@ -290,6 +316,7 @@ def merge_model(game_dat, mod_scr, mod_tm3, keep=KEEP, append_textures=True, tri
                 elif nd['name'] in keep:
                     mdb=mdb_read(d,nd['mdb_off'])
                     if trim and nd['name'] in trim: mdb=trim_mdb(mdb,*trim[nd['name']])
+                    mdb=restrip_mdb(mdb)   # the game's own strips repeat vertices: a few % smaller
                 else: mdb=empty_mdb(4 if len(m0['bones'])>4 else 0)
                 new.append(dict(name=nd['name'], mdb=dict(vbs=mdb['vbs'], hdr=mdb['hdr']), srt=nd['srt'], tail=nd['tail']))
             d=scr_write(kind,new,bones,anchor)
