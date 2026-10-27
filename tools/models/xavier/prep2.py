@@ -17,8 +17,9 @@ def decimate(o, ratio):
 def tri(o):
     bm=bmesh.new(); bm.from_mesh(o.data); bmesh.ops.triangulate(bm,faces=bm.faces[:]); bm.to_mesh(o.data); bm.free()
 
-budget={'XavierBody':0.46,'XavierHair':0.48,'XavierNecklace':0.6,'XavierShoulderPad':1.0,'Xaviersnakeeyes':1.0,'XavierEyeR':0.03,'XavierEyesL':0.03}
-MOUTH_KEEP=0.05   # the mouth interior (prep1's 'mouthdec' group) keeps this share of its faces (an interior, seen
+budget={'XavierBody':0.5,'XavierHair':0.55,'XavierNecklace':0.6,'XavierShoulderPad':1.0,'Xaviersnakeeyes':0.5,'XavierEyeR':0.03,'XavierEyesL':0.03}
+SNAKE_KEEP=float(os.environ.get('XAVIER_SNAKE_KEEP','0.35'))
+MOUTH_KEEP=0.08   # the mouth interior (prep1's 'mouthdec' group) keeps this share of its faces (an interior, seen
                   # through a half-open mouth); the rest of the body keeps its own budget ratio as before
 for n,r in budget.items():
     o=obj(n); tri(o)
@@ -32,6 +33,21 @@ for n,r in budget.items():
         print('DEC mouth', n, inside, 'of', total, 'faces ->', len(o.data.polygons))
         r=(body*r+mouth)/len(o.data.polygons)   # the body's share decimated as without the mouth
     decimate(o,r); print('DEC',n,len(o.data.polygons))
+    if n=='XavierBody' and SNAKE_KEEP<1:
+        # The snake's head is stored four times (Gene's four left-hand meshes, encode_xavier): it keeps SNAKE_KEEP of
+        # its faces after the body's decimation, so the four copies cost about what the hand meshes they replace did.
+        g16=o.vertex_groups.get('16'); g31=o.vertex_groups.get('31')
+        ids=[g.index for g in (g16,g31) if g]
+        sg=o.vertex_groups.new(name='snakedec')
+        for v in o.data.vertices:
+            w=sum(g.weight for g in v.groups if g.group in ids)
+            if w>0.3: sg.add([v.index],1.0,'REPLACE')
+        inside=sum(1 for p in o.data.polygons if all(any(g.group==sg.index for g in o.data.vertices[v].groups) for v in p.vertices))
+        total=len(o.data.polygons)
+        m=o.modifiers.new('decsnake','DECIMATE'); m.ratio=(total-inside*(1-SNAKE_KEEP))/total; m.use_collapse_triangulate=True
+        m.vertex_group='snakedec'; m.vertex_group_factor=10.0
+        bpy.context.view_layer.objects.active=o; bpy.ops.object.modifier_apply(modifier='decsnake')
+        print('DEC snake head', inside, 'faces of', total, '->', len(o.data.polygons))
 
 images={}
 def img_array(name):

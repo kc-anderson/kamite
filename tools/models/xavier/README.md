@@ -19,11 +19,13 @@ pillow`), numpy and Pillow:
    Oct 27: the boot is skinned to the foot bone alone (XAVIER_BOOT=0 for the old split, which let the upper trail the
    shin), the mouth interior is kept on the face texture's unused bottom strip (XAVIER_MOUTH=0 drops it as before) with
    its UVs squeezed there, the jaw, lower lips and tongue ride Gene's jaw bone 26 (his talking opens the mouth), and the
-   snake's jaw and tongue ride the spare bone 31, which the port turns shut while Gene's fist mesh shows
-   (bone_tweaks.cpp; prep1 prints the `[SnakeJaw]` hinge lines for character.ini, Closed = the angle where the
-   jaw first meets the head, measured on the mesh; the tongue rides jaw and head half and half). The hair rides spare
-   bones 29 (back) and 30 (both side strands), which the port swings (prep1 prints `[Hair]`). encode_xavier hangs each
-   loincloth panel on the mean of its two coat chains (XAVIER_LOIN_SPREAD=1 for the old spread across them). After prep1, run
+   snake's head is built as Gene's four left-hand meshes (LH_00 open, LH_01 the fist = shut, LH_02/LH_03 open), so
+   the game swaps it exactly as it swaps Gene's hands: prep1 marks the jaw with bone 31 and writes the hinge
+   (`snake_hinge.json`: pivot, axis, and the shut angle measured on the mesh), encode_xavier bakes the shut copy and
+   puts everything on bone 16 (the tongue shuts half way). prep2 keeps 35% of the snake head's faces
+   (XAVIER_SNAKE_KEEP) so the four copies stay small. The hair rides spare bones 29 (back) and 30 (both side
+   strands), which the port swings (prep1 prints `[Hair]`). encode_xavier hangs each loincloth panel on the mean of
+   its two coat chains (XAVIER_LOIN_SPREAD=1 for the old spread across them). After prep1, run
    `python -I tools/models/xavier/face_mouth.py <work>/textures` (pastes the mouth texture into the strip).
 2. `prep2.py`: decimated to Gene's budget (the mouth interior to 8% of its faces first), the body atlas split into UV-island groups (fur by colour, the rest by place);
    the two loincloth panels are their own group.
@@ -37,6 +39,11 @@ pillow`), numpy and Pillow:
    needs `pip install xxhash`). The runtime adds the character's textures folder to PCSX2's replacement folders, so
    the hardware renderer draws these instead of the 16-colour slots. Hair alpha: near-opaque texels are made exactly
    opaque (0x80), as in Gene's hair texture.
+
+encode_xavier prints the merged pl00.dat's size: it may be larger than the game's (the port grows the archive,
+character_mods growFile) up to XAVIER_GROW_MAX (256 KB); the game loads it into heap A (0x754200, 6.8 MB, about
+145 KB free in a dump of Oct 27), so keep the growth well under that until the in-game log line
+`character: loading pl/pl00.dat ... largest free block` says otherwise.
 
 After encode: `python -I tools/models/xavier/requantize.py <out folder>` remakes the 16-colour slots from the
 full-resolution images (and renames them to their new PCSX2 names) before copying into assets/characters/xavier.

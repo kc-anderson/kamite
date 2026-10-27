@@ -34,10 +34,8 @@ namespace kamite::bone_tweaks
             uint32_t address = 0;
             std::array<float, 16> original{}, mirrored{};
         };
-        Saved g_saved[7]; // the thighs and shins, the snake's jaw bone, the two hair bones
+        Saved g_saved[6]; // the thighs and shins, the two hair bones
         bool g_applied = false;
-        float g_jaw = 0.0f;          // the snake jaw's angle now (radians), eased towards open / closed
-        uint32_t g_fistNode = 0;     // the LH_01 mesh node, once found
 
         uint32_t rd32(const uint8_t *rdram, uint32_t a) { uint32_t v; std::memcpy(&v, rdram + (a & 0x01FFFFFFu), 4); return v; }
         bool inRam(uint32_t a, uint32_t size = 4u) { a &= 0x01FFFFFFu; return a >= 0x100000u && a + size <= 0x02000000u; }
@@ -188,32 +186,6 @@ namespace kamite::bone_tweaks
             return {m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]};
         }
 
-        // Gene's fist mesh LH_01 is shown (the game swaps hand meshes by node visibility; Xavier keeps the nodes empty).
-        bool fistShown(const uint8_t *rdram, uint32_t model)
-        {
-            auto nodeIs = [&](uint32_t node, const char *name) {
-                const uint32_t info = rd32(rdram, node + kNodeInfo);
-                return inRam(info, 0x10u) && std::memcmp(rdram + ((info + kInfoName) & 0x01FFFFFFu), name, 6) == 0;
-            };
-            if (!inRam(g_fistNode, 0x418u) || !nodeIs(g_fistNode, "LH_01"))
-            {
-                g_fistNode = 0;
-                uint32_t node = rd32(rdram, model + kMeshHead);
-                for (int i = 0; i < 64 && inRam(node, 0x418u) && !g_fistNode; ++i, node = rd32(rdram, node + kNodeNext))
-                    if (nodeIs(node, "LH_01"))
-                        g_fistNode = node;
-                if (!g_fistNode)
-                    return false;
-            }
-            return (rd32(rdram, g_fistNode + kNodeFlags) & 1u) == 0u;
-        }
-
-        // The snake's jaw: its bone (31, a head child the game never moves) placed under the hand (bone 16) with the
-        // jaw turned about its hinge: shut while the fist mesh shows, open otherwise (swapped at once, as the game swaps the hand). The
-        // game skins with mtx * (bind pose)^-1 and the bind rotations are identity, so for a vertex p (bind space):
-        // world = R16 (pivot + R (p - GW16 - pivot)) + t16 = A (p - GW31) + b with A = R16 R, b = R16 (R (d - pivot) + pivot) + t16,
-        // d = GW31 - GW16 (bind positions, the part offsets summed up the chain).
-        void placeSnakeJaw(uint8_t *rdram, uint32_t model, const uint32_t parts[32], const Vec bind[32]);
         // The bind positions (the part offsets summed up the chain; the bind rotations are identity).
         void bindPositions(const uint8_t *rdram, const uint32_t parts[32], int count, Vec bind[32])
         {
@@ -249,16 +221,6 @@ namespace kamite::bone_tweaks
             writeBone(rdram, parts[bone], b);
             s.mirrored = b.m;
             g_applied = true;
-        }
-
-        void placeSnakeJaw(uint8_t *rdram, uint32_t model, const uint32_t parts[32], const Vec bind[32])
-        {
-            const characters::HingedBone &jaw = characters::snakeJaw();
-            if (jaw.bone < 0 || jaw.bone > 31 || jaw.parent < 0 || jaw.parent > 31)
-                return;
-            g_jaw = fistShown(rdram, model) ? jaw.closed : 0.0f; // a swap, like the game's fist mesh: no easing (K)
-            placeHinged(rdram, parts, bind, jaw.bone, jaw.parent, Vec{jaw.pivot[0], jaw.pivot[1], jaw.pivot[2]},
-                        axisAngle(unit(Vec{jaw.axis[0], jaw.axis[1], jaw.axis[2]}), g_jaw), g_saved[4]);
         }
 
         // ---- hair: each strand's tip a point mass on a rod from its root, pulled back to the rest shape by a spring,
@@ -345,10 +307,10 @@ namespace kamite::bone_tweaks
             }
             if (hair.back.bone >= 0)
                 placeHinged(rdram, parts, bind, hair.back.bone, 4, Vec{hair.back.pivot[0], hair.back.pivot[1], hair.back.pivot[2]},
-                            g_strands[0].q, g_saved[5]);
+                            g_strands[0].q, g_saved[4]);
             if (hair.side.bone >= 0)
                 placeHinged(rdram, parts, bind, hair.side.bone, 4, Vec{hair.side.pivot[0], hair.side.pivot[1], hair.side.pivot[2]},
-                            g_strands[1].q, g_saved[6]);
+                            g_strands[1].q, g_saved[5]);
         }
 
         void onGetMeshPtr(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
@@ -360,14 +322,13 @@ namespace kamite::bone_tweaks
                 return;
             if (g_knees.load(std::memory_order_relaxed))
                 mirrorKnees(rdram);
-            if (characters::snakeJaw().bone < 0 && characters::hair().back.bone < 0 && characters::hair().side.bone < 0)
+            if (characters::hair().back.bone < 0 && characters::hair().side.bone < 0)
                 return;
             uint32_t parts[32];
             if (playerParts(rdram, parts) != 32)
                 return;
             Vec bind[32];
             bindPositions(rdram, parts, 32, bind);
-            placeSnakeJaw(rdram, model, parts, bind);
             placeHair(rdram, parts, bind);
         }
     }
@@ -385,7 +346,7 @@ namespace kamite::bone_tweaks
         g_tune[2].store(h.gravity);
         g_tune[3].store(h.wind);
         KM_INFO(Game, "bone tweaks: backward knees " << (g_knees.load() ? "on" : "off") << " ([Mods] BackwardKnees; F2 > Debug)"
-                                                     << (characters::snakeJaw().bone >= 0 ? "; snake jaw on" : ""));
+                                                     << (hasHair() ? "; hair on" : ""));
     }
 
     void onFrame(uint8_t *rdram, R5900Context *, PS2Runtime *)

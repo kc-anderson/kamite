@@ -31,6 +31,12 @@ namespace kamite::disc_files
     // The archive's table entry of an index.
     std::optional<File> byIndex(uint32_t index);
 
-    // The file's bytes as on the disc (patches already set are applied, as for every read of the image).
+    // The file's bytes as on the disc (patches already set are applied, as for every read of the image; a file after
+    // an insertion is read where it now sits). imageOffset stays the original offset, which is what patches use.
     bool read(const File &file, std::vector<uint8_t> &out);
+    // The archive: its byte offset in the image, its file count, and its attribute table (offset from the archive
+    // start, size; 0, 0 when it has none).
+    uint64_t archiveBase();
+    uint32_t archiveCount();
+    std::pair<uint32_t, uint32_t> attributeTable();
 }

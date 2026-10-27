@@ -123,13 +123,13 @@ def group_xform(n):
 JAW=('def_jaw_0_master','def_lips_1_lower.L','def_lips_1_lower.R','def_lips_1_lower_stretch.L','def_lips_1_lower_stretch.R',
      'def_lips_front_lower','def_tongue_0','def_tongue_1','def_tongue_2')   # Gene's jaw (bone 26): opens when he talks
 SNAKE_JAW=('def_snake_jaw_0','def_snake_jaw_1','def_snake_jaw_2')
-SNAKE_TONGUE=('def_snake_tongue_0','def_snake_tongue_1','def_snake_tongue_2')   # half jaw, half head: between them
+SNAKE_TONGUE=('def_snake_tongue_0','def_snake_tongue_1','def_snake_tongue_2')   # half jaw, half head: shuts half way
 HAIR={'def_hair_back':29,'def_hair.L':30,'def_hair.R':30}   # spare head bones the port swings (bone_tweaks hair)
 def gene_bone(n, pos=None):
     if n in ('def_pelvis_0','def_loincloth_front','def_loincloth_back') or n.startswith('def_butt'): return 17
     if n in JAW: return 26
     if n in HAIR: return HAIR[n]
-    if n in SNAKE_JAW: return 31   # unused by the game (a head child); the port moves it with the fist (bone_tweaks)
+    if n in SNAKE_JAW: return 31   # marks the jaw for encode_xavier, which bakes the shut head and puts it on bone 16
     if n.startswith('def_waist') or n in ('def_spine_0','def_spine_1'): return 1
     if n=='def_chest_0': return 2
     if n=='def_neck_0': return 3
@@ -338,11 +338,7 @@ def snakejaw():
     gape=float(np.degrees(np.arccos(np.clip(np.dot(jd,hd),-1,1))))
     game=lambda v: (v[0],v[2],-v[1])                     # Blender (x, y, z) -> game (x, z, -y)
     rel=game(piv-G[16]); axg=game(ax)
-    print('[SnakeJaw]')
-    print('Bone=31\nParent=16')
-    print('Pivot=%.4f %.4f %.4f' % tuple(rel))
-    print('Axis=%.4f %.4f %.4f' % tuple(axg))
-    print('Gape=%.1f' % gape)
+    print('snake jaw: pivot (from bone 16) %.4f %.4f %.4f, axis %.4f %.4f %.4f, gape %.1f' % (tuple(rel)+tuple(axg)+(gape,)))
     # Closed: the angle at which the jaw's upper surface first meets the head's lower surface (vertices binned by
     # their distance from the hinge axis and along it; the smallest angular gap among the bins both share).
     body=[o for o in out_objs if o.name=='X_XavierBody'][0]
@@ -363,7 +359,11 @@ def snakejaw():
             H=[a for r,z,a in head if r0<=r<r0+0.006 and z0<=z<z0+0.006]
             if J and H and min(H)>max(J): gaps.append(min(H)-max(J))
     closed=min(gaps) if gaps else gape*0.5
-    print('Closed=%.1f' % closed)
+    print('snake jaw: shut at %.1f degrees' % closed)
+    # For encode_xavier: the shut snake head (LH_01) is the open one with the jaw turned by this, in game bind space.
+    import json
+    json.dump(dict(pivot=[float(x) for x in game(piv)], axis=[float(x) for x in axg], closed=float(closed)),
+              open(WORK+'/snake_hinge.json','w'))
 snakejaw()
 
 def hair():

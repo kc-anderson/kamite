@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -27,15 +28,9 @@ namespace kamite::characters
     // hardware renderer (PS2X_PCSX2_TEXTURE_EXTRA), so the character draws at full resolution.
     void install(const std::filesystem::path &exeDir);
 
-    // character.ini [SnakeJaw] of the chosen character (Xavier): a jaw skinned to a spare bone that the port turns
-    // about a hinge in its parent bone's bind space when the fist hand mesh shows (bone_tweaks). bone < 0: none.
-    struct HingedBone
-    {
-        int bone = -1, parent = -1;
-        float pivot[3] = {}, axis[3] = {};
-        float closed = 0.0f; // radians the bone turns about the axis when the fist shows
-    };
-    const HingedBone &snakeJaw();
+    // The disc files the chosen character replaces: path (lower case, as in the archive's path table) -> (the game's
+    // size, the replacement's). A replacement larger than the game's file grows the image the game sees.
+    const std::map<std::string, std::pair<uint32_t, uint32_t>> &replacedFiles();
 
     // character.ini [Hair]: strands on spare head bones that the port swings (bone_tweaks). bone < 0: none.
     struct HairStrand
@@ -57,5 +52,7 @@ namespace kamite::characters
     // 0x108068): the hook at 0x108088 remembers the player and the coat, and onFrame logs their bone matrices once
     // a few seconds later ([cloth] lines), to work out how an attached model's root is placed.
     void installProbe();
+    // Logs the room the game's heap has when it loads a replaced file (cDvd_ReadAlloc), warning when it may not fit.
+    void installLoadWatch();
     void onFrame(uint8_t *rdram);
 }

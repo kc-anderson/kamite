@@ -155,12 +155,20 @@ def coat_weights(p):
     ws=[w for w in ws if w[1]>0.001]
     return sorted(ws,key=lambda w:-w[1])[:3]
 
-nodes={}
-for mat in plan:
-    if mat not in uvf: continue
+# The snake's head is a hand: Gene's left hand is four meshes the game shows one at a time (LH_00 open, LH_01 the
+# fist, LH_02 / LH_03 other open shapes, K Oct 27), so the snake's head (every face on the hand bone 16, or on the
+# jaw's helper bone 31 that prep1 gives the lower jaw) goes into all four: shut in LH_01, open in the others. The game
+# swaps them exactly as it swaps Gene's hands; no port code. Shut = each vertex turned about the jaw's hinge by the
+# angle where the jaw meets the head, times its weight on bone 31 (the tongue rides half), then bone 31 becomes 16.
+HINGE=json.load(open(os.path.join(WORK,'snake_hinge.json')))
+SNAKE_NODES=(('LH_00',False),('LH_01',True),('LH_02',False),('LH_03',False))
+def axis_angle(k,a):
+    k=np.array(k,float); k/=np.linalg.norm(k); K=np.array([[0,-k[2],k[1]],[k[2],0,-k[0]],[-k[1],k[0],0]])
+    return np.eye(3)+np.sin(a)*K+(1-np.cos(a))*K@K
+def snake_head(f): return f['mat']=='snakeeye' or any(b in (16,31) for c in f['c'] for b,_ in c['w'])
+
+def emit(node, mat, fl, shut=None):
     idx=plan[mat]
-    node=node_of.get(mat,'cort')
-    fl=[f for f in faces if f['mat']==mat]
     ids={}; verts=[]; tris=[]
     for f in fl:
         t=[]
@@ -171,20 +179,41 @@ for mat in plan:
             k=(tuple(c['key']),u,v)
             if k not in ids:
                 ids[k]=len(verts)
-                w=coat_weights(game(c['pos'])) if node=='COAT' else c['w']; tot=sum(x[1] for x in w) or 1
+                w=coat_weights(game(c['pos'])) if node=='COAT' else c['w']
+                pos=np.array(game(c['pos']),float); n=np.array(game(c['nrm']),float)
+                w31=sum(x for b,x in w if b==31)/(sum(x for _,x in w) or 1)
+                if shut is not None and w31>0:
+                    R=axis_angle(HINGE['axis'],np.radians(HINGE['closed'])*w31)
+                    piv=np.array(HINGE['pivot'],float); pos=piv+R@(pos-piv); n=R@n
+                if node.startswith('LH_'):   # bone 31 is not used any more: the jaw rides the head's bone
+                    m={}
+                    for b,x in w: m[16 if b==31 else b]=m.get(16 if b==31 else b,0)+x
+                    w=sorted(m.items(),key=lambda e:-e[1])[:3]
+                tot=sum(x[1] for x in w) or 1
                 pct=[int(math.floor(x[1]*100/tot)) for x in w]
                 if pct: pct[0]+=100-sum(pct)
                 j=[0,0,0,0]; ww=[0,0,0,0]
-                for s,(b,_) in enumerate(w):
-                    if pct[s]>0: j[s+1]=b*4; ww[s]=pct[s]
-                n=game(c['nrm']); 
-                verts.append(dict(pos=game(c['pos']),nrm=tuple(max(-127,min(127,int(round(x*127)))) for x in n),uv=(max(-32768,min(32767,u)),max(-32768,min(32767,v))),wt=(tuple(j),tuple(ww))))
+                for s_,(b,_) in enumerate(w):
+                    if pct[s_]>0: j[s_+1]=b*4; ww[s_]=pct[s_]
+                verts.append(dict(pos=tuple(float(x) for x in pos),nrm=tuple(max(-127,min(127,int(round(x*127)))) for x in n),uv=(max(-32768,min(32767,u)),max(-32768,min(32767,v))),wt=(tuple(j),tuple(ww))))
             t.append(ids[k])
         if len(set(t))==3: tris.append(tuple(t))
     for buf in build_buffers(tris, 900):
         vb=dict(pos=[verts[i]['pos'] for i,_ in buf],flags=[fl_ for _,fl_ in buf],nrm=[verts[i]['nrm'] for i,_ in buf],
                 uv=[verts[i]['uv'] for i,_ in buf],col=[(128,128,128,128)]*len(buf),wt=[verts[i]['wt'] for i,_ in buf],mat=COAT_TEX if node=='COAT' else idx,extra=bytes(8))
         nodes.setdefault(node,[]).append(vb)
+
+nodes={}
+for mat in plan:
+    if mat not in uvf: continue
+    node=node_of.get(mat,'cort')
+    fl=[f for f in faces if f['mat']==mat]
+    if node=='cort':
+        head=[f for f in fl if snake_head(f)]
+        fl=[f for f in fl if not snake_head(f)]
+        for name,shut in SNAKE_NODES:
+            if head: emit(name, mat, head, shut if shut else None)
+    emit(node, mat, fl)
 for n,vbs in nodes.items(): print('NODE',n,len(vbs),'vbs',sum(len(v['pos']) for v in vbs),'verts')
 
 # write the Xavier node file (scr) with an empty bone table and the texture container
@@ -212,6 +241,7 @@ for i,(n,t) in sorted(textures.items()):
     print('HD',n,big.shape[1],'x',big.shape[0],'->',name)
 open(OUT+'/xavier_textures.tm3','wb').write(tm)
 print('scr',len(scr),'tm3',len(tm))
+GROW_MAX=int(os.environ.get('XAVIER_GROW_MAX',256*1024))
 # The replacement pl00.dat must not be larger than the game's (character_mods leaves a bigger file out and the game
 # shows Gene with Xavier's loincloth: Oct 27). The merge as build_characters.py does it, against GENE_PL00.
 try:
@@ -219,7 +249,10 @@ try:
     _spec=_json.load(open(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),'..','assets','characters','xavier','character.json')))['files']['pl/pl00.dat']
     _game=open(os.environ['GENE_PL00'],'rb').read()
     _merged=merge_model(_game, scr, tm, trim={k:(tuple(v['axis']),v['min']) for k,v in _spec.get('trim',{}).items()})
-    print('merged pl00.dat', len(_merged), 'of', len(_game), '(%+d bytes; must not be larger)' % (len(_merged)-len(_game)))
-    if len(_merged)>len(_game): raise SystemExit('TOO LARGE: decimate harder (prep2 budget) or drop detail')
+    # Larger than the game's file is fine since the port grows the archive (character_mods growFile); the load then
+    # needs that much more of the game's heap (logged in game: 'character: loading pl/pl00.dat ... largest free
+    # block'). Keep the growth modest until those numbers are in.
+    print('merged pl00.dat', len(_merged), 'of', len(_game), '(%+d bytes)' % (len(_merged)-len(_game)))
+    if len(_merged)>len(_game)+GROW_MAX: raise SystemExit('TOO LARGE: more than %d bytes over the game\'s file' % GROW_MAX)
 except KeyError as e:
     print('merge size check skipped:', e)

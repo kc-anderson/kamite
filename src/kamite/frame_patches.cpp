@@ -405,6 +405,7 @@ namespace kamite
         g_l3Dash = envOn("KAMITE_L3_DASH");
         ps2xRegisterHostHook("km_frame_start", &frameStart);
         characters::installProbe();
+        characters::installLoadWatch();
         ps2xRegisterHostHook("km_fps60_hitbox_compare", &hitboxCompare);
         ps2xRegisterHostHook("km_fps60_roulette_timer", &rouletteTimer);
         ps2xRegisterHostHook("km_fps60_roulette_dial", &rouletteDial);

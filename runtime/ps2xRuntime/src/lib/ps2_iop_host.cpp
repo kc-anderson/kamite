@@ -374,6 +374,9 @@ uint64_t PS2IopHostAdapter::openHostFile(std::string_view path)
         const std::filesystem::path &image = PS2Runtime::getIoPaths().cdImage;
         std::error_code sameError;
         opened.discImageStream = !image.empty() && std::filesystem::equivalent(hostPath, image, sameError) && !sameError;
+        // The disc image is read as the game sees it (PS2CdImage: patches and inserted bytes), sized to match.
+        if (opened.discImageStream && PS2CdImage::instance().isOpen())
+            opened.size = PS2CdImage::instance().sizeBytes();
     }
     std::lock_guard<std::mutex> lock(m_hostFileMutex);
     uint64_t handle = m_nextHostFileHandle++;
@@ -428,6 +431,15 @@ bool PS2IopHostAdapter::readHostFile(uint64_t handle,
         return false;
     }
 
+    if (it->second.discImageStream && PS2CdImage::instance().isOpen())
+    {
+        const uint64_t available = offset < it->second.size ? it->second.size - offset : 0u;
+        const size_t count = static_cast<size_t>(std::min<uint64_t>(size, available));
+        if (count != 0u && !PS2CdImage::instance().read(offset, destination, count))
+            return false;
+        bytesRead = count;
+        return true;
+    }
 #if defined(_WIN32)
     if (offset > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) ||
         _fseeki64(it->second.stream, static_cast<int64_t>(offset), SEEK_SET) != 0)

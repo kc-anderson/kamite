@@ -150,6 +150,15 @@ namespace kamite::disc_files
 
     bool read(const File &file, std::vector<uint8_t> &out)
     {
-        return readImage(file.imageOffset, out, file.size);
+        return readImage(PS2DiscOverlay::toVirtual(file.imageOffset), out, file.size);
+    }
+
+    uint64_t archiveBase() { return g_afsBase; }
+    uint32_t archiveCount() { return g_count; }
+    std::pair<uint32_t, uint32_t> attributeTable()
+    {
+        if (!g_open)
+            return {0u, 0u};
+        return {le32(g_toc, 8 + 8u * g_count), le32(g_toc, 12 + 8u * g_count)};
     }
 }

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -67,5 +68,17 @@ public:
     static bool active();
     // Overlays the patches on [offset, offset + size) of the image, already read into destination.
     static void apply(uint64_t offset, void *destination, size_t size);
+
+    // Bytes inserted into the image at an offset of the original image (whole sectors; a file replacement larger than
+    // its slot): every original byte at or after it is read that much later, so the image the game sees grows. Patches
+    // stay in original offsets (they apply to the original bytes wherever those now sit). Before the game runs.
+    static void insert(uint64_t originalOffset, std::vector<uint8_t> bytes);
+    static uint64_t insertedBytes();
+    // Where an original byte now sits in the image the game sees.
+    static uint64_t toVirtual(uint64_t originalOffset);
+    // Reads [offset, offset + size) of the image the game sees: original bytes through readOriginal(original offset,
+    // destination, size) -> bytes read, with the patches applied, and the inserted bytes. Returns the bytes read.
+    static size_t read(uint64_t offset, void *destination, size_t size,
+                       const std::function<size_t(uint64_t, void *, size_t)> &readOriginal);
 };
 

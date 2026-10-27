@@ -21,9 +21,9 @@ struct R5900Context;
 // plays keeps its feet and hips, the legs bend the other way. Deep bends, whose mirror would point the thigh far
 // back, swing the knee home round the outward side (KneeEase degrees).
 //
-// The character's spare bones (character.ini): the snake's jaw (bone 31, shut while the fist mesh LH_01 shows) and
-// the hair (bones 29 and 30: a spring-damped tip per strand with gravity and a gusting wind, the bone turned towards
-// it within swing limits).
+// The character's hair (character.ini [Hair], spare head bones 29 and 30): a spring-damped tip per strand with
+// gravity and a gusting wind, the bone turned towards it within swing limits. (Xavier's snake head is not a bone
+// here: it is the four left-hand meshes, swapped by the game like Gene's fist.)
 namespace kamite::bone_tweaks
 {
     void install(PS2Runtime &runtime);

@@ -2,6 +2,13 @@
 
 Newest first, one line per change; the code comments say how.
 
+## October 27, 2026 (7)
+
+- Character models may be larger than the game's file (the port grows the disc archive the game sees; the image
+  itself is untouched). The log reports the room the game has for the model when it loads.
+- Xavier: more detail again (body, hair, mouth); the snake's head is now Gene's four hand meshes, so the game swaps
+  it shut with the fist exactly as it swaps Gene's hand. Bone 31 is free again.
+
 ## October 27, 2026 (6)
 
 - Xavier: hair physics (the back hair and side strands swing with his head, gravity and a gusting wind; F2 > Debug
