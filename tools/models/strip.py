@@ -11,7 +11,8 @@ from collections import defaultdict
 
 def stripify(tris, swaps=False, tries=40):
     """tris: list of (a,b,c) unique-vertex ids with the wanted winding. Returns strips, each a list of
-    (vertex id, makes_triangle); the first two entries of a strip never make a triangle. The greedy pass is run
+    (vertex id, the index in tris of the triangle that vertex closes, or None); the first two entries of a strip
+    never close one. The greedy pass is run
     'tries' times with ties broken at random (seeded, so the output is the same every run); the fewest vertices win."""
     import random
     best = None
@@ -50,18 +51,18 @@ def _stripify(tris, swaps, rng):
             if nxt is None and allow_swaps:
                 nxt = across(t, seq[-3][0], seq[-1][0])
                 if nxt is not None:
-                    seq.append((seq[-3][0], False))
+                    seq.append((seq[-3][0], None))
             if nxt is None:
                 return taken
             t, x = nxt
             used[t] = True
             taken.append(t)
-            seq.append((x, True))
+            seq.append((x, t))
 
     def build(start, rot, keep):
         a, b, c = tris[start][rot:] + tris[start][:rot]
         used[start] = True
-        back = [(c, False), (b, False), (a, True)]
+        back = [(c, None), (b, None), (a, start)]
         took_b = grow(back, start, False)
         seq = _reverse(back)                       # ... a, b, c: ends with the start triangle
         took_f = grow(seq, start, swaps)
@@ -89,26 +90,27 @@ def _stripify(tris, swaps, rng):
 
 
 def _reverse(back):
-    """A strip without swaps grown backwards, turned round: every entry from the third on makes a triangle."""
-    verts = [v for v, _ in back][::-1]
-    return [(v, i >= 2) for i, v in enumerate(verts)]
+    """A strip without swaps grown backwards, turned round. The triangle closed at back[k] (the window k-2..k) is the
+    window ending at n+1-k when turned round."""
+    n = len(back)
+    return [(back[n - 1 - i][0], back[n + 1 - i][1] if i >= 2 else None) for i in range(n)]
 
 
 def build_buffers(tris, max_verts=1000, swaps=False):
-    """Returns list of buffers: each [(vid, flag)] with flags 0x8000/0/1, keeping each buffer <= max_verts."""
-    want = set()
-    for a, b, c in tris:
-        want.add((a, b, c)); want.add((b, c, a)); want.add((c, a, b))
+    """Returns list of buffers: each [(vid, flag)] with flags 0x8000/0/1, keeping each buffer <= max_verts. Each
+    triangle's flag comes from that triangle's own winding in tris (a triangle and its reversed twin, as two-sided
+    faces are sent, get opposite flags)."""
     bufs = []; cur = []
     for s in stripify(tris, swaps):
         if len(cur) + 3 > max_verts:
             bufs.append(cur); cur = []
         last = []   # the last two vertices sent; a buffer split restarts the strip from them
-        for v, makes in s:
-            if makes:
+        for v, tid in s:
+            if tid is not None:
                 if len(cur) + 1 > max_verts:
                     bufs.append(cur); cur = [(last[0], 0x8000), (last[1], 0x8000)]
-                cur.append((v, 0 if (last[0], last[1], v) in want else 1))
+                a, b, c = tris[tid]
+                cur.append((v, 0 if (last[0], last[1], v) in ((a, b, c), (b, c, a), (c, a, b)) else 1))
             else:
                 cur.append((v, 0x8000))
             last = (last + [v])[-2:]

@@ -28,7 +28,7 @@ SNAKE_KEEP=float(os.environ.get('XAVIER_SNAKE_KEEP','1'))
 SNAKE_TOOTH_WIDTH=float(os.environ.get('XAVIER_SNAKE_TOOTH_WIDTH','1.6'))    # the flat tooth's half-width / the cone's radius
 SNAKE_TOOTH_LENGTH=float(os.environ.get('XAVIER_SNAKE_TOOTH_LENGTH','1.3'))  # the flat tooth's length / the cone's
 FANG_WIDTH=float(os.environ.get('XAVIER_FANG_WIDTH','1.5'))   # the fang pyramids' base radius / the cone's
-FANG_IN=float(os.environ.get('XAVIER_FANG_IN','0.002'))       # metres the fangs move towards the head's middle (inside the lip)
+FANG_IN=float(os.environ.get('XAVIER_FANG_IN','0.005'))       # metres the fangs move towards the head's middle (inside the lip)
 # The back hair (bone 29) is drawn from both sides: its cards' undersides showed as holes from some angles.
 HAIR_BACK_TWOSIDED=os.environ.get('XAVIER_HAIR_BACK_TWOSIDED','1')!='0'
 

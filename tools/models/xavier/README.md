@@ -24,7 +24,7 @@ environment variable, for trying variants.
 2. `prep2.py`: the small parts rebuilt before decimation, so they keep their shape: the snake's 40 side teeth
    become flat two-sided triangles along their rows, `XAVIER_SNAKE_TOOTH_WIDTH` (1.6) and `_LENGTH` (1.3) times the
    original cone; its two fangs thin pyramids at their own length (`XAVIER_FANG_WIDTH` 1.5 times the cone's root),
-   `XAVIER_FANG_IN` (2 mm) towards the head's middle so they stay inside the lip; the other 21 front teeth and the
+   `XAVIER_FANG_IN` (5 mm) towards the head's middle so they stay inside the lip; the other 21 front teeth and the
    tongue are left out (a snake's snout; the tongue showed through the shut jaw), and the lining's openings (where
    the tongue sat, a pinhole in the throat) are sealed. The back hair's faces are drawn from both sides
    (`XAVIER_HAIR_BACK_TWOSIDED`). Xavier's own 30 teeth become two curved bands, the upper behind the upper lip and the lower below the lower
