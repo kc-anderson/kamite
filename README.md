@@ -68,6 +68,10 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed and when.
   Evil): model, motion and motion-event format knowledge.
 - Nicolae "Xelu" Berbece (Those Awesome Guys): [Xelu's free controller and keyboard prompts](https://opengameart.org/content/free-keyboard-and-controllers-prompts-pack)
   (CC0), the button prompt art in `resources/prompts/xelu`.
+- [Quaternius](https://quaternius.com): the Universal Animation Library 1 and 2 (CC0), the NPC poses' rail lean, dance and
+  folded-arms idle.
+- [Denys Almaral](https://denysalmaral.com): the Free Animation Pack for City People, two of the NPC poses' idles.
+- Harold Lohner ([haroldsfonts.com](http://www.haroldsfonts.com)): the Dominican font of the launcher's splash text.
 - [Ace Combat 5 static recompilation](https://github.com/sal063/Ace-Combat-5-Static-recompilation): the movie decoder
   (Apache-2.0).
 - Xavier and *Xavier: Renegade Angel* belong to Adult Swim. The Xavier mod is a fan-made example of the character

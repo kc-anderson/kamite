@@ -1,7 +1,7 @@
 """An NPC pose motion from any Blender-readable animation (.blend, .fbx such as Mixamo's, .glb): retargets one
 armature's action to the game's 30-bone woman's skeleton and writes a MOT for mods/npc_motions/ (npc_poses.cpp).
 
-    python -I tools/models/npc_motion.py <animation file> <rig: custom|mixamo|ual> <extracted em/ema5.dat> <out.mot>
+    python -I tools/models/npc_motion.py <animation file> <rig: custom|mixamo|ual|biped> <extracted em/ema5.dat> <out.mot>
         [--slow 1.5] [--smooth 2] [--frames a:b] [--tolerance 0.004] [--pelvis 1.0] [--head-forward]
 
 Needs Blender's Python module (pip install bpy), numpy and scipy. The upper body, the hips and the pelvis's wiggle
@@ -10,7 +10,8 @@ IK, so any bend of the source's pelvis becomes the waist's (the port's "Bottom o
 bone's world rotation relative to the source's rest pose is carried over to the game's T-pose, with the rest bone
 directions aligned (an A-pose rest works). --slow stretches it (1.5 = two thirds the speed), --smooth is a Gaussian
 over the rotations in frames, --tolerance the curves' largest error (radians; larger = a smaller file), --pelvis scales
-the hips' travel and the pelvis's wiggle, --head-forward takes out the neck's and head's mean turn. Left/right follow the source's own (the game's bones 5-10 are her right side).
+the hips' travel and the pelvis's wiggle, --head-forward takes out the neck's and head's mean turn. Left/right follow the source's own (the game's bones 5-10 are her right side). A rig with other axes or units
+than the game's (Y up, +Z forward, metres) gives its basis and unit (biped: 3ds Max Biped).
 Only motions you may share go into the repo; the rest stay in your own mods folder.
 """
 import math, os, struct, sys
@@ -30,6 +31,11 @@ RIGS = {
    5:('RightShoulder','RightArm',7),6:('RightArm','RightForeArm',8),7:('RightArm','RightForeArm',8),8:('RightForeArm','RightHand',9),9:('RightHand','RightHandMiddle1',10),10:('RightHandMiddle1','RightHandMiddle2',None),
    11:('LeftShoulder','LeftArm',13),12:('LeftArm','LeftForeArm',14),13:('LeftArm','LeftForeArm',14),14:('LeftForeArm','LeftHand',15),15:('LeftHand','LeftHandMiddle1',16),16:('LeftHandMiddle1','LeftHandMiddle2',None),
    17:('Hips',None,None),26:('Head',None,None),29:('Spine2',None,None)}),
+ # 3ds Max Biped (Denys Almaral's Free Animation Pack for City People): Z up, +X forward, +Y her left, centimetres.
+ 'biped': dict(fmt='bip %s', basis=[[0,1,0],[0,0,1],[1,0,0]], unit=0.0119, bones={0:('Pelvis',None,None),1:('Spine','Spine1',2),2:('Spine1','Neck',3),3:('Neck','Head',4),4:('Head',None,None),
+   5:('R Clavicle','R UpperArm',7),6:('R UpperArm','R Forearm',8),7:('R UpperArm','R Forearm',8),8:('R Forearm','R Hand',9),9:('R Hand','R Finger1',10),10:('R Finger1','R Finger11',None),
+   11:('L Clavicle','L UpperArm',13),12:('L UpperArm','L Forearm',14),13:('L UpperArm','L Forearm',14),14:('L Forearm','L Hand',15),15:('L Hand','L Finger1',16),16:('L Finger1','L Finger11',None),
+   17:('Pelvis',None,None),26:('Head',None,None),29:('Spine1',None,None)}),
  'ual': dict(fmt='%s', bones={0:('pelvis',None,None),1:('spine_01','spine_03',2),2:('spine_03','neck_01',3),3:('neck_01','Head',4),4:('Head',None,None),
    5:('clavicle_r','upperarm_r',7),6:('upperarm_r','lowerarm_r',8),7:('upperarm_r','lowerarm_r',8),8:('lowerarm_r','hand_r',9),9:('hand_r','middle_01_r',10),10:('middle_01_r','middle_02_r',None),
    11:('clavicle_l','upperarm_l',13),12:('upperarm_l','lowerarm_l',14),13:('upperarm_l','lowerarm_l',14),14:('lowerarm_l','hand_l',15),15:('hand_l','middle_01_l',16),16:('middle_01_l','middle_02_l',None),
@@ -91,8 +97,9 @@ def retarget(names, rest, anim, rig, bones, slow=1.5, sigma=2.0):
             if np.dot(q[f],q[f-1])<0: q[f]=-q[f]
         q=gaussian_filter1d(q,sigma,axis=0,mode='wrap'); q/=np.linalg.norm(q,axis=1)[:,None]
         W[g]=q
-    hp=np.array([anim[f][ix[B('ROOT_bind')]][:3,3] for f in range(n)]); hp=gaussian_filter1d(hp,sigma,axis=0,mode='wrap')
-    hp-=hp.mean(0); hp[:,1]+= (np.array([anim[f][ix[B('ROOT_bind')]][1,3] for f in range(n)]).mean()-rest[ix[B('ROOT_bind')]][1,3])
+    hip=B(MAP[0][0]); unit=rig.get('unit',1.0)   # the source's hips bone; its units to metres
+    hp=np.array([anim[f][ix[hip]][:3,3] for f in range(n)])*unit; hp=gaussian_filter1d(hp,sigma,axis=0,mode='wrap')
+    hp-=hp.mean(0); hp[:,1]+= (np.array([anim[f][ix[hip]][1,3] for f in range(n)]).mean()-rest[ix[hip]][1,3])*unit
     m=int(round(n*slow)); out=[]
     ts=np.arange(n+1)
     sl={g:Slerp(ts,Rot.from_quat(np.vstack([W[g],W[g][:1]]))) for g in W}
@@ -260,6 +267,10 @@ if __name__ == '__main__':
     if fps != 30:
         print('note: the source runs at %d frames/s; the game at 30 (--slow %.3f keeps its speed)' % (fps, 30.0 / fps))
     bones = game_skeleton(ema5)
+    if 'basis' in RIGS[rig]:
+        # The armature's axes to the game's (Y up, +Z forward, +X her left): bone matrices M -> G M.
+        G = np.eye(4); G[:3, :3] = np.array(RIGS[rig]['basis'], float)
+        rest = np.einsum('ij,bjk->bik', G, rest); anim = np.einsum('ij,fbjk->fbik', G, anim)
     seq = retarget(names, rest, anim, RIGS[rig], bones, slow, sigma)
     upright(seq)
     mot, _ = build_motion(seq, ema5, RIGS[rig]['bones'], tol, pelvis, head_forward)

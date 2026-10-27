@@ -22,7 +22,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
+#include <fstream>
 #include <functional>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -224,6 +227,8 @@ namespace kamite::launcher
             Texture2D logo{};  // resources/images/logo.png when present (the KAMITE wordmark; it stays still)
             Texture2D kana{};  // resources/images/kana.png: the painted kana over the wordmark's top right
             Texture2D burst{}; // resources/images/burst.png: the speed lines behind the logo
+            Font splashFont{}; // resources/splash/dominican.ttf, loaded with the glyphs of the line picked
+            std::string splash; // a random line of resources/splash/splash.txt, "" when there is none
             // The title's motion: the cursor (eased) shifts the burst layers and the kana by different amounts,
             // the bursts turn slowly and pulse; the wordmark does not move.
             float time = 0.0f;
@@ -297,6 +302,68 @@ namespace kamite::launcher
         float fontSize(const State &state, float base) { return std::round(base * state.unit); }
 
         void pushSize(const State &state, float base) { ImGui::PushFont(state.font, fontSize(state, base)); }
+
+        // The splash text (Minecraft's): a random line of resources/splash/splash.txt, one per start, yellow with a hard
+        // shadow, tilted up across the wordmark's bottom right corner and pulsing. Long lines are drawn smaller, so
+        // each stays within 40% of the wordmark's width. Over the screens with the logo (Home, Install), fading out with
+        // the burst on Options.
+        void loadSplash(State &state, const fs::path &folder)
+        {
+            std::ifstream in(folder / "splash.txt", std::ios::binary);
+            std::vector<std::string> lines;
+            std::string line;
+            while (std::getline(in, line))
+            {
+                if (line.size() >= 3 && static_cast<unsigned char>(line[0]) == 0xEF && static_cast<unsigned char>(line[1]) == 0xBB &&
+                    static_cast<unsigned char>(line[2]) == 0xBF)
+                    line.erase(0, 3); // a UTF-8 byte order mark (Notepad)
+                while (!line.empty() && std::isspace(static_cast<unsigned char>(line.back())))
+                    line.pop_back();
+                size_t start = 0;
+                while (start < line.size() && std::isspace(static_cast<unsigned char>(line[start])))
+                    ++start;
+                if (start < line.size())
+                    lines.push_back(line.substr(start));
+            }
+            std::error_code error;
+            const fs::path fontPath = folder / "dominican.ttf";
+            if (lines.empty() || !fs::is_regular_file(fontPath, error))
+                return;
+            std::mt19937 random(std::random_device{}() ^ static_cast<unsigned>(std::time(nullptr)));
+            state.splash = lines[std::uniform_int_distribution<size_t>(0, lines.size() - 1)(random)];
+            int count = 0;
+            int *codepoints = LoadCodepoints(state.splash.c_str(), &count);
+            state.splashFont = LoadFontEx(utf8(fontPath).c_str(), 128, codepoints, count);
+            UnloadCodepoints(codepoints);
+            if (state.splashFont.texture.id == 0u)
+            {
+                state.splash.clear();
+                return;
+            }
+            GenTextureMipmaps(&state.splashFont.texture);
+            SetTextureFilter(state.splashFont.texture, TEXTURE_FILTER_TRILINEAR);
+        }
+
+        void drawSplash(const State &state)
+        {
+            if (state.splash.empty() || !state.logoPlaced || state.burstShown < 0.01f)
+                return;
+            const float logoWidth = state.logoMax.x - state.logoMin.x, logoHeight = state.logoMax.y - state.logoMin.y;
+            const char *text = state.splash.c_str();
+            float size = logoWidth * 0.047f;
+            const Vector2 measured = MeasureTextEx(state.splashFont, text, size, 0.0f);
+            if (measured.x > logoWidth * 0.40f)
+                size *= logoWidth * 0.40f / measured.x;
+            size *= 1.0f + 0.05f * std::fabs(std::sin(state.time * 3.14159265f)); // the pulse, once a second
+            const Vector2 box = MeasureTextEx(state.splashFont, text, size, 0.0f);
+            const Vector2 at{state.logoMin.x + logoWidth * 0.93f, state.logoMin.y + logoHeight * 0.97f};
+            const Vector2 origin{box.x * 0.5f, box.y * 0.5f};
+            const float shadow = size * 0.085f;
+            const unsigned char alpha = static_cast<unsigned char>(255.0f * std::clamp(state.burstShown, 0.0f, 1.0f));
+            DrawTextPro(state.splashFont, text, Vector2{at.x + shadow, at.y + shadow}, origin, -18.0f, size, 0.0f,
+                        Color{62, 52, 0, alpha});
+            DrawTextPro(state.splashFont, text, at, origin, -18.0f, size, 0.0f, Color{255, 236, 64, alpha});
+        }
 
         void centeredText(const char *text, const ImVec4 &color)
         {
@@ -1334,6 +1401,7 @@ namespace kamite::launcher
                 SetTextureFilter(state.burst, TEXTURE_FILTER_TRILINEAR);
             }
         }
+        loadSplash(state, context.exeDir / "resources" / "splash");
         KM_INFO(Boot, "launcher: shown (" << (state.installed ? "installed" : "not installed") << ")");
 
         while (!state.done)
@@ -1371,6 +1439,7 @@ namespace kamite::launcher
             }
             ImGui::End();
             rlImGuiEnd();
+            drawSplash(state);
             EndDrawing();
         }
         state.ini.save();
@@ -1381,6 +1450,8 @@ namespace kamite::launcher
             UnloadTexture(state.kana);
         if (state.burst.id != 0u)
             UnloadTexture(state.burst);
+        if (state.splashFont.texture.id != 0u)
+            UnloadFont(state.splashFont);
         rlImGuiShutdown(); // the F12 debugger sets ImGui up again later
         // One empty frame, so the window does not keep showing the launcher until the game's first picture.
         BeginDrawing();

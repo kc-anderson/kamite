@@ -2,6 +2,24 @@
 
 Newest first. Each change is commented in the code where it was made.
 
+## October 27, 2026
+
+- **Launcher: splash text.** One line of resources/splash/splash.txt, picked at random at each start, tilted yellow
+  over the wordmark's corner and pulsing (Minecraft's splash text), in the Dominican font. Edit the file to add lines.
+- **NPC poses: new motions.** dance (Quaternius' Universal Animation Library 1, Dance_Loop), idle_fold_arms (UAL 2,
+  Idle_FoldArms_Loop), female_idle_1 and female_idle_2 (Denys Almaral's Free Animation Pack for City People). The
+  counter idle is now the calm, slow take (the other takes are gone) and table_tease is counter_tease; poses saved
+  with the old names still load.
+- **NPC poses: Hip sway** scales all of the hips' movement (travel, turning and the pelvis), so it works on every
+  motion, the new ones included. A pose with a high hip sway on the counter idle now sways side to side more too.
+- **Xavier:** his 16-colour textures (what the game draws without replacement textures, or from a save state made as
+  Xavier while another character is chosen) are made again from his full-resolution ones with a better palette: no
+  more olive buttons and sleeve. Every character's full-resolution textures are now registered whichever one is
+  chosen, so a state made as Xavier still shows his full textures.
+- **F2 > Debug: Hide** works: a display bit hides its part when set (the first version cleared the bits).
+- Tools: tools/models/ual_motion.py (a UAL clip with its hips as an NPC motion), npc_motion.py's biped rig (3ds Max
+  Biped FBX), tools/models/xavier/requantize.py.
+
 ## October 26, 2026 (17)
 
 - **Precise depth: the casino fence's floor shadow** no longer breaks into shards. The shadow is its own mesh, up to

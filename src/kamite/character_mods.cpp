@@ -74,8 +74,41 @@ namespace kamite::characters
         return out;
     }
 
+    namespace
+    {
+        // Every character's full-resolution textures (PCSX2 replacement images named after its in-game textures), not
+        // only the chosen one's: a save state made as one character and loaded while another is chosen brings that
+        // character's model and 16-colour textures back with it, and its images must still be found (Oct 27: Xavier
+        // loaded from a state while Gene was chosen showed his 16-colour body, an olive sleeve and olive buttons).
+        // The names are hashes of the textures' own pixels and palettes, so another character's images never match.
+        void registerTextures(const fs::path &exeDir)
+        {
+            std::error_code error;
+            std::string folders;
+            std::vector<fs::path> all;
+            for (const auto &entry : fs::directory_iterator(exeDir / "mods" / "characters", error))
+                if (entry.is_directory(error) && fs::is_directory(entry.path() / "textures", error))
+                    all.push_back(entry.path() / "textures");
+            std::sort(all.begin(), all.end());
+            for (const fs::path &textures : all)
+            {
+                const std::u8string native = fs::path(textures).lexically_normal().make_preferred().u8string();
+                folders += (folders.empty() ? "" : "|") + std::string(native.begin(), native.end());
+                KM_INFO(Boot, "character textures: " << std::string(native.begin(), native.end()));
+            }
+            if (folders.empty())
+                return;
+#if defined(_WIN32)
+            _putenv_s("PS2X_PCSX2_TEXTURE_EXTRA", folders.c_str());
+#else
+            setenv("PS2X_PCSX2_TEXTURE_EXTRA", folders.c_str(), 1);
+#endif
+        }
+    }
+
     void install(const fs::path &exeDir)
     {
+        registerTextures(exeDir);
         const char *chosen = std::getenv("KAMITE_CHARACTER");
         const std::string id = chosen ? lower(chosen) : std::string();
         if (id.empty() || id == "gene")
@@ -131,19 +164,7 @@ namespace kamite::characters
         }
         PS2DiscOverlay::add(std::move(patches));
         KM_INFO(Boot, "playing as " << describe(folder).name << " (" << replaced << " files)");
-        // Full-resolution textures: PCSX2 replacement images named after the character's in-game textures.
-        const fs::path textures = folder / "textures";
-        if (fs::is_directory(textures, error))
-        {
-            const std::u8string native = fs::path(textures).lexically_normal().make_preferred().u8string();
-            const std::string path(native.begin(), native.end());
-#if defined(_WIN32)
-            _putenv_s("PS2X_PCSX2_TEXTURE_EXTRA", path.c_str());
-#else
-            setenv("PS2X_PCSX2_TEXTURE_EXTRA", path.c_str(), 1);
-#endif
-            KM_INFO(Boot, "character '" << id << "': full-resolution textures from " << path);
-        }
+        // Its full-resolution textures were registered with every character's (registerTextures).
     }
 
     namespace

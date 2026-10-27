@@ -1,13 +1,13 @@
 // Dev tools in the F2 menu's Debug tab: the game's display switches and a room jump (dev-only: strip-list).
 //
-// Display switches. GameWork +0x5E0 (0x747A80) is the preview's DSP group (game::Dsp): one bit per part of the game
-// that is drawn. Retail still reads most of them: Gene (0x1020F8, 0x107F28), the enemies (12 enemy draw functions),
-// the objects (0x1B80C0, IsTargetVisible_14B470), the stage (0x319848), the screen filters
-// (classCFILTER_TAG_Filter_main), the shadows (cObjBase_KageDraw), the coat (IsTargetVisibleOrForced_1004C8), the
-// action-button prompt (0x1F7360). The HUD bit is set and cleared round events; its reader was not seen as a direct
-// load, so it is the one to check. A ticked box clears its bit at every frame start; untick it and the bit gets the
-// value the game last gave it (set again by the game while hidden counts; a clear by the game while hidden is missed,
-// so a cutscene that hid the HUD meanwhile may show it: a dev tool).
+// Display switches. GameWork +0x5E0 (0x747A80) is the preview's DSP group (game::Dsp): one bit per part of the game,
+// and a SET bit HIDES that part (the dog race and the jukebox set them to hide the world and Gene, the door jump sets
+// DSP_ACTBTN to hide the prompt; func_002BF708 sets them all). Retail still reads most of them: Gene (0x1020F8,
+// 0x107F28), the enemies (12 enemy draw functions), the objects (0x1B80C0, IsTargetVisible_14B470), the stage
+// (0x319848), the screen filters (classCFILTER_TAG_Filter_main), the shadows (cObjBase_KageDraw), the coat
+// (IsTargetVisibleOrForced_1004C8), the action-button prompt (0x1F7360). A ticked box sets its bit at every frame
+// start; untick it and the bit gets the value the game last gave it (a clear by the game while hidden counts; a set
+// by the game meanwhile is missed, so a part the game hid meanwhile may show again: a dev tool).
 //
 // Room jump. RoomJmpTbl.dat (etc/debugres, loaded by retail into D_00747A44 for the casino's jump points): u32 group
 // count, u32 group table offset, u32 record offset; groups of (u16 room, u8 count, u8 first); 0x30-byte records of
@@ -74,8 +74,8 @@ namespace kamite::debug_tools
             {Dsp::kActBtn, "Action-button prompt (DSP_ACTBTN)"},
         };
 
-        std::atomic<uint32_t> g_hide{0};   // the bits to keep clear (UI thread writes, game thread reads)
-        uint32_t g_hiding = 0;             // game thread: the bits it is keeping clear now
+        std::atomic<uint32_t> g_hide{0};   // the bits to keep set = hidden (UI thread writes, game thread reads)
+        uint32_t g_hiding = 0;             // game thread: the bits it is keeping set now
         uint32_t g_gameWants = 0;          // game thread: of those, the ones the game had set
 
         struct Point
@@ -336,8 +336,8 @@ namespace kamite::debug_tools
             uint32_t w = rd32(rdram, address);
             const uint32_t starting = hide & ~g_hiding, stopping = g_hiding & ~hide;
             g_gameWants = (g_gameWants & ~starting) | (w & starting); // what the game had when the hiding began
-            g_gameWants |= w & hide & g_hiding;                       // set again by the game while hidden
-            w = (w & ~hide) | (g_gameWants & stopping);
+            g_gameWants &= ~(~w & hide & g_hiding);                   // cleared by the game while hidden
+            w = (w | hide) & ~(stopping & ~g_gameWants);
             g_gameWants &= ~stopping;
             g_hiding = hide;
             wr32(rdram, address, w);

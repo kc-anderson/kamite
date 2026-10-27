@@ -68,7 +68,8 @@ namespace kamite::game
         inline constexpr uint32_t kPlStopKey = 0x00000010u;   // STP_PLSTOPKEY
         inline constexpr uint32_t kSubScr2 = 0x00100000u;     // STP_SUBSCR, in word 2 (0x747A7C)
     }
-    namespace Dsp // GameWork +0x5E0 (0x747A80): "display" - a part of the game is drawn
+    namespace Dsp // GameWork +0x5E0 (0x747A80): "display" - a SET bit hides that part (the dog race, the jukebox and
+                  // the door jump set them; func_002BF708 sets them all)
     {
         inline constexpr uint32_t kPl = 0x80000000u;          // DSP_PL: Gene
         inline constexpr uint32_t kEm = 0x40000000u;          // DSP_EM: enemies

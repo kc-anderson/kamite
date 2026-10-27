@@ -16,7 +16,7 @@
 // below 0x82000, ELF from 0x100000), and its idle is started from the slot instead. A slot holds the actor's own idle
 // unchanged, or the rail idle when the actor is set to lean, with that actor's adjustments:
 //   bend at the waist   bone 1 x rotation (+ = further forward)
-//   hip sway            bone 0's height and bone 17's rotations, scaled round their first key
+//   hip sway            bone 0's travel and rotations and bone 17's rotations, scaled round their first key
 //   height              bone 0's height and the two feet's IK targets (bones 20, 24) together
 //   forward / sideways  bone 0's and the feet's x / z, in the actor's own space (+z = her forward, +x = her left)
 //   turn                bone 0's y rotation, with the feet's targets turned round her middle
@@ -58,6 +58,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace kamite::npc_poses
@@ -574,6 +575,22 @@ namespace kamite::npc_poses
                 m = serialize(frames, loop, out);
         }
 
+        // Motions renamed since (Oct 27): a pose saved with an old id plays the new motion, and an old file left in
+        // the play folder (the build copies resources/ without deleting) is not listed twice.
+        constexpr std::pair<const char *, const char *> kRenamed[] = {
+            {"table_tease", "counter_tease"},
+            {"counter_idle_calm_slow", "counter_idle"},
+            {"counter_idle_calm", "counter_idle"},
+            {"counter_idle_slow", "counter_idle"},
+        };
+        const char *renamed(const std::string &id)
+        {
+            for (const auto &[from, to] : kRenamed)
+                if (id == from)
+                    return to;
+            return nullptr;
+        }
+
         const Motion *motionFor(const std::string &id)
         {
             for (const Motion &mo : g_motions)
@@ -595,8 +612,12 @@ namespace kamite::npc_poses
                     scale(m, bone, c, amount);
             shift(m, 17, 3, p.butt * kDeg);
             shift(m, 1, 3, p.waist * kDeg);
+            // Hip sway: all of the hips' movement (bone 0's travel and turning, the pelvis's wiggle), round each
+            // curve's first key. Motions keep their hip movement in different places (the rail and table idles in the
+            // pelvis, the UAL and biped ones in bone 0's travel and roll), so the slider scales them all.
             const float s = p.sway / 100.0f;
-            scale(m, 0, 1, s);
+            for (int c = 0; c <= 5; ++c)
+                scale(m, 0, c, s);
             for (int c = 3; c <= 5; ++c)
                 scale(m, 17, c, s);
             // Turn: the hips' heading, and the feet's targets (constants here) turned round her middle, the feet
@@ -824,7 +845,7 @@ namespace kamite::npc_poses
                 std::string motion;
                 if (fields >> motion)
                 {
-                    pose.motion = motion;
+                    pose.motion = renamed(motion) ? renamed(motion) : motion;
                     fields >> pose.headPitch >> pose.headYaw >> pose.arms >> pose.elbows >> pose.butt >> pose.amount;
                     fields >> pose.headRoll >> pose.legTurn >> pose.stance; // added later still
                 }
@@ -1026,7 +1047,8 @@ namespace kamite::npc_poses
             std::map<std::string, fs::path> byName;
             for (const fs::path &folder : {exeDir / "resources" / "npc_motions", exeDir / "mods" / "npc_motions"})
                 for (const auto &entry : fs::directory_iterator(folder, error))
-                    if (entry.is_regular_file(error) && entry.path().extension() == ".mot")
+                    if (entry.is_regular_file(error) && entry.path().extension() == ".mot" &&
+                        !renamed(entry.path().stem().string()))
                         byName[entry.path().stem().string()] = entry.path();
             std::vector<fs::path> files;
             for (const auto &[name, path] : byName)

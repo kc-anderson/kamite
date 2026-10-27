@@ -42,8 +42,10 @@ name in the preview (added later, presumably).
 | D_00747A84 (flags5E4) | STA, "state" | 80000000 COCKPIT, 40000000 SCENARIO, 20000000 EVENT, 10000000 TALK, 08000000 SUBSCR, 04000000 STA_ESP_DISP_EVENT_SST, 02000000 ROOMJUMP, 01000000 STA_SUSPEND, 00800000 STA_STAGE_START_JUMP, 00400000 STA_LV_MAX_FIX, 00100000 RELEASE_EM, 00080000 STA_EVENT2, 00020000 STA_WORLD_SLOW, 00010000 STA_ESP_DISP_EVENT_ONLY, 00008000 STA_DOOR_JUMP, 00004000 STA_TITLE, 00000800 SESCR_OFF, 00000080 WIPE, 00000040 SOFT_EVENT, 00000020 ROOMJUMP_NOWIPE, 00000010 SOFT EVENT CANCEL, 00000004 SCE MOVIE CANCEL |
 | D_00747A8C | PL | 00004000 PL_FUDEMODEON |
 
-So D_00747A80 is the display word rather than a lock word: retail still
-reads most of it. DSP_PL at 0x1020F8 / 0x107F28 (the sign test), DSP_EM in
+So D_00747A80 is the display word rather than a lock word: a set bit hides
+that part (the dog race and the jukebox set them to hide the world, the door
+jump sets DSP_ACTBTN, func_002BF708 sets them all). Retail still reads most
+of it. DSP_PL at 0x1020F8 / 0x107F28 (the sign test), DSP_EM in
 12 enemy draw functions (0x2684A0..0x28E9D0), DSP_OM at 0x1B80C0, DSP_SCR
 at 0x319848, DSP_FILTER in classCFILTER_TAG_Filter_main, DSP_KAGE in
 cObjBase_KageDraw, DSP_OBJ in IsTargetVisible_14B470, DSP_PL01 in

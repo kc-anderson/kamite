@@ -1,7 +1,7 @@
 #pragma once
 
 // Dev tools in the F2 menu's Debug tab (dev-only: claude/strip-list.md), built from what the 2006-06-21 preview disc's
-// debug menu showed of the game: its display switches (game::Dsp: draw or hide Gene, the enemies, the stage, the HUD,
+// debug menu showed of the game: its display switches (game::Dsp: hide Gene, the enemies, the stage, the HUD,
 // the shadows ...) and a room jump to any room's jump point (etc/debugres/RoomJmpTbl.dat, which retail still loads,
 // through the game's own door jump). See debug_tools.cpp.
 
