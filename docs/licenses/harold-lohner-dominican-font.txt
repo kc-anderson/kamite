@@ -1,5 +1,5 @@
-Dominican (resources/splash/dominican.ttf)
+Dominican (resources/splash/splash.fnt and splash.png: the font baked as a glyph atlas)
 DOMINICAN computer fonts v2.1 (c) 2002, 2009 Harold Lohner, www.haroldsfonts.com
 
-A free font by Harold Lohner, used unchanged for the launcher's splash text. Harold's fonts are offered free of
-charge; see www.haroldsfonts.com for the author's terms.
+A free font by Harold Lohner, used for the launcher's splash text. Free for any use provided the raw .ttf file is not
+redistributed: the repo and the port ship only the baked atlas, not the font file.

@@ -2,5 +2,5 @@ Free Animation Pack for City People, by Denys Almaral (denysalmaral.com; sketchf
 female_idle1_150f and female_idle2_190f, retargeted to the game's skeleton as resources/npc_motions/female_idle_1.mot
 and female_idle_2.mot (tools/models/npc_motion.py, rig biped).
 
-The pack is offered free by its author ("Price: FREE, forever"; license given as CC 4.0 on
-denysalmaral.com/post/free-animation-pack-city-people-common-moves-wip/). Credit: Denys Almaral.
+Licence: Creative Commons Attribution 4.0 (CC BY 4.0), per the author
+(denysalmaral.com/post/free-animation-pack-city-people-common-moves-wip/). Credit: Denys Almaral.

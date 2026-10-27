@@ -358,6 +358,9 @@ public:
 
     static const IoPaths &getIoPaths();
     static void setIoPaths(const IoPaths &paths);
+    // Shift+F8 in the game window calls this on the host thread (a port's hang dump: the guest's threads and PCs
+    // while the game sits at 0 FPS). None set: the key does nothing.
+    static void setDebugDumpHandler(void (*handler)());
     static void configureIoPathsFromElf(const std::string &elfPath);
 
     void SignalException(R5900Context *ctx, PS2Exception exception);

@@ -16,7 +16,8 @@
 // below 0x82000, ELF from 0x100000), and its idle is started from the slot instead. A slot holds the actor's own idle
 // unchanged, or the rail idle when the actor is set to lean, with that actor's adjustments:
 //   bend at the waist   bone 1 x rotation (+ = further forward)
-//   hip sway            bone 0's travel and rotations and bone 17's rotations, scaled round their first key
+//   butt wiggle         the rail idle's pelvis (bone 17) rotations added on top of the motion's own (any motion)
+//   hip sway            bone 0 moved side to side with the same undulation
 //   height              bone 0's height and the two feet's IK targets (bones 20, 24) together
 //   forward / sideways  bone 0's and the feet's x / z, in the actor's own space (+z = her forward, +x = her left)
 //   turn                bone 0's y rotation, with the feet's targets turned round her middle
@@ -27,7 +28,7 @@
 // .blend / .fbx / .glb; the file's name is the motion's id). On top of the motion: the head (pitch, turn), the upper
 // arms (raised round the shoulders' side axis) and the forearms (bent round the upper arms' up axis) are turned in
 // front of the motion's own rotation, every frame (preRotate resamples those curves); bottom out tips the pelvis;
-// amount scales the motion's own rotations round its first frame.
+// amount scales the motion's own movement (rotations and the hips' travel) round its first frame.
 //
 // Which actors lean: npc_poses.txt next to the exe, one line per actor (room, the place it first started the idle in
 // centimetres, and the adjustments). The F2 menu's NPCs tab edits the nearest actor and saves the file.
@@ -82,7 +83,7 @@ namespace kamite::npc_poses
         {
             bool lean = false;
             float waist = 0.0f;   // degrees
-            float sway = 100.0f;  // percent
+            float sway = 0.0f;    // percent: the hips moved side to side (100 = 2 cm each way)
             float height = 0.0f;  // metres
             float forward = 0.0f; // metres
             float side = 0.0f;    // metres
@@ -98,6 +99,7 @@ namespace kamite::npc_poses
             float legTurn = 0.0f;    // degrees, + = the legs turned round her middle to her left (she and her feet keep
                                      // facing); past 90 they cross
             float stance = 100.0f;   // percent of the feet's distance apart
+            float wiggle = 0.0f;     // percent: the rail idle's pelvis undulation added (100 = as the rail idle's)
         };
 
         // The motions a pose can play: the rail lean built in, and any MOT files in mods/npc_motions (made with
@@ -575,6 +577,86 @@ namespace kamite::npc_poses
                 m = serialize(frames, loop, out);
         }
 
+        // The rail idle's pelvis (bone 17) rotations round their first key, one cycle of 71 frames (radians x, y, z):
+        // the "butt wiggle" every motion can have added.
+        constexpr int kWiggleFrames = 71;
+        constexpr float kWiggle[kWiggleFrames][3] = {
+            {0.0000f, 0.0000f, 0.0000f}, {0.0007f, 0.0002f, 0.0002f}, {0.0008f, -0.0004f, 0.0003f}, {0.0004f, -0.0017f, 0.0003f},
+            {-0.0003f, -0.0035f, 0.0004f}, {-0.0012f, -0.0057f, 0.0003f}, {-0.0023f, -0.0081f, 0.0003f}, {-0.0035f, -0.0106f, 0.0002f},
+            {-0.0046f, -0.0131f, 0.0002f}, {-0.0056f, -0.0155f, 0.0001f}, {-0.0064f, -0.0175f, 0.0000f}, {-0.0070f, -0.0194f, -0.0000f},
+            {-0.0076f, -0.0214f, -0.0001f}, {-0.0082f, -0.0235f, -0.0002f}, {-0.0087f, -0.0256f, -0.0002f}, {-0.0093f, -0.0278f, -0.0003f},
+            {-0.0099f, -0.0298f, -0.0005f}, {-0.0104f, -0.0319f, -0.0006f}, {-0.0110f, -0.0337f, -0.0007f}, {-0.0116f, -0.0355f, -0.0008f},
+            {-0.0121f, -0.0370f, -0.0009f}, {-0.0126f, -0.0383f, -0.0010f}, {-0.0132f, -0.0394f, -0.0010f}, {-0.0138f, -0.0402f, -0.0011f},
+            {-0.0144f, -0.0409f, -0.0011f}, {-0.0151f, -0.0414f, -0.0012f}, {-0.0157f, -0.0417f, -0.0012f}, {-0.0162f, -0.0419f, -0.0013f},
+            {-0.0167f, -0.0420f, -0.0014f}, {-0.0171f, -0.0421f, -0.0015f}, {-0.0173f, -0.0421f, -0.0016f}, {-0.0174f, -0.0422f, -0.0017f},
+            {-0.0172f, -0.0421f, -0.0019f}, {-0.0167f, -0.0420f, -0.0021f}, {-0.0160f, -0.0418f, -0.0024f}, {-0.0152f, -0.0415f, -0.0026f},
+            {-0.0143f, -0.0412f, -0.0029f}, {-0.0134f, -0.0408f, -0.0032f}, {-0.0127f, -0.0404f, -0.0035f}, {-0.0121f, -0.0400f, -0.0038f},
+            {-0.0119f, -0.0396f, -0.0040f}, {-0.0119f, -0.0392f, -0.0043f}, {-0.0125f, -0.0388f, -0.0045f}, {-0.0138f, -0.0386f, -0.0047f},
+            {-0.0158f, -0.0385f, -0.0049f}, {-0.0185f, -0.0385f, -0.0051f}, {-0.0215f, -0.0385f, -0.0053f}, {-0.0246f, -0.0384f, -0.0055f},
+            {-0.0276f, -0.0383f, -0.0057f}, {-0.0303f, -0.0379f, -0.0058f}, {-0.0323f, -0.0374f, -0.0058f}, {-0.0336f, -0.0365f, -0.0058f},
+            {-0.0337f, -0.0353f, -0.0057f}, {-0.0331f, -0.0338f, -0.0055f}, {-0.0321f, -0.0321f, -0.0053f}, {-0.0307f, -0.0301f, -0.0050f},
+            {-0.0291f, -0.0280f, -0.0047f}, {-0.0272f, -0.0257f, -0.0044f}, {-0.0251f, -0.0233f, -0.0041f}, {-0.0229f, -0.0209f, -0.0037f},
+            {-0.0205f, -0.0184f, -0.0033f}, {-0.0181f, -0.0160f, -0.0030f}, {-0.0156f, -0.0136f, -0.0026f}, {-0.0132f, -0.0112f, -0.0022f},
+            {-0.0108f, -0.0090f, -0.0018f}, {-0.0085f, -0.0069f, -0.0015f}, {-0.0063f, -0.0050f, -0.0011f}, {-0.0044f, -0.0034f, -0.0008f},
+            {-0.0026f, -0.0019f, -0.0005f}, {-0.0012f, -0.0008f, -0.0002f}, {0.0000f, 0.0000f, 0.0000f},
+        };
+
+        // delta[f] added to the bone's component every frame; the record becomes a curve (always, so the motion's
+        // records stay the same whatever the sliders say).
+        void addCurve(std::vector<uint8_t> &m, int bone, int component, const std::vector<float> &delta)
+        {
+            std::vector<Rec> recs;
+            if (!parse(m, recs))
+                return;
+            uint16_t frames;
+            std::memcpy(&frames, m.data() + 4, 2);
+            const uint8_t loop = m[7];
+            const Rec *own = nullptr;
+            size_t where = recs.size();
+            for (size_t i = 0; i < recs.size(); ++i)
+                if (recs[i].bone == bone)
+                {
+                    if (where == recs.size())
+                        where = i;
+                    if ((recs[i].channel & 0x0F) == component)
+                    {
+                        own = &recs[i];
+                        where = i;
+                    }
+                }
+            std::vector<float> v(frames);
+            for (int f = 0; f < frames; ++f)
+                v[f] = (own ? sample(*own, static_cast<float>(f)) : 0.0f) + delta[f % delta.size()];
+            std::vector<Rec> out;
+            for (size_t i = 0; i < recs.size(); ++i)
+            {
+                if (i == where)
+                    out.push_back(encode(static_cast<uint8_t>(bone), static_cast<uint8_t>(component), v));
+                if (&recs[i] != own)
+                    out.push_back(recs[i]);
+            }
+            if (where == recs.size())
+                out.push_back(encode(static_cast<uint8_t>(bone), static_cast<uint8_t>(component), v));
+            if (out.size() < 254)
+                m = serialize(frames, loop, out);
+        }
+
+        // One value a frame of the wiggle's component (0..2), scaled, over `frames`: whole cycles of the rail idle's
+        // 71, as many as fit, so the loop stays seamless.
+        std::vector<float> wiggleCurve(int frames, int component, float scale)
+        {
+            const int cycles = std::max(1, static_cast<int>(std::lround(frames / static_cast<float>(kWiggleFrames))));
+            std::vector<float> v(std::max(frames, 1));
+            for (int f = 0; f < frames; ++f)
+            {
+                const float t = std::fmod(f * cycles * static_cast<float>(kWiggleFrames) / frames, static_cast<float>(kWiggleFrames));
+                const int i = static_cast<int>(t), j = (i + 1) % kWiggleFrames;
+                const float a = t - i;
+                v[f] = ((1 - a) * kWiggle[i][component] + a * kWiggle[j][component]) * scale;
+            }
+            return v;
+        }
+
         // Motions renamed since (Oct 27): a pose saved with an old id plays the new motion, and an old file left in
         // the play folder (the build copies resources/ without deleting) is not listed twice.
         constexpr std::pair<const char *, const char *> kRenamed[] = {
@@ -610,16 +692,20 @@ namespace kamite::npc_poses
             for (int bone : {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 26, 29})
                 for (int c = 3; c <= 5; ++c)
                     scale(m, bone, c, amount);
+            for (int c = 0; c <= 2; ++c)
+                scale(m, 0, c, amount); // the hips' own travel (the UAL and biped motions keep theirs here)
             shift(m, 17, 3, p.butt * kDeg);
             shift(m, 1, 3, p.waist * kDeg);
-            // Hip sway: all of the hips' movement (bone 0's travel and turning, the pelvis's wiggle), round each
-            // curve's first key. Motions keep their hip movement in different places (the rail and table idles in the
-            // pelvis, the UAL and biped ones in bone 0's travel and roll), so the slider scales them all.
-            const float s = p.sway / 100.0f;
-            for (int c = 0; c <= 5; ++c)
-                scale(m, 0, c, s);
-            for (int c = 3; c <= 5; ++c)
-                scale(m, 17, c, s);
+            // Butt wiggle: the rail idle's pelvis undulation added to any motion. Hip sway: the hips (bone 0, so the
+            // whole body above the planted feet) moved side to side with the same undulation, 2 cm each way at 100%.
+            uint16_t frames = 1;
+            std::memcpy(&frames, m.data() + 4, 2);
+            for (int c = 0; c < 3; ++c)
+                addCurve(m, 17, 3 + c, wiggleCurve(frames, c, p.wiggle / 100.0f));
+            std::vector<float> side = wiggleCurve(frames, 1, -(p.sway / 100.0f) * 0.02f / 0.0211f); // yaw swings 0..-0.042
+            for (float &x : side)
+                x -= (p.sway / 100.0f) * 0.02f; // round her middle
+            addCurve(m, 0, 0, side);
             // Turn: the hips' heading, and the feet's targets (constants here) turned round her middle, the feet
             // pointing the new way. Legs: the feet's places alone turned round her middle (the leg IK swings the legs
             // round; she keeps facing), the feet still pointing where she faces; past 90 degrees they pass each other
@@ -848,6 +934,18 @@ namespace kamite::npc_poses
                     pose.motion = renamed(motion) ? renamed(motion) : motion;
                     fields >> pose.headPitch >> pose.headYaw >> pose.arms >> pose.elbows >> pose.butt >> pose.amount;
                     fields >> pose.headRoll >> pose.legTurn >> pose.stance; // added later still
+                    if (!(fields >> pose.wiggle))
+                    {
+                        // Before Oct 27 "hip sway" scaled the motion's own pelvis movement (100 = unchanged): what it
+                        // added past that is near the wiggle; the side-to-side sway is new.
+                        pose.wiggle = std::max(0.0f, pose.sway - 100.0f);
+                        pose.sway = 0.0f;
+                    }
+                }
+                else
+                {
+                    pose.wiggle = std::max(0.0f, pose.sway - 100.0f);
+                    pose.sway = 0.0f;
                 }
                 g_poses.emplace_back(key, pose);
             }
@@ -862,14 +960,14 @@ namespace kamite::npc_poses
                    "# room (hex), where the NPC stands (x z, cm), lean (0/1), bend at the waist (degrees), hip sway (%),\r\n"
                    "# height (m), forward (m), sideways (m, + = her left), turn (degrees, + = to her left), motion,\r\n"
                    "# head pitch and turn, arms raised, elbows bent, bottom out (degrees), amount of movement (%),\r\n"
-                   "# head tilt, legs turned (degrees), feet apart (%)\r\n";
+                   "# head tilt, legs turned (degrees), feet apart (%), butt wiggle (%)\r\n";
             for (const auto &[key, pose] : g_poses)
             {
                 char line[320];
-                std::snprintf(line, sizeof(line), "%s %d %.1f %.0f %.3f %.3f %.3f %.1f %s %.1f %.1f %.1f %.1f %.1f %.0f %.1f %.1f %.0f\r\n",
+                std::snprintf(line, sizeof(line), "%s %d %.1f %.0f %.3f %.3f %.3f %.1f %s %.1f %.1f %.1f %.1f %.1f %.0f %.1f %.1f %.0f %.0f\r\n",
                               keyText(key).c_str(), pose.lean ? 1 : 0, pose.waist, pose.sway, pose.height, pose.forward,
                               pose.side, pose.turn, pose.motion.c_str(), pose.headPitch, pose.headYaw, pose.arms, pose.elbows,
-                              pose.butt, pose.amount, pose.headRoll, pose.legTurn, pose.stance);
+                              pose.butt, pose.amount, pose.headRoll, pose.legTurn, pose.stance, pose.wiggle);
                 out << line;
             }
             return static_cast<bool>(out);
@@ -944,7 +1042,8 @@ namespace kamite::npc_poses
                         dragging = true;
                 };
                 slider("Bend at the waist##waist", pose.waist, -30.0f, 40.0f, "%.1f deg");
-                slider("Hip sway##sway", pose.sway, 0.0f, 300.0f, "%.0f%%");
+                slider("Butt wiggle##wiggle", pose.wiggle, 0.0f, 500.0f, "%.0f%%");
+                slider("Hip sway (side to side)##sway", pose.sway, 0.0f, 300.0f, "%.0f%%");
                 slider("Height##height", pose.height, -0.5f, 0.5f, "%.3f m");
                 slider("Forward##forward", pose.forward, -2.0f, 2.0f, "%.3f m");
                 slider("Sideways (+ = her left)##side", pose.side, -2.0f, 2.0f, "%.3f m");

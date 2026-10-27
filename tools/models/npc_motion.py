@@ -22,23 +22,27 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gamemodel import dat_read, scr_read, mdb_read
 from mot import Mot, half, hermite
 
+# Game arm bones: 8 / 14 the forearm (at the elbow), 9 / 15 the forearm's twist bone (mid-forearm; the game turns it
+# round x only), 10 / 16 the hand (at the wrist). The hand bone takes the source's hand; the twist bone turns with the
+# forearm (the whole wrist twist happens at the wrist). The game's hands have no finger bones (fists are other hand
+# meshes), so the source's fingers are not used.
 RIGS = {
  'custom': dict(fmt='b__%s__', bones={0:('ROOT_bind',None,None),1:('Spine0','Spine2',2),2:('Spine2','Neck',3),3:('Neck','Head',4),4:('Head',None,None),
-   5:('R_Clavicle','R_UpperArm',7),6:('R_UpperArm','R_Forearm',8),7:('R_UpperArm','R_Forearm',8),8:('R_Forearm','R_Hand',9),9:('R_Hand','R_Mid0',10),10:('R_Mid0','R_Mid1',None),
-   11:('L_Clavicle','L_UpperArm',13),12:('L_UpperArm','L_Forearm',14),13:('L_UpperArm','L_Forearm',14),14:('L_Forearm','L_Hand',15),15:('L_Hand','L_Mid0',16),16:('L_Mid0','L_Mid1',None),
+   5:('R_Clavicle','R_UpperArm',7),6:('R_UpperArm','R_Forearm',8),7:('R_UpperArm','R_Forearm',8),8:('R_Forearm','R_Hand',9),9:('R_Forearm','R_Hand',10),10:('R_Hand','R_Mid0',None),
+   11:('L_Clavicle','L_UpperArm',13),12:('L_UpperArm','L_Forearm',14),13:('L_UpperArm','L_Forearm',14),14:('L_Forearm','L_Hand',15),15:('L_Forearm','L_Hand',16),16:('L_Hand','L_Mid0',None),
    17:('Pelvis',None,None),26:('Head',None,None),29:('Spine2',None,None)}),
  'mixamo': dict(fmt='mixamorig:%s', bones={0:('Hips',None,None),1:('Spine','Spine2',2),2:('Spine2','Neck',3),3:('Neck','Head',4),4:('Head',None,None),
-   5:('RightShoulder','RightArm',7),6:('RightArm','RightForeArm',8),7:('RightArm','RightForeArm',8),8:('RightForeArm','RightHand',9),9:('RightHand','RightHandMiddle1',10),10:('RightHandMiddle1','RightHandMiddle2',None),
-   11:('LeftShoulder','LeftArm',13),12:('LeftArm','LeftForeArm',14),13:('LeftArm','LeftForeArm',14),14:('LeftForeArm','LeftHand',15),15:('LeftHand','LeftHandMiddle1',16),16:('LeftHandMiddle1','LeftHandMiddle2',None),
+   5:('RightShoulder','RightArm',7),6:('RightArm','RightForeArm',8),7:('RightArm','RightForeArm',8),8:('RightForeArm','RightHand',9),9:('RightForeArm','RightHand',10),10:('RightHand','RightHandMiddle1',None),
+   11:('LeftShoulder','LeftArm',13),12:('LeftArm','LeftForeArm',14),13:('LeftArm','LeftForeArm',14),14:('LeftForeArm','LeftHand',15),15:('LeftForeArm','LeftHand',16),16:('LeftHand','LeftHandMiddle1',None),
    17:('Hips',None,None),26:('Head',None,None),29:('Spine2',None,None)}),
  # 3ds Max Biped (Denys Almaral's Free Animation Pack for City People): Z up, +X forward, +Y her left, centimetres.
  'biped': dict(fmt='bip %s', basis=[[0,1,0],[0,0,1],[1,0,0]], unit=0.0119, bones={0:('Pelvis',None,None),1:('Spine','Spine1',2),2:('Spine1','Neck',3),3:('Neck','Head',4),4:('Head',None,None),
-   5:('R Clavicle','R UpperArm',7),6:('R UpperArm','R Forearm',8),7:('R UpperArm','R Forearm',8),8:('R Forearm','R Hand',9),9:('R Hand','R Finger1',10),10:('R Finger1','R Finger11',None),
-   11:('L Clavicle','L UpperArm',13),12:('L UpperArm','L Forearm',14),13:('L UpperArm','L Forearm',14),14:('L Forearm','L Hand',15),15:('L Hand','L Finger1',16),16:('L Finger1','L Finger11',None),
+   5:('R Clavicle','R UpperArm',7),6:('R UpperArm','R Forearm',8),7:('R UpperArm','R Forearm',8),8:('R Forearm','R Hand',9),9:('R Forearm','R Hand',10),10:('R Hand','R Finger1',None),
+   11:('L Clavicle','L UpperArm',13),12:('L UpperArm','L Forearm',14),13:('L UpperArm','L Forearm',14),14:('L Forearm','L Hand',15),15:('L Forearm','L Hand',16),16:('L Hand','L Finger1',None),
    17:('Pelvis',None,None),26:('Head',None,None),29:('Spine1',None,None)}),
  'ual': dict(fmt='%s', bones={0:('pelvis',None,None),1:('spine_01','spine_03',2),2:('spine_03','neck_01',3),3:('neck_01','Head',4),4:('Head',None,None),
-   5:('clavicle_r','upperarm_r',7),6:('upperarm_r','lowerarm_r',8),7:('upperarm_r','lowerarm_r',8),8:('lowerarm_r','hand_r',9),9:('hand_r','middle_01_r',10),10:('middle_01_r','middle_02_r',None),
-   11:('clavicle_l','upperarm_l',13),12:('upperarm_l','lowerarm_l',14),13:('upperarm_l','lowerarm_l',14),14:('lowerarm_l','hand_l',15),15:('hand_l','middle_01_l',16),16:('middle_01_l','middle_02_l',None),
+   5:('clavicle_r','upperarm_r',7),6:('upperarm_r','lowerarm_r',8),7:('upperarm_r','lowerarm_r',8),8:('lowerarm_r','hand_r',9),9:('lowerarm_r','hand_r',10),10:('hand_r','middle_01_r',None),
+   11:('clavicle_l','upperarm_l',13),12:('upperarm_l','lowerarm_l',14),13:('upperarm_l','lowerarm_l',14),14:('lowerarm_l','hand_l',15),15:('lowerarm_l','hand_l',16),16:('hand_l','middle_01_l',None),
    17:('pelvis',None,None),26:('Head',None,None),29:('spine_03',None,None)}),
 }
 

@@ -13,4 +13,8 @@ The UAL and biped motions take the upper body and the hips from the animation; t
 the game's leg IK, so the feet stay planted. Old names still load (npc_poses.cpp kRenamed): table_tease is
 counter_tease; counter_idle_calm_slow, counter_idle_calm and counter_idle_slow are counter_idle.
 
+All of them bend the hand at the wrist (bone 10 / 16) and keep the forearm's twist bone (9 / 15) with the forearm;
+a motion made with an older tool is fixed with `mot_rework.py --wrist`. The port adds the butt wiggle and hip sway
+itself (F2 > NPCs), so a motion needs none of its own.
+
 A file of the same name in mods/npc_motions replaces one of these.

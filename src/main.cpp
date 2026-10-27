@@ -995,6 +995,18 @@ int main(int argc, char *argv[])
         kamite::installSteadyIdleCamera(runtime); // [Video] SteadyIdleCamera
         kamite::jukebox::install(runtime); // the shop's radio: Gene stays in the picture while it plays
         kamite::hangdump::setRuntime(&runtime);
+        // Shift+F8: the hang dump (guest threads, PCs, waits; every host stack) into the log, and the EE RAM as
+        // hang_ram.bin next to the exe, for a game sitting at 0 FPS.
+        PS2Runtime::setDebugDumpHandler([] {
+            if (PS2Runtime *rt = g_capRuntime.load())
+                if (std::FILE *file = std::fopen("hang_ram.bin", "wb"))
+                {
+                    std::fwrite(rt->memory().getRDRAM(), 1, PS2_RAM_SIZE, file);
+                    std::fclose(file);
+                    std::fprintf(stderr, "[Shift+F8] wrote hang_ram.bin\n");
+                }
+            kamite::hangdump::dumpNow(true);
+        });
         kamite::calltrace::installFromEnvironment(runtime);
         kamite::pcsampler::installFromEnvironment(runtime);
         kamite::FunctionHooks::instance().logBindings();

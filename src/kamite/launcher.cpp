@@ -227,7 +227,7 @@ namespace kamite::launcher
             Texture2D logo{};  // resources/images/logo.png when present (the KAMITE wordmark; it stays still)
             Texture2D kana{};  // resources/images/kana.png: the painted kana over the wordmark's top right
             Texture2D burst{}; // resources/images/burst.png: the speed lines behind the logo
-            Font splashFont{}; // resources/splash/dominican.ttf, loaded with the glyphs of the line picked
+            Font splashFont{}; // resources/splash/splash.fnt, the Dominican font baked as an atlas
             std::string splash; // a random line of resources/splash/splash.txt, "" when there is none
             // The title's motion: the cursor (eased) shifts the burst layers and the kana by different amounts,
             // the bursts turn slowly and pulse; the wordmark does not move.
@@ -325,17 +325,17 @@ namespace kamite::launcher
                 if (start < line.size())
                     lines.push_back(line.substr(start));
             }
+            // The font is a baked atlas (tools/splash/bake_font.py: splash.fnt + splash.png, Latin-1), not the .ttf:
+            // its terms keep the raw file out of the repo, and raylib's own atlas packer clipped and garbled this
+            // font's tall glyphs (it assumes none is taller than the font size).
             std::error_code error;
-            const fs::path fontPath = folder / "dominican.ttf";
+            const fs::path fontPath = folder / "splash.fnt";
             if (lines.empty() || !fs::is_regular_file(fontPath, error))
                 return;
             std::mt19937 random(std::random_device{}() ^ static_cast<unsigned>(std::time(nullptr)));
             state.splash = lines[std::uniform_int_distribution<size_t>(0, lines.size() - 1)(random)];
-            int count = 0;
-            int *codepoints = LoadCodepoints(state.splash.c_str(), &count);
-            state.splashFont = LoadFontEx(utf8(fontPath).c_str(), 128, codepoints, count);
-            UnloadCodepoints(codepoints);
-            if (state.splashFont.texture.id == 0u)
+            state.splashFont = LoadFont(utf8(fontPath).c_str());
+            if (state.splashFont.texture.id == 0u || state.splashFont.texture.id == GetFontDefault().texture.id)
             {
                 state.splash.clear();
                 return;

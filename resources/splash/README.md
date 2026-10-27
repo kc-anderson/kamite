@@ -5,4 +5,6 @@ right corner (Minecraft's splash text). One splash per line; empty lines are ski
 smaller). Edit the copy next to kamite.exe (`resources/splash/splash.txt`) to try lines out; the repo's copy is synced
 from K's own list.
 
-`dominican.ttf`: Dominican by Harold Lohner (haroldsfonts.com), free font; see docs/licenses/harold-lohner-dominican-font.txt.
+`splash.fnt` + `splash.png`: Dominican by Harold Lohner (haroldsfonts.com) baked as a glyph atlas with
+`tools/splash/bake_font.py` (free for any use; the raw .ttf is not redistributed, so it is not in the repo). Glyphs:
+ASCII and the Latin-1 letters the font has; anything else draws as `?`.

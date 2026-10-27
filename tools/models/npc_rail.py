@@ -92,8 +92,8 @@ def model(d):
 
 # --- retarget ---
 MAP={1:'spine_01',2:'spine_03',3:'neck_01',4:'Head',
-     5:'clavicle_r',6:'upperarm_r',7:'upperarm_r',8:'lowerarm_r',9:'hand_r',10:'middle_01_r',
-     11:'clavicle_l',12:'upperarm_l',13:'upperarm_l',14:'lowerarm_l',15:'hand_l',16:'middle_01_l',
+     5:'clavicle_r',6:'upperarm_r',7:'upperarm_r',8:'lowerarm_r',9:'lowerarm_r',10:'hand_r',
+     11:'clavicle_l',12:'upperarm_l',13:'upperarm_l',14:'lowerarm_l',15:'lowerarm_l',16:'hand_l',
      26:'Head',29:'spine_03'}
 PARENT=None
 def game_parents():

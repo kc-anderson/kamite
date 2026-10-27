@@ -1470,6 +1470,9 @@ const PS2Runtime::IoPaths &PS2Runtime::getIoPaths()
     return runtimeIoPaths();
 }
 
+static void (*s_debugDumpHandler)() = nullptr;
+void PS2Runtime::setDebugDumpHandler(void (*handler)()) { s_debugDumpHandler = handler; }
+
 void PS2Runtime::setIoPaths(const IoPaths &paths)
 {
     IoPaths normalized = paths;
@@ -3401,7 +3404,7 @@ void PS2Runtime::run()
             ps2x::savestate::requestQuickLoad();
         if (!controlsOpen && IsKeyPressed(KEY_F3))
             fpsOverlay.visible = !fpsOverlay.visible;
-        if (!controlsOpen && IsKeyPressed(KEY_F8))
+        if (!controlsOpen && !(IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) && IsKeyPressed(KEY_F8))
         {
             // Debug capture: VU1 trace of the next 2 fields (vu1trace_<tick>.bin) plus the EE RAM (ram_<tick>.bin).
             const unsigned long long tick = static_cast<unsigned long long>(m_memory.gs().vsyncTick.load());
@@ -3416,6 +3419,11 @@ void PS2Runtime::run()
             std::fprintf(stderr, "[F8] wrote %s, VU1 trace requested\n", name);
         }
         const bool shiftHeld = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+        if (!controlsOpen && shiftHeld && IsKeyPressed(KEY_F8) && s_debugDumpHandler)
+        {
+            std::fprintf(stderr, "[Shift+F8] debug dump requested\n");
+            s_debugDumpHandler();
+        }
         if (!controlsOpen && !shiftHeld && IsKeyPressed(KEY_F10))
         {
             // Debug capture: the GIF stream of the next 2 fields as sent to PCSX2's GS (gif_<tick>.bin, the
