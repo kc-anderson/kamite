@@ -20,13 +20,17 @@ def tri(o):
 budget={'XavierBody':0.5,'XavierHair':0.55,'XavierNecklace':0.6,'XavierShoulderPad':1.0,'Xaviersnakeeyes':0.5,'XavierEyeR':0.03,'XavierEyesL':0.03}
 # The snake's eyes are painted into the body texture (K's XavierDiffuse.png: unpack_textures.py), so their spheres go (XAVIER_SNAKE_EYES=geometry
 # keeps them). The snake head (stored four times: encode_xavier) keeps the body's ratio (SNAKE_KEEP 1); its teeth and
-# tongue are taken out of the body before the decimation (snake_bits): each tooth becomes one flat two-sided
-# triangle, the tongue is left out.
+# tongue are taken out of the body before the decimation (snake_bits): each side tooth becomes one flat two-sided
+# triangle, the two fangs thin pyramids; the other front teeth and the tongue are left out.
 if os.environ.get('XAVIER_SNAKE_EYES','paint')!='geometry':
     del budget['Xaviersnakeeyes']
 SNAKE_KEEP=float(os.environ.get('XAVIER_SNAKE_KEEP','1'))
 SNAKE_TOOTH_WIDTH=float(os.environ.get('XAVIER_SNAKE_TOOTH_WIDTH','1.6'))    # the flat tooth's half-width / the cone's radius
 SNAKE_TOOTH_LENGTH=float(os.environ.get('XAVIER_SNAKE_TOOTH_LENGTH','1.3'))  # the flat tooth's length / the cone's
+FANG_WIDTH=float(os.environ.get('XAVIER_FANG_WIDTH','1.5'))   # the fang pyramids' base radius / the cone's
+FANG_IN=float(os.environ.get('XAVIER_FANG_IN','0.002'))       # metres the fangs move towards the head's middle (inside the lip)
+# The back hair (bone 29) is drawn from both sides: its cards' undersides showed as holes from some angles.
+HAIR_BACK_TWOSIDED=os.environ.get('XAVIER_HAIR_BACK_TWOSIDED','1')!='0'
 
 def components(bm, faces):
     seen=set(); out=[]
@@ -57,6 +61,21 @@ def snake_bits():
     bits=o.copy(); bits.data=o.data.copy(); bits.name='X_XavierSnakeBits'; bpy.context.scene.collection.objects.link(bits)
     bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.index in keep], context='FACES')
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+    # The snake's mouth lining is open where the tongue sat (and at a pinhole in the throat): every open edge loop on
+    # the snake's bones is filled, its new corners taking the UVs their vertices already have.
+    bm.edges.ensure_lookup_table()
+    uvb=bm.loops.layers.uv.active
+    open_edges=[e for e in bm.edges if e.is_boundary and all(on(v) for v in e.verts)]
+    if open_edges:
+        filled=bmesh.ops.holes_fill(bm, edges=open_edges, sides=0)['faces']
+        for f in filled:
+            for l in f.loops:
+                other=[x for x in l.vert.link_loops if x.face not in filled]
+                if other: l[uvb].uv=other[0][uvb].uv.copy()
+            near_=[x for v in f.verts for x in v.link_faces if x not in filled]
+            if near_: f.material_index=near_[0].material_index
+        bmesh.ops.triangulate(bm, faces=filled)
+        print('SNAKE: %d open edges sealed (%d faces)' % (len(open_edges), len(filled)))
     bm.to_mesh(o.data); bm.free()
     bm=bmesh.new(); bm.from_mesh(bits.data); bm.faces.ensure_lookup_table()
     bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.index not in keep], context='FACES')
@@ -76,29 +95,61 @@ def snake_bits():
         P=np.array([tuple(v.co) for v in vs]); m=P.mean(0)
         ax=np.linalg.svd(P-m)[2][0]
         t=(P-m)@ax
-        # the tip: the end of the long axis with the fewest vertices near it (a cone's point)
+        # the tip: the narrower end of the long axis (a cone's point)
         span=t.max()-t.min()
-        lo=(t<t.min()+0.2*span).sum(); hi=(t>t.max()-0.2*span).sum()
+        radial=np.linalg.norm((P-m)-np.outer(t,ax),axis=1)
+        lo=radial[t<t.min()+0.25*span].mean(); hi=radial[t>t.max()-0.25*span].mean()
         if lo<hi: ax=-ax; t=-t
         tip=vs[int(np.argmax(t))]
         root=[i for i in range(len(vs)) if t[i]<t.min()+0.35*span]
         rc=P[root].mean(0)
         rad=float(np.mean([np.linalg.norm((P[i]-rc)-ax*((P[i]-rc)@ax)) for i in root]))
         info.append((c,vs,P,ax,tip,root,rc,rad))
+    # The model has two kinds of teeth: the side rows (14 triangles each) and the snout's front teeth (20 each), among
+    # them the two long fangs. The fangs become thin pyramids at their own length (they stay inside the lip and read
+    # from every side), the other front teeth go, so the snout looks like a snake's (K, Oct 27).
+    lengths=np.array([float((np.array(i[4].co)-i[6])@i[3]) for i in info])
+    front=max(len(i[0]) for i in info)
+    fangs=set(int(k) for k in np.argsort(-lengths)[:2])
+    midline=float(np.mean([i[6][1] for i in info]))   # the snake head's middle (Blender y)
+    dropped=[k for k,i in enumerate(info) if len(i[0])==front and k not in fangs]
+    for k in fangs:
+        c,vs,P,ax,tip,root,rc,rad=info[k]
+        L=lengths[k]
+        e1=np.cross(ax,(1.0,0,0) if abs(ax[0])<0.9 else (0,1.0,0)); e1/=np.linalg.norm(e1); e2=np.cross(ax,e1)
+        inward=np.array((0.0, midline-rc[1], 0.0)); inward*=FANG_IN/max(np.linalg.norm(inward),1e-9)
+        base=rc-ax*L*0.15+inward
+        ring=[base+(e1*np.cos(a)+e2*np.sin(a))*rad*FANG_WIDTH for a in (0.0,2.0944,4.1888)]
+        near=lambda p_: vs[min(root,key=lambda i: np.linalg.norm(P[i]-p_))]
+        nvs=[]
+        for p_,sv in [(q,near(q)) for q in ring]+[(np.array(tip.co)+inward,tip)]:
+            nv=bm.verts.new(p_)
+            for g,w in sv[dl].items(): nv[dl][g]=w
+            nvs.append((nv,sv.link_loops[0][uvl].uv.copy()))
+        mat=c[0].material_index
+        bmesh.ops.delete(bm, geom=c, context='FACES')
+        tv,tu=nvs[3]
+        for (a,ua),(b,ub) in ((nvs[0],nvs[1]),(nvs[1],nvs[2]),(nvs[2],nvs[0])):
+            n=np.cross(np.array(b.co)-np.array(a.co),np.array(tv.co)-np.array(a.co))
+            f=bm.faces.new((a,b,tv) if n@(((np.array(a.co)+np.array(b.co))/2)-base)>=0 else (b,a,tv)); f.material_index=mat
+            uvs={a:ua,b:ub,tv:tu}
+            for l in f.loops: l[uvl].uv=uvs[l.vert]
+    for k in dropped:
+        bmesh.ops.delete(bm, geom=info[k][0], context='FACES')
+    info=[i for k,i in enumerate(info) if k not in fangs and k not in dropped]
     centres=np.array([i[6] for i in info])
-    lengths=np.array([float((np.array(i[4].co)-i[6])@i[3]) for i in info]); fang=np.median(lengths)*1.5
     teeth=0
     for k,(c,vs,P,ax,tip,root,rc,rad) in enumerate(info):
         L=float((np.array(tip.co)-rc)@ax)
         # one flat triangle along its row (its plane holds the tooth's axis and the line through its two nearest
-        # neighbours; the fangs facing the sides), wider and longer than the cone, its base sunk into the gum; drawn from both sides
+        # neighbours), wider and longer than the cone, its base sunk into the gum; drawn from both sides
         # (encode_xavier: 'twosided')
         d=np.linalg.norm(centres-rc,axis=1); d[k]=np.inf
         n1,n2=np.argsort(d)[:2]
         row=centres[n1]-centres[n2] if np.linalg.norm(centres[n1]-centres[n2])>d[n1] else centres[n1]-rc
         tn=row-ax*(row@ax)
-        if L>fang or np.linalg.norm(tn)<1e-9:
-            tn=np.cross(ax,(0.0,1.0,0.0))   # the fangs stand apart from the rows: facing the head's sides (+-y)
+        if np.linalg.norm(tn)<1e-9:
+            tn=np.cross(ax,(0.0,1.0,0.0))
         tn/=np.linalg.norm(tn)
         base=rc-ax*L*0.15
         pts=[base-tn*rad*SNAKE_TOOTH_WIDTH, base+tn*rad*SNAKE_TOOTH_WIDTH, rc+ax*L*SNAKE_TOOTH_LENGTH]
@@ -115,7 +166,7 @@ def snake_bits():
         teeth+=1
     bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
     bm.to_mesh(bits.data); bm.free()
-    print('SNAKE BITS: %d teeth as two-sided triangles, the tongue (%d faces) left out' % (teeth, len(tongue)))
+    print('SNAKE BITS: %d teeth as two-sided triangles, 2 fangs as pyramids, %d front teeth and the tongue (%d faces) left out' % (teeth, len(dropped), len(tongue)))
     return 'XavierSnakeBits'
 
 def mouth_teeth():
@@ -255,7 +306,8 @@ for n in budget:
             l=me.loops[li]; v=me.vertices[l.vertex_index]
             w=sorted([(vg[g.group],g.weight) for g in v.groups if g.weight>0.0005 and g.group in vg], key=lambda x:-x[1])[:3]
             corners.append(dict(key=(n,l.vertex_index), pos=tuple(v.co), nrm=tuple(v.normal), uv=tuple(uvl[li].uv), w=w, cloth=(cl.data[l.vertex_index].value if cl else 0.0)))
-        faces.append(dict(obj=n,mat=mat,c=corners,ts=bool(ts and ts.data[p.index].value)))
+        two=bool(ts and ts.data[p.index].value) or (HAIR_BACK_TWOSIDED and n=='XavierHair' and any(b==29 for c_ in corners for b,_ in c_['w']))
+        faces.append(dict(obj=n,mat=mat,c=corners,ts=two))
 print('faces',len(faces))
 
 # ---- split the body atlas into colour groups by UV island

@@ -21,10 +21,13 @@ environment variable, for trying variants.
    `XAVIER_HAIR_LIFT` / `_STAGGER` / `_FLARE`. Then `python -I face_mouth.py <work>/textures` (the mouth texture into
    the face's bottom strip, with the tooth strip painted over its old tooth shapes: rows 0-52 of the 512-row mouth
    texture, gum at the top).
-2. `prep2.py`: the small parts rebuilt before decimation, so they keep their shape: each of the snake's 63 teeth
-   becomes one flat two-sided triangle along its row (the fangs facing the head's sides), `XAVIER_SNAKE_TOOTH_WIDTH`
-   (1.6) and `_LENGTH` (1.3) times the original cone; the snake's tongue is left out (it showed through the shut
-   jaw). Xavier's own 30 teeth become two curved bands, the upper behind the upper lip and the lower below the lower
+2. `prep2.py`: the small parts rebuilt before decimation, so they keep their shape: the snake's 40 side teeth
+   become flat two-sided triangles along their rows, `XAVIER_SNAKE_TOOTH_WIDTH` (1.6) and `_LENGTH` (1.3) times the
+   original cone; its two fangs thin pyramids at their own length (`XAVIER_FANG_WIDTH` 1.5 times the cone's root),
+   `XAVIER_FANG_IN` (2 mm) towards the head's middle so they stay inside the lip; the other 21 front teeth and the
+   tongue are left out (a snake's snout; the tongue showed through the shut jaw), and the lining's openings (where
+   the tongue sat, a pinhole in the throat) are sealed. The back hair's faces are drawn from both sides
+   (`XAVIER_HAIR_BACK_TWOSIDED`). Xavier's own 30 teeth become two curved bands, the upper behind the upper lip and the lower below the lower
    lip, `XAVIER_TOOTH_SPAN` (4 cm) across the front of the arch, `XAVIER_TOOTH_SHIFT` (5 mm) towards the lips'
    opening and `XAVIER_TOOTH_FORWARD` (1 mm) forward in the middle (the model keeps its teeth hidden inside the lips),
    textured with the tooth strip face_mouth.py paints (`TOOTH_STRIP_PNG` for a hand-painted one). Then decimated to
