@@ -188,7 +188,7 @@ namespace kamite::bone_tweaks
         }
 
         // The snake's jaw: its bone (31, a head child the game never moves) placed under the hand (bone 16) with the
-        // jaw turned about its hinge: shut while the fist mesh shows, open otherwise, eased over a few frames. The
+        // jaw turned about its hinge: shut while the fist mesh shows, open otherwise (swapped at once, as the game swaps the hand). The
         // game skins with mtx * (bind pose)^-1 and the bind rotations are identity, so for a vertex p (bind space):
         // world = R16 (pivot + R (p - GW16 - pivot)) + t16 = A (p - GW31) + b with A = R16 R, b = R16 (R (d - pivot) + pivot) + t16,
         // d = GW31 - GW16 (bind positions, the part offsets summed up the chain).
@@ -197,9 +197,7 @@ namespace kamite::bone_tweaks
             const characters::HingedBone &jaw = characters::snakeJaw();
             if (jaw.bone < 0 || jaw.bone >= count || jaw.parent >= count)
                 return;
-            const float target = fistShown(rdram, model) ? jaw.closed : 0.0f;
-            const float rate = std::max(0.02f, jaw.closed / 6.0f);
-            g_jaw += std::clamp(target - g_jaw, -rate, rate);
+            g_jaw = fistShown(rdram, model) ? jaw.closed : 0.0f; // a swap, like the game's fist mesh: no easing (K)
             Vec bind[32];
             for (int i = 0; i < count; ++i)
             {

@@ -2,6 +2,12 @@
 
 Newest first, one line per change; the code comments say how.
 
+## October 27, 2026 (5)
+
+- Xavier shows up again (the Oct 27 (4) model was 17 KB larger than the game's file and was left out: Gene with
+  Xavier's loincloth); the encoder now refuses a model that does not fit.
+- The snake's mouth swaps shut at once while the fist shows (no easing).
+
 ## October 27, 2026 (4)
 
 - Fixed the save-menu hang after a save state load for real (the first fix used the wrong end code).

@@ -208,3 +208,14 @@ for i,(n,t) in sorted(textures.items()):
     print('HD',n,big.shape[1],'x',big.shape[0],'->',name)
 open(OUT+'/xavier_textures.tm3','wb').write(tm)
 print('scr',len(scr),'tm3',len(tm))
+# The replacement pl00.dat must not be larger than the game's (character_mods leaves a bigger file out and the game
+# shows Gene with Xavier's loincloth: Oct 27). The merge as build_characters.py does it, against GENE_PL00.
+try:
+    import json as _json
+    _spec=_json.load(open(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),'..','assets','characters','xavier','character.json')))['files']['pl/pl00.dat']
+    _game=open(os.environ['GENE_PL00'],'rb').read()
+    _merged=merge_model(_game, scr, tm, trim={k:(tuple(v['axis']),v['min']) for k,v in _spec.get('trim',{}).items()})
+    print('merged pl00.dat', len(_merged), 'of', len(_game), '(%+d bytes; must not be larger)' % (len(_merged)-len(_game)))
+    if len(_merged)>len(_game): raise SystemExit('TOO LARGE: decimate harder (prep2 budget) or drop detail')
+except KeyError as e:
+    print('merge size check skipped:', e)

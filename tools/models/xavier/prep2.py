@@ -17,8 +17,8 @@ def decimate(o, ratio):
 def tri(o):
     bm=bmesh.new(); bm.from_mesh(o.data); bmesh.ops.triangulate(bm,faces=bm.faces[:]); bm.to_mesh(o.data); bm.free()
 
-budget={'XavierBody':0.5,'XavierHair':0.55,'XavierNecklace':0.6,'XavierShoulderPad':1.0,'Xaviersnakeeyes':1.0,'XavierEyeR':0.03,'XavierEyesL':0.03}
-MOUTH_KEEP=0.08   # the mouth interior (prep1's 'mouthdec' group) keeps this share of its faces (an interior, seen
+budget={'XavierBody':0.46,'XavierHair':0.48,'XavierNecklace':0.6,'XavierShoulderPad':1.0,'Xaviersnakeeyes':1.0,'XavierEyeR':0.03,'XavierEyesL':0.03}
+MOUTH_KEEP=0.05   # the mouth interior (prep1's 'mouthdec' group) keeps this share of its faces (an interior, seen
                   # through a half-open mouth); the rest of the body keeps its own budget ratio as before
 for n,r in budget.items():
     o=obj(n); tri(o)
