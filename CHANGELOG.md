@@ -4,6 +4,10 @@ Newest first, one line per change; the code comments say how.
 
 ## October 28, 2026
 
+- 60 FPS: Door-kun heals, shakes and swings his arms at the same speed as at 30 FPS.
+- F2 > Debug > Hitboxes: no longer drawn over menus and the title screen.
+- F2 > Debug > Room jump: the cut Floodgate room (r502) and a stale r601 point that dropped Gene outside the map are
+  gone from the list.
 - F2 > Debug > Developer switches: the game's own debug flags (invincible, free God Hand and roulette, every
   roulette reel, every technique, max gold, max health/tension upgrades, max combo length, no enemy or object
   placement, pathfinding off, no hit blur, no vibration).

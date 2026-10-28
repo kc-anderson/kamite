@@ -58,6 +58,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <mutex>
@@ -237,6 +238,35 @@ namespace kamite::debug_tools
                 setHp(rdram, obj, 1);
         }
 
+        // KAMITE_DOOR_PROBE=1 (diagnostic, claude/strip-list.md): Door-kun's (cOm5a) damage per frame, for the 30/60 FPS
+        // roundhouse report. Hook km_door_probe at 0x1ACA14 in its update func_001AC980 (s0 = Door-kun), before its
+        // regen and its damage step: HP +0x54A / +0x548, its take unit +0x624 (+0x60 bit 0 = hit this frame, +0x4C the
+        // damage), the damage manager's hit stop (0x574380 + 0xACD0, frames). One line per frame with a hit or an HP
+        // change.
+        void doorProbeHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            static uint32_t frame = 0, lastObj = 0;
+            static int16_t lastHp = 0;
+            ++frame;
+            const uint32_t door = GPR_U32(ctx, 16);
+            if (!inRam(door, 0x800u))
+                return;
+            const int16_t hp = getHp(rdram, door);
+            int16_t max = 0;
+            std::memcpy(&max, rdram + ((door + 0x548u) & 0x01FFFFFFu), 2);
+            const uint32_t unit = rd32(rdram, door + 0x624u);
+            const uint32_t flags = inRam(unit, 0x70u) ? rd32(rdram, unit + 0x60u) : 0u;
+            const uint32_t damage = inRam(unit, 0x70u) ? rd32(rdram, unit + 0x4Cu) : 0u;
+            const uint32_t hitStop = rd32(rdram, 0x574380u + 0xACD0u);
+            if (door == lastObj && hp == lastHp && !(flags & 1u))
+                return;
+            KM_INFO(Game, "door probe f" << frame << (rdram[GameWork::address(GameWork::kVblankDivider)] == 1u ? " 60" : " 30")
+                                         << " hp " << lastHp << "->" << hp << "/" << max << " hit " << (flags & 1u) << " dmg "
+                                         << damage << " hitstop " << hitStop << " total " << rd32(rdram, door + 0x618u));
+            lastObj = door;
+            lastHp = hp;
+        }
+
         // The developers' names (Shift-JIS in the table), in English. "なまえをいれてください" ("please enter a
         // name") and points without a name here are "(unnamed)".
         const char *nameOf(uint16_t room, uint8_t index)
@@ -278,10 +308,16 @@ namespace kamite::debug_tools
             return "(unnamed)";
         }
 
+        // A room needs its module and its map data. r502 (Floodgate) is cut: its module is a stub and st5/r502.dat is
+        // not on the disc, so jumping there calls a load routine that is not there.
         bool roomModuleExists(uint16_t room)
         {
+            const unsigned stage = (room >> 8) & 0xF, index = room & 0xFF;
             char path[48];
-            std::snprintf(path, sizeof(path), "dll/debugoptimize/r%x%02x.rel", (room >> 8) & 0xF, room & 0xFF);
+            std::snprintf(path, sizeof(path), "dll/debugoptimize/r%x%02x.rel", stage, index);
+            if (!disc_files::find(path))
+                return false;
+            std::snprintf(path, sizeof(path), "st%x/r%x%02x.dat", stage, stage, index);
             return disc_files::find(path).has_value();
         }
 
@@ -306,6 +342,9 @@ namespace kamite::debug_tools
                     continue;
                 for (uint8_t k = 0; k < count; ++k)
                 {
+                    // r601 #2 ("Uphill slope", -40,-145,45) is stale: it lands outside the finished map.
+                    if (room == 0x601 && k == 1)
+                        continue;
                     const size_t r = recordOffset + 0x30u * (first + k);
                     if (r + 16 > d.size())
                         break;
@@ -319,7 +358,7 @@ namespace kamite::debug_tools
                     char label[128];
                     std::snprintf(label, sizeof(label), "r%x%02x  %s %s%s", (room >> 8) & 0xF, room & 0xFF,
                                   ((room >> 8) & 0xF) == 0 ? "Casino & rings:" : ("Stage " + std::to_string((room >> 8) & 0xF) + ":").c_str(),
-                                  nameOf(room, k), count > 1 ? (" (#" + std::to_string(k + 1) + ")").c_str() : "");
+                                  nameOf(room, k), count > 1 && room != 0x601 ? (" (#" + std::to_string(k + 1) + ")").c_str() : "");
                     p.label = label;
                     g_points.push_back(std::move(p));
                 }
@@ -511,6 +550,12 @@ namespace kamite::debug_tools
         ps2xRegisterHostHook("km_dbg_em_damage", &enemyDamageHook);
         ps2xRegisterHostHook("km_dbg_em_dizzy", &dizzyHook);
         ps2xSetPatchFlag("debug_cheats", true); // the hooks test their switches themselves
+        if (const char *probe = std::getenv("KAMITE_DOOR_PROBE"); probe && *probe == '1')
+        {
+            ps2xRegisterHostHook("km_door_probe", &doorProbeHook);
+            ps2xSetPatchFlag("door_probe", true);
+            KM_INFO(Game, "door probe: on (KAMITE_DOOR_PROBE)");
+        }
 #if defined(KAMITE_HAS_GS_MENU)
         ps2x::menu::addPanel("Debug", &drawPanel);
 #endif

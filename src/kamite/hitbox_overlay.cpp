@@ -27,6 +27,7 @@
 // "Dump this frame" writes the shape list to godhand.log once (world space), for diffing a 30 fps frame against a
 // 60 fps one.
 #include "kamite/hitbox_overlay.h"
+#include "kamite/game_layout.h"
 #include "kamite/log.h"
 #include "runtime/ps2_memory.h"
 #include "runtime/gs/gs_pcsx2_backend.h"
@@ -72,6 +73,7 @@ namespace kamite::hitbox_overlay
         std::atomic<bool> g_dllTooOld{false};
         std::atomic<bool> g_haveMatrix{false};
         bool g_sentClear = true; // game thread: the DLL holds no lines
+        bool g_collected = false; // game thread: collect() ran since the last frame start
 
         float g_matrix[16] = {};       // game thread: the last world-to-screen matrix (column-major as camera.cpp uses it)
         std::vector<float> g_lines;    // game thread: x0 y0 x1 y1 per line, GS pixels
@@ -211,15 +213,30 @@ namespace kamite::hitbox_overlay
         }
 
         // After func_002B9D58 (the collision manager's update) in Move(): the shapes as the game just tested them.
+        void clear()
+        {
+            if (!g_sentClear)
+            {
+                GSPcsx2Backend::SetOverlay(nullptr, nullptr, 0u);
+                g_sentClear = true;
+            }
+        }
+
+        // A game menu (pause, save/load, shop) is open: the shapes stay in the pool but are not drawn over it.
+        bool menuOpen(const uint8_t *rdram)
+        {
+            if (rd32(rdram, game::GameWork::address(game::GameWork::kFlags5E4)) & game::Sta::kSubScr)
+                return true;
+            const uint32_t subScr = rd32(rdram, game::SubScr::kPointer);
+            return inRam(subScr, 0x60u) && static_cast<int32_t>(rd32(rdram, subScr + game::SubScr::kKind)) != -1;
+        }
+
         void collect(uint8_t *rdram, R5900Context *, PS2Runtime *)
         {
-            if (!g_enabled.load(std::memory_order_relaxed))
+            g_collected = true;
+            if (!g_enabled.load(std::memory_order_relaxed) || menuOpen(rdram))
             {
-                if (!g_sentClear)
-                {
-                    GSPcsx2Backend::SetOverlay(nullptr, nullptr, 0u);
-                    g_sentClear = true;
-                }
+                clear();
                 return;
             }
             if (!g_haveMatrix.load(std::memory_order_relaxed))
@@ -326,6 +343,14 @@ namespace kamite::hitbox_overlay
             g_dllTooOld.store(!sent, std::memory_order_relaxed);
             g_sentClear = g_lines.empty();
         }
+    }
+
+    void onFrame()
+    {
+        // Move() did not run last frame (title screen, a menu that stops the game): the DLL would keep the last lines.
+        if (!g_collected)
+            clear();
+        g_collected = false;
     }
 
     void noteScreenMatrix(const float *m16)

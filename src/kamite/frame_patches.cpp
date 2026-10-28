@@ -38,6 +38,7 @@
 #include "kamite/hud_layout.h"
 #include "kamite/npc_poses.h"
 #include "kamite/debug_tools.h"
+#include "kamite/hitbox_overlay.h"
 #include "kamite/bone_tweaks.h"
 #include "kamite/call_profile.h"
 #include "kamite/counter_finder.h"
@@ -297,6 +298,7 @@ namespace kamite
             characters::onFrame(rdram);
             npc_poses::onFrame(rdram, ctx, runtime);
             debug_tools::onFrame(rdram, ctx, runtime);
+            hitbox_overlay::onFrame();
             bone_tweaks::onFrame(rdram, ctx, runtime);
             // The game's frame divider: 2 (the PS2's, written once at boot by func_0030B298) or 1 for 60 frames a
             // second. Written in both modes: a save state made at 60 carries a 1, and loaded at 30 nothing put the 2

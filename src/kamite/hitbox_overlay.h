@@ -19,4 +19,6 @@ namespace kamite::hitbox_overlay
     // cCamera_update built a world-to-screen matrix (camera.cpp's km_cam_matrix hook): the one the overlay projects
     // with. Game thread.
     void noteScreenMatrix(const float *m16);
+    // Frame start (frame_patches.cpp), game thread: clears the overlay when Move() did not run last frame.
+    void onFrame();
 }
