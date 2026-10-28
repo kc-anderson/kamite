@@ -5,6 +5,7 @@ Newest first, one line per change; the code comments say how.
 ## October 28, 2026
 
 - 60 FPS: Door-kun heals, shakes and swings his arms at the same speed as at 30 FPS.
+- 60 FPS: the roundhouse hits Door-kun once, as at 30 FPS (it hit him twice).
 - F2 > Debug > Hitboxes: no longer drawn over menus and the title screen.
 - F2 > Debug > Room jump: the cut Floodgate room (r502) and a stale r601 point that dropped Gene outside the map are
   gone from the list.

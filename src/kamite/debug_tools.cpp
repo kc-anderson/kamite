@@ -267,6 +267,42 @@ namespace kamite::debug_tools
             lastHp = hp;
         }
 
+        // KAMITE_BGM_PROBE=1 (diagnostic, claude/strip-list.md): the music doubling report (Thinso / K, Oct 28). Each
+        // frame the BGM node list of cSnd (0x5FEE00, +0x18 bgmHead, nodes linked at +0x88; decomp cSnd.h) is read and
+        // logged whenever it changes: two nodes on one track = the game started it twice; one node = the doubling is
+        // below the game (ADX/IOP/SPU2).
+        bool g_bgmProbe = false;
+        void bgmProbe(const uint8_t *rdram)
+        {
+            constexpr uint32_t kSnd = 0x5FEE00u;
+            static std::string last;
+            std::string key, full;
+            int count = 0;
+            uint32_t node = rd32(rdram, kSnd + 0x18u);
+            for (; count < 16 && inRam(node, 0xDCu); ++count, node = rd32(rdram, node + 0x88u))
+            {
+                char text[96];
+                std::snprintf(text, sizeof(text), " [%06X bank %d req %d state %d flags %X state2 %d started %u", node,
+                              static_cast<int32_t>(rd32(rdram, node + 0x8Cu)), static_cast<int32_t>(rd32(rdram, node + 0x90u)),
+                              static_cast<int32_t>(rd32(rdram, node + 0x94u)), rd32(rdram, node + 0x98u),
+                              static_cast<int32_t>(rd32(rdram, node + 0xB0u)), rdram[(node + 0x5Eu) & 0x01FFFFFFu]);
+                key += text;
+                float volume = 0.0f;
+                std::memcpy(&volume, rdram + ((node + 0xC4u) & 0x01FFFFFFu), 4);
+                char fade[48];
+                // wait and volume change every frame during fades: logged, not compared.
+                std::snprintf(fade, sizeof(fade), " wait %d vol %.2f]", static_cast<int32_t>(rd32(rdram, node + 0xB4u)), volume);
+                full += text;
+                full += fade;
+            }
+            if (key == last)
+                return;
+            last = key;
+            KM_INFO(Game, "bgm probe" << (rdram[GameWork::address(GameWork::kVblankDivider)] == 1u ? " 60" : " 30") << " cur bank "
+                                      << static_cast<int32_t>(rd32(rdram, kSnd + 0x118u)) << " req "
+                                      << static_cast<int32_t>(rd32(rdram, kSnd + 0x11Cu)) << ", " << count << " nodes:" << full);
+        }
+
         // The developers' names (Shift-JIS in the table), in English. "なまえをいれてください" ("please enter a
         // name") and points without a name here are "(unnamed)".
         const char *nameOf(uint16_t room, uint8_t index)
@@ -556,6 +592,11 @@ namespace kamite::debug_tools
             ps2xSetPatchFlag("door_probe", true);
             KM_INFO(Game, "door probe: on (KAMITE_DOOR_PROBE)");
         }
+        if (const char *probe = std::getenv("KAMITE_BGM_PROBE"); probe && *probe == '1')
+        {
+            g_bgmProbe = true;
+            KM_INFO(Game, "bgm probe: on (KAMITE_BGM_PROBE)");
+        }
 #if defined(KAMITE_HAS_GS_MENU)
         ps2x::menu::addPanel("Debug", &drawPanel);
 #endif
@@ -564,6 +605,8 @@ namespace kamite::debug_tools
     void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         std::memcpy(&g_room, rdram + GameWork::address(GameWork::kRoom), 2);
+        if (g_bgmProbe)
+            bgmProbe(rdram);
         // A frame step is one game frame: the game's vblanks per frame (2 at 30 fps, 1 at 60).
         ps2x::timecontrol::setStepVblanks(rdram[GameWork::address(GameWork::kVblankDivider)] == 1u ? 1u : 2u);
         // Cheats.
