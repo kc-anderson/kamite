@@ -28,6 +28,9 @@ namespace kamite::prompt_hd
         Steam
     };
     Choice choice();
+    // The F2 menu (any thread): the choice from now on (button_prompts::requestRebuild() redraws the sheets).
+    void setChoice(Choice choice);
+    const char *choiceName(Choice choice); // the kamite.ini value: auto, xbox, playstation, nintendo, steam
 
     // The art sets. PlayStation is the game's own art (no image is made); Keyboard is for keys and mouse buttons.
     enum class Set : uint8_t

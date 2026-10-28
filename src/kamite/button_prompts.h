@@ -11,4 +11,6 @@ namespace kamite::button_prompts
 {
     // After FunctionHooks::attach, before runtime.run() (registers a vblank frame hook and starts the builder thread).
     void install(PS2Runtime &runtime);
+    // The F2 menu (any thread): the sheets are drawn again at the builder's next pass (a changed prompt set).
+    void requestRebuild();
 }

@@ -3,6 +3,7 @@
 
 #include "kamite/log.h"
 
+#include <atomic>
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -322,8 +323,32 @@ namespace kamite::prompt_hd
         }
     }
 
+    namespace
+    {
+        std::atomic<int> g_choiceOverride{-1}; // the F2 menu's choice (-1 = the environment's)
+    }
+
+    void setChoice(Choice choice)
+    {
+        g_choiceOverride.store(static_cast<int>(choice), std::memory_order_relaxed);
+    }
+
+    const char *choiceName(Choice choice)
+    {
+        switch (choice)
+        {
+        case Choice::Xbox: return "xbox";
+        case Choice::PlayStation: return "playstation";
+        case Choice::Nintendo: return "nintendo";
+        case Choice::Steam: return "steam";
+        default: return "auto";
+        }
+    }
+
     Choice choice()
     {
+        if (const int chosen = g_choiceOverride.load(std::memory_order_relaxed); chosen >= 0)
+            return static_cast<Choice>(chosen);
         const char *value = std::getenv("KAMITE_BUTTON_PROMPTS");
         std::string text = value ? value : "auto";
         for (char &c : text)

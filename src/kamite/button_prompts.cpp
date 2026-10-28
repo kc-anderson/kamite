@@ -64,6 +64,7 @@ namespace kamite::button_prompts
         std::atomic<bool> g_crateCaptured{false};
         std::atomic<uint32_t> g_crateAddress{0u};              // guest address of the pixels, 0 = not located
         std::atomic<bool> g_crateRebuild{false};
+        std::atomic<bool> g_promptsRebuild{false}; // the F2 menu changed the prompt set
 
         // ---- built images: builder thread -> EE thread (whole object replaced) ----
         struct Images
@@ -427,7 +428,8 @@ namespace kamite::button_prompts
                 if (++ticks % 10u == 0u && g_crateAddress.load(std::memory_order_acquire) == 0u)
                     scanCrate(builtCrates);
                 const bool crateNew = g_crateRebuild.exchange(false, std::memory_order_acq_rel);
-                if (built && !crateNew && generation == lastGeneration && device == lastDevice && style == lastStyle)
+                const bool setNew = g_promptsRebuild.exchange(false, std::memory_order_acq_rel);
+                if (built && !crateNew && !setNew && generation == lastGeneration && device == lastDevice && style == lastStyle)
                     continue;
                 built = true;
                 lastGeneration = generation;
@@ -568,5 +570,10 @@ namespace kamite::button_prompts
         ps2x::pnach::addFrameHook(&onVblank);
         std::thread(builderLoop).detach();
         KM_INFO(Game, "button prompts: on (the bound keys replace the PS2 button art once the sheets load)");
+    }
+
+    void requestRebuild()
+    {
+        g_promptsRebuild.store(true, std::memory_order_release);
     }
 }

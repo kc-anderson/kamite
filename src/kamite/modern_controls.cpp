@@ -26,7 +26,9 @@
 #include "kamite/modern_controls.h"
 
 #include "kamite/hotkeys.h"
+#include "kamite/button_prompts.h"
 #include "kamite/jukebox.h"
+#include "kamite/prompt_hd.h"
 #include "kamite/camera.h"
 #include "kamite/ini_file.h"
 #include "kamite/log.h"
@@ -348,6 +350,7 @@ namespace kamite::modern
             ini.setBool("Game", "MouseCamera", g_mouseCamera.load());
             ini.set("Game", "MouseSensitivity", number2(g_mouseSensitivity.load()));
             ini.set("Game", "MenuButtons", menu_buttons::modern() ? "modern" : "classic");
+            ini.set("Game", "ButtonPrompts", prompt_hd::choiceName(prompt_hd::choice()));
             setStatus(ini.save() ? "Saved to kamite.ini." : "Could not write kamite.ini.");
         }
 
@@ -440,6 +443,17 @@ namespace kamite::modern
                     ui->text(g_status.c_str());
                 }
             }
+            ui->separator_text("Button prompts");
+            static const char *const kPrompts[] = {"Automatic: from the controller in use", "Xbox", "PlayStation",
+                                                   "Nintendo", "Steam Deck"};
+            int prompts = static_cast<int>(prompt_hd::choice());
+            ui->set_next_width(340.0f);
+            if (ui->combo("##prompts", &prompts, kPrompts, 5))
+            {
+                prompt_hd::setChoice(static_cast<prompt_hd::Choice>(prompts));
+                button_prompts::requestRebuild();
+            }
+            ui->text_disabled("The buttons the game shows for a controller; keys and mouse always show keys. Redrawn at once.");
             ui->separator_text("Bindings");
             ui->text_disabled("The game's buttons: F1 (or Back + Start on a controller) opens the Controls screen; the "
                               "launcher's Controls tab edits the same controls.ini.");

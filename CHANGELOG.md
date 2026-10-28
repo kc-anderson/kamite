@@ -14,7 +14,8 @@ Newest first, one line per change; the code comments say how.
 - Hotkeys: the port's shortcut keys (F2 menu, save and load state, FPS overlay, full screen, HUD layout, the dumps)
   are rebindable in the launcher's Controls tab and the F2 Controls tab, saved in kamite.ini [Hotkeys], with a
   warning when a key is also one of the game's controls. F1 stays the Controls screen.
-- Controls tab: the Modern-only settings (Auto, L1, free camera, mouse) show only with Modern selected.
+- Controls tab: the Modern-only settings (Auto, L1, free camera, mouse) show only with Modern selected; the button
+  prompt set (auto, Xbox, PlayStation, Nintendo, Steam Deck) switches there, redrawn at once.
 - Gameplay tab: Styles is a fold-out section there (no Styles tab). NPCs tab: the poser is the "Pose NPC" fold-out.
 - Debug tab: cheats for testing (God mode, enemies can't die, one-hit kills), the room jump, and Hide as a fold-out
   at the bottom; the hair sliders are gone.
