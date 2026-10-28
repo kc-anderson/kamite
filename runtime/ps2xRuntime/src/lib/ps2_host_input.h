@@ -75,7 +75,7 @@ namespace ps2_host_input
         [[nodiscard]] std::string padButtonBinding(int device, int button);
         [[nodiscard]] std::string padAxisBinding(int device, int axis, bool negative);
         // The PS2 button or stick direction ("Cross", "LUp") a keyboard key is bound to on this pad; empty = none.
-        // For the hotkeys' clash warning. Window thread.
+        // For the hotkeys' clash warning. Window thread only (the bindings are edited there).
         [[nodiscard]] std::string keyboardKeyUse(uint32_t pad, int raylibKey);
         // Tests: whether the live table holds that binding; a file's bindings for one key; the default layout.
         [[nodiscard]] bool liveBinding(uint32_t pad, std::string_view key, std::string_view binding);

@@ -32,8 +32,10 @@ namespace ps2x::menu
     [[nodiscard]] bool notice(std::string &text, float &alpha);
 
     // "Press a key" for a panel: begin on the GS thread, the window thread (hostTick) takes the next key the hotkeys
-    // table accepts (with Shift / Ctrl as held), Esc cancels. captured() is true once, with the key (0 = cancelled).
+    // table accepts (with Shift / Ctrl as held), Esc cancels. captured() is true once, with the key (0 = cancelled)
+    // and the game button that key is bound to in the controls ("" = none; for a clash warning).
     void beginKeyCapture();
+    void cancelKeyCapture(); // the panel gave up (the menu closing cancels it too)
     [[nodiscard]] bool capturing();
-    [[nodiscard]] bool captured(int &key, bool &shift, bool &ctrl);
+    [[nodiscard]] bool captured(int &key, bool &shift, bool &ctrl, std::string &gameUse);
 }

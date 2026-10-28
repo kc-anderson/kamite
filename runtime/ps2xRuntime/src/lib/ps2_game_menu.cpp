@@ -40,8 +40,11 @@ namespace ps2x::menu
                                                    // (on by default, K, Oct 27: the menu is a dev tool used mid-fight)
         std::atomic<bool> g_keepPlayingChanged{false};
         std::atomic<int> g_captureState{0}; // 0 idle, 1 capturing, 2 captured (g_captured*)
+        std::atomic<bool> g_captureFresh{false}; // a capture just began: wait for the activating key to go up
         std::atomic<int> g_capturedKey{0};
         std::atomic<bool> g_capturedShift{false}, g_capturedCtrl{false};
+        std::mutex g_captureMutex;
+        std::string g_capturedUse; // the game button the captured key is bound to ("" = none)
 
         bool enabled()
         {
@@ -236,17 +239,34 @@ namespace ps2x::menu
             applyInputOwner(isOpen());
         if (capturing && isOpen())
         {
-            if (IsKeyPressed(KEY_ESCAPE))
+            // The Enter / Space that pressed the button must go up first, or it would be the key captured.
+            static bool s_waitRelease = true;
+            const bool activators = IsKeyDown(KEY_ENTER) || IsKeyDown(KEY_KP_ENTER) || IsKeyDown(KEY_SPACE);
+            if (g_captureFresh.exchange(false, std::memory_order_relaxed))
+                s_waitRelease = true;
+            if (s_waitRelease)
+            {
+                if (!activators)
+                    s_waitRelease = false;
+                else
+                    (void)ps2x::hotkeys::capturePressed(); // drop what is queued meanwhile
+            }
+            else if (IsKeyPressed(KEY_ESCAPE))
             {
                 g_capturedKey.store(0, std::memory_order_relaxed);
-                g_captureState.store(2, std::memory_order_relaxed);
+                g_captureState.store(2, std::memory_order_release);
             }
             else if (const int key = ps2x::hotkeys::capturePressed(); key != 0)
             {
+                {
+                    // The game button this key is bound to, read here on the window thread (the bindings' owner).
+                    std::lock_guard<std::mutex> lock(g_captureMutex);
+                    g_capturedUse = ps2_host_input::controls::keyboardKeyUse(0u, key);
+                }
                 g_capturedKey.store(key, std::memory_order_relaxed);
                 g_capturedShift.store(IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT), std::memory_order_relaxed);
                 g_capturedCtrl.store(IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL), std::memory_order_relaxed);
-                g_captureState.store(2, std::memory_order_relaxed);
+                g_captureState.store(2, std::memory_order_release);
             }
         }
         else if (!isOpen())
@@ -282,7 +302,13 @@ namespace ps2x::menu
 
     void beginKeyCapture()
     {
+        g_captureFresh.store(true, std::memory_order_relaxed);
         g_captureState.store(1, std::memory_order_relaxed);
+    }
+
+    void cancelKeyCapture()
+    {
+        g_captureState.store(0, std::memory_order_relaxed);
     }
 
     bool capturing()
@@ -290,13 +316,17 @@ namespace ps2x::menu
         return g_captureState.load(std::memory_order_relaxed) == 1;
     }
 
-    bool captured(int &key, bool &shift, bool &ctrl)
+    bool captured(int &key, bool &shift, bool &ctrl, std::string &gameUse)
     {
-        if (g_captureState.load(std::memory_order_relaxed) != 2)
+        if (g_captureState.load(std::memory_order_acquire) != 2)
             return false;
         key = g_capturedKey.load(std::memory_order_relaxed);
         shift = g_capturedShift.load(std::memory_order_relaxed);
         ctrl = g_capturedCtrl.load(std::memory_order_relaxed);
+        {
+            std::lock_guard<std::mutex> lock(g_captureMutex);
+            gameUse = key ? g_capturedUse : std::string();
+        }
         g_captureState.store(0, std::memory_order_relaxed);
         return true;
     }

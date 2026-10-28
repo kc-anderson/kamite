@@ -2,7 +2,6 @@
 #include "kamite/hotkeys.h"
 #include "kamite/ini_file.h"
 #include "kamite/log.h"
-#include "ps2_host_input.h"
 #include "runtime/ps2_game_menu.h"
 #include "runtime/ps2_hotkeys.h"
 
@@ -85,10 +84,14 @@ namespace kamite::hotkeys
             return;
         ui->text_disabled("The port's own keys. Click one, then press the key (with Shift or Ctrl held if you want); "
                           "Esc keeps the old one. F1 (the Controls screen) stays as it is.");
-        // A capture that finished: take the key.
+        // A capture that finished: take the key. One the menu dropped (it was closed meanwhile): forget it.
         int key = 0;
         bool shift = false, ctrl = false;
-        if (g_capturing >= 0 && ps2x::menu::captured(key, shift, ctrl))
+        std::string gameUse;
+        const bool done = g_capturing >= 0 && ps2x::menu::captured(key, shift, ctrl, gameUse);
+        if (g_capturing >= 0 && !done && !ps2x::menu::capturing())
+            g_capturing = -1;
+        if (done)
         {
             const rt::Action target = action(g_capturing);
             g_capturing = -1;
@@ -102,9 +105,8 @@ namespace kamite::hotkeys
                 else
                 {
                     rt::setBinding(target, binding);
-                    const std::string use = ps2_host_input::controls::keyboardKeyUse(0u, key);
-                    if (!use.empty() && !shift && !ctrl)
-                        g_warning = rt::text(binding) + " is also " + use + " in the game's controls: it will do both.";
+                    if (!gameUse.empty() && !shift && !ctrl)
+                        g_warning = rt::text(binding) + " is also " + gameUse + " in the game's controls: it will do both.";
                     save(g_status);
                 }
             }
@@ -124,7 +126,10 @@ namespace kamite::hotkeys
             if (ui->button(label))
             {
                 if (g_capturing == i)
+                {
                     g_capturing = -1; // clicked again: never mind
+                    ps2x::menu::cancelKeyCapture();
+                }
                 else
                 {
                     g_capturing = i;
@@ -150,6 +155,7 @@ namespace kamite::hotkeys
         {
             rt::setBinding(action(g_capturing), rt::Binding{});
             g_capturing = -1;
+            ps2x::menu::cancelKeyCapture();
             save(g_status);
         }
         if (!g_warning.empty())

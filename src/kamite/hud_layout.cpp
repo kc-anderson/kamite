@@ -68,7 +68,7 @@ namespace kamite::hud
         namespace idb = game::IDBase;
 
         Layout g_layout = Layout::Anchored;
-        std::atomic<int> g_layoutRequest{0}; // F2 menu: 1 = switch the layout at the next frame (game thread applies)
+        std::atomic<int> g_layoutRequest{-1}; // F2 menu: the layout wanted (0 = 16:9, 1 = 4:3), applied at the next frame
         std::atomic<int> g_layoutShown{0};   // 0 = 16:9 (anchored), 1 = 4:3, for the F2 menu
 
         // Menus and screens (the pause menu, options, the roulette setup...) are drawn for 4:3 and partly through
@@ -82,6 +82,7 @@ namespace kamite::hud
         };
         MenuMode g_menuMode = MenuMode::Pillarbox;
         std::atomic<int> g_menuModeRequest{-1}; // F2 menu: 0 = 4:3, 1 = stretch, applied at the next frame
+        std::atomic<int> g_menuModeShown{0};    // for the F2 menu
         bool g_menuSeen = false;  // a menu background this frame
         int g_menuHold = 0;       // frames the menu state lasts without one (covers a few frames of transitions)
         bool g_menuAspect = false; // the picture is forced to 4:3 now
@@ -620,15 +621,25 @@ namespace kamite::hud
         }
         if (ps2x::hotkeys::take(ps2x::hotkeys::Action::Dump2D))
             g_dumpArmed = true;
-        if (ps2x::hotkeys::take(ps2x::hotkeys::Action::HudLayout) || g_layoutRequest.exchange(0) != 0)
         {
-            g_layout = g_layout == Layout::Anchored ? Layout::Centered : Layout::Anchored;
-            g_loose.clear();
-            KM_INFO(Game, "HUD layout switched: " << layoutName(g_layout));
+            const bool key = ps2x::hotkeys::take(ps2x::hotkeys::Action::HudLayout);
+            const int wanted = g_layoutRequest.exchange(-1);
+            Layout layout = g_layout;
+            if (wanted >= 0)
+                layout = wanted ? Layout::Centered : Layout::Anchored;
+            if (key)
+                layout = layout == Layout::Anchored ? Layout::Centered : Layout::Anchored;
+            if (layout != g_layout)
+            {
+                g_layout = layout;
+                g_loose.clear();
+                KM_INFO(Game, "HUD layout switched: " << layoutName(g_layout));
+            }
         }
         g_layoutShown.store(g_layout == Layout::Anchored ? 0 : 1, std::memory_order_relaxed);
         if (const int mode = g_menuModeRequest.exchange(-1); mode >= 0)
             g_menuMode = mode == 1 ? MenuMode::Stretch : MenuMode::Pillarbox;
+        g_menuModeShown.store(g_menuMode == MenuMode::Stretch ? 1 : 0, std::memory_order_relaxed);
         if (++g_frame % 600u == 0u && g_layout == Layout::Anchored)
             reportLoose();
     }
@@ -677,13 +688,12 @@ namespace kamite::hud
 
     void requestLayout(int index)
     {
-        if (layoutIndex() != (index ? 1 : 0))
-            g_layoutRequest.store(1, std::memory_order_relaxed);
+        g_layoutRequest.store(index ? 1 : 0, std::memory_order_relaxed);
     }
 
     int menuModeIndex()
     {
-        return g_menuMode == MenuMode::Stretch ? 1 : 0;
+        return g_menuModeShown.load(std::memory_order_relaxed);
     }
 
     void requestMenuMode(int index)

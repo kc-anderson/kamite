@@ -3384,8 +3384,9 @@ void PS2Runtime::run()
         // The shortcuts are off while the F2 menu waits for a key to bind (the key pressed is the binding, not a command).
         const bool shortcutsOff = controlsOpen || ps2x::menu::capturing();
 #if !defined(PLATFORM_VITA)
-        if (!shortcutsOff && (ps2x::hotkeys::pressed(ps2x::hotkeys::Action::Fullscreen) ||
-                              ps2x::hotkeys::take(ps2x::hotkeys::Action::Fullscreen))) // the key, or the F2 menu's button
+        const bool fullscreenKey = !shortcutsOff && ps2x::hotkeys::pressed(ps2x::hotkeys::Action::Fullscreen);
+        const bool fullscreenAsked = ps2x::hotkeys::take(ps2x::hotkeys::Action::Fullscreen); // the F2 menu's button
+        if (fullscreenKey || fullscreenAsked)
         {
             ps2_host_input::releaseMouse();
             const bool leavingFullscreen = IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE);

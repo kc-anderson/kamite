@@ -395,10 +395,11 @@ namespace kamite::debug_tools
                 if (kind < 0x200u || kind >= 0x280u || hp <= 0 || flags < 0)
                     continue;
                 ++alive;
-                if (oneHit && hp > 1)
+                if (oneHit)
                 {
-                    const int16_t one = 1;
-                    std::memcpy(rdram + ((em + kObjHp) & 0x01FFFFFFu), &one, sizeof(one));
+                    const int16_t one = 1; // wins over "can't die": otherwise the two would trade HP every frame
+                    if (hp > 1)
+                        std::memcpy(rdram + ((em + kObjHp) & 0x01FFFFFFu), &one, sizeof(one));
                 }
                 else if (noDeath && max > 0 && hp <= max / 4)
                     std::memcpy(rdram + ((em + kObjHp) & 0x01FFFFFFu), &max, sizeof(max));

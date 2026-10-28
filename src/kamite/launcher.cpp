@@ -966,6 +966,7 @@ namespace kamite::launcher
         namespace hk = ps2x::hotkeys;
         int g_hotkeyCapture = -1;
         double g_hotkeyStarted = 0.0;
+        bool g_hotkeyWaitRelease = false; // the Enter / Space / click that opened the capture must go up first
         bool g_openHotkeyCapture = false;
         std::string g_hotkeyStatus;
 
@@ -1024,6 +1025,7 @@ namespace kamite::launcher
                         g_hotkeyCapture = i;
                         g_hotkeyStarted = GetTime();
                         g_openHotkeyCapture = true;
+                        g_hotkeyWaitRelease = true;
                     }
                     if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
                     {
@@ -1059,7 +1061,13 @@ namespace kamite::launcher
                 ImGui::TextColored(kTextDim, "Esc cancels (%d s)", std::max(0, 10 - static_cast<int>(GetTime() - g_hotkeyStarted)));
                 ImGui::Dummy(ImVec2(0.0f, ImGui::GetFontSize() * 0.5f));
                 bool done = false;
-                if (IsKeyPressed(KEY_ESCAPE) || GetTime() - g_hotkeyStarted > 10.0)
+                if (g_hotkeyWaitRelease)
+                {
+                    (void)hk::capturePressed(); // the queue holds the activating key still
+                    if (!(IsKeyDown(KEY_ENTER) || IsKeyDown(KEY_KP_ENTER) || IsKeyDown(KEY_SPACE) || IsMouseButtonDown(MOUSE_BUTTON_LEFT)))
+                        g_hotkeyWaitRelease = false;
+                }
+                else if (IsKeyPressed(KEY_ESCAPE) || GetTime() - g_hotkeyStarted > 10.0)
                 {
                     g_hotkeyStatus = IsKeyPressed(KEY_ESCAPE) ? "Cancelled." : "Nothing pressed for 10 s: cancelled.";
                     done = true;
