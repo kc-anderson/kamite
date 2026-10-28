@@ -31,6 +31,7 @@
 #include "kamite/debug_tools.h"
 #include "kamite/disc_files.h"
 #include "kamite/hitbox_overlay.h"
+#include "kamite/dash_probe.h"
 #include "kamite/game_layout.h"
 #include "kamite/log.h"
 #include "ps2_runtime_macros.h" // GPR_U32 / SET_GPR_U32
@@ -367,6 +368,7 @@ namespace kamite::debug_tools
             }
 
             hitbox_overlay::drawPanel(ui);
+            dash_probe::drawPanel(ui);
 
             ui->spacing();
             if (ui->version >= 4u ? ui->collapsing_header("Hide", 0) != 0 : true)
