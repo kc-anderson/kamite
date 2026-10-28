@@ -213,6 +213,99 @@ hook = "km_fps60_hitbox_compare"
 flag = "fps60"
 replace = true
 
+# Stick dash (pl00, 0x108FB0..0x109004): a forward push with the window (+0x628, a byte counted down once a game frame
+# at 0x108DB8) still open sets "dash requested" (+0x627, counted down at 0x108DA4) and closes it; otherwise it opens it
+# at 10. Game frames: at 60 FPS the double tap had half the time (dash logger, Oct 28). Doubled here.
+[[patches.conditional]] # window loaded on the first push: 10 -> 20
+address = "0x00108FF8"
+value = "0x24020014"
+flag = "fps60"
+[[patches.conditional]] # "dash requested" flag lifetime (delay slot): 2 -> 4
+address = "0x00108FE8"
+value = "0x24020004"
+flag = "fps60"
+
+# Button-mash meter, two copies (pl00 states at 0x10FC84 and 0x1201A8): each direction press (GameWork pressed & 0xF0)
+# raises the level (+0x15B4) when the game frames since the last one (+0x15B0, +1 a frame) are under the level's limit
+# (jump tables 0x41BDC0 / 0x41C6D0: the limits are the immediates of the table's cases), and the level decays when
+# +0x15B8 (counted down a frame) runs out. All in game frames, so at 60 FPS mashing had to be twice as fast. Doubled.
+[[patches.conditional]] # level 1 limit 6 -> 12 (delay slot)
+address = "0x0010FCE8"
+value = "0x2403000C"
+flag = "fps60"
+[[patches.conditional]] # level 2 limit 5 -> 10 (delay slot)
+address = "0x0010FCF0"
+value = "0x2403000A"
+flag = "fps60"
+[[patches.conditional]] # level 3 limit 4 -> 8 (delay slot)
+address = "0x0010FCF8"
+value = "0x24030008"
+flag = "fps60"
+[[patches.conditional]] # level 4 limit 3 -> 6 (delay slot)
+address = "0x0010FD00"
+value = "0x24030006"
+flag = "fps60"
+[[patches.conditional]] # level 5 limit 2 -> 4
+address = "0x0010FD04"
+value = "0x24030004"
+flag = "fps60"
+[[patches.conditional]] # decay after a press 10 -> 20 (delay slot)
+address = "0x0010FD54"
+value = "0x24020014"
+flag = "fps60"
+[[patches.conditional]] # decay after a press 10 -> 20
+address = "0x0010FD60"
+value = "0x24020014"
+flag = "fps60"
+[[patches.conditional]] # decay per level 5 -> 10
+address = "0x0010FD7C"
+value = "0x2403000A"
+flag = "fps60"
+[[patches.conditional]] # level 0 limit 9 -> 18 (delay slot)
+address = "0x00120204"
+value = "0x24030012"
+flag = "fps60"
+[[patches.conditional]] # level 1 limit 8 -> 16 (delay slot)
+address = "0x0012020C"
+value = "0x24030010"
+flag = "fps60"
+[[patches.conditional]] # level 2 limit 7 -> 14 (delay slot)
+address = "0x00120214"
+value = "0x2403000E"
+flag = "fps60"
+[[patches.conditional]] # level 3 limit 6 -> 12 (delay slot)
+address = "0x0012021C"
+value = "0x2403000C"
+flag = "fps60"
+[[patches.conditional]] # level 4 limit 5 -> 10 (delay slot)
+address = "0x00120224"
+value = "0x2403000A"
+flag = "fps60"
+[[patches.conditional]] # level 5 limit 4 -> 8 (delay slot)
+address = "0x0012022C"
+value = "0x24030008"
+flag = "fps60"
+[[patches.conditional]] # level 6 limit 3 -> 6 (delay slot)
+address = "0x00120234"
+value = "0x24030006"
+flag = "fps60"
+[[patches.conditional]] # level 7 limit 2 -> 4
+address = "0x00120238"
+value = "0x24030004"
+flag = "fps60"
+[[patches.conditional]] # decay after a press 10 -> 20 (delay slot)
+address = "0x00120288"
+value = "0x24020014"
+flag = "fps60"
+[[patches.conditional]] # decay after a press 10 -> 20
+address = "0x00120294"
+value = "0x24020014"
+flag = "fps60"
+[[patches.conditional]] # decay per level 5 -> 10
+address = "0x001202B0"
+value = "0x2403000A"
+flag = "fps60"
+
 # Move(), the instruction after its call of func_002B9D58 (the collision manager's update and hit tests): the hitbox
 # overlay reads the shapes as the game just tested them (hitbox_overlay.cpp).
 [[patches.hooks]]

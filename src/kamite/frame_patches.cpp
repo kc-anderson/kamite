@@ -16,6 +16,10 @@
 //                                                  is skipped when the integer frame (cvt.w.s) of the last and the
 //                                                  current position are equal, not only the exact floats
 //   15765C nop (dodge sync)                       conditional patch: the add.s in the beql delay slot is not run
+//   108FF8 / 108FE8 (ours, stick dash)            conditional patches: the double-tap window 10 -> 20 frames and the
+//                                                  "dash requested" flag 2 -> 4 (counted in game frames)
+//   10FCE8.. / 120204.. (ours, mash meter)        conditional patches: the mash meter's per-level limits and decay
+//                                                  doubled (both copies; recomp/kamite.toml lists them)
 //   1147CC sw zero,0(at) (roulette time)          conditional patch: nop (the timer store is dropped; the pnach's
 //                                                  store to whatever $at holds is left out)
 //   29059C lui at,0x3F00 (enemy physics x0.5)     conditional patch
@@ -304,6 +308,7 @@ namespace kamite
                 restoreInjected(rdram);
                 l3Dash(rdram);
                 rouletteDpad(rdram);
+                dash_probe::onFrame(rdram); // temporary: F2 > Debug > Dash logger
                 return;
             }
             // The pnach writes the held value over the game's and reads it back the next frame as if it came from the
