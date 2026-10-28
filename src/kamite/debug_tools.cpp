@@ -240,41 +240,54 @@ namespace kamite::debug_tools
         }
 
         // KAMITE_ADX_PROBE=1 (diagnostic, claude/audio-notes.md): the music doubling. The ADMA dump of Oct 28 showed the
-        // right channel jumping 8192 samples (one 32-block lap) ahead of the left after a hitch. CRI's EE transfer
-        // server (func_00340130) moves each stream channel from its EE ring to the IOP in its own slot (32 slots of 0x40
-        // at 0x3EBC20: +0 on, +1/+2 states, +4 source SJ, +8 destination SJ, +0x1C/+0x20/+0x24 the last transfer,
-        // +0x2C its DMA id, +0x3C bytes moved so far). If the totals of the two music channels drift apart, the EE side
-        // lost or doubled data; if they stay together, the split is on the IOP side. Logged every 300 frames and at once
-        // when the spread of the active totals changes by 4 KB or more.
-        bool g_adxProbe = false;
-        void adxProbe(const uint8_t *rdram)
+        // right channel jumping 8192 samples (one 16 KB lap) ahead of the left after a hitch. CRI's EE transfer
+        // server (func_00340130, once a vblank) moves each stream channel from its EE ring to the IOP in its own slot
+        // (32 slots of 0x40 at 0x3EBC20: +0 on, +4 source SJ, +8 destination SJ, +0x1C/+0x20/+0x24 the transfer's
+        // source, destination and size, +0x2C its DMA id; a stereo stream takes two slots side by side). Hook
+        // km_adx_xfer at 0x3400E0 (func_0033FDC0 right after a successful sceSifSetDma, s2 = the slot): the bytes each
+        // slot has moved since its stream started; a line whenever a pair's left-minus-right count moves by 2 KB or
+        // more (at most 400 lines). A jump of 16 KB at the hitch = the EE side; a steady count = the IOP side.
+        void adxTransferHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             constexpr uint32_t kSlots = 0x3EBC20u;
-            static uint32_t frame = 0, lastSpread = 0;
-            ++frame;
-            uint32_t lo = 0xFFFFFFFFu, hi = 0, active = 0;
-            std::string row;
-            for (uint32_t k = 0; k < 32u; ++k)
+            static uint64_t moved[32] = {};
+            static uint32_t source[32] = {};
+            static int64_t logged[16] = {};
+            static uint32_t linesLeft = 400u;
+            const uint32_t slot = GPR_U32(ctx, 18);
+            if (slot < kSlots || slot >= kSlots + 32u * 0x40u || (slot - kSlots) % 0x40u != 0u)
+                return;
+            const uint32_t k = (slot - kSlots) / 0x40u, pair = k / 2u;
+            if (rd32(rdram, slot + 4u) != source[k])
             {
-                const uint32_t slot = kSlots + k * 0x40u;
-                if (static_cast<int8_t>(rdram[slot]) != 1)
-                    continue;
-                const uint32_t total = rd32(rdram, slot + 0x3Cu);
-                lo = std::min(lo, total);
-                hi = std::max(hi, total);
-                ++active;
-                char text[96];
-                std::snprintf(text, sizeof(text), " [%u %X->%X st %d/%d total %u last %u]", k, rd32(rdram, slot + 4u), rd32(rdram, slot + 8u),
-                              static_cast<int8_t>(rdram[slot + 1u]), static_cast<int8_t>(rdram[slot + 2u]), total, rd32(rdram, slot + 0x24u));
-                row += text;
+                source[k] = rd32(rdram, slot + 4u);
+                moved[k] = 0u;
+                logged[pair] = 0;
+                if (linesLeft != 0u && (--linesLeft, true))
+                    KM_INFO(Game, "adx probe: slot " << k << " starts, source SJ 0x" << std::hex << source[k] << " -> 0x"
+                                                     << rd32(rdram, slot + 8u) << std::dec);
             }
-            const uint32_t spread = active > 1u ? hi - lo : 0u;
-            const uint32_t change = spread > lastSpread ? spread - lastSpread : lastSpread - spread;
-            static uint32_t changedLeft = 200u;
-            if ((change >= 4096u && changedLeft != 0u && (--changedLeft, true)) || frame % 300u == 0u)
+            const uint32_t size = rd32(rdram, slot + 0x24u);
+            moved[k] += size;
+            const uint32_t partner = k ^ 1u;
+            if (static_cast<int8_t>(rdram[kSlots + partner * 0x40u]) != 1)
             {
-                KM_INFO(Game, "adx probe f" << frame << " spread " << spread << (change >= 4096u ? " CHANGED" : "") << ":" << row);
-                lastSpread = spread;
+                if (linesLeft != 0u && (--linesLeft, true))
+                    KM_INFO(Game, "adx probe: slot " << k << " moved " << size << " while slot " << partner << " is off");
+                return;
+            }
+            if ((k & 1u) == 0u) // the left slot goes first in each pass: compare after the right one
+                return;
+            const int64_t diff = static_cast<int64_t>(moved[pair * 2u]) - static_cast<int64_t>(moved[pair * 2u + 1u]);
+            const int64_t change = diff - logged[pair];
+            if ((change >= 2048 || change <= -2048) && linesLeft != 0u && (--linesLeft, true))
+            {
+                KM_INFO(Game, "adx probe: pair " << pair << " left-right " << diff << " bytes (was " << logged[pair] << "); slot " << k
+                                                 << " moved " << size << " to 0x" << std::hex << rd32(rdram, slot + 0x20u)
+                                                 << ", partner's last " << std::dec << rd32(rdram, kSlots + partner * 0x40u + 0x24u)
+                                                 << " to 0x" << std::hex << rd32(rdram, kSlots + partner * 0x40u + 0x20u) << std::dec
+                                                 << "; totals " << moved[pair * 2u] << " / " << moved[pair * 2u + 1u]);
+                logged[pair] = diff;
             }
         }
 
@@ -563,7 +576,8 @@ namespace kamite::debug_tools
         ps2xSetPatchFlag("debug_cheats", true); // the hooks test their switches themselves
         if (const char *probe = std::getenv("KAMITE_ADX_PROBE"); probe && *probe == '1')
         {
-            g_adxProbe = true;
+            ps2xRegisterHostHook("km_adx_xfer", &adxTransferHook);
+            ps2xSetPatchFlag("adx_probe", true);
             KM_INFO(Game, "adx probe: on (KAMITE_ADX_PROBE)");
         }
 #if defined(KAMITE_HAS_GS_MENU)
@@ -574,8 +588,6 @@ namespace kamite::debug_tools
     void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         std::memcpy(&g_room, rdram + GameWork::address(GameWork::kRoom), 2);
-        if (g_adxProbe)
-            adxProbe(rdram);
         // A frame step is one game frame: the game's vblanks per frame (2 at 30 fps, 1 at 60).
         ps2x::timecontrol::setStepVblanks(rdram[GameWork::address(GameWork::kVblankDivider)] == 1u ? 1u : 2u);
         // Cheats.

@@ -372,6 +372,13 @@ hook = "km_fps60_countdown"
 flag = "fps60"
 replace = true
 
+# Diagnostic (KAMITE_ADX_PROBE=1, debug_tools.cpp; claude/strip-list.md): each CRI stream transfer to the IOP, right after
+# its sceSifSetDma succeeded (func_0033FDC0, s2 = the slot), for the music doubling.
+[[patches.hooks]]
+address = "0x003400E0"
+hook = "km_adx_xfer"
+flag = "adx_probe"
+
 # Button-mash meter, two copies (pl00 states at 0x10FC84 and 0x1201A8): each direction press (GameWork pressed & 0xF0)
 # raises the level (+0x15B4) when the game frames since the last one (+0x15B0, +1 a frame) are under the level's limit
 # (jump tables 0x41BDC0 / 0x41C6D0: the limits are the immediates of the table's cases), and the level decays when
