@@ -378,6 +378,22 @@ replace = true
 address = "0x003400E0"
 hook = "km_adx_xfer"
 flag = "adx_probe"
+[[patches.hooks]]
+address = "0x003402BC"
+hook = "km_adx_create"
+flag = "adx_probe"
+[[patches.hooks]]
+address = "0x003402F8"
+hook = "km_adx_destroy"
+flag = "adx_probe"
+[[patches.hooks]]
+address = "0x0034030C"
+hook = "km_adx_start"
+flag = "adx_probe"
+[[patches.hooks]]
+address = "0x00340334"
+hook = "km_adx_stop"
+flag = "adx_probe"
 
 # Button-mash meter, two copies (pl00 states at 0x10FC84 and 0x1201A8): each direction press (GameWork pressed & 0xF0)
 # raises the level (+0x15B4) when the game frames since the last one (+0x15B0, +1 a frame) are under the level's limit

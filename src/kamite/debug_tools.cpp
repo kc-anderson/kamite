@@ -273,7 +273,10 @@ namespace kamite::debug_tools
             if (static_cast<int8_t>(rdram[kSlots + partner * 0x40u]) != 1)
             {
                 if (linesLeft != 0u && (--linesLeft, true))
-                    KM_INFO(Game, "adx probe: slot " << k << " moved " << size << " while slot " << partner << " is off");
+                    KM_INFO(Game, "adx probe: slot " << k << " moved " << size << " while slot " << partner << " is off (flags "
+                                                     << int(rdram[kSlots + partner * 0x40u]) << "/" << int(rdram[kSlots + partner * 0x40u + 1u])
+                                                     << "/" << int(rdram[kSlots + partner * 0x40u + 2u]) << ", source SJ 0x" << std::hex
+                                                     << rd32(rdram, kSlots + partner * 0x40u + 4u) << std::dec << ")");
                 return;
             }
             if ((k & 1u) == 0u) // the left slot goes first in each pass: compare after the right one
@@ -290,6 +293,25 @@ namespace kamite::debug_tools
                 logged[pair] = diff;
             }
         }
+
+        // The DTR slot life cycle for the ADX probe: create (DTR_Create 0x3401F0, at 0x3402BC: s1 = the new slot),
+        // destroy (0x3402E0, at 0x3402F8: s0), start (0x340308, at 0x34030C: a0) and stop (DTR_Stop 0x340318, at
+        // 0x340334: s2), with the caller (ra where it is still live).
+        void adxSlotLine(const char *what, uint8_t *rdram, uint32_t slot, uint32_t ra)
+        {
+            constexpr uint32_t kSlots = 0x3EBC20u;
+            static uint32_t linesLeft = 300u;
+            if (slot < kSlots || slot >= kSlots + 32u * 0x40u || linesLeft == 0u)
+                return;
+            --linesLeft;
+            KM_INFO(Game, "adx probe: " << what << " slot " << (slot - kSlots) / 0x40u << " (source SJ 0x" << std::hex
+                                        << rd32(rdram, slot + 4u) << " -> 0x" << rd32(rdram, slot + 8u) << ", ra 0x" << ra << std::dec
+                                        << ", flags " << int(rdram[slot]) << "/" << int(rdram[slot + 1u]) << "/" << int(rdram[slot + 2u]) << ")");
+        }
+        void adxCreateHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { adxSlotLine("create", rdram, GPR_U32(ctx, 17), 0u); }
+        void adxDestroyHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { adxSlotLine("destroy", rdram, GPR_U32(ctx, 16), 0u); }
+        void adxStartHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { adxSlotLine("start", rdram, GPR_U32(ctx, 4), GPR_U32(ctx, 31)); }
+        void adxStopHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { adxSlotLine("stop", rdram, GPR_U32(ctx, 18), 0u); }
 
         // The developers' names (Shift-JIS in the table), in English. "なまえをいれてください" ("please enter a
         // name") and points without a name here are "(unnamed)".
@@ -577,6 +599,10 @@ namespace kamite::debug_tools
         if (const char *probe = std::getenv("KAMITE_ADX_PROBE"); probe && *probe == '1')
         {
             ps2xRegisterHostHook("km_adx_xfer", &adxTransferHook);
+            ps2xRegisterHostHook("km_adx_create", &adxCreateHook);
+            ps2xRegisterHostHook("km_adx_destroy", &adxDestroyHook);
+            ps2xRegisterHostHook("km_adx_start", &adxStartHook);
+            ps2xRegisterHostHook("km_adx_stop", &adxStopHook);
             ps2xSetPatchFlag("adx_probe", true);
             KM_INFO(Game, "adx probe: on (KAMITE_ADX_PROBE)");
         }
