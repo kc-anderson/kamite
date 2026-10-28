@@ -247,12 +247,15 @@ namespace kamite::debug_tools
         // km_adx_xfer at 0x3400E0 (func_0033FDC0 right after a successful sceSifSetDma, s2 = the slot): the bytes each
         // slot has moved since its stream started; a line whenever a pair's left-minus-right count moves by 2 KB or
         // more (at most 400 lines). A jump of 16 KB at the hitch = the EE side; a steady count = the IOP side.
+        uint64_t g_adxMoved[32] = {};
+        uint32_t g_adxSource[32] = {};
+        int64_t g_adxLogged[16] = {};
         void adxTransferHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             constexpr uint32_t kSlots = 0x3EBC20u;
-            static uint64_t moved[32] = {};
-            static uint32_t source[32] = {};
-            static int64_t logged[16] = {};
+            uint64_t *moved = g_adxMoved;
+            uint32_t *source = g_adxSource;
+            int64_t *logged = g_adxLogged;
             static uint32_t linesLeft = 400u;
             const uint32_t slot = GPR_U32(ctx, 18);
             if (slot < kSlots || slot >= kSlots + 32u * 0x40u || (slot - kSlots) % 0x40u != 0u)
@@ -308,7 +311,32 @@ namespace kamite::debug_tools
                                         << rd32(rdram, slot + 4u) << " -> 0x" << rd32(rdram, slot + 8u) << ", ra 0x" << ra << std::dec
                                         << ", flags " << int(rdram[slot]) << "/" << int(rdram[slot + 1u]) << "/" << int(rdram[slot + 2u]) << ")");
         }
-        void adxCreateHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { adxSlotLine("create", rdram, GPR_U32(ctx, 17), 0u); }
+        void adxCreateHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t slot = GPR_U32(ctx, 17);
+            adxSlotLine("create", rdram, slot, 0u);
+            if (slot >= 0x3EBC20u && slot < 0x3EBC20u + 32u * 0x40u)
+            {
+                const uint32_t k = (slot - 0x3EBC20u) / 0x40u;
+                g_adxMoved[k] = 0u;
+                g_adxSource[k] = rd32(rdram, slot + 4u);
+                g_adxLogged[k / 2u] = 0;
+                // The two rings (source on the EE, destination for the IOP): their first words, to learn base/size/positions.
+                for (const uint32_t sj : {rd32(rdram, slot + 4u), rd32(rdram, slot + 8u)})
+                {
+                    if (!inRam(sj, 0x40u))
+                        continue;
+                    std::string words;
+                    char text[16];
+                    for (uint32_t i = 0; i < 16u; ++i)
+                    {
+                        std::snprintf(text, sizeof(text), " %X", rd32(rdram, sj + 4u * i));
+                        words += text;
+                    }
+                    KM_INFO(Game, "adx probe:   SJ 0x" << std::hex << sj << std::dec << ":" << words);
+                }
+            }
+        }
         void adxDestroyHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { adxSlotLine("destroy", rdram, GPR_U32(ctx, 16), 0u); }
         void adxStartHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { adxSlotLine("start", rdram, GPR_U32(ctx, 4), GPR_U32(ctx, 31)); }
         void adxStopHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { adxSlotLine("stop", rdram, GPR_U32(ctx, 18), 0u); }
