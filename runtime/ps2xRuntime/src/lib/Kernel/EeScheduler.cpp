@@ -4,6 +4,7 @@
 #include "ps2_runtime_macros.h"
 #include "runtime/ps2_async_vif.h"
 #include "runtime/ps2_pnach.h"
+#include "runtime/ps2_time_control.h"
 #include "GuestKernelMemory.h"
 
 // Defined in ps2_memory.cpp: latches bits in INTC_STAT (W1C register).
@@ -192,6 +193,7 @@ void ps2xWakeEeForGsInterrupt() noexcept
 }
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cstdarg>
 #include <cstdio>
@@ -199,6 +201,40 @@ void ps2xWakeEeForGsInterrupt() noexcept
 #include <cstring>
 #include <limits>
 #include <stdexcept>
+
+// Slow motion / pause / frame step (ps2_time_control.h): read at each vblank by the event loop below.
+namespace
+{
+    std::atomic<uint32_t> g_slowDivisor{1u};
+    std::atomic<bool> g_timePaused{false};
+    std::atomic<uint32_t> g_stepBudget{0u};  // vblanks still let through while paused
+    std::atomic<uint32_t> g_stepVblanks{1u}; // one step's vblanks (the game's vblanks per frame)
+}
+
+void ps2x::timecontrol::setSlowDivisor(uint32_t divisor)
+{
+    g_slowDivisor.store(std::clamp(divisor, 1u, 16u), std::memory_order_relaxed);
+}
+uint32_t ps2x::timecontrol::slowDivisor() { return g_slowDivisor.load(std::memory_order_relaxed); }
+void ps2x::timecontrol::setPaused(bool paused)
+{
+    g_stepBudget.store(0u, std::memory_order_relaxed);
+    g_timePaused.store(paused, std::memory_order_release);
+}
+bool ps2x::timecontrol::paused() { return g_timePaused.load(std::memory_order_acquire); }
+void ps2x::timecontrol::step()
+{
+    if (!g_timePaused.load(std::memory_order_acquire))
+    {
+        setPaused(true);
+        return;
+    }
+    g_stepBudget.store(g_stepVblanks.load(std::memory_order_relaxed), std::memory_order_relaxed);
+}
+void ps2x::timecontrol::setStepVblanks(uint32_t vblanks)
+{
+    g_stepVblanks.store(std::clamp(vblanks, 1u, 4u), std::memory_order_relaxed);
+}
 
 void ps2xTraceSchedulerDispatch(R5900Context *ctx);
 
@@ -2723,6 +2759,24 @@ void EeScheduler::processDueDeadlines()
 
         for (ScheduledEvent &scheduled : due)
         {
+            if (scheduled.event.type == EeEventType::VBlankStart && g_timePaused.load(std::memory_order_acquire))
+            {
+                // Paused (ps2_time_control.h): the vblank waits, same EE cycle, one field later; the GS presents the
+                // frame again meanwhile (same registers: the finished front buffer) so the menu and overlays redraw.
+                // A frame step lets its vblanks through one at a time.
+                uint32_t budget = g_stepBudget.load(std::memory_order_relaxed);
+                bool through = false;
+                while (budget > 0u && !(through = g_stepBudget.compare_exchange_weak(budget, budget - 1u, std::memory_order_relaxed)))
+                {
+                }
+                if (!through)
+                {
+                    scheduleEvent(scheduled.deadlineCycle, std::chrono::steady_clock::now() + vblankPeriod(),
+                                  EeEvent{EeEventType::VBlankStart, 0, 0});
+                    m_runtime.gs().vblank();
+                    continue;
+                }
+            }
             if (scheduled.event.type == EeEventType::VBlankStart)
             {
                 // MTVU timing model: no catch-up beyond 2 ms of jitter. Catching up 2 fields after a late frame fired the
@@ -2787,11 +2841,14 @@ void EeScheduler::processDueDeadlines()
                                  static_cast<double>(scheduled.deadlineCycle) / kEeClockHz,
                                  1000.0 * static_cast<double>(m_eeCycle - scheduled.deadlineCycle) / kEeClockHz,
                                  static_cast<double>(m_eeCycle) / static_cast<double>(vblankPeriodCycles()));
+                // Slow motion (ps2_time_control.h): the next field comes divisor times later in real time; EE time
+                // (cycles) is unchanged, so the guest runs the same frames, only further apart.
+                const uint32_t slow = g_slowDivisor.load(std::memory_order_relaxed);
                 scheduleEvent(scheduled.deadlineCycle + kVBlankDurationCycles,
-                              hostStart + kVBlankDuration,
+                              hostStart + kVBlankDuration * slow,
                               EeEvent{EeEventType::VBlankEnd, 0, m_vsyncTick + 1u});
                 scheduleEvent(scheduled.deadlineCycle + vblankPeriodCycles(),
-                              lockToHostVsync(hostStart + vblankPeriod()),
+                              slow > 1u ? hostStart + vblankPeriod() * slow : lockToHostVsync(hostStart + vblankPeriod()),
                               EeEvent{EeEventType::VBlankStart, 0, 0});
                 m_pacingRefCycle = scheduled.deadlineCycle;
                 m_pacingRefTime = hostStart;

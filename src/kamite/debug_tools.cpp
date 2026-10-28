@@ -37,6 +37,8 @@
 #include "runtime/ps2_memory.h"
 
 #include "runtime/ps2_game_menu.h"
+#include "runtime/ps2_hotkeys.h"
+#include "runtime/ps2_time_control.h"
 #if __has_include("pcsx2gs_api.h")
 #include "pcsx2gs_api.h"
 #define KAMITE_HAS_GS_MENU 1
@@ -332,6 +334,34 @@ namespace kamite::debug_tools
                     ui->text(g_status.c_str());
             }
 
+            ui->separator_text("Slow motion and frame step");
+            {
+                namespace tc = ps2x::timecontrol;
+                namespace hk = ps2x::hotkeys;
+                static const char *const kSpeeds[] = {"Full speed", "1/2", "1/4", "1/8"};
+                static constexpr uint32_t kDivisors[] = {1u, 2u, 4u, 8u};
+                int speed = 0;
+                for (int i = 0; i < 4; ++i)
+                    if (kDivisors[i] == tc::slowDivisor())
+                        speed = i;
+                ui->set_next_width(160.0f);
+                if (ui->combo("Speed##slowmo", &speed, kSpeeds, 4))
+                    tc::setSlowDivisor(kDivisors[speed]);
+                ui->same_line();
+                int paused = tc::paused() ? 1 : 0;
+                if (ui->checkbox("Paused##pause", &paused))
+                    tc::setPaused(paused != 0);
+                ui->same_line();
+                if (ui->button("Step one frame##step"))
+                    tc::step();
+                char keys[192];
+                std::snprintf(keys, sizeof(keys), "Keys: %s speed, %s pause, %s step (Controls > Hotkeys rebinds them). "
+                              "The game runs exactly as at full speed, only slower; the sound crackles.",
+                              hk::text(hk::binding(hk::Action::SlowMotion)).c_str(), hk::text(hk::binding(hk::Action::Pause)).c_str(),
+                              hk::text(hk::binding(hk::Action::FrameStep)).c_str());
+                ui->text_disabled(keys);
+            }
+
             ui->spacing();
             hitbox_overlay::drawPanel(ui);
 
@@ -366,6 +396,8 @@ namespace kamite::debug_tools
     void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         std::memcpy(&g_room, rdram + GameWork::address(GameWork::kRoom), 2);
+        // A frame step is one game frame: the game's vblanks per frame (2 at 30 fps, 1 at 60).
+        ps2x::timecontrol::setStepVblanks(rdram[GameWork::address(GameWork::kVblankDivider)] == 1u ? 1u : 2u);
         // Cheats.
         if (g_godMode.load(std::memory_order_relaxed))
         {

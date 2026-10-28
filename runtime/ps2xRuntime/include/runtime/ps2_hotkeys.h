@@ -27,6 +27,9 @@ namespace ps2x::hotkeys
         GifDump,     // F10
         DrawDump,    // Shift+F10
         DebugPanel,  // F12
+        SlowMotion,  // Shift+F2: full speed -> 1/2 -> 1/4 -> 1/8 -> full (ps2_time_control.h)
+        Pause,       // Shift+F3: pause / resume
+        FrameStep,   // Shift+F4: one game frame on (pauses first)
         Count
     };
 

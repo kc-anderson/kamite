@@ -5,6 +5,7 @@
 #include "runtime/ps2_pnach.h"
 #include "runtime/ps2_game_menu.h"
 #include "runtime/ps2_hotkeys.h"
+#include "runtime/ps2_time_control.h"
 #include "runtime/ps2_controls_screen.h"
 #include "runtime/ps2_display_options.h"
 #include "ps2_log.h"
@@ -3411,6 +3412,16 @@ void PS2Runtime::run()
             ps2x::savestate::requestQuickLoad();
         if (!shortcutsOff && ps2x::hotkeys::pressed(Action::FpsOverlay))
             fpsOverlay.visible = !fpsOverlay.visible;
+        // Slow motion, pause, frame step (ps2_time_control.h; the F2 menu's Debug tab has the same).
+        if (!shortcutsOff && ps2x::hotkeys::pressed(Action::SlowMotion))
+        {
+            const uint32_t divisor = ps2x::timecontrol::slowDivisor();
+            ps2x::timecontrol::setSlowDivisor(divisor >= 8u ? 1u : divisor * 2u);
+        }
+        if (!shortcutsOff && ps2x::hotkeys::pressed(Action::Pause))
+            ps2x::timecontrol::setPaused(!ps2x::timecontrol::paused());
+        if (!shortcutsOff && ps2x::hotkeys::pressed(Action::FrameStep))
+            ps2x::timecontrol::step();
         if (!shortcutsOff && ps2x::hotkeys::pressed(Action::HudLayout))
             ps2x::hotkeys::fire(Action::HudLayout); // the game layer's HUD module takes it on the game thread
         if (!shortcutsOff && ps2x::hotkeys::pressed(Action::Dump2D))

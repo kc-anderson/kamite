@@ -29,6 +29,9 @@ namespace ps2x::hotkeys
             {"GifDump", "GIF dump", {KEY_F10}},
             {"DrawDump", "Draw dump", {KEY_F10, true}},
             {"DebugPanel", "Debugger", {KEY_F12}},
+            {"SlowMotion", "Slow motion (1/2, 1/4, 1/8, full speed)", {KEY_F2, true}},
+            {"Pause", "Pause / resume the game", {KEY_F3, true}},
+            {"FrameStep", "Step one frame (pauses first)", {KEY_F4, true}},
         };
 
         std::mutex g_mutex;
