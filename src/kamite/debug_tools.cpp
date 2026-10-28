@@ -238,35 +238,6 @@ namespace kamite::debug_tools
                 setHp(rdram, obj, 1);
         }
 
-        // KAMITE_DOOR_PROBE=1 (diagnostic, claude/strip-list.md): Door-kun's (cOm5a) damage per frame, for the 30/60 FPS
-        // roundhouse report. Hook km_door_probe at 0x1ACA14 in its update func_001AC980 (s0 = Door-kun), before its
-        // regen and its damage step: HP +0x54A / +0x548, its take unit +0x624 (+0x60 bit 0 = hit this frame, +0x4C the
-        // damage), the damage manager's hit stop (0x574380 + 0xACD0, frames). One line per frame with a hit or an HP
-        // change.
-        void doorProbeHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
-        {
-            static uint32_t frame = 0, lastObj = 0;
-            static int16_t lastHp = 0;
-            ++frame;
-            const uint32_t door = GPR_U32(ctx, 16);
-            if (!inRam(door, 0x800u))
-                return;
-            const int16_t hp = getHp(rdram, door);
-            int16_t max = 0;
-            std::memcpy(&max, rdram + ((door + 0x548u) & 0x01FFFFFFu), 2);
-            const uint32_t unit = rd32(rdram, door + 0x624u);
-            const uint32_t flags = inRam(unit, 0x70u) ? rd32(rdram, unit + 0x60u) : 0u;
-            const uint32_t damage = inRam(unit, 0x70u) ? rd32(rdram, unit + 0x4Cu) : 0u;
-            const uint32_t hitStop = rd32(rdram, 0x574380u + 0xACD0u);
-            if (door == lastObj && hp == lastHp && !(flags & 1u))
-                return;
-            KM_INFO(Game, "door probe f" << frame << (rdram[GameWork::address(GameWork::kVblankDivider)] == 1u ? " 60" : " 30")
-                                         << " hp " << lastHp << "->" << hp << "/" << max << " hit " << (flags & 1u) << " dmg "
-                                         << damage << " hitstop " << hitStop << " total " << rd32(rdram, door + 0x618u));
-            lastObj = door;
-            lastHp = hp;
-        }
-
         // KAMITE_BGM_PROBE=1 (diagnostic, claude/strip-list.md): the music doubling report (Thinso / K, Oct 28). Each
         // frame the BGM node list of cSnd (0x5FEE00, +0x18 bgmHead, nodes linked at +0x88; decomp cSnd.h) is read and
         // logged whenever it changes: two nodes on one track = the game started it twice; one node = the doubling is
@@ -586,12 +557,6 @@ namespace kamite::debug_tools
         ps2xRegisterHostHook("km_dbg_em_damage", &enemyDamageHook);
         ps2xRegisterHostHook("km_dbg_em_dizzy", &dizzyHook);
         ps2xSetPatchFlag("debug_cheats", true); // the hooks test their switches themselves
-        if (const char *probe = std::getenv("KAMITE_DOOR_PROBE"); probe && *probe == '1')
-        {
-            ps2xRegisterHostHook("km_door_probe", &doorProbeHook);
-            ps2xSetPatchFlag("door_probe", true);
-            KM_INFO(Game, "door probe: on (KAMITE_DOOR_PROBE)");
-        }
         if (const char *probe = std::getenv("KAMITE_BGM_PROBE"); probe && *probe == '1')
         {
             g_bgmProbe = true;

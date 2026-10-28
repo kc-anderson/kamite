@@ -213,17 +213,99 @@ hook = "km_fps60_hitbox_compare"
 flag = "fps60"
 replace = true
 
-# Stick dash (pl00, 0x108FB0..0x109004): a forward push with the window (+0x628, a byte counted down once a game frame
-# at 0x108DB8) still open sets "dash requested" (+0x627, counted down at 0x108DA4) and closes it; otherwise it opens it
-# at 10. Game frames: at 60 FPS the double tap had half the time (dash logger, Oct 28). Doubled here.
-[[patches.conditional]] # window loaded on the first push: 10 -> 20
-address = "0x00108FF8"
-value = "0x24020014"
+# Gene's timer block (player update func_00108AB0, 0x108D08..0x10917C): each countdown is lowered once a game frame,
+# so at 60 FPS all of them ran at double speed. Counted every other frame (frame_patches.cpp). This replaces the stick
+# dash's doubled setters (0x108FF8 10 -> 20, 0x108FE8 2 -> 4, 1f88879): +0x627 / +0x628 are in the block.
+[[patches.hooks]] # +0x5F8 (its decrement is in a delay slot: the load is raised instead)
+address = "0x00108D08"
+hook = "km_fps60_countdown_5f8"
 flag = "fps60"
-[[patches.conditional]] # "dash requested" flag lifetime (delay slot): 2 -> 4
-address = "0x00108FE8"
-value = "0x24020004"
+replace = true
+[[patches.hooks]] # float +0x15D0 -= 1.0
+address = "0x00108DE8"
+hook = "km_fps60_countdown_float"
 flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x5FC (its zero test runs the action only on a real step to 0)
+address = "0x00108DFC"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x626
+address = "0x00108D2C"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x621
+address = "0x00108D40"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x622
+address = "0x00108D54"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x623
+address = "0x00108D68"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x624
+address = "0x00108D7C"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x625
+address = "0x00108D90"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x627 dash requested
+address = "0x00108DA4"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x628 dash window
+address = "0x00108DB8"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x648
+address = "0x00109100"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x1600
+address = "0x00109114"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x1601
+address = "0x00109128"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x1602
+address = "0x0010913C"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x1616 combo timer
+address = "0x00109150"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x1618 dodge timer
+address = "0x00109164"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x1603 upper-body dodge
+address = "0x00109178"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
 
 # Button-mash meter, two copies (pl00 states at 0x10FC84 and 0x1201A8): each direction press (GameWork pressed & 0xF0)
 # raises the level (+0x15B4) when the game frames since the last one (+0x15B0, +1 a frame) are under the level's limit
@@ -357,11 +439,6 @@ flag = "fps60"
 address = "0x001AC66C"
 value = "0x3C013C23"
 flag = "fps60"
-# Diagnostic (KAMITE_DOOR_PROBE=1, debug_tools.cpp; claude/strip-list.md): Door-kun's HP and hits, before his regen.
-[[patches.hooks]]
-address = "0x001ACA14"
-hook = "km_door_probe"
-flag = "door_probe"
 
 # Move(), the instruction after its call of func_002B9D58 (the collision manager's update and hit tests): the hitbox
 # overlay reads the shapes as the game just tested them (hitbox_overlay.cpp).

@@ -399,6 +399,31 @@ namespace kamite
             SET_GPR_S32(ctx, 2, (g_gameFrame & 1u) ? value : value - 1);
         }
 
+        // Gene's timer block (the player update func_00108AB0, 0x108D08..0x10917C): every countdown he keeps is lowered
+        // by 1 each game frame, so at 60 FPS every one of them ran in half the time (upper-body dodge +0x1603 10 frames
+        // -> its head/chest hurt volumes back after 1/6 s instead of 1/3; dodge timer +0x1618; combo timer +0x1616;
+        // +0x648 10..90; the stick windows +0x621..0x628 / +0x1600..0x1602; +0x5F8, +0x5FC, float +0x15D0). They now
+        // count every other frame: the `addiu v0,v1,-1` sites take km_fps60_button_timer's rule (km_fps60_countdown),
+        // the three other forms are below. claude/fps60-notes.md "Families".
+        void countdownSelf(uint8_t *, R5900Context *ctx, PS2Runtime *) // addiu v0,v0,-1 (+0x5FC at 0x108DFC)
+        {
+            const int32_t value = GPR_S32(ctx, 2);
+            SET_GPR_S32(ctx, 2, (g_gameFrame & 1u) ? value : value - 1);
+        }
+        void countdownFloat(uint8_t *, R5900Context *ctx, PS2Runtime *) // sub.s f0,f1,f0 (+0x15D0 -= 1.0 at 0x108DE8)
+        {
+            ctx->f[0] = (g_gameFrame & 1u) ? ctx->f[1] : ctx->f[1] - ctx->f[0];
+        }
+        // lw v0,0x5F8(s1) at 0x108D08: its decrement sits in a branch delay slot (no hook there), so on the skipped
+        // frames the loaded value is raised by one and the decrement stores it back unchanged (the zero test is not
+        // affected: a non-zero value stays non-zero).
+        void countdownLoad5F8(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            uint32_t value = 0;
+            std::memcpy(&value, rdram + ((GPR_U32(ctx, 17) + 0x5F8u) & 0x01FFFFFFu), 4);
+            SET_GPR_U32(ctx, 2, (g_gameFrame & 1u) && value != 0u ? value + 1u : value);
+        }
+
         // The stick-wiggle button prompt (cCockActButton move, type 4, 0x13BF08..0x13C020) swings its stick icon a
         // fixed 30 degrees and 5 units per frame (a 4-frame cycle). At 60 frames/s the swing of every other frame is
         // undone: the icon's angle (+0x48) and x (+0x38) of the entry at +0xD8 and the swing direction (0x3BD6E0).
@@ -461,6 +486,10 @@ namespace kamite
         ps2xRegisterHostHook("km_roulette_slide_end", &rouletteSlideEnd);
         ps2xRegisterHostHook("km_fps60_ui_anim", &uiAnimStep);
         ps2xRegisterHostHook("km_fps60_button_timer", &buttonTimer);
+        ps2xRegisterHostHook("km_fps60_countdown", &buttonTimer);
+        ps2xRegisterHostHook("km_fps60_countdown_self", &countdownSelf);
+        ps2xRegisterHostHook("km_fps60_countdown_float", &countdownFloat);
+        ps2xRegisterHostHook("km_fps60_countdown_5f8", &countdownLoad5F8);
         ps2xRegisterHostHook("km_fps60_emit_every_frame", &emitEveryFrame);
         ps2xRegisterHostHook("km_fps60_wiggle_begin", &wiggleBegin);
         ps2xRegisterHostHook("km_fps60_wiggle_end", &wiggleEnd);
