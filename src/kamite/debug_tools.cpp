@@ -55,6 +55,7 @@
 #define KAMITE_HAS_GS_MENU 1
 #endif
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdio>
@@ -238,40 +239,43 @@ namespace kamite::debug_tools
                 setHp(rdram, obj, 1);
         }
 
-        // KAMITE_BGM_PROBE=1 (diagnostic, claude/strip-list.md): the music doubling report (Thinso / K, Oct 28). Each
-        // frame the BGM node list of cSnd (0x5FEE00, +0x18 bgmHead, nodes linked at +0x88; decomp cSnd.h) is read and
-        // logged whenever it changes: two nodes on one track = the game started it twice; one node = the doubling is
-        // below the game (ADX/IOP/SPU2).
-        bool g_bgmProbe = false;
-        void bgmProbe(const uint8_t *rdram)
+        // KAMITE_ADX_PROBE=1 (diagnostic, claude/audio-notes.md): the music doubling. The ADMA dump of Oct 28 showed the
+        // right channel jumping 8192 samples (one 32-block lap) ahead of the left after a hitch. CRI's EE transfer
+        // server (func_00340130) moves each stream channel from its EE ring to the IOP in its own slot (32 slots of 0x40
+        // at 0x3EBC20: +0 on, +1/+2 states, +4 source SJ, +8 destination SJ, +0x1C/+0x20/+0x24 the last transfer,
+        // +0x2C its DMA id, +0x3C bytes moved so far). If the totals of the two music channels drift apart, the EE side
+        // lost or doubled data; if they stay together, the split is on the IOP side. Logged every 300 frames and at once
+        // when the spread of the active totals changes by 4 KB or more.
+        bool g_adxProbe = false;
+        void adxProbe(const uint8_t *rdram)
         {
-            constexpr uint32_t kSnd = 0x5FEE00u;
-            static std::string last;
-            std::string key, full;
-            int count = 0;
-            uint32_t node = rd32(rdram, kSnd + 0x18u);
-            for (; count < 16 && inRam(node, 0xDCu); ++count, node = rd32(rdram, node + 0x88u))
+            constexpr uint32_t kSlots = 0x3EBC20u;
+            static uint32_t frame = 0, lastSpread = 0;
+            ++frame;
+            uint32_t lo = 0xFFFFFFFFu, hi = 0, active = 0;
+            std::string row;
+            for (uint32_t k = 0; k < 32u; ++k)
             {
+                const uint32_t slot = kSlots + k * 0x40u;
+                if (static_cast<int8_t>(rdram[slot]) != 1)
+                    continue;
+                const uint32_t total = rd32(rdram, slot + 0x3Cu);
+                lo = std::min(lo, total);
+                hi = std::max(hi, total);
+                ++active;
                 char text[96];
-                std::snprintf(text, sizeof(text), " [%06X bank %d req %d state %d flags %X state2 %d started %u", node,
-                              static_cast<int32_t>(rd32(rdram, node + 0x8Cu)), static_cast<int32_t>(rd32(rdram, node + 0x90u)),
-                              static_cast<int32_t>(rd32(rdram, node + 0x94u)), rd32(rdram, node + 0x98u),
-                              static_cast<int32_t>(rd32(rdram, node + 0xB0u)), rdram[(node + 0x5Eu) & 0x01FFFFFFu]);
-                key += text;
-                float volume = 0.0f;
-                std::memcpy(&volume, rdram + ((node + 0xC4u) & 0x01FFFFFFu), 4);
-                char fade[48];
-                // wait and volume change every frame during fades: logged, not compared.
-                std::snprintf(fade, sizeof(fade), " wait %d vol %.2f]", static_cast<int32_t>(rd32(rdram, node + 0xB4u)), volume);
-                full += text;
-                full += fade;
+                std::snprintf(text, sizeof(text), " [%u %X->%X st %d/%d total %u last %u]", k, rd32(rdram, slot + 4u), rd32(rdram, slot + 8u),
+                              static_cast<int8_t>(rdram[slot + 1u]), static_cast<int8_t>(rdram[slot + 2u]), total, rd32(rdram, slot + 0x24u));
+                row += text;
             }
-            if (key == last)
-                return;
-            last = key;
-            KM_INFO(Game, "bgm probe" << (rdram[GameWork::address(GameWork::kVblankDivider)] == 1u ? " 60" : " 30") << " cur bank "
-                                      << static_cast<int32_t>(rd32(rdram, kSnd + 0x118u)) << " req "
-                                      << static_cast<int32_t>(rd32(rdram, kSnd + 0x11Cu)) << ", " << count << " nodes:" << full);
+            const uint32_t spread = active > 1u ? hi - lo : 0u;
+            const uint32_t change = spread > lastSpread ? spread - lastSpread : lastSpread - spread;
+            static uint32_t changedLeft = 200u;
+            if ((change >= 4096u && changedLeft != 0u && (--changedLeft, true)) || frame % 300u == 0u)
+            {
+                KM_INFO(Game, "adx probe f" << frame << " spread " << spread << (change >= 4096u ? " CHANGED" : "") << ":" << row);
+                lastSpread = spread;
+            }
         }
 
         // The developers' names (Shift-JIS in the table), in English. "なまえをいれてください" ("please enter a
@@ -557,10 +561,10 @@ namespace kamite::debug_tools
         ps2xRegisterHostHook("km_dbg_em_damage", &enemyDamageHook);
         ps2xRegisterHostHook("km_dbg_em_dizzy", &dizzyHook);
         ps2xSetPatchFlag("debug_cheats", true); // the hooks test their switches themselves
-        if (const char *probe = std::getenv("KAMITE_BGM_PROBE"); probe && *probe == '1')
+        if (const char *probe = std::getenv("KAMITE_ADX_PROBE"); probe && *probe == '1')
         {
-            g_bgmProbe = true;
-            KM_INFO(Game, "bgm probe: on (KAMITE_BGM_PROBE)");
+            g_adxProbe = true;
+            KM_INFO(Game, "adx probe: on (KAMITE_ADX_PROBE)");
         }
 #if defined(KAMITE_HAS_GS_MENU)
         ps2x::menu::addPanel("Debug", &drawPanel);
@@ -570,8 +574,8 @@ namespace kamite::debug_tools
     void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         std::memcpy(&g_room, rdram + GameWork::address(GameWork::kRoom), 2);
-        if (g_bgmProbe)
-            bgmProbe(rdram);
+        if (g_adxProbe)
+            adxProbe(rdram);
         // A frame step is one game frame: the game's vblanks per frame (2 at 30 fps, 1 at 60).
         ps2x::timecontrol::setStepVblanks(rdram[GameWork::address(GameWork::kVblankDivider)] == 1u ? 1u : 2u);
         // Cheats.
