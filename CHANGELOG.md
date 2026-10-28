@@ -5,6 +5,7 @@ Newest first, one line per change; the code comments say how.
 ## October 28, 2026
 
 - F2 > Debug: slow motion (1/2, 1/4, 1/8), pause and step one frame; hotkeys Shift+F2 / Shift+F3 / Shift+F4.
+- F2 > Debug: mute the game's sound (next to slow motion).
 - F2 > Debug > Hitboxes: the damage shapes the game tests each frame drawn over the picture (attack volumes red, hurt
   volumes blue; inactive ones dimmed on request), with a one-frame dump of the shape list to godhand.log.
 - The F2 menu is the dev menu: tabs Display, Graphics, Gameplay, Camera, Controls, NPCs, Debug; "Keep playing" is on

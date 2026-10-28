@@ -1,6 +1,8 @@
 #include "runtime/ps2_audio.h"
 #include "runtime/ps2_memory.h"
 #include "ps2_host_backend.h"
+#include "runtime/ps2_time_control.h"
+#include <atomic>
 #include <algorithm>
 #include <cmath>
 #include <span>
@@ -387,8 +389,8 @@ void PS2AudioBackend::setAudioReady(bool ready)
         m_impl->statsEnabled = audioStats && *audioStats && *audioStats != '0';
         m_impl->statsStart = std::chrono::steady_clock::now();
         const char *audioMute = std::getenv("PS2X_AUDIO_MUTE");
-        if (audioMute && *audioMute && *audioMute != '0')
-            SetMasterVolume(0.0f);
+        if ((audioMute && *audioMute && *audioMute != '0') || ps2x::timecontrol::muted())
+            ps2x::timecontrol::setMuted(true);
         SetAudioStreamBufferSizeDefault(512);
         if (const char *outPath = std::getenv("PS2X_AUDIO_OUT_DUMP"); outPath && *outPath && !m_impl->outDump)
             m_impl->outDump = std::fopen(outPath, "wb");
@@ -833,4 +835,25 @@ void PS2AudioBackend::stopAll()
     }
     m_impl->activeSounds.clear();
 #endif
+}
+
+// The F2 menu's mute (ps2_time_control.h): the stream's master volume. Opening the device resets the volume, so
+// setAudioReady applies PS2X_AUDIO_MUTE through here after it is open; before that only the flag is kept.
+namespace
+{
+    std::atomic<bool> g_audioMuted{false};
+}
+
+void ps2x::timecontrol::setMuted(bool muted)
+{
+    g_audioMuted.store(muted, std::memory_order_relaxed);
+#if !defined(PLATFORM_VITA)
+    if (IsAudioDeviceReady())
+        SetMasterVolume(muted ? 0.0f : 1.0f);
+#endif
+}
+
+bool ps2x::timecontrol::muted()
+{
+    return g_audioMuted.load(std::memory_order_relaxed);
 }

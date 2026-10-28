@@ -20,4 +20,8 @@ namespace ps2x::timecontrol
     // 1 or 2; default 1). Not paused: pauses.
     void step();
     void setStepVblanks(uint32_t vblanks);
+
+    // Mutes the game's sound output (the host stream's master volume; ps2_audio.cpp), e.g. for slow motion.
+    void setMuted(bool muted);
+    [[nodiscard]] bool muted();
 }

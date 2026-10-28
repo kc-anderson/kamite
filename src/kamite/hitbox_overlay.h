@@ -14,7 +14,7 @@ namespace kamite::hitbox_overlay
 {
     // Before the game loop: registers the collection hook (km_hitbox_collect, recomp/kamite.toml).
     void install();
-    // The Debug tab's "Hitboxes" fold-out (debug_tools.cpp draws it between its own sections). GS thread.
+    // The Debug tab's "Hitboxes" section (debug_tools.cpp draws it between its own sections). GS thread.
     void drawPanel(const Pcsx2GsUi *ui);
     // cCamera_update built a world-to-screen matrix (camera.cpp's km_cam_matrix hook): the one the overlay projects
     // with. Game thread.

@@ -354,6 +354,10 @@ namespace kamite::debug_tools
                 ui->same_line();
                 if (ui->button("Step one frame##step"))
                     tc::step();
+                ui->same_line();
+                int mute = tc::muted() ? 1 : 0;
+                if (ui->checkbox("Mute the game##mute", &mute))
+                    tc::setMuted(mute != 0);
                 char keys[192];
                 std::snprintf(keys, sizeof(keys), "Keys: %s speed, %s pause, %s step (Controls > Hotkeys rebinds them). "
                               "The game runs exactly as at full speed, only slower; the sound crackles.",
@@ -362,7 +366,6 @@ namespace kamite::debug_tools
                 ui->text_disabled(keys);
             }
 
-            ui->spacing();
             hitbox_overlay::drawPanel(ui);
 
             ui->spacing();

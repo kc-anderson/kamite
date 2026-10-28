@@ -346,17 +346,14 @@ namespace kamite::hitbox_overlay
 #if defined(KAMITE_HAS_GS_MENU)
         if (ui->version < 4u)
             return;
-        if (!ui->collapsing_header("Hitboxes", 0))
-            return;
-        ui->text_disabled("The damage shapes the game tests each frame, drawn over the picture: the preview disc's "
-                          "DBG_COLL_AT_DISP. Red = attack volumes, blue = hurt volumes. They sit where the game "
-                          "tested them, which is one frame behind the picture (the game's own lag).");
+        ui->separator_text("Hitboxes");
         auto toggle = [&](const char *label, std::atomic<bool> &setting) {
             int on = setting.load() ? 1 : 0;
             if (ui->checkbox(label, &on))
                 setting = on != 0;
         };
-        toggle("Show hitboxes##hitboxes", g_enabled);
+        toggle("Show hitboxes (red = attack, blue = hurt; where the game tested them, one frame behind the picture)##hitboxes",
+               g_enabled);
         if (g_enabled.load())
         {
             ui->indent();
