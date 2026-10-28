@@ -4,6 +4,9 @@ Newest first, one line per change; the code comments say how.
 
 ## October 28, 2026
 
+- F2 > Debug > Developer switches: the game's own debug flags (invincible, free God Hand and roulette, every
+  roulette reel, max gold, no enemy or object placement, pathfinding off, no hit blur, no vibration).
+- F2 > Debug: God mode and Enemies can't die stop the killing hit itself; One-hit kills kill on the first hit.
 - 60 FPS: the stick dash's double tap has the same time to land as at 30 FPS.
 - 60 FPS: the button-mash meter fills and drains at the same mashing speed as at 30 FPS.
 - F2 > Debug: slow motion (1/2, 1/4, 1/8), pause and step one frame; hotkeys Shift+F2 / Shift+F3 / Shift+F4.

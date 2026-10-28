@@ -313,6 +313,26 @@ address = "0x0030EF34"
 hook = "km_hitbox_collect"
 flag = "frame_hook"
 
+# F2 > Debug cheats (debug_tools.cpp; the hooks test their switches). The hit loop func_001FCF20: s3 = 1 here, then
+# `beql v0,s3` skips the hit record when $v0 = 1 (Invincible sets it when the target is Gene: PL MUTEKI's lost check).
+[[patches.hooks]]
+address = "0x001FD038"
+hook = "km_dbg_muteki"
+flag = "debug_cheats"
+replace = true
+
+# Gene's damage step func_0012C0F8, right after HP -= damage (God mode: HP stays >= 1).
+[[patches.hooks]]
+address = "0x0012C2A4"
+hook = "km_dbg_pl_damage"
+flag = "debug_cheats"
+
+# The enemies' damage step func_0028FB88 (vtable method), right after HP -= damage (can't die / one-hit kills).
+[[patches.hooks]]
+address = "0x0028FD38"
+hook = "km_dbg_em_damage"
+flag = "debug_cheats"
+
 # Top of the main loop, after the wait for the next frame: frame divider, stick hold (fps60), L3 dash, frame count.
 [[patches.hooks]]
 address = "0x0030ADF4"

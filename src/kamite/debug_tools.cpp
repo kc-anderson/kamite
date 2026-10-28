@@ -1,13 +1,22 @@
 // Dev tools in the F2 menu's Debug tab: cheats for testing, a room jump and the game's display switches (dev-only:
 // strip-list).
 //
-// Cheats (per game frame, at frame start; retail dropped the preview disc's DBG_PL_NO_DEATH / DBG_EM_NO_DEATH /
-// DBG_EM_DIRECT_DEATH, which clamped HP inside the damage step, so these work on the HP words instead):
-//   God mode           Gene's HP (cGameObj +0x54A) is put back to his maximum (+0x548) every frame: a hit shows and
-//                      is healed before the next; only a hit worth his whole bar in one go (a pit) still kills.
-//   Enemies can't die  every live enemy's HP is put back to its maximum once it falls to a quarter: their bars move,
-//                      they do not die (a single hit worth over three quarters of a bar still kills).
-//   One-hit kills      every live enemy's HP is held at 1.
+// Cheats (the preview disc's DBG_PL_NO_DEATH / DBG_EM_NO_DEATH / DBG_EM_DIRECT_DEATH clamped HP inside the damage
+// step; retail dropped those checks, so the same clamps are hooks in the retail damage steps, plus per-frame refills):
+//   God mode           Gene's HP (cGameObj +0x54A) never falls below 1 in his damage step (func_0012C0F8, hook
+//                      km_dbg_pl_damage at 0x12C2A4, right after the subtraction) and is put back to his maximum
+//                      (+0x548) every frame. A pit or a fall is not a damage step.
+//   Enemies can't die  an enemy's HP never falls below 1 in the enemies' damage step (func_0028FB88, the vtable
+//                      method; hook km_dbg_em_damage at 0x28FD38) and is put back to its maximum once it falls to a
+//                      quarter: their bars move, they do not die.
+//   One-hit kills      the damage step sets the HP to 0 (the enemy dies of the first hit), and every live enemy's HP
+//                      is held at 1 between hits.
+//
+// Developer switches: the preview's DBG group lives on in retail at GameWork +0x58C..+0x59C (game::Dbg; the preview had
+// it at 0x718CA0) and retail still reads about 30 of its bits. Ticked boxes set their bit at every frame start (as the
+// Hide switches below; the game never sets these itself). PL MUTEKI lost its check in the hit loop (the preview's
+// func_001D6910 skipped Gene's take units; retail func_001FCF20), so km_dbg_muteki at 0x1FD038 puts it back: the hit
+// record whose target object is Gene is skipped as if he were in his own invulnerable frames.
 // Enemies: cEmManage's list (0x5864F0 + 0x500: slot = {+4 next, +8 object}; kinds 0x200..0x27F are enemies, alive
 // while HP > 0 and +0x250 has no release bit), as modern_controls' nearest-enemy scan reads it.
 //
@@ -95,9 +104,50 @@ namespace kamite::debug_tools
         constexpr uint32_t kEnemyList = 0x5864F0u + 0x500u; // cEmManage: the first used slot
         constexpr uint32_t kObjHpMax = 0x548u, kObjHp = 0x54Au; // cGameObj: shorts
 
-        std::atomic<uint32_t> g_hide{0};   // the bits to keep set = hidden (UI thread writes, game thread reads)
-        uint32_t g_hiding = 0;             // game thread: the bits it is keeping set now
-        uint32_t g_gameWants = 0;          // game thread: of those, the ones the game had set
+        // A flag word some of whose bits the Debug tab keeps set while ticked. Untick a bit and it gets the value the
+        // game last gave it (a clear by the game while forced counts; a set by the game meanwhile is missed).
+        struct ForcedBits
+        {
+            std::atomic<uint32_t> wanted{0}; // UI thread writes, game thread reads
+            uint32_t forcing = 0;            // game thread: the bits it is keeping set now
+            uint32_t gameWants = 0;          // game thread: of those, the ones the game had set
+
+            void apply(uint8_t *rdram, uint32_t address)
+            {
+                const uint32_t want = wanted.load(std::memory_order_relaxed);
+                if (!want && !forcing)
+                    return;
+                uint32_t w = 0;
+                std::memcpy(&w, rdram + (address & 0x01FFFFFFu), 4);
+                const uint32_t starting = want & ~forcing, stopping = forcing & ~want;
+                gameWants = (gameWants & ~starting) | (w & starting); // what the game had when the forcing began
+                gameWants &= ~(~w & want & forcing);                   // cleared by the game while forced
+                w = (w | want) & ~(stopping & ~gameWants);
+                gameWants &= ~stopping;
+                forcing = want;
+                std::memcpy(rdram + (address & 0x01FFFFFFu), &w, 4);
+            }
+        };
+        ForcedBits g_hide;       // GameWork DSP: a set bit hides that part
+        ForcedBits g_dbg[4];     // GameWork DBG words 0..3
+
+        struct DbgSwitch
+        {
+            uint32_t word;
+            uint32_t bit;
+            const char *label;
+        };
+        constexpr DbgSwitch kDbgSwitches[] = {
+            {0, Dbg::kPlMuteki, "Invincible: hits, grabs and hazards pass through Gene (PL MUTEKI)##muteki"},
+            {0, Dbg::kGhCostZero, "God Hand and roulette for free: tension and roulette orbs stay full (DBG_PL_GH_COST_ZERO)##ghfree"},
+            {2, Dbg::kAllGodReel, "Every roulette reel owned: the roulette offers all its moves (DBG_ALL_GOD_REEL)##godreel"},
+            {2, Dbg::kMaxGold, "Gold at 999,999: written into the save data (MAX_GOLD)##maxgold"},
+            {1, Dbg::kEmSetOff, "No enemies placed when a room loads (DBG_EM_SET_OFF)##emsetoff"},
+            {1, Dbg::kOmSetOff, "No objects placed when a room loads (DBG_OM_SET_OFF)##omsetoff"},
+            {3, Dbg::kPathfindingOff, "Enemy pathfinding off (PATHFINDING OFF)##pathoff"},
+            {1, Dbg::kNoHitBlur, "No hit blur (DBG_NO_HIT_BLUR)##nohitblur"},
+            {0, Dbg::kVibrateOff, "No vibration (VIBRATE OFF)##vibeoff"},
+        };
 
         struct Point
         {
@@ -133,6 +183,42 @@ namespace kamite::debug_tools
         {
             const uint32_t a = address & 0x1FFFFFFFu;
             return a >= 0x100000u && a + size <= PS2_RAM_SIZE;
+        }
+
+        // km_dbg_muteki at 0x1FD038 (func_001FCF20, the hit loop: `addiu s3,zero,1`, then `beql v0,s3` skips the hit
+        // record while $v0 = 1). s1 = the hit's target object.
+        void mutekiHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            SET_GPR_U32(ctx, 19, 1u);
+            if ((g_dbg[0].wanted.load(std::memory_order_relaxed) & Dbg::kPlMuteki) &&
+                GPR_U32(ctx, 17) == rd32(rdram, GameWork::address(GameWork::kPlayerObj)))
+                SET_GPR_U32(ctx, 2, 1u);
+        }
+
+        void setHp(uint8_t *rdram, uint32_t obj, int16_t hp) { std::memcpy(rdram + ((obj + kObjHp) & 0x01FFFFFFu), &hp, 2); }
+        int16_t getHp(const uint8_t *rdram, uint32_t obj)
+        {
+            int16_t hp = 0;
+            std::memcpy(&hp, rdram + ((obj + kObjHp) & 0x01FFFFFFu), 2);
+            return hp;
+        }
+        // km_dbg_pl_damage at 0x12C2A4 (Gene's damage step, after `sh v0,0x54A(s1)` / the clamp to 0); s1 = Gene.
+        void playerDamageHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t obj = GPR_U32(ctx, 17);
+            if (g_godMode.load(std::memory_order_relaxed) && inRam(obj, 0x600u) && getHp(rdram, obj) < 1)
+                setHp(rdram, obj, 1);
+        }
+        // km_dbg_em_damage at 0x28FD38 (the enemies' damage step, after the subtraction); s1 = the enemy.
+        void enemyDamageHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t obj = GPR_U32(ctx, 17);
+            if (!inRam(obj, 0x600u))
+                return;
+            if (g_oneHitKills.load(std::memory_order_relaxed))
+                setHp(rdram, obj, 0);
+            else if (g_enemiesNoDeath.load(std::memory_order_relaxed) && getHp(rdram, obj) < 1)
+                setHp(rdram, obj, 1);
         }
 
         // The developers' names (Shift-JIS in the table), in English. "なまえをいれてください" ("please enter a
@@ -301,12 +387,24 @@ namespace kamite::debug_tools
                 if (ui->checkbox(label, &on))
                     setting = on != 0;
             };
-            toggle("God mode: Gene's HP is refilled every frame##god", g_godMode);
-            toggle("Enemies can't die: their HP is refilled once it falls to a quarter##emnodeath", g_enemiesNoDeath);
-            toggle("One-hit kills: every enemy's HP is held at 1##onehit", g_oneHitKills);
+            toggle("God mode: Gene's HP never falls below 1 and is refilled every frame##god", g_godMode);
+            toggle("Enemies can't die: their HP never falls below 1 and is refilled at a quarter##emnodeath", g_enemiesNoDeath);
+            toggle("One-hit kills: an enemy dies of its first hit##onehit", g_oneHitKills);
             char enemies[64];
             std::snprintf(enemies, sizeof(enemies), "%d live enemies in the room.", g_enemiesAlive.load());
             ui->text_disabled(enemies);
+
+            ui->separator_text("Developer switches");
+            ui->text_disabled("The game's own debug flags (names from the preview disc), still read by retail.");
+            for (const DbgSwitch &s : kDbgSwitches)
+            {
+                uint32_t want = g_dbg[s.word].wanted.load();
+                int on = (want & s.bit) ? 1 : 0;
+                if (ui->checkbox(s.label, &on))
+                    g_dbg[s.word].wanted.store(on ? (want | s.bit) : (want & ~s.bit));
+            }
+            if (g_dbg[2].wanted.load() & Dbg::kMaxGold)
+                ui->text_disabled("Max gold changes the save's gold: don't save unless you want to keep it.");
 
             ui->separator_text("Room jump");
             if (g_points.empty())
@@ -372,16 +470,16 @@ namespace kamite::debug_tools
             if (ui->version >= 4u ? ui->collapsing_header("Hide", 0) != 0 : true)
             {
                 ui->text_disabled("The game's own display switches (names from the preview disc's debug menu).");
-                uint32_t hide = g_hide.load();
+                uint32_t hide = g_hide.wanted.load();
                 for (const Switch &s : kSwitches)
                 {
                     int on = (hide & s.bit) ? 1 : 0;
                     if (ui->checkbox(s.label, &on))
                         hide = on ? (hide | s.bit) : (hide & ~s.bit);
                 }
-                g_hide.store(hide);
+                g_hide.wanted.store(hide);
                 if (hide && ui->button("Show everything##showall"))
-                    g_hide.store(0);
+                    g_hide.wanted.store(0);
             }
         }
 #endif
@@ -391,6 +489,10 @@ namespace kamite::debug_tools
     {
         loadPoints();
         KM_INFO(Game, "debug tools: " << g_points.size() << " room jump points");
+        ps2xRegisterHostHook("km_dbg_muteki", &mutekiHook);
+        ps2xRegisterHostHook("km_dbg_pl_damage", &playerDamageHook);
+        ps2xRegisterHostHook("km_dbg_em_damage", &enemyDamageHook);
+        ps2xSetPatchFlag("debug_cheats", true); // the hooks test their switches themselves
 #if defined(KAMITE_HAS_GS_MENU)
         ps2x::menu::addPanel("Debug", &drawPanel);
 #endif
@@ -445,20 +547,10 @@ namespace kamite::debug_tools
             }
             g_enemiesAlive.store(alive, std::memory_order_relaxed);
         }
-        // Display switches.
-        const uint32_t address = GameWork::address(GameWork::kFlagsDsp);
-        const uint32_t hide = g_hide.load(std::memory_order_relaxed);
-        if (hide || g_hiding)
-        {
-            uint32_t w = rd32(rdram, address);
-            const uint32_t starting = hide & ~g_hiding, stopping = g_hiding & ~hide;
-            g_gameWants = (g_gameWants & ~starting) | (w & starting); // what the game had when the hiding began
-            g_gameWants &= ~(~w & hide & g_hiding);                   // cleared by the game while hidden
-            w = (w | hide) & ~(stopping & ~g_gameWants);
-            g_gameWants &= ~stopping;
-            g_hiding = hide;
-            wr32(rdram, address, w);
-        }
+        // Display switches and developer switches.
+        g_hide.apply(rdram, GameWork::address(GameWork::kFlagsDsp));
+        for (uint32_t i = 0; i < 4; ++i)
+            g_dbg[i].apply(rdram, GameWork::address(Dbg::word(i)));
         // Room jump.
         const int request = g_request.exchange(-1);
         if (request >= 0 && request < static_cast<int>(g_points.size()) && ctx && runtime)

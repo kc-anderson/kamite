@@ -110,6 +110,21 @@ namespace kamite::game
         inline constexpr uint32_t kSoftEventCancel = 0x00000010u; // SOFT EVENT CANCEL
         inline constexpr uint32_t kSceMovieCancel = 0x00000004u;  // SCE MOVIE CANCEL
     }
+    namespace Dbg // GameWork +0x58C..+0x59C (0x747A2C..0x747A3C): the preview's DBG group (its 0x718CA0..), five words
+                  // moved here in retail (word 2 is the decomp's debugFlags). Retail still reads ~30 of the bits; the
+                  // ones the Debug tab sets (claude/preview-debug-flags.md has the rest).
+    {
+        inline constexpr uint32_t word(uint32_t index) { return 0x58Cu + 4u * index; }
+        inline constexpr uint32_t kPlMuteki = 0x00000008u;    // word 0, PL MUTEKI: the grab checks and hazards skip Gene
+        inline constexpr uint32_t kGhCostZero = 0x00080000u;  // word 0, DBG_PL_GH_COST_ZERO: tension and orbs kept full
+        inline constexpr uint32_t kVibrateOff = 0x08000000u;  // word 0, VIBRATE OFF
+        inline constexpr uint32_t kEmSetOff = 0x10000000u;    // word 1, DBG_EM_SET_OFF: no enemy placement on room load
+        inline constexpr uint32_t kOmSetOff = 0x08000000u;    // word 1, DBG_OM_SET_OFF: no object placement on room load
+        inline constexpr uint32_t kNoHitBlur = 0x00000800u;   // word 1, DBG_NO_HIT_BLUR
+        inline constexpr uint32_t kMaxGold = 0x02000000u;     // word 2, MAX_GOLD: the gold getters write 999999
+        inline constexpr uint32_t kAllGodReel = 0x00000002u;  // word 2, DBG_ALL_GOD_REEL: cCoreSave_getGodReel says yes
+        inline constexpr uint32_t kPathfindingOff = 0x00080000u; // word 3, PATHFINDING OFF
+    }
     // GameWork.flags5D8 bits the port uses (ours, before the names above).
     inline constexpr uint32_t kFlags5D8PlayerOff = Stp::kPl | Stp::kEm; // the player's Move returns at once (func_001F6C40)
     inline constexpr uint32_t kFlags5D8KeyStop = Stp::kKey;             // the controls are off, the player still updates
