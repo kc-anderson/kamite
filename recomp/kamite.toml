@@ -307,6 +307,71 @@ hook = "km_fps60_countdown"
 flag = "fps60"
 replace = true
 
+# The enemy manager's timers (cEmManage_Main 0x290284..0x29038C, once a game frame; the manager is the enemies' shared
+# state at 0x5864F0): words +0x510/+0x514/+0x530 and bytes +0x538..+0x53D, +0x540, +0x541, half +0x542 count down a
+# frame, so at 60 FPS they ran twice as fast (its float +0x544 already steps by the speed rate +0x548). Every other
+# frame here (claude/fps60-notes.md family 1).
+[[patches.hooks]] # +0x510 (decrement in a delay slot: the load is raised)
+address = "0x00290284"
+hook = "km_fps60_countdown_em510"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x514 (decrement in a delay slot: the load is raised)
+address = "0x00290294"
+hook = "km_fps60_countdown_em514"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x530 (decrement in a delay slot: the load is raised)
+address = "0x002902A4"
+hook = "km_fps60_countdown_em530"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x538
+address = "0x002902C0"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x539
+address = "0x002902D4"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x53A
+address = "0x002902E8"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x53B
+address = "0x002902FC"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x53C
+address = "0x00290310"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x53D
+address = "0x00290324"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x540
+address = "0x00290360"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x541
+address = "0x00290374"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x542
+address = "0x00290388"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+
 # Button-mash meter, two copies (pl00 states at 0x10FC84 and 0x1201A8): each direction press (GameWork pressed & 0xF0)
 # raises the level (+0x15B4) when the game frames since the last one (+0x15B0, +1 a frame) are under the level's limit
 # (jump tables 0x41BDC0 / 0x41C6D0: the limits are the immediates of the table's cases), and the level decays when

@@ -414,13 +414,14 @@ namespace kamite
         {
             ctx->f[0] = (g_gameFrame & 1u) ? ctx->f[1] : ctx->f[1] - ctx->f[0];
         }
-        // lw v0,0x5F8(s1) at 0x108D08: its decrement sits in a branch delay slot (no hook there), so on the skipped
-        // frames the loaded value is raised by one and the decrement stores it back unchanged (the zero test is not
-        // affected: a non-zero value stays non-zero).
-        void countdownLoad5F8(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        // `lw v0,X(base)` before a countdown whose `addiu v0,v0,-1` sits in a branch delay slot (no hook there): on the
+        // skipped frames the loaded value is raised by one and the decrement stores it back unchanged (the zero test
+        // is not affected: a non-zero value stays non-zero). Gene's +0x5F8 (0x108D08), cEmManage +0x510/+0x514/+0x530.
+        template <int Base, uint32_t Offset>
+        void countdownLoad(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             uint32_t value = 0;
-            std::memcpy(&value, rdram + ((GPR_U32(ctx, 17) + 0x5F8u) & 0x01FFFFFFu), 4);
+            std::memcpy(&value, rdram + ((GPR_U32(ctx, Base) + Offset) & 0x01FFFFFFu), 4);
             SET_GPR_U32(ctx, 2, (g_gameFrame & 1u) && value != 0u ? value + 1u : value);
         }
 
@@ -489,7 +490,10 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_countdown", &buttonTimer);
         ps2xRegisterHostHook("km_fps60_countdown_self", &countdownSelf);
         ps2xRegisterHostHook("km_fps60_countdown_float", &countdownFloat);
-        ps2xRegisterHostHook("km_fps60_countdown_5f8", &countdownLoad5F8);
+        ps2xRegisterHostHook("km_fps60_countdown_5f8", &countdownLoad<17, 0x5F8u>);
+        ps2xRegisterHostHook("km_fps60_countdown_em510", &countdownLoad<16, 0x510u>);
+        ps2xRegisterHostHook("km_fps60_countdown_em514", &countdownLoad<16, 0x514u>);
+        ps2xRegisterHostHook("km_fps60_countdown_em530", &countdownLoad<16, 0x530u>);
         ps2xRegisterHostHook("km_fps60_emit_every_frame", &emitEveryFrame);
         ps2xRegisterHostHook("km_fps60_wiggle_begin", &wiggleBegin);
         ps2xRegisterHostHook("km_fps60_wiggle_end", &wiggleEnd);

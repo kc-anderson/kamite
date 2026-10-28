@@ -8,6 +8,7 @@ Newest first, one line per change; the code comments say how.
 - 60 FPS: the roundhouse hits Door-kun once, as at 30 FPS (it hit him twice).
 - 60 FPS: all of Gene's timers run in real time: the dodges keep him out of reach as long as at 30 FPS (the duck
   was half as long), and the combo and stick input windows match too.
+- 60 FPS: the enemies' shared timers (the enemy manager's countdowns) run in real time.
 - F2 > Debug > Hitboxes: no longer drawn over menus and the title screen.
 - F2 > Debug > Room jump: the cut Floodgate room (r502) and a stale r601 point that dropped Gene outside the map are
   gone from the list.
