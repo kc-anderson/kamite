@@ -213,6 +213,13 @@ hook = "km_fps60_hitbox_compare"
 flag = "fps60"
 replace = true
 
+# Move(), the instruction after its call of func_002B9D58 (the collision manager's update and hit tests): the hitbox
+# overlay reads the shapes as the game just tested them (hitbox_overlay.cpp).
+[[patches.hooks]]
+address = "0x0030EF34"
+hook = "km_hitbox_collect"
+flag = "frame_hook"
+
 # Top of the main loop, after the wait for the next frame: frame divider, stick hold (fps60), L3 dash, frame count.
 [[patches.hooks]]
 address = "0x0030ADF4"

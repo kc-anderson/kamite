@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## October 28, 2026
 
+- F2 > Debug > Hitboxes: the damage shapes the game tests each frame drawn over the picture (attack volumes red, hurt
+  volumes blue; inactive ones dimmed on request), with a one-frame dump of the shape list to godhand.log.
 - The F2 menu is the dev menu: tabs Display, Graphics, Gameplay, Camera, Controls, NPCs, Debug; "Keep playing" is on
   by default. The launcher's options that can change while the game runs are in it (HUD layout, menu width, full
   screen; the renderer switches; 60 FPS, L3 dash, roulette timer, mute music; the control style); the ones that

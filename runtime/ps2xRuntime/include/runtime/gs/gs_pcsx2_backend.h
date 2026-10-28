@@ -32,6 +32,9 @@ public:
     // Any thread: an option the DLL changes while running (pcsx2gs_set_option, e.g. "dof" "0"); false = this DLL
     // does not have it.
     static bool SetOption(const char *key, const char *value);
+    // Any thread: lines drawn over the image at each present (pcsx2gs_set_overlay: x0 y0 x1 y1 per line in GS pixel
+    // coordinates, a colour per line with R in the low byte; count 0 clears). False = this DLL does not have it.
+    static bool SetOverlay(const float *lines, const uint32_t *colors, uint32_t count);
     static void SetMenuInput(const void *input);
     // Main thread: hides the GS image while a host UI drawn by raylib (the F1 debugger) is open.
     static void SetHostUiVisible(bool visible);

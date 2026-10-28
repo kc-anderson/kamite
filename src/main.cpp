@@ -23,6 +23,7 @@
 #include "kamite/style_presets.h"
 #include "kamite/npc_poses.h"
 #include "kamite/debug_tools.h"
+#include "kamite/hitbox_overlay.h"
 #include "kamite/dev_menu.h"
 #include "kamite/hotkeys.h"
 #include "kamite/texture_slots.h"
@@ -994,6 +995,7 @@ int main(int argc, char *argv[])
         kamite::style_presets::install(runtime); // style presets: d-pad swaps in play, the Techniques screen's list and Y + d-pad
         kamite::npc_poses::install(runtime, exeDir); // NPCs who lean on their counter (F2: NPCs; npc_poses.txt)
         kamite::debug_tools::install(runtime); // F2: Debug (the game's display switches, room jump; dev-only)
+        kamite::hitbox_overlay::install();     // F2: Debug > Hitboxes (dev-only)
         kamite::installMovieWatchdog(runtime); // sweep R3: ending/movie-list movie polls cannot spin forever
         // 60 FPS mode, L3 dash, and the game-frame count for the F3 overlay (a hook at the top of the main loop).
         kamite::installFramePatches(runtime);

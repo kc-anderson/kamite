@@ -26,6 +26,11 @@
 
 #include <algorithm>
 #include <array>
+
+namespace pcsx2gs
+{
+	void SetPresentRect(float x0, float y0, float x1, float y1, float width, float height); // compat/HostStubs.cpp: the overlay
+}
 #include <deque>
 #include <thread>
 #include <mutex>
@@ -666,6 +671,9 @@ void GSRenderer::VSync(u32 field, bool registers_written, bool idle_frame)
 				src_rect, current->GetSize(), s_display_alignment, g_gs_device->UsesLowerLeftOrigin(),
 				GetVideoMode() == GSVideoMode::SDTV_480P);
 			s_last_draw_rect = draw_rect;
+			// pcsx2gs (Kamite): the overlay lines (compat/HostStubs.cpp) are mapped onto this rectangle.
+			pcsx2gs::SetPresentRect(draw_rect.x, draw_rect.y, draw_rect.z, draw_rect.w,
+				static_cast<float>(m_real_size.x), static_cast<float>(m_real_size.y));
 
 			if (GSConfig.CASMode != GSCASMode::Disabled)
 			{

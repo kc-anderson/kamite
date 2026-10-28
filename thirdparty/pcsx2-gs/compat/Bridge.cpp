@@ -541,6 +541,12 @@ extern "C" __declspec(dllexport) void pcsx2gs_set_option(const char *key, const 
     }
 }
 
+// Lines drawn over the image at each present (pcsx2gs_host.h SetOverlay): the port's hitbox overlay. Any thread.
+extern "C" __declspec(dllexport) void pcsx2gs_set_overlay(const float *lines, const uint32_t *colors, uint32_t count)
+{
+    pcsx2gs::SetOverlay(lines, colors, count);
+}
+
 // The aspect ratio while the game runs (0 = 4:3, 1 = 16:9, 2 = fill the window), read at every present: the port uses
 // it to follow the game's own 4:3 / 16:9 option. Exported on its own so that the API table above stays the same.
 extern "C" __declspec(dllexport) void pcsx2gs_set_aspect(uint32_t mode)

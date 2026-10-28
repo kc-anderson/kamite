@@ -30,6 +30,7 @@
 // flags are not set: saving after a jump can leave the save in a state the game never makes.
 #include "kamite/debug_tools.h"
 #include "kamite/disc_files.h"
+#include "kamite/hitbox_overlay.h"
 #include "kamite/game_layout.h"
 #include "kamite/log.h"
 #include "ps2_runtime_macros.h" // GPR_U32 / SET_GPR_U32
@@ -330,6 +331,9 @@ namespace kamite::debug_tools
                 if (!g_status.empty())
                     ui->text(g_status.c_str());
             }
+
+            ui->spacing();
+            hitbox_overlay::drawPanel(ui);
 
             ui->spacing();
             if (ui->version >= 4u ? ui->collapsing_header("Hide", 0) != 0 : true)

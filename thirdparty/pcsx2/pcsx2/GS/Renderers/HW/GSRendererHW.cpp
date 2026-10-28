@@ -29,6 +29,7 @@ namespace pcsx2gs
 		float inverse[16]; // row-major
 	};
 	bool GetSeeThrough(SeeThroughParams& out); // compat/Bridge.cpp: pcsx2gs_set_option("see_through")
+	void SetSceneOffset(float ox, float oy);   // compat/HostStubs.cpp: the overlay's GS -> frame mapping
 	extern std::atomic<int> g_drawDumpState;   // compat/Bridge.cpp: pcsx2gs_set_option("draw_dump"); 2 = recording
 	extern std::FILE* g_drawDumpFile;
 	extern std::string g_drawDumpBase;
@@ -6205,6 +6206,9 @@ void GSRendererHW::ApplyPerspectiveShading()
 // (sprites, no depth test).
 void GSRendererHW::ApplySeeThrough(float rtscale)
 {
+	// pcsx2gs (Kamite): the hitbox overlay maps the game's screen coordinates into the frame with the scene's XYOFFSET.
+	if (m_km_draw_class == 1u && m_vt.m_primclass == GS_TRIANGLE_CLASS && m_conf.ds && !m_channel_shuffle)
+		pcsx2gs::SetSceneOffset(static_cast<float>(m_context->XYOFFSET.OFX) / 16.0f, static_cast<float>(m_context->XYOFFSET.OFY) / 16.0f);
 	pcsx2gs::SeeThroughParams s;
 	if (!pcsx2gs::GetSeeThrough(s))
 		return;

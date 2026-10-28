@@ -33,6 +33,7 @@ namespace
     const Pcsx2GsApi *g_api = nullptr;
     void(__cdecl *g_setAspect)(uint32_t) = nullptr; // pcsx2gs_set_aspect, when the DLL has it
     void(__cdecl *g_setOption)(const char *, const char *) = nullptr; // pcsx2gs_set_option, when the DLL has it
+    void(__cdecl *g_setOverlay)(const float *, const uint32_t *, uint32_t) = nullptr; // pcsx2gs_set_overlay, when the DLL has it
     const std::chrono::steady_clock::time_point g_processStart = std::chrono::steady_clock::now();
     HWND g_parent = nullptr;
     HWND g_child = nullptr;
@@ -223,6 +224,7 @@ bool GSPcsx2Backend::Requested()
         g_api = getApi ? getApi(PCSX2GS_API_VERSION) : nullptr;
         g_setAspect = reinterpret_cast<void(__cdecl *)(uint32_t)>(GetProcAddress(module, "pcsx2gs_set_aspect"));
         g_setOption = reinterpret_cast<void(__cdecl *)(const char *, const char *)>(GetProcAddress(module, "pcsx2gs_set_option"));
+        g_setOverlay = reinterpret_cast<void(__cdecl *)(const float *, const uint32_t *, uint32_t)>(GetProcAddress(module, "pcsx2gs_set_overlay"));
         if (!g_api)
         {
             std::fprintf(stderr, "[gs] pcsx2gs.dll has no matching pcsx2gs_get_api (version %u); using the built-in GS\n",
@@ -293,6 +295,14 @@ bool GSPcsx2Backend::SetOption(const char *key, const char *value)
     if (!g_setOption)
         return false;
     g_setOption(key, value);
+    return true;
+}
+
+bool GSPcsx2Backend::SetOverlay(const float *lines, const uint32_t *colors, uint32_t count)
+{
+    if (!g_setOverlay)
+        return false;
+    g_setOverlay(lines, colors, count);
     return true;
 }
 
@@ -627,6 +637,7 @@ bool GSPcsx2Backend::Active() { return false; }
 void GSPcsx2Backend::SetOsd(const char *, uint32_t, float, const char *) {}
 void GSPcsx2Backend::SetMenu(void *, void *) {}
 bool GSPcsx2Backend::SetOption(const char *, const char *) { return false; }
+bool GSPcsx2Backend::SetOverlay(const float *, const uint32_t *, uint32_t) { return false; }
 void GSPcsx2Backend::SetMenuInput(const void *) {}
 void GSPcsx2Backend::SetHostUiVisible(bool) {}
 bool GSPcsx2Backend::HostUiVisible() { return false; }

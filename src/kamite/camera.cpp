@@ -29,6 +29,7 @@
 //   func_00262AA8 0x263CF4 ... 0x267FC8 (9)  c.lt.s $f0,$f1: $f0 = the angle, $f1 = the level's lunge cone
 // The hooks run before the compare and scale the cone's register (every path after it loads both registers again).
 #include "kamite/camera.h"
+#include "kamite/hitbox_overlay.h"
 #include "kamite/camera_presets.h"
 #include "kamite/ini_file.h"
 #include "kamite/modern_controls.h"
@@ -364,6 +365,8 @@ namespace kamite
         {
             updateKeepWalls();
             const uint32_t camera = GPR_U32(ctx, 20);
+            if (camera >= 0x100000u && camera < PS2_RAM_SIZE - 0x1000u)
+                hitbox_overlay::noteScreenMatrix(reinterpret_cast<const float *>(rdram + camera)); // any camera: the last built wins
             if (camera != g_playerCamera.load(std::memory_order_relaxed))
                 return;
             const auto valid = [](uint32_t p) { return p >= 0x100000u && p < PS2_RAM_SIZE - 0x1000u; };

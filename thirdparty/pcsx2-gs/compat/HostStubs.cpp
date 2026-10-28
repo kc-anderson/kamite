@@ -64,6 +64,14 @@ namespace
     Pcsx2GsMenuInput g_menuInput{};
     float g_menuWheel = 0.0f;
 
+    // Overlay lines (set_overlay, any thread -> RenderOSD on the GS thread). pcsx2gs (Kamite): the hitbox overlay.
+    std::mutex g_overlayMutex;
+    std::vector<float> g_overlayLines;      // x0 y0 x1 y1 per line, GS pixels
+    std::vector<uint32_t> g_overlayColors;  // per line, R in the low byte
+    float g_sceneOffset[2] = {2048.0f - 320.0f, 2048.0f - 224.0f}; // GS thread: the scene draws' XYOFFSET, pixels
+    float g_presentRect[4] = {};             // GS thread: the frame's place in the window at the last present
+    float g_presentSize[2] = {640.0f, 448.0f}; // GS thread: the frame's size in GS pixels
+
     int UiBeginWindow(const char *title, int *open, float width, float height)
     {
         // Text and window follow the window's size (sized for ~900 lines; never larger than the screen).
@@ -287,6 +295,39 @@ void pcsx2gs::MenuInput(const Pcsx2GsMenuInput *input)
     std::lock_guard<std::mutex> lock(g_menuMutex);
     g_menuWheel += input->wheel;
     g_menuInput = *input;
+}
+
+void pcsx2gs::SetOverlay(const float *lines, const uint32_t *colors, uint32_t count)
+{
+    std::lock_guard<std::mutex> lock(g_overlayMutex);
+    if (!lines || !colors || count == 0u)
+    {
+        g_overlayLines.clear();
+        g_overlayColors.clear();
+        return;
+    }
+    count = std::min(count, 65536u);
+    g_overlayLines.assign(lines, lines + 4u * count);
+    g_overlayColors.assign(colors, colors + count);
+}
+
+void pcsx2gs::SetSceneOffset(float ox, float oy)
+{
+    g_sceneOffset[0] = ox;
+    g_sceneOffset[1] = oy;
+}
+
+void pcsx2gs::SetPresentRect(float x0, float y0, float x1, float y1, float width, float height)
+{
+    g_presentRect[0] = x0;
+    g_presentRect[1] = y0;
+    g_presentRect[2] = x1;
+    g_presentRect[3] = y1;
+    if (width > 0.0f && height > 0.0f)
+    {
+        g_presentSize[0] = width;
+        g_presentSize[1] = height;
+    }
 }
 
 void pcsx2gs::SetOsd(const char *top, uint32_t topRgba, float topAlpha, const char *bottom)
@@ -634,6 +675,29 @@ void ImGuiManager::RenderOSD()
     }
     if (menu)
         menu(&g_ui, menuUser);
+
+    {
+        std::lock_guard<std::mutex> lock(g_overlayMutex);
+        if (!g_overlayColors.empty())
+        {
+            ImDrawList *list = ImGui::GetBackgroundDrawList();
+            const float width = g_presentRect[2] - g_presentRect[0], height = g_presentRect[3] - g_presentRect[1];
+            if (width > 1.0f && height > 1.0f)
+            {
+                const float sx = width / g_presentSize[0], sy = height / g_presentSize[1];
+                const float thickness = std::max(1.0f, std::floor(ImGui::GetIO().DisplaySize.y / 540.0f));
+                list->PushClipRect(ImVec2(g_presentRect[0], g_presentRect[1]), ImVec2(g_presentRect[2], g_presentRect[3]), true);
+                for (size_t i = 0; i < g_overlayColors.size(); ++i)
+                {
+                    const float *l = &g_overlayLines[4 * i];
+                    const ImVec2 a(g_presentRect[0] + (l[0] - g_sceneOffset[0]) * sx, g_presentRect[1] + (l[1] - g_sceneOffset[1]) * sy);
+                    const ImVec2 b(g_presentRect[0] + (l[2] - g_sceneOffset[0]) * sx, g_presentRect[1] + (l[3] - g_sceneOffset[1]) * sy);
+                    list->AddLine(a, b, g_overlayColors[i], thickness);
+                }
+                list->PopClipRect();
+            }
+        }
+    }
 
     std::string top, bottom;
     uint32_t topRgba;
