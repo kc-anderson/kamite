@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 struct Pcsx2GsUi; // pcsx2gs_api.h: the UI calls a panel draws with
 
@@ -12,8 +13,10 @@ namespace ps2x::menu
 {
     using DrawPanel = std::function<void(const Pcsx2GsUi *ui)>;
 
-    // Register before the game loop starts; tabs appear in this order.
+    // Register before the game loop starts. A title registered again adds a section to that tab, drawn after the
+    // earlier ones; tabs appear in setTabOrder's order (the rest after, in registration order).
     void addPanel(std::string title, DrawPanel draw);
+    void setTabOrder(std::vector<std::string> titles);
     // The window title (e.g. "Urban Reign") and the hint line under the tabs.
     void setTitle(std::string title, std::string hint);
     // Shown instead of the tabs when no panel is registered (e.g. "no mod is on").
@@ -27,4 +30,10 @@ namespace ps2x::menu
     void notify(std::string text, float seconds = 1.5f);
     // For the presenter: the notice to draw now and its alpha; false when there is none.
     [[nodiscard]] bool notice(std::string &text, float &alpha);
+
+    // "Press a key" for a panel: begin on the GS thread, the window thread (hostTick) takes the next key the hotkeys
+    // table accepts (with Shift / Ctrl as held), Esc cancels. captured() is true once, with the key (0 = cancelled).
+    void beginKeyCapture();
+    [[nodiscard]] bool capturing();
+    [[nodiscard]] bool captured(int &key, bool &shift, bool &ctrl);
 }

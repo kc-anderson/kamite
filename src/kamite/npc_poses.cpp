@@ -981,6 +981,8 @@ namespace kamite::npc_poses
                 ui->text_wrapped("This pcsx2gs.dll is older than the game: build again.");
                 return;
             }
+            if (ui->version >= 4u && !ui->collapsing_header("Pose NPC", 0))
+                return; // a fold-out section at the bottom of the NPCs tab (K, Oct 27)
             std::lock_guard<std::mutex> lock(g_mutex);
             if (!g_enabled)
                 ui->text_colored(0xFF60C0FFu, "Better shop & casino poses is off (launcher: Gameplay), so the poses set "

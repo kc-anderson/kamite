@@ -1,4 +1,15 @@
-// Dev tools in the F2 menu's Debug tab: the game's display switches and a room jump (dev-only: strip-list).
+// Dev tools in the F2 menu's Debug tab: cheats for testing, a room jump and the game's display switches (dev-only:
+// strip-list).
+//
+// Cheats (per game frame, at frame start; retail dropped the preview disc's DBG_PL_NO_DEATH / DBG_EM_NO_DEATH /
+// DBG_EM_DIRECT_DEATH, which clamped HP inside the damage step, so these work on the HP words instead):
+//   God mode           Gene's HP (cGameObj +0x54A) is put back to his maximum (+0x548) every frame: a hit shows and
+//                      is healed before the next; only a hit worth his whole bar in one go (a pit) still kills.
+//   Enemies can't die  every live enemy's HP is put back to its maximum once it falls to a quarter: their bars move,
+//                      they do not die (a single hit worth over three quarters of a bar still kills).
+//   One-hit kills      every live enemy's HP is held at 1.
+// Enemies: cEmManage's list (0x5864F0 + 0x500: slot = {+4 next, +8 object}; kinds 0x200..0x27F are enemies, alive
+// while HP > 0 and +0x250 has no release bit), as modern_controls' nearest-enemy scan reads it.
 //
 // Display switches. GameWork +0x5E0 (0x747A80) is the preview's DSP group (game::Dsp): one bit per part of the game,
 // and a SET bit HIDES that part (the dog race and the jukebox set them to hide the world and Gene, the door jump sets
@@ -18,7 +29,6 @@
 // module is on the retail disc are listed (the table also has the developers' test rooms). The landing point's story
 // flags are not set: saving after a jump can leave the save in a state the game never makes.
 #include "kamite/debug_tools.h"
-#include "kamite/bone_tweaks.h"
 #include "kamite/disc_files.h"
 #include "kamite/game_layout.h"
 #include "kamite/log.h"
@@ -75,6 +85,13 @@ namespace kamite::debug_tools
             {Dsp::kActBtn, "Action-button prompt (DSP_ACTBTN)"},
         };
 
+        std::atomic<bool> g_godMode{false};
+        std::atomic<bool> g_enemiesNoDeath{false};
+        std::atomic<bool> g_oneHitKills{false};
+        std::atomic<int> g_enemiesAlive{0};   // game thread -> UI: live enemies this frame
+        constexpr uint32_t kEnemyList = 0x5864F0u + 0x500u; // cEmManage: the first used slot
+        constexpr uint32_t kObjHpMax = 0x548u, kObjHp = 0x54Au; // cGameObj: shorts
+
         std::atomic<uint32_t> g_hide{0};   // the bits to keep set = hidden (UI thread writes, game thread reads)
         uint32_t g_hiding = 0;             // game thread: the bits it is keeping set now
         uint32_t g_gameWants = 0;          // game thread: of those, the ones the game had set
@@ -93,7 +110,6 @@ namespace kamite::debug_tools
         int g_selected = 0;                 // UI thread
         std::mutex g_statusMutex;
         std::string g_status;
-        std::string g_hands;
         PS2Runtime::RecompiledFunction g_jump = nullptr;
         uint16_t g_room = 0xFFFFu;          // the room Gene is in (game thread writes)
 
@@ -276,69 +292,60 @@ namespace kamite::debug_tools
                 ui->text_wrapped("This pcsx2gs.dll is older than the game: build again.");
                 return;
             }
-            ui->separator_text("Hide");
-            ui->text_disabled("The game's own display switches (names from the preview disc's debug menu).");
-            uint32_t hide = g_hide.load();
-            for (const Switch &s : kSwitches)
-            {
-                int on = (hide & s.bit) ? 1 : 0;
-                if (ui->checkbox(s.label, &on))
-                    hide = on ? (hide | s.bit) : (hide & ~s.bit);
-            }
-            g_hide.store(hide);
-            if (hide && ui->button("Show everything##showall"))
-                g_hide.store(0);
-
-            ui->separator_text("Model");
-            if (ui->version >= 3u)
-            {
-                using bone_tweaks::Tune;
-                auto slider = [&](const char *label, Tune t, float lo, float hi, const char *fmt) {
-                    float v = bone_tweaks::tuning(t);
-                    ui->set_next_width(300.0f);
-                    if (ui->slider_float(label, &v, lo, hi, fmt))
-                        bone_tweaks::setTuning(t, v);
-                };
-                if (bone_tweaks::hasHair())
-                {
-                    slider("Hair: stiffness##hk", Tune::HairStiffness, 1.0f, 200.0f, "%.0f");
-                    slider("Hair: damping##hc", Tune::HairDamping, 0.0f, 30.0f, "%.1f");
-                    slider("Hair: gravity##hg", Tune::HairGravity, 0.0f, 2.0f, "%.2f");
-                    slider("Hair: wind##hw", Tune::HairWind, 0.0f, 10.0f, "%.1f");
-                    ui->text_disabled("Hair values go in mods/characters/xavier/character.ini [Hair] to keep them.");
-                }
-            }
-            {
-                std::lock_guard<std::mutex> lock(g_statusMutex);
-                ui->text(g_hands.c_str());
-            }
-            ui->text_disabled("The hand meshes the game shows now (the fist, open hand and grab shapes it swaps).");
+            ui->separator_text("Cheats");
+            auto toggle = [&](const char *label, std::atomic<bool> &setting) {
+                int on = setting.load() ? 1 : 0;
+                if (ui->checkbox(label, &on))
+                    setting = on != 0;
+            };
+            toggle("God mode: Gene's HP is refilled every frame##god", g_godMode);
+            toggle("Enemies can't die: their HP is refilled once it falls to a quarter##emnodeath", g_enemiesNoDeath);
+            toggle("One-hit kills: every enemy's HP is held at 1##onehit", g_oneHitKills);
+            char enemies[64];
+            std::snprintf(enemies, sizeof(enemies), "%d live enemies in the room.", g_enemiesAlive.load());
+            ui->text_disabled(enemies);
 
             ui->separator_text("Room jump");
             if (g_points.empty())
-            {
                 ui->text_disabled("The jump table (etc/debugres/RoomJmpTbl.dat) was not found on the disc image.");
-                return;
-            }
-            char here[64];
-            std::snprintf(here, sizeof(here), "Gene is in r%x%02x.", (g_room >> 8) & 0xF, g_room & 0xFF);
-            ui->text(here);
-            std::vector<const char *> labels;
-            for (const std::string &l : g_labels)
-                labels.push_back(l.c_str());
-            ui->set_next_width(420.0f);
-            ui->combo("##jumppoint", &g_selected, labels.data(), static_cast<int>(labels.size()));
-            ui->same_line();
-            if (ui->button("Jump##jump"))
+            else
             {
-                g_request.store(g_selected);
-                setStatus("Jumping...");
+                char here[64];
+                std::snprintf(here, sizeof(here), "Gene is in r%x%02x.", (g_room >> 8) & 0xF, g_room & 0xFF);
+                ui->text(here);
+                std::vector<const char *> labels;
+                for (const std::string &l : g_labels)
+                    labels.push_back(l.c_str());
+                ui->set_next_width(420.0f);
+                ui->combo("##jumppoint", &g_selected, labels.data(), static_cast<int>(labels.size()));
+                ui->same_line();
+                if (ui->button("Jump##jump"))
+                {
+                    g_request.store(g_selected);
+                    setStatus("Jumping...");
+                }
+                ui->text_disabled("The game's door jump with a black fade. The story flags of the place are not set: "
+                                  "don't save after a jump you don't want in your save. Other stages: untested.");
+                std::lock_guard<std::mutex> lock(g_statusMutex);
+                if (!g_status.empty())
+                    ui->text(g_status.c_str());
             }
-            ui->text_disabled("The game's door jump with a black fade. The story flags of the place are not set: "
-                              "don't save after a jump you don't want in your save. Other stages: untested.");
-            std::lock_guard<std::mutex> lock(g_statusMutex);
-            if (!g_status.empty())
-                ui->text(g_status.c_str());
+
+            ui->spacing();
+            if (ui->version >= 4u ? ui->collapsing_header("Hide", 0) != 0 : true)
+            {
+                ui->text_disabled("The game's own display switches (names from the preview disc's debug menu).");
+                uint32_t hide = g_hide.load();
+                for (const Switch &s : kSwitches)
+                {
+                    int on = (hide & s.bit) ? 1 : 0;
+                    if (ui->checkbox(s.label, &on))
+                        hide = on ? (hide | s.bit) : (hide & ~s.bit);
+                }
+                g_hide.store(hide);
+                if (hide && ui->button("Show everything##showall"))
+                    g_hide.store(0);
+            }
         }
 #endif
     }
@@ -355,14 +362,48 @@ namespace kamite::debug_tools
     void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         std::memcpy(&g_room, rdram + GameWork::address(GameWork::kRoom), 2);
+        // Cheats.
+        if (g_godMode.load(std::memory_order_relaxed))
         {
-            static uint32_t frames = 0;
-            if (++frames % 6u == 0u)
+            const uint32_t player = rd32(rdram, GameWork::address(GameWork::kPlayerObj));
+            if (inRam(player, 0x700u))
             {
-                std::string hands = "Hand meshes shown: " + bone_tweaks::handNodes(rdram);
-                std::lock_guard<std::mutex> lock(g_statusMutex);
-                g_hands = std::move(hands);
+                int16_t max = 0, hp = 0;
+                std::memcpy(&max, rdram + ((player + kObjHpMax) & 0x01FFFFFFu), sizeof(max));
+                std::memcpy(&hp, rdram + ((player + kObjHp) & 0x01FFFFFFu), sizeof(hp));
+                if (max > 0 && hp > 0 && hp < max)
+                    std::memcpy(rdram + ((player + kObjHp) & 0x01FFFFFFu), &max, sizeof(max));
             }
+        }
+        {
+            const bool noDeath = g_enemiesNoDeath.load(std::memory_order_relaxed);
+            const bool oneHit = g_oneHitKills.load(std::memory_order_relaxed);
+            int alive = 0;
+            uint32_t slot = rd32(rdram, kEnemyList);
+            for (int guard = 0; guard < 64 && inRam(slot, 16u); ++guard)
+            {
+                const uint32_t em = rd32(rdram, slot + 8u);
+                slot = rd32(rdram, slot + 4u);
+                if (!inRam(em, 0x600u))
+                    continue;
+                uint16_t kind = 0;
+                int16_t hp = 0, max = 0;
+                std::memcpy(&kind, rdram + ((em + 0x2FEu) & 0x01FFFFFFu), sizeof(kind));
+                std::memcpy(&hp, rdram + ((em + kObjHp) & 0x01FFFFFFu), sizeof(hp));
+                std::memcpy(&max, rdram + ((em + kObjHpMax) & 0x01FFFFFFu), sizeof(max));
+                const int32_t flags = static_cast<int32_t>(rd32(rdram, em + 0x250u));
+                if (kind < 0x200u || kind >= 0x280u || hp <= 0 || flags < 0)
+                    continue;
+                ++alive;
+                if (oneHit && hp > 1)
+                {
+                    const int16_t one = 1;
+                    std::memcpy(rdram + ((em + kObjHp) & 0x01FFFFFFu), &one, sizeof(one));
+                }
+                else if (noDeath && max > 0 && hp <= max / 4)
+                    std::memcpy(rdram + ((em + kObjHp) & 0x01FFFFFFu), &max, sizeof(max));
+            }
+            g_enemiesAlive.store(alive, std::memory_order_relaxed);
         }
         // Display switches.
         const uint32_t address = GameWork::address(GameWork::kFlagsDsp);

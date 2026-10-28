@@ -1,4 +1,5 @@
 #include "runtime/ps2_game_menu.h"
+#include "runtime/ps2_hotkeys.h"
 
 #include "ps2_host_backend.h"
 #include "ps2_host_gamepads.h"
@@ -24,8 +25,9 @@ namespace ps2x::menu
         struct Panel
         {
             std::string title;
-            DrawPanel draw;
+            std::vector<DrawPanel> draws; // the tab's sections, in registration order
         };
+        std::vector<std::string> g_order;
 
         std::mutex g_mutex; // panels and texts (registered before the menu can open, drawn on the GS thread)
         std::vector<Panel> g_panels;
@@ -34,8 +36,12 @@ namespace ps2x::menu
         std::string g_empty;
         std::atomic<bool> g_open{false};
         std::atomic<bool> g_closedByWindow{false}; // the window's close button (GS thread)
-        std::atomic<bool> g_keepPlaying{false};    // the game keeps the controllers and keys; the menu has the mouse
+        std::atomic<bool> g_keepPlaying{true};     // the game keeps the controllers and keys; the menu has the mouse
+                                                   // (on by default, K, Oct 27: the menu is a dev tool used mid-fight)
         std::atomic<bool> g_keepPlayingChanged{false};
+        std::atomic<int> g_captureState{0}; // 0 idle, 1 capturing, 2 captured (g_captured*)
+        std::atomic<int> g_capturedKey{0};
+        std::atomic<bool> g_capturedShift{false}, g_capturedCtrl{false};
 
         bool enabled()
         {
@@ -74,7 +80,14 @@ namespace ps2x::menu
                     {
                         if (ui->begin_tab(panel.title.c_str()))
                         {
-                            panel.draw(ui);
+                            for (size_t i = 0; i < panel.draws.size(); ++i)
+                            {
+                                if (i > 0)
+                                    ui->spacing();
+                                ui->push_id(static_cast<int>(i));
+                                panel.draws[i](ui);
+                                ui->pop_id();
+                            }
                             ui->end_tab();
                         }
                     }
@@ -151,10 +164,44 @@ namespace ps2x::menu
 #endif
     }
 
+    namespace
+    {
+        void sortPanels()
+        {
+            // By the order given; tabs not in it keep their place after those, in registration order.
+            std::vector<Panel> sorted;
+            for (const std::string &title : g_order)
+                for (Panel &panel : g_panels)
+                    if (panel.title == title && !panel.draws.empty())
+                    {
+                        sorted.push_back(std::move(panel));
+                        panel.draws.clear();
+                    }
+            for (Panel &panel : g_panels)
+                if (!panel.draws.empty())
+                    sorted.push_back(std::move(panel));
+            g_panels = std::move(sorted);
+        }
+    }
+
     void addPanel(std::string title, DrawPanel draw)
     {
         std::lock_guard<std::mutex> lock(g_mutex);
-        g_panels.push_back({std::move(title), std::move(draw)});
+        for (Panel &panel : g_panels)
+            if (panel.title == title)
+            {
+                panel.draws.push_back(std::move(draw));
+                return;
+            }
+        g_panels.push_back({std::move(title), {std::move(draw)}});
+        sortPanels();
+    }
+
+    void setTabOrder(std::vector<std::string> titles)
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        g_order = std::move(titles);
+        sortPanels();
     }
 
     void setTitle(std::string title, std::string hint)
@@ -180,12 +227,30 @@ namespace ps2x::menu
 #if defined(PS2X_HAS_GAME_MENU)
         if (!enabled() || !GSPcsx2Backend::Active())
             return;
-        if (IsKeyPressed(KEY_F2))
+        const bool capturing = isOpen() && g_captureState.load(std::memory_order_relaxed) == 1;
+        if (!capturing && ps2x::hotkeys::pressed(ps2x::hotkeys::Action::Menu))
             setOpen(!isOpen());
         else if (g_closedByWindow.exchange(false, std::memory_order_relaxed) && isOpen())
             setOpen(false);
         if (g_keepPlayingChanged.exchange(false, std::memory_order_relaxed))
             applyInputOwner(isOpen());
+        if (capturing && isOpen())
+        {
+            if (IsKeyPressed(KEY_ESCAPE))
+            {
+                g_capturedKey.store(0, std::memory_order_relaxed);
+                g_captureState.store(2, std::memory_order_relaxed);
+            }
+            else if (const int key = ps2x::hotkeys::capturePressed(); key != 0)
+            {
+                g_capturedKey.store(key, std::memory_order_relaxed);
+                g_capturedShift.store(IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT), std::memory_order_relaxed);
+                g_capturedCtrl.store(IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL), std::memory_order_relaxed);
+                g_captureState.store(2, std::memory_order_relaxed);
+            }
+        }
+        else if (!isOpen())
+            g_captureState.store(0, std::memory_order_relaxed);
         if (isOpen())
         {
             Pcsx2GsMenuInput input = readInput();
@@ -213,6 +278,27 @@ namespace ps2x::menu
         g_notice = std::move(text);
         g_noticeSeconds = seconds;
         g_noticeTime = std::chrono::steady_clock::now();
+    }
+
+    void beginKeyCapture()
+    {
+        g_captureState.store(1, std::memory_order_relaxed);
+    }
+
+    bool capturing()
+    {
+        return g_captureState.load(std::memory_order_relaxed) == 1;
+    }
+
+    bool captured(int &key, bool &shift, bool &ctrl)
+    {
+        if (g_captureState.load(std::memory_order_relaxed) != 2)
+            return false;
+        key = g_capturedKey.load(std::memory_order_relaxed);
+        shift = g_capturedShift.load(std::memory_order_relaxed);
+        ctrl = g_capturedCtrl.load(std::memory_order_relaxed);
+        g_captureState.store(0, std::memory_order_relaxed);
+        return true;
     }
 
     bool notice(std::string &text, float &alpha)

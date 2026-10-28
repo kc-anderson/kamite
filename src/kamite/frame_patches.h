@@ -8,4 +8,12 @@ namespace kamite
     // the per-frame hook at the top of the game's main loop (also counts game frames for the F3 overlay). Before
     // runtime.run().
     void installFramePatches(PS2Runtime &runtime);
+
+    // The F2 menu (any thread). The 60 FPS mode switches between two game frames; the others take effect at once.
+    bool fps60();
+    void requestFps60(bool on);
+    bool l3Dash();
+    void setL3Dash(bool on);
+    bool rouletteTimerDouble();
+    void setRouletteTimerDouble(bool on);
 }

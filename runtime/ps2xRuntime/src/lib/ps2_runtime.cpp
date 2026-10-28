@@ -4,6 +4,7 @@
 #include "runtime/ps2_save_state.h"
 #include "runtime/ps2_pnach.h"
 #include "runtime/ps2_game_menu.h"
+#include "runtime/ps2_hotkeys.h"
 #include "runtime/ps2_controls_screen.h"
 #include "runtime/ps2_display_options.h"
 #include "ps2_log.h"
@@ -3380,8 +3381,11 @@ void PS2Runtime::run()
         // while it is open the runtime's F-key shortcuts below are off (F5 is its "reset" key, F9 would load a state).
         ps2x::controls::hostTick(!GSPcsx2Backend::Active());
         const bool controlsOpen = ps2x::controls::isOpen();
+        // The shortcuts are off while the F2 menu waits for a key to bind (the key pressed is the binding, not a command).
+        const bool shortcutsOff = controlsOpen || ps2x::menu::capturing();
 #if !defined(PLATFORM_VITA)
-        if (!controlsOpen && IsKeyPressed(KEY_F11))
+        if (!shortcutsOff && (ps2x::hotkeys::pressed(ps2x::hotkeys::Action::Fullscreen) ||
+                              ps2x::hotkeys::take(ps2x::hotkeys::Action::Fullscreen))) // the key, or the F2 menu's button
         {
             ps2_host_input::releaseMouse();
             const bool leavingFullscreen = IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE);
@@ -3394,17 +3398,23 @@ void PS2Runtime::run()
         }
 #endif
         ps2_host_input::sample();
-        if (!controlsOpen && IsKeyPressed(KEY_F4))
+        // The port's shortcuts (ps2_hotkeys.h: F keys by default, rebindable from the F2 menu and the launcher).
+        using ps2x::hotkeys::Action;
+        if (!shortcutsOff && ps2x::hotkeys::pressed(Action::ReloadPnach))
             ps2x::pnach::requestReload(); // reload the enabled .pnach files
         if (!controlsOpen)
-            ps2x::menu::hostTick();       // F2: the in-game menu
-        if (!controlsOpen && IsKeyPressed(KEY_F5))
+            ps2x::menu::hostTick();       // the in-game menu (F2)
+        if (!shortcutsOff && ps2x::hotkeys::pressed(Action::SaveState))
             ps2x::savestate::requestQuickSave();
-        if (!controlsOpen && IsKeyPressed(KEY_F9))
+        if (!shortcutsOff && ps2x::hotkeys::pressed(Action::LoadState))
             ps2x::savestate::requestQuickLoad();
-        if (!controlsOpen && IsKeyPressed(KEY_F3))
+        if (!shortcutsOff && ps2x::hotkeys::pressed(Action::FpsOverlay))
             fpsOverlay.visible = !fpsOverlay.visible;
-        if (!controlsOpen && !(IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) && IsKeyPressed(KEY_F8))
+        if (!shortcutsOff && ps2x::hotkeys::pressed(Action::HudLayout))
+            ps2x::hotkeys::fire(Action::HudLayout); // the game layer's HUD module takes it on the game thread
+        if (!shortcutsOff && ps2x::hotkeys::pressed(Action::Dump2D))
+            ps2x::hotkeys::fire(Action::Dump2D);
+        if (!shortcutsOff && ps2x::hotkeys::pressed(Action::RamDump))
         {
             // Debug capture: VU1 trace of the next 2 fields (vu1trace_<tick>.bin) plus the EE RAM (ram_<tick>.bin).
             const unsigned long long tick = static_cast<unsigned long long>(m_memory.gs().vsyncTick.load());
@@ -3418,13 +3428,12 @@ void PS2Runtime::run()
             ps2xRequestVu1Trace(2u);
             std::fprintf(stderr, "[F8] wrote %s, VU1 trace requested\n", name);
         }
-        const bool shiftHeld = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
-        if (!controlsOpen && shiftHeld && IsKeyPressed(KEY_F8) && s_debugDumpHandler)
+        if (!shortcutsOff && ps2x::hotkeys::pressed(Action::DebugDump) && s_debugDumpHandler)
         {
             std::fprintf(stderr, "[Shift+F8] debug dump requested\n");
             s_debugDumpHandler();
         }
-        if (!controlsOpen && !shiftHeld && IsKeyPressed(KEY_F10))
+        if (!shortcutsOff && ps2x::hotkeys::pressed(Action::GifDump))
         {
             // Debug capture: the GIF stream of the next 2 fields as sent to PCSX2's GS (gif_<tick>.bin, the
             // PS2X_GIF_DUMP format; tools/gs/gif_dump.py lists its draws).
@@ -3433,7 +3442,7 @@ void PS2Runtime::run()
             std::snprintf(name, sizeof(name), "gif_%llu.bin", tick);
             ps2xRequestGifDump(2u, name);
         }
-        if (!controlsOpen && shiftHeld && IsKeyPressed(KEY_F10))
+        if (!shortcutsOff && ps2x::hotkeys::pressed(Action::DrawDump))
         {
             // Debug capture (Shift+F10): every draw of the next frame as PCSX2's GPU renderer gets it, with the frame's colour and
             // depth (drawdump_<tick>.bin / _rt.png / _depth.png; pcsx2gs "draw_dump").

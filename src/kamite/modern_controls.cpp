@@ -25,6 +25,7 @@
 // "right" on the stick is the direction a camera turned right by the stick would face (yaw decreasing).
 #include "kamite/modern_controls.h"
 
+#include "kamite/hotkeys.h"
 #include "kamite/jukebox.h"
 #include "kamite/camera.h"
 #include "kamite/ini_file.h"
@@ -379,26 +380,28 @@ namespace kamite::modern
             ui->set_next_width(340.0f);
             if (ui->combo("##style", &style, kStyles, 2))
                 g_modern = style == 1;
-            ui->begin_disabled(style == 0);
-            checkbox(ui, "Auto: the original controls while the battle camera is on##auto", g_auto);
-            static const char *const kL1[] = {"Hold L1 for the original controls", "Press L1 to switch to them and back"};
-            int l1 = g_toggleStyle.load() ? 1 : 0;
-            ui->set_next_width(340.0f);
-            if (ui->combo("##l1", &l1, kL1, 2))
-                g_toggleStyle = l1 == 1;
-            ui->text_disabled("Double-tap L1: the original quick turn; the camera swings back behind Gene.");
-            ui->separator_text("Free camera");
-            slider(ui, "Turn speed##yaw", g_yawSpeed, 40.0f, 400.0f, "%.0f deg/s");
-            slider(ui, "Up/down speed##pitch", g_pitchSpeed, 20.0f, 250.0f, "%.0f deg/s");
-            checkbox(ui, "Invert left/right##invx", g_invertX);
-            checkbox(ui, "Invert up/down##invy", g_invertY);
-            ui->separator_text("Mouse");
-            checkbox(ui, "The mouse turns the free camera##mouse", g_mouseCamera);
-            ui->begin_disabled(!g_mouseCamera.load());
-            slider(ui, "Sensitivity##mousesens", g_mouseSensitivity, 0.02f, 0.5f, "%.3f deg/pixel");
-            ui->end_disabled();
-            ui->text_disabled("Click in the game to capture the mouse; Esc frees it (so does this menu).");
-            ui->end_disabled();
+            // The Modern settings show only with Modern selected (K, Oct 27).
+            if (style == 1)
+            {
+                checkbox(ui, "Auto: the original controls while the battle camera is on##auto", g_auto);
+                static const char *const kL1[] = {"Hold L1 for the original controls", "Press L1 to switch to them and back"};
+                int l1 = g_toggleStyle.load() ? 1 : 0;
+                ui->set_next_width(340.0f);
+                if (ui->combo("##l1", &l1, kL1, 2))
+                    g_toggleStyle = l1 == 1;
+                ui->text_disabled("Double-tap L1: the original quick turn; the camera swings back behind Gene.");
+                ui->separator_text("Free camera");
+                slider(ui, "Turn speed##yaw", g_yawSpeed, 40.0f, 400.0f, "%.0f deg/s");
+                slider(ui, "Up/down speed##pitch", g_pitchSpeed, 20.0f, 250.0f, "%.0f deg/s");
+                checkbox(ui, "Invert left/right##invx", g_invertX);
+                checkbox(ui, "Invert up/down##invy", g_invertY);
+                ui->separator_text("Mouse");
+                checkbox(ui, "The mouse turns the free camera##mouse", g_mouseCamera);
+                ui->begin_disabled(!g_mouseCamera.load());
+                slider(ui, "Sensitivity##mousesens", g_mouseSensitivity, 0.02f, 0.5f, "%.3f deg/pixel");
+                ui->end_disabled();
+                ui->text_disabled("Click in the game to capture the mouse; Esc frees it (so does this menu).");
+            }
 
             ui->separator_text("Now");
             const char *now = !g_modern.load()    ? "Classic"
@@ -429,12 +432,19 @@ namespace kamite::modern
             ui->separator_text("kamite.ini");
             if (ui->button("Save##controls"))
                 saveToIni();
-            std::lock_guard<std::mutex> lock(g_statusMutex);
-            if (!g_status.empty())
             {
-                ui->same_line();
-                ui->text(g_status.c_str());
+                std::lock_guard<std::mutex> lock(g_statusMutex);
+                if (!g_status.empty())
+                {
+                    ui->same_line();
+                    ui->text(g_status.c_str());
+                }
             }
+            ui->separator_text("Bindings");
+            ui->text_disabled("The game's buttons: F1 (or Back + Start on a controller) opens the Controls screen; the "
+                              "launcher's Controls tab edits the same controls.ini.");
+            ui->spacing();
+            hotkeys::drawSection(ui);
         }
 #endif
 
@@ -510,8 +520,9 @@ namespace kamite::modern
         if (original || g_following)
         {
             // Back to the original camera (faster while following a quick turn); once there, it is the original
-            // camera exactly. A quick turn keeps it behind Gene until his turn is over.
-            const float ease = 1.0f - std::exp(-dt * (g_following ? 12.0f : 7.0f));
+            // camera exactly. A quick turn keeps it behind Gene until his turn is over. The L1 glide was 7.0 (K,
+            // Oct 27: "a touch too slow", 30% faster).
+            const float ease = 1.0f - std::exp(-dt * (g_following ? 12.0f : 9.1f));
             g_yaw = wrapAngle(g_yaw + wrapAngle(gameYaw - g_yaw) * ease);
             g_pitch += (0.0f - g_pitch) * ease;
             const bool there = std::fabs(wrapAngle(gameYaw - g_yaw)) < 0.01f && std::fabs(g_pitch) < 0.005f;

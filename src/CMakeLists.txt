@@ -56,6 +56,8 @@ set(KAMITE_HOST_SOURCES
     kamite/near_geometry.cpp
     kamite/crash_history.cpp
     kamite/hud_layout.cpp
+    kamite/hotkeys.cpp
+    kamite/dev_menu.cpp
     kamite/roulette_bar.cpp
     kamite/radar_glow.cpp
     kamite/ini_file.cpp

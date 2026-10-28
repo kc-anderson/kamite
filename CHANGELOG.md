@@ -2,6 +2,27 @@
 
 Newest first, one line per change; the code comments say how.
 
+## October 28, 2026
+
+- The F2 menu is the dev menu: tabs Display, Graphics, Gameplay, Camera, Controls, NPCs, Debug; "Keep playing" is on
+  by default. The launcher's options that can change while the game runs are in it (HUD layout, menu width, full
+  screen; the renderer switches; 60 FPS, L3 dash, roulette timer, mute music; the control style); the ones that
+  cannot are listed as "set in the launcher".
+- 60 FPS mode switches in the game (Gameplay tab), and a save state made in one mode now loads into the mode that is
+  set: the game's frame divider is written in both modes (a state made at 60 and loaded at 30 ran at the old,
+  unfixed 60).
+- Hotkeys: the port's shortcut keys (F2 menu, save and load state, FPS overlay, full screen, HUD layout, the dumps)
+  are rebindable in the launcher's Controls tab and the F2 Controls tab, saved in kamite.ini [Hotkeys], with a
+  warning when a key is also one of the game's controls. F1 stays the Controls screen.
+- Controls tab: the Modern-only settings (Auto, L1, free camera, mouse) show only with Modern selected.
+- Gameplay tab: Styles is a fold-out section there (no Styles tab). NPCs tab: the poser is the "Pose NPC" fold-out.
+- Debug tab: cheats for testing (God mode, enemies can't die, one-hit kills), the room jump, and Hide as a fold-out
+  at the bottom; the hair sliders are gone.
+- Fixed the boss health bar's background and gauge sitting at the 4:3 position while its portrait stayed at the
+  screen's edge: a HUD group that starts at an edge keeps to that edge.
+- Fixed the gold blinking after a style save or load lasting twice as long at 30 fps (it was counted in frames).
+- The free camera glides back behind Gene 30% faster on L1.
+
 ## October 27, 2026 (10)
 
 - Fixed the game hanging when a save was loaded after a save state with a character mod.

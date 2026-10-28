@@ -406,6 +406,7 @@ add_library(ps2_runtime STATIC
     src/lib/ps2_audio.cpp
     src/lib/ps2_pnach.cpp
     src/lib/ps2_game_menu.cpp
+    src/lib/ps2_hotkeys.cpp
     src/lib/ps2_controls_screen.cpp
     src/lib/ps2_audio_vag.cpp
     src/lib/gs/ps2_gs_memory.cpp

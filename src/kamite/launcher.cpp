@@ -9,6 +9,7 @@
 #include "ps2_host_gamepads.h"
 #include "ps2_host_input.h"
 #include "runtime/ps2_display_options.h"
+#include "runtime/ps2_hotkeys.h"
 
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -960,6 +961,135 @@ namespace kamite::launcher
             ImGui::PopID();
         }
 
+        // The port's shortcut keys (runtime/ps2_hotkeys.h): kamite.ini [Hotkeys], one line per action. The runtime's
+        // table is set too, so a key bound here is live when the game starts from this launcher.
+        namespace hk = ps2x::hotkeys;
+        int g_hotkeyCapture = -1;
+        double g_hotkeyStarted = 0.0;
+        bool g_openHotkeyCapture = false;
+        std::string g_hotkeyStatus;
+
+        void loadHotkeys(const State &state)
+        {
+            for (int i = 0; i < static_cast<int>(hk::Action::Count); ++i)
+            {
+                const hk::Action action = static_cast<hk::Action>(i);
+                const std::string value = state.ini.get("Hotkeys", hk::info(action).id, "\x01");
+                hk::Binding binding;
+                if (value != "\x01" && hk::parse(value, binding))
+                    hk::setBinding(action, binding);
+            }
+        }
+
+        void storeHotkey(State &state, hk::Action action, hk::Binding binding)
+        {
+            hk::setBinding(action, binding);
+            state.ini.set("Hotkeys", hk::info(action).id, binding.key ? hk::text(binding) : "none");
+        }
+
+        void drawHotkeys(State &state)
+        {
+            static bool loaded = false;
+            if (!loaded)
+            {
+                loaded = true;
+                loadHotkeys(state);
+            }
+            ImGui::Spacing();
+            ImGui::SeparatorText("Hotkeys");
+            ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
+            ImGui::TextWrapped("The port's own keys. Click one, then press the key (with Shift or Ctrl held if you want). "
+                               "Right-click clears it. F1 (the Controls screen) stays as it is. The F2 menu's Controls "
+                               "tab edits the same list.");
+            ImGui::PopStyleColor();
+            if (ImGui::BeginTable("hotkeys", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX | ImGuiTableFlags_RowBg))
+            {
+                ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthStretch, 0.6f);
+                ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthStretch, 0.4f);
+                ImGui::TableHeadersRow();
+                for (int i = 0; i < static_cast<int>(hk::Action::Count); ++i)
+                {
+                    const hk::Action action = static_cast<hk::Action>(i);
+                    const hk::Info &info = hk::info(action);
+                    const hk::Binding binding = hk::binding(action);
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::TextUnformatted(info.label);
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::PushID(1000 + i);
+                    const std::string label = (binding.key ? hk::text(binding) : std::string("-")) + "##hk";
+                    if (ImGui::Button(label.c_str(), ImVec2(-1.0f, 0.0f)))
+                    {
+                        g_hotkeyCapture = i;
+                        g_hotkeyStarted = GetTime();
+                        g_openHotkeyCapture = true;
+                    }
+                    if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+                    {
+                        storeHotkey(state, action, hk::Binding{});
+                        g_hotkeyStatus = std::string(info.label) + ": no key.";
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+            if (!g_hotkeyStatus.empty())
+                ImGui::TextColored(kTextDim, "%s", g_hotkeyStatus.c_str());
+            if (ImGui::Button("Default hotkeys"))
+            {
+                for (int i = 0; i < static_cast<int>(hk::Action::Count); ++i)
+                    storeHotkey(state, static_cast<hk::Action>(i), hk::info(static_cast<hk::Action>(i)).def);
+                g_hotkeyStatus = "Default hotkeys restored.";
+            }
+
+            if (g_openHotkeyCapture)
+            {
+                g_openHotkeyCapture = false;
+                ImGui::OpenPopup("##hotkeycapture");
+            }
+            ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+            if (ImGui::BeginPopupModal("##hotkeycapture", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar))
+            {
+                g_captureFrame = true;
+                const hk::Action action = static_cast<hk::Action>(g_hotkeyCapture);
+                ImGui::Dummy(ImVec2(ImGui::GetFontSize() * 18.0f, ImGui::GetFontSize() * 0.5f));
+                ImGui::TextUnformatted(hk::info(action).label);
+                ImGui::TextColored(kTextDim, "Press a key (Shift or Ctrl with it if you like)...");
+                ImGui::TextColored(kTextDim, "Esc cancels (%d s)", std::max(0, 10 - static_cast<int>(GetTime() - g_hotkeyStarted)));
+                ImGui::Dummy(ImVec2(0.0f, ImGui::GetFontSize() * 0.5f));
+                bool done = false;
+                if (IsKeyPressed(KEY_ESCAPE) || GetTime() - g_hotkeyStarted > 10.0)
+                {
+                    g_hotkeyStatus = IsKeyPressed(KEY_ESCAPE) ? "Cancelled." : "Nothing pressed for 10 s: cancelled.";
+                    done = true;
+                }
+                else if (const int key = hk::capturePressed(); key != 0)
+                {
+                    const hk::Binding binding{key, IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT),
+                                              IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL)};
+                    const hk::Action other = hk::conflict(action, binding);
+                    if (other != hk::Action::Count)
+                        g_hotkeyStatus = hk::text(binding) + " is already " + hk::info(other).label + "; not changed.";
+                    else
+                    {
+                        storeHotkey(state, action, binding);
+                        g_hotkeyStatus = std::string(hk::info(action).label) + ": " + hk::text(binding);
+                        const std::string use = pc::keyboardKeyUse(kPlayer, key);
+                        if (!use.empty() && !binding.shift && !binding.ctrl)
+                            g_hotkeyStatus += "   (also " + use + " in the game's controls: it will do both)";
+                    }
+                    done = true;
+                }
+                if (done)
+                {
+                    g_hotkeyCapture = -1;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+        }
+
         void drawControls(State &state)
         {
             if (beginSettings("controls"))
@@ -1047,6 +1177,8 @@ namespace kamite::launcher
                 pc::save(message);
                 platform::open(state.context->exeDir / "controls.ini");
             }
+
+            drawHotkeys(state);
 
             // The capture popup.
             if (g_openCapture)

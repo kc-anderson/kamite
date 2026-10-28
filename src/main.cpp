@@ -23,6 +23,8 @@
 #include "kamite/style_presets.h"
 #include "kamite/npc_poses.h"
 #include "kamite/debug_tools.h"
+#include "kamite/dev_menu.h"
+#include "kamite/hotkeys.h"
 #include "kamite/texture_slots.h"
 #include "kamite/jukebox.h"
 #include "kamite/message_guard.h"
@@ -553,7 +555,8 @@ namespace
                 variable = key;
             if (variable.empty())
             {
-                notes.push_back("unknown setting [" + section + "] " + key + " (ignored)");
+                if (section != "hotkeys") // [Hotkeys] is kamite::hotkeys' (read from the file, not through the environment)
+                    notes.push_back("unknown setting [" + section + "] " + key + " (ignored)");
                 continue;
             }
             // Read again after the launcher changed the file: variables this file set before follow it (an emptied
@@ -986,6 +989,8 @@ int main(int argc, char *argv[])
         kamite::button_prompts::install(runtime); // the button prompts show the bound keys (KAMITE_PROMPTS=0: PS2 art)
         kamite::menu_buttons::install(runtime.memory().getRDRAM()); // [Game] MenuButtons: the menus' confirm/cancel buttons
         kamite::radar_glow::install(runtime.memory().getRDRAM()); // Modern: the radar glows while the original controls are in effect
+        kamite::hotkeys::install(exeDir / "kamite.ini"); // [Hotkeys]: the port's shortcut keys
+        kamite::dev_menu::install(exeDir / "kamite.ini"); // F2: the dev menu's tab order, Display and Gameplay
         kamite::style_presets::install(runtime); // style presets: d-pad swaps in play, the Techniques screen's list and Y + d-pad
         kamite::npc_poses::install(runtime, exeDir); // NPCs who lean on their counter (F2: NPCs; npc_poses.txt)
         kamite::debug_tools::install(runtime); // F2: Debug (the game's display switches, room jump; dev-only)

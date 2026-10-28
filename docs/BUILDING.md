@@ -53,7 +53,7 @@ Your settings are in `build\port\bin\kamite.ini` (every launcher option is a lin
 | Mods | Character: Gene or Xavier |
 | Controls | Every key, mouse button and controller button (also F1 in game) |
 
-In game: **F1** controls, **F2** in-game menu (the camera, tuned live), **F6** / **F7** menu and HUD layout, **F11** full screen, **F12** debugger.
+In game: **F1** controls, **F2** the dev menu (display, graphics, gameplay, camera, controls, NPCs, debug; options tuned live), **F5** / **F9** save / load state, **F7** HUD layout, **F11** full screen, **F12** debugger. All but F1 are rebindable (kamite.ini [Hotkeys]; the launcher's and the F2 menu's Controls tabs).
 
 ---
 

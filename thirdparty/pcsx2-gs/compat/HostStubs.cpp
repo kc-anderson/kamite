@@ -182,12 +182,24 @@ namespace
         return changed ? 1 : 0;
     }
     int UiIsItemActive() { return ImGui::IsItemActive() ? 1 : 0; }
+    int UiCollapsingHeader(const char *label, int defaultOpen)
+    {
+        return ImGui::CollapsingHeader(label ? label : "", defaultOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0) ? 1 : 0;
+    }
+    int UiSliderInt(const char *label, int *value, int min, int max, const char *format)
+    {
+        int v = value ? *value : 0;
+        const bool changed = ImGui::SliderInt(label, &v, min, max, format ? format : "%d");
+        if (value)
+            *value = v;
+        return changed ? 1 : 0;
+    }
 
-    const Pcsx2GsUi g_ui = {3u, UiBeginWindow, UiEndWindow, UiBeginTabBar, UiEndTabBar, UiBeginTab, UiEndTab, UiText,
+    const Pcsx2GsUi g_ui = {4u, UiBeginWindow, UiEndWindow, UiBeginTabBar, UiEndTabBar, UiBeginTab, UiEndTab, UiText,
                             UiTextWrapped, UiTextDisabled, UiTextColored, UiHeading, UiCheckbox, UiButton, UiSameLine,
                             UiSeparator, UiSpacing, UiBeginChild, UiEndChild, UiPushId, UiPopId, UiCombo, UiRadio,
                             UiSmallButton, UiSeparatorText, UiIndent, UiUnindent, UiSetNextWidth, UiBeginDisabled,
-                            UiEndDisabled, UiSliderFloat, UiIsItemActive};
+                            UiEndDisabled, UiSliderFloat, UiIsItemActive, UiCollapsingHeader, UiSliderInt};
 
     // The menu's look: ImGui's dark style with the launcher's red.
     void ApplyMenuStyle()

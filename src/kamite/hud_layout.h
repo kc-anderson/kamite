@@ -31,4 +31,11 @@ namespace kamite::hud
     // For the font and gauge width hooks of widescreen.cpp: whether those draws still need narrowing there.
     bool narrowFont();
     bool narrowGauge();
+
+    // The F2 menu (any thread): the HUD layout (0 = 16:9 at the edges, 1 = 4:3) and the menu width (0 = 4:3 with
+    // side bars, 1 = stretched); a request is applied at the next game frame.
+    int layoutIndex();
+    void requestLayout(int index);
+    int menuModeIndex();
+    void requestMenuMode(int index);
 }

@@ -1,3 +1,5 @@
+#include "runtime/ps2_hotkeys.h"
+#include "runtime/ps2_game_menu.h"
 #include "ps2_debug_panel.h"
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
@@ -2209,7 +2211,7 @@ void PS2DebugPanel::draw(PS2Runtime &runtime)
 
     // F12 (F1 is the Controls screen, ps2_controls_screen.cpp). Not while that screen is open: it refuses F keys and
     // the debugger would open behind it (sweep CR-10).
-    if (!ps2x::controls::isOpen() && IsKeyPressed(KEY_F12))
+    if (!ps2x::controls::isOpen() && !ps2x::menu::capturing() && ps2x::hotkeys::pressed(ps2x::hotkeys::Action::DebugPanel))
     {
         toggleVisible();
     }

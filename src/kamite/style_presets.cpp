@@ -239,10 +239,20 @@ namespace kamite::style_presets
         std::string g_status;
         // Pad filter / F2 -> EE thread: 1..4 save that style, 11..14 load it.
         std::atomic<int> g_request{0};
-        // Shown (the list, a flash) after a load or a save: which style and when (EE vblank count).
+        // Shown (the list, a flash) after a load or a save: which style and when. Host milliseconds, not frame-hook
+        // ticks: the hook runs once a game frame, so a tick count made the blinking last twice as long at 30 fps
+        // (Thinso, Oct 27: "saving a style takes twice as long on 30fps").
         std::atomic<int> g_lastStyle{-1};
-        std::atomic<uint32_t> g_lastAction{0u};
-        uint32_t g_vblanks = 0u;
+        std::atomic<int64_t> g_lastActionMs{-100000};
+        uint32_t g_vblanks = 0u; // frame-hook ticks (the snapshot refresh)
+        constexpr int64_t kFlashMs = 667;  // 40 ticks at 60
+        constexpr int64_t kBlinkMs = 133;  // 8 ticks at 60
+
+        int64_t steadyMs()
+        {
+            using namespace std::chrono;
+            return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+        }
 
         uint32_t rd32(uint32_t address)
         {
@@ -413,7 +423,7 @@ namespace kamite::style_presets
                     store.active = static_cast<uint8_t>(slot);
                     writeStore(data, store);
                     g_lastStyle = slot;
-                    g_lastAction = g_vblanks;
+                    g_lastActionMs = steadyMs();
                     std::snprintf(text, sizeof(text), "Style %c saved.", g_letters[slot]);
                 }
                 else if (!(store.used & (1u << slot)))
@@ -433,7 +443,7 @@ namespace kamite::style_presets
                     store.active = static_cast<uint8_t>(slot);
                     writeStore(data, store);
                     g_lastStyle = slot;
-                    g_lastAction = g_vblanks;
+                    g_lastActionMs = steadyMs();
                     std::snprintf(text, sizeof(text), "Style %c loaded%s.", g_letters[slot],
                                   skipped ? " (moves this save does not own left out)" : "");
                 }
@@ -646,8 +656,9 @@ namespace kamite::style_presets
 
         std::vector<uint16_t> hudText(uint32_t data, const Store &store, bool colours)
         {
-            const bool blinkOn = (g_vblanks / 8u) % 2u == 0u;
-            const bool flash = g_vblanks - g_lastAction.load(std::memory_order_relaxed) < 40u;
+            const int64_t now = steadyMs();
+            const bool blinkOn = (now / kBlinkMs) % 2 == 0;
+            const bool flash = now - g_lastActionMs.load(std::memory_order_relaxed) < kFlashMs;
             std::vector<uint16_t> out;
             for (int slot = 0; slot < kStyles; ++slot)
             {
@@ -673,8 +684,9 @@ namespace kamite::style_presets
         std::vector<uint16_t> listText(uint32_t data, const Store &store, bool colours)
         {
             const int holding = g_holding.load(std::memory_order_relaxed);
-            const bool blinkOn = (g_vblanks / 8u) % 2u == 0u;
-            const bool flash = g_vblanks - g_lastAction.load(std::memory_order_relaxed) < 40u;
+            const int64_t now = steadyMs();
+            const bool blinkOn = (now / kBlinkMs) % 2 == 0;
+            const bool flash = now - g_lastActionMs.load(std::memory_order_relaxed) < kFlashMs;
             std::vector<uint16_t> out;
             for (int slot = 0; slot < kStyles; ++slot)
             {
@@ -997,6 +1009,8 @@ namespace kamite::style_presets
 #if defined(KAMITE_HAS_GS_MENU)
         void drawPanel(const Pcsx2GsUi *ui)
         {
+            if (ui->version >= 4u && !ui->collapsing_header("Styles", 0))
+                return; // a fold-out section of the Gameplay tab (K, Oct 27)
             std::lock_guard<std::mutex> lock(g_mutex);
             ui->text_wrapped("Styles are kept in the save (they go to the memory card with it). In play, a d-pad tap loads "
                              "one (up, right, down, left). On the Techniques screen (Modern menu buttons): Y + d-pad loads, "
@@ -1155,7 +1169,7 @@ namespace kamite::style_presets
         ps2xRegisterHostHook("km_styles_text", &onTextSetup);
         ps2xSetPatchFlag("styles", true);
 #if defined(KAMITE_HAS_GS_MENU)
-        ps2x::menu::addPanel("Styles", &drawPanel);
+        ps2x::menu::addPanel("Gameplay", &drawPanel); // a section of the Gameplay tab
 #endif
     }
 }

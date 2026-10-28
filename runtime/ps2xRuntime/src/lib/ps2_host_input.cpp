@@ -2467,6 +2467,18 @@ namespace ps2_host_input
             return "SDL-" + std::to_string(device) + "/" + (negative ? "-" : "+") + std::string(kSdlAxisNames[static_cast<size_t>(axis)]);
         }
 
+        std::string keyboardKeyUse(uint32_t pad, int raylibKey)
+        {
+            if (pad >= kMaxPlayers || raylibKey == 0)
+                return {};
+            for (size_t index = 0; index < kBindingKeyCount; ++index)
+                for (const Chord &chord : *liveBindings(pad, index))
+                    for (const Element &element : chord)
+                        if (element.source == Source::Keyboard && element.code == raylibKey)
+                            return std::string(bindingKeyName(index));
+            return {};
+        }
+
         bool liveBinding(uint32_t pad, std::string_view key, std::string_view binding)
         {
             const auto index = bindingKeyIndex(key);

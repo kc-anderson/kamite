@@ -44,6 +44,7 @@
 #include "runtime/ps2_async_vif.h"
 #include "runtime/ps2_display_options.h"
 
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -56,7 +57,11 @@ namespace kamite
         constexpr uint32_t kStickBytes[4] = {0x5E8146u, 0x5E8147u, 0x5E81C6u, 0x5E81C7u}; // left stick X/Y, two pads
         constexpr uint32_t kPadButtons = 0x5E8242u;                                        // 16-bit; 2 = L3
         bool g_fps60 = false;
-        bool g_l3Dash = false;
+        std::atomic<int> g_fps60Request{-1};   // F2 menu: 0 / 1, applied at the next frame start (game thread)
+        std::atomic<bool> g_fps60Shown{false}; // for the F2 menu
+        std::atomic<bool> g_l3Dash{false};
+        std::atomic<bool> g_rouletteSlow{false}; // [Game] RouletteTimer=double
+        std::atomic<int> g_rouletteRequest{0};   // F2 menu: the period wants working out again
         uint8_t g_stickHeld[4] = {}; // the axis was at 0 or 0xFF last frame
         uint8_t g_stickLast[4] = {};
         int g_stickInjected[4] = {-1, -1, -1, -1}; // the value written over the game's last frame (-1: none)
@@ -218,7 +223,7 @@ namespace kamite
 
         void l3Dash(uint8_t *rdram)
         {
-            if (!g_l3Dash)
+            if (!g_l3Dash.load(std::memory_order_relaxed))
                 return;
             uint16_t buttons = 0;
             std::memcpy(&buttons, &ram8(rdram, kPadButtons), sizeof(buttons));
@@ -242,10 +247,45 @@ namespace kamite
             }
         }
 
+        // The roulette's time: one count every g_roulettePeriod game frames. 1 at 30 frames/s, 2 at 60 (the PS2's
+        // time); [Game] RouletteTimer=double doubles it (2 at 30, 4 at 60), for the timer and the time to choose.
+        std::atomic<uint32_t> g_roulettePeriod{1};
+
+        void applyRoulettePeriod()
+        {
+            const uint32_t period = (g_fps60 ? 2u : 1u) * (g_rouletteSlow.load() ? 2u : 1u);
+            g_roulettePeriod.store(period);
+            ps2xSetPatchFlag("roulette_timer", period > 1u);
+        }
+
+        // The 60 FPS mode on or off, between two game frames: the patch bits (every code change of the mode is a
+        // runtime flag the recompiled code tests at each patched instruction), the VU1 timing, the roulette period
+        // and the stick-hold state. The frame divider byte follows at every frame start (below), in both modes.
+        void setFps60(bool on)
+        {
+            if (on == g_fps60)
+                return;
+            g_fps60 = on;
+            g_fps60Shown.store(on);
+            ps2xSetPatchFlag("fps60", on);
+            ps2x::asyncvif::setVu1TimingScale(on ? 0.5 : 1.0);
+            applyRoulettePeriod();
+            for (int axis = 0; axis < 4; ++axis)
+            {
+                g_stickHeld[axis] = 0u;
+                g_stickLast[axis] = 0u;
+            }
+            KM_INFO(Game, "frame rate switched: " << (on ? "60 FPS mode" : "30 FPS, as on the PS2"));
+        }
+
         void frameStart(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             pcsampler::noteMainContext(ctx);
             ++g_gameFrame;
+            if (const int request = g_fps60Request.exchange(-1); request >= 0)
+                setFps60(request != 0);
+            if (g_rouletteRequest.exchange(0) != 0)
+                applyRoulettePeriod();
             ps2_host_display::noteGameFrame();
             profileWindow();
             counterfinder::onFrame(rdram);
@@ -254,6 +294,10 @@ namespace kamite
             npc_poses::onFrame(rdram, ctx, runtime);
             debug_tools::onFrame(rdram, ctx, runtime);
             bone_tweaks::onFrame(rdram, ctx, runtime);
+            // The game's frame divider: 2 (the PS2's, written once at boot by func_0030B298) or 1 for 60 frames a
+            // second. Written in both modes: a save state made at 60 carries a 1, and loaded at 30 nothing put the 2
+            // back, so the game ran at 60 with none of the mode's fixes ("the old broken 60 FPS", Thinso, Oct 27).
+            ram8(rdram, kFrameDivider) = g_fps60 ? 1u : 2u;
             if (!g_fps60)
             {
                 restoreInjected(rdram);
@@ -261,7 +305,6 @@ namespace kamite
                 rouletteDpad(rdram);
                 return;
             }
-            ram8(rdram, kFrameDivider) = 1u;
             // The pnach writes the held value over the game's and reads it back the next frame as if it came from the
             // pad. The game does not rewrite these bytes every frame here, so a written 0xFF came back as a new full
             // deflection and was held again, forever (stick stuck at full right/left; the pnach's "input loop" with
@@ -312,16 +355,12 @@ namespace kamite
             ctx->fcr31 = last == current ? (ctx->fcr31 | 0x800000u) : (ctx->fcr31 & ~0x800000u);
         }
 
-        // The roulette's time: one count every g_roulettePeriod game frames. 1 at 30 frames/s, 2 at 60 (the PS2's
-        // time); [Game] RouletteTimer=double doubles it (2 at 30, 4 at 60), for the timer and the time to choose.
-        uint32_t g_roulettePeriod = 1;
-
         // Replaces sw v0,0x15B0(s1) at 0x1147CC (the player's roulette timer, decremented once per game frame): the
         // store happens once every g_roulettePeriod calls.
         void rouletteTimer(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             static uint32_t calls = 0;
-            if (++calls % g_roulettePeriod != 0u)
+            if (++calls % g_roulettePeriod.load(std::memory_order_relaxed) != 0u)
                 return;
             const uint32_t value = GPR_U32(ctx, 2), address = GPR_U32(ctx, 17) + 0x15B0u;
             std::memcpy(&ram8(rdram, address), &value, sizeof(value));
@@ -389,7 +428,7 @@ namespace kamite
         void rouletteDial(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
             static uint32_t calls = 0;
-            if (++calls % g_roulettePeriod == 0u)
+            if (++calls % g_roulettePeriod.load(std::memory_order_relaxed) == 0u)
                 SET_GPR_S32(ctx, 2, GPR_S32(ctx, 2) - 1);
         }
     }
@@ -398,6 +437,7 @@ namespace kamite
     {
         counterfinder::install(runtime);
         g_fps60 = envOn("KAMITE_FPS60");
+        g_fps60Shown.store(g_fps60);
         // 60 FPS: the emulated VU1 gets half the time per program (ps2_async_vif.h setVu1TimingScale), so a view the
         // PS2 itself draws in two fields still fits one.
         if (g_fps60)
@@ -424,11 +464,42 @@ namespace kamite
             const char *timer = std::getenv("KAMITE_ROULETTE_TIMER");
             const std::string value = timer ? timer : "";
             const bool slow = value == "double" || value == "Double" || value == "2";
-            g_roulettePeriod = (g_fps60 ? 2u : 1u) * (slow ? 2u : 1u);
-            ps2xSetPatchFlag("roulette_timer", g_roulettePeriod > 1u);
-            KM_INFO(Game, "roulette timer: " << (slow ? "double" : "normal") << " (one count every " << g_roulettePeriod << " frames)");
+            g_rouletteSlow.store(slow);
+            applyRoulettePeriod();
+            KM_INFO(Game, "roulette timer: " << (slow ? "double" : "normal") << " (one count every " << g_roulettePeriod.load() << " frames)");
         }
         KM_INFO(Game, "frame rate: " << (g_fps60 ? "60 FPS mode (Fps60=1)" : "30 FPS, as on the PS2") << "; L3 dash: "
-                                     << (g_l3Dash ? "on" : "off"));
+                                     << (g_l3Dash.load() ? "on" : "off"));
+    }
+
+    bool fps60()
+    {
+        return g_fps60Shown.load(std::memory_order_relaxed);
+    }
+
+    void requestFps60(bool on)
+    {
+        g_fps60Request.store(on ? 1 : 0, std::memory_order_relaxed);
+    }
+
+    bool l3Dash()
+    {
+        return g_l3Dash.load(std::memory_order_relaxed);
+    }
+
+    void setL3Dash(bool on)
+    {
+        g_l3Dash.store(on, std::memory_order_relaxed);
+    }
+
+    bool rouletteTimerDouble()
+    {
+        return g_rouletteSlow.load(std::memory_order_relaxed);
+    }
+
+    void setRouletteTimerDouble(bool on)
+    {
+        g_rouletteSlow.store(on, std::memory_order_relaxed);
+        g_rouletteRequest.store(1, std::memory_order_relaxed);
     }
 }

@@ -76,4 +76,15 @@ namespace kamite
         KM_INFO(Game, "options: Hard " << (unlockHard ? "unlocked from the start" : "as saved") << "; music "
                                        << (muteMusic ? "muted" : "on"));
     }
+
+    bool muteMusic()
+    {
+        return ps2xPatchFlag("mute_music");
+    }
+
+    void setMuteMusic(bool on)
+    {
+        // The flag is read at every stream volume call, so the change lands at the next one (a room or track change).
+        ps2xSetPatchFlag("mute_music", on);
+    }
 }

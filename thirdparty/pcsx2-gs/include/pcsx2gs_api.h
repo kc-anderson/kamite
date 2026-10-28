@@ -88,6 +88,9 @@ typedef struct Pcsx2GsUi
     // version 3
     int (*slider_float)(const char *label, float *value, float min, float max, const char *format); // printf format
     int (*is_item_active)(void); // the last item is being dragged / edited
+    // version 4
+    int (*collapsing_header)(const char *label, int default_open); // a fold-out section; its contents follow when 1
+    int (*slider_int)(const char *label, int *value, int min, int max, const char *format);
 } Pcsx2GsUi;
 
 typedef void (*Pcsx2GsMenuFn)(const Pcsx2GsUi *ui, void *user);

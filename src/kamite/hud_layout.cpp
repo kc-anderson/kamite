@@ -22,6 +22,7 @@
 // screen = its own centre (button prompts over things in the 3D view); else by the third its centre is in: the
 // screen's left edge, centre or right edge.
 #include "kamite/hud_layout.h"
+#include "runtime/ps2_hotkeys.h"
 #include "kamite/game_layout.h"
 #include "kamite/log.h"
 #include "kamite/roulette_bar.h"
@@ -31,6 +32,7 @@
 #include "runtime/gs/gs_aspect.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstdio>
 #include <cmath>
@@ -39,16 +41,6 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-#if defined(_WIN32)
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#endif
 
 namespace kamite::hud
 {
@@ -76,6 +68,8 @@ namespace kamite::hud
         namespace idb = game::IDBase;
 
         Layout g_layout = Layout::Anchored;
+        std::atomic<int> g_layoutRequest{0}; // F2 menu: 1 = switch the layout at the next frame (game thread applies)
+        std::atomic<int> g_layoutShown{0};   // 0 = 16:9 (anchored), 1 = 4:3, for the F2 menu
 
         // Menus and screens (the pause menu, options, the roulette setup...) are drawn for 4:3 and partly through
         // drawers the 2D narrowing does not reach, so their layers cannot be lined up by narrowing. A frame that
@@ -87,6 +81,7 @@ namespace kamite::hud
             Stretch,
         };
         MenuMode g_menuMode = MenuMode::Pillarbox;
+        std::atomic<int> g_menuModeRequest{-1}; // F2 menu: 0 = 4:3, 1 = stretch, applied at the next frame
         bool g_menuSeen = false;  // a menu background this frame
         int g_menuHold = 0;       // frames the menu state lasts without one (covers a few frames of transitions)
         bool g_menuAspect = false; // the picture is forced to 4:3 now
@@ -190,6 +185,13 @@ namespace kamite::hud
             if (g_layout != Layout::Anchored || g_edgeShare <= 0.0f)
                 return 0.5f * width;
             const float left = 0.5f * width * (1.0f - g_edgeShare);
+            // A group that starts near one screen edge belongs to it, however far it reaches: the boss bar's portrait
+            // sits at the left edge (an edge draw, never narrowed, so not in the extent) and its bar and background
+            // run so far right that their centre is in the middle third, which put them at the 4:3 position while the
+            // portrait stayed at the screen's edge (Thinso, Oct 27).
+            const bool hugsLeft = x0 < 0.15f * width, hugsRight = x1 > 0.85f * width;
+            if (hugsLeft != hugsRight)
+                return hugsLeft ? left : width - left;
             if (centre < width / 3.0f)
                 return left;
             if (centre > 2.0f * width / 3.0f)
@@ -534,24 +536,6 @@ namespace kamite::hud
             return Layout::Anchored; // "16:9", "wide", and the old "anchored" / "off"
         }
 
-        bool keyPressed(int key, bool &wasDown)
-        {
-#if defined(_WIN32)
-            const bool down = (GetAsyncKeyState(key) & 0x8000) != 0;
-            const bool pressed = down && !wasDown;
-            wasDown = down;
-            if (!pressed)
-                return false;
-            DWORD process = 0;
-            GetWindowThreadProcessId(GetForegroundWindow(), &process);
-            return process == GetCurrentProcessId();
-#else
-            (void)key;
-            (void)wasDown;
-            return false;
-#endif
-        }
-
         void reportLoose()
         {
             if (g_loose.empty())
@@ -634,19 +618,17 @@ namespace kamite::hud
             g_dumpArmed = false;
             g_dumping = true;
         }
-#if defined(_WIN32)
-        static bool f7 = false, f6 = false;
-        if (keyPressed(VK_F6, f6))
+        if (ps2x::hotkeys::take(ps2x::hotkeys::Action::Dump2D))
             g_dumpArmed = true;
-        if (keyPressed(VK_F7, f7))
-#else
-        if (false)
-#endif
+        if (ps2x::hotkeys::take(ps2x::hotkeys::Action::HudLayout) || g_layoutRequest.exchange(0) != 0)
         {
             g_layout = g_layout == Layout::Anchored ? Layout::Centered : Layout::Anchored;
             g_loose.clear();
-            KM_INFO(Game, "HUD layout (F7): " << layoutName(g_layout));
+            KM_INFO(Game, "HUD layout switched: " << layoutName(g_layout));
         }
+        g_layoutShown.store(g_layout == Layout::Anchored ? 0 : 1, std::memory_order_relaxed);
+        if (const int mode = g_menuModeRequest.exchange(-1); mode >= 0)
+            g_menuMode = mode == 1 ? MenuMode::Stretch : MenuMode::Pillarbox;
         if (++g_frame % 600u == 0u && g_layout == Layout::Anchored)
             reportLoose();
     }
@@ -685,6 +667,27 @@ namespace kamite::hud
         ps2xRegisterHostHook("km_hud_roulette_begin", &regionBegin<kRoulette, Region::Forced>);
         ps2xRegisterHostHook("km_hud_region_end", &regionEnd);
         if (wide)
-            KM_INFO(Game, "HUD layout: " << layoutName(g_layout) << " (F7 switches 16:9 / 4:3 HUD; F6 writes one frame's 2D to the log)");
+            KM_INFO(Game, "HUD layout: " << layoutName(g_layout) << " (the HUD layout hotkey switches 16:9 / 4:3; the 2D dump hotkey writes one frame's 2D to the log)");
+    }
+
+    int layoutIndex()
+    {
+        return g_layoutShown.load(std::memory_order_relaxed);
+    }
+
+    void requestLayout(int index)
+    {
+        if (layoutIndex() != (index ? 1 : 0))
+            g_layoutRequest.store(1, std::memory_order_relaxed);
+    }
+
+    int menuModeIndex()
+    {
+        return g_menuMode == MenuMode::Stretch ? 1 : 0;
+    }
+
+    void requestMenuMode(int index)
+    {
+        g_menuModeRequest.store(index ? 1 : 0, std::memory_order_relaxed);
     }
 }
