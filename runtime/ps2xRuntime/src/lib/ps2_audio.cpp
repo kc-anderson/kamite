@@ -522,10 +522,7 @@ void PS2AudioBackend::submitPcm(std::span<const int16_t> samples)
             {
                 d.stretching = true;
                 d.stretch.reset();
-                // Always logged (at most 40 times): the music doubling report (Thinso, Oct 28) needs to know whether
-                // the stretch was on when it happened.
-                static uint32_t onLogsLeft = 40u;
-                if (d.statsEnabled || (onLogsLeft != 0u && (--onLogsLeft, true)))
+                if (d.statsEnabled)
                     std::fprintf(stderr, "[audio] time-stretch on (speed %.2f)\n", d.speed);
             }
             // Off only once the queue is back near its target too: leaving at 140 ms (after a state load) the fine
@@ -537,8 +534,7 @@ void PS2AudioBackend::submitPcm(std::span<const int16_t> samples)
             {
                 d.stretching = false;
                 leaving = true;
-                static uint32_t offLogsLeft = 40u;
-                if (d.statsEnabled || (offLogsLeft != 0u && (--offLogsLeft, true)))
+                if (d.statsEnabled)
                     std::fprintf(stderr, "[audio] time-stretch off (speed %.2f)\n", d.speed);
             }
         }
