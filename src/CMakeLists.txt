@@ -52,7 +52,6 @@ set(KAMITE_HOST_SOURCES
     kamite/npc_poses.cpp
     kamite/debug_tools.cpp
     kamite/hitbox_overlay.cpp
-    kamite/dash_probe.cpp
     kamite/menu_buttons.cpp
     kamite/modern_controls.cpp
     kamite/near_geometry.cpp

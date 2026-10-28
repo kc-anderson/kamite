@@ -38,7 +38,6 @@
 #include "kamite/hud_layout.h"
 #include "kamite/npc_poses.h"
 #include "kamite/debug_tools.h"
-#include "kamite/dash_probe.h"
 #include "kamite/bone_tweaks.h"
 #include "kamite/call_profile.h"
 #include "kamite/counter_finder.h"
@@ -308,7 +307,6 @@ namespace kamite
                 restoreInjected(rdram);
                 l3Dash(rdram);
                 rouletteDpad(rdram);
-                dash_probe::onFrame(rdram); // temporary: F2 > Debug > Dash logger
                 return;
             }
             // The pnach writes the held value over the game's and reads it back the next frame as if it came from the
@@ -351,7 +349,6 @@ namespace kamite
                 g_holds = g_staleRestores = 0u;
             l3Dash(rdram);
             rouletteDpad(rdram);
-            dash_probe::onFrame(rdram); // temporary: F2 > Debug > Dash logger
         }
 
         // Replaces c.eq.s f0,f2 at 0x2C81C0: the condition is "same integer frame" (cvt.w.s of both).
