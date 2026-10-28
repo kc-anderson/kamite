@@ -671,9 +671,14 @@ void GSRenderer::VSync(u32 field, bool registers_written, bool idle_frame)
 				src_rect, current->GetSize(), s_display_alignment, g_gs_device->UsesLowerLeftOrigin(),
 				GetVideoMode() == GSVideoMode::SDTV_480P);
 			s_last_draw_rect = draw_rect;
-			// pcsx2gs (Kamite): the overlay lines (compat/HostStubs.cpp) are mapped onto this rectangle.
-			pcsx2gs::SetPresentRect(draw_rect.x, draw_rect.y, draw_rect.z, draw_rect.w,
-				static_cast<float>(m_real_size.x), static_cast<float>(m_real_size.y));
+			// pcsx2gs (Kamite): the overlay lines (compat/HostStubs.cpp) are mapped onto this rectangle. Their
+			// coordinates are native GS pixels, so the frame's size goes in native pixels too: m_real_size is at the
+			// internal resolution (x the upscale), which drew the hitboxes a third of the way to the top-left at 3x.
+			{
+				const float upscale = std::max(GetUpscaleMultiplier(), 0.01f);
+				pcsx2gs::SetPresentRect(draw_rect.x, draw_rect.y, draw_rect.z, draw_rect.w,
+					static_cast<float>(m_real_size.x) / upscale, static_cast<float>(m_real_size.y) / upscale);
+			}
 
 			if (GSConfig.CASMode != GSCASMode::Disabled)
 			{
