@@ -11,6 +11,8 @@
 //                      quarter: their bars move, they do not die.
 //   One-hit kills      the damage step sets the HP to 0 (the enemy dies of the first hit), and every live enemy's HP
 //                      is held at 1 between hits.
+//   Dizzy at once      the enemies' add-stun (func_0028ED28; hook km_dbg_em_dizzy at 0x28ED3C) fills the gauge on any
+//                      stun damage (the preview's DBG_EM_KIZETSU).
 //
 // Developer switches: the preview's DBG group lives on in retail at GameWork +0x58C..+0x59C (game::Dbg; the preview had
 // it at 0x718CA0) and retail still reads about 30 of its bits. Ticked boxes set their bit at every frame start (as the
@@ -100,6 +102,7 @@ namespace kamite::debug_tools
         std::atomic<bool> g_godMode{false};
         std::atomic<bool> g_enemiesNoDeath{false};
         std::atomic<bool> g_oneHitKills{false};
+        std::atomic<bool> g_enemiesDizzy{false};
         std::atomic<int> g_enemiesAlive{0};   // game thread -> UI: live enemies this frame
         constexpr uint32_t kEnemyList = 0x5864F0u + 0x500u; // cEmManage: the first used slot
         constexpr uint32_t kObjHpMax = 0x548u, kObjHp = 0x54Au; // cGameObj: shorts
@@ -141,7 +144,10 @@ namespace kamite::debug_tools
             {0, Dbg::kPlMuteki, "Invincible: hits, grabs and hazards pass through Gene (PL MUTEKI)##muteki"},
             {0, Dbg::kGhCostZero, "God Hand and roulette for free: tension and roulette orbs stay full (DBG_PL_GH_COST_ZERO)##ghfree"},
             {2, Dbg::kAllGodReel, "Every roulette reel owned: the roulette offers all its moves (DBG_ALL_GOD_REEL)##godreel"},
+            {2, Dbg::kWazaFullOpen, "Every technique owned (DBG_WAZA_FULL_OPEN)##wazaopen"},
             {2, Dbg::kMaxGold, "Gold at 999,999: written into the save data (MAX_GOLD)##maxgold"},
+            {3, Dbg::kHpTpMax, "Health and tension upgrades at max: written into the save data (DBG_HP_TP_MAX)##hptpmax"},
+            {2, Dbg::kWazaComboMax, "Combo length at max: written into the save data (WAZA_COMBO_MAX)##combomax"},
             {1, Dbg::kEmSetOff, "No enemies placed when a room loads (DBG_EM_SET_OFF)##emsetoff"},
             {1, Dbg::kOmSetOff, "No objects placed when a room loads (DBG_OM_SET_OFF)##omsetoff"},
             {3, Dbg::kPathfindingOff, "Enemy pathfinding off (PATHFINDING OFF)##pathoff"},
@@ -193,6 +199,16 @@ namespace kamite::debug_tools
             if ((g_dbg[0].wanted.load(std::memory_order_relaxed) & Dbg::kPlMuteki) &&
                 GPR_U32(ctx, 17) == rd32(rdram, GameWork::address(GameWork::kPlayerObj)))
                 SET_GPR_U32(ctx, 2, 1u);
+        }
+
+        // km_dbg_em_dizzy at 0x28ED3C (func_0028ED28, the enemies' add-stun: +0x5B4 += a1, clamped to 0..100000, then
+        // +0x5B8 = 90). The preview's DBG_EM_KIZETSU set the gauge to 100000 when a1 > 0; this puts it there before the
+        // clamp reads it.
+        void dizzyHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t obj = GPR_U32(ctx, 4);
+            if (g_enemiesDizzy.load(std::memory_order_relaxed) && GPR_S32(ctx, 5) > 0 && inRam(obj, 0x600u))
+                wr32(rdram, obj + 0x5B4u, 100000u);
         }
 
         void setHp(uint8_t *rdram, uint32_t obj, int16_t hp) { std::memcpy(rdram + ((obj + kObjHp) & 0x01FFFFFFu), &hp, 2); }
@@ -390,6 +406,7 @@ namespace kamite::debug_tools
             toggle("God mode: Gene's HP never falls below 1 and is refilled every frame##god", g_godMode);
             toggle("Enemies can't die: their HP never falls below 1 and is refilled at a quarter##emnodeath", g_enemiesNoDeath);
             toggle("One-hit kills: an enemy dies of its first hit##onehit", g_oneHitKills);
+            toggle("Dizzy at once: any hit that stuns fills an enemy's stun gauge (DBG_EM_KIZETSU)##dizzy", g_enemiesDizzy);
             char enemies[64];
             std::snprintf(enemies, sizeof(enemies), "%d live enemies in the room.", g_enemiesAlive.load());
             ui->text_disabled(enemies);
@@ -403,8 +420,8 @@ namespace kamite::debug_tools
                 if (ui->checkbox(s.label, &on))
                     g_dbg[s.word].wanted.store(on ? (want | s.bit) : (want & ~s.bit));
             }
-            if (g_dbg[2].wanted.load() & Dbg::kMaxGold)
-                ui->text_disabled("Max gold changes the save's gold: don't save unless you want to keep it.");
+            if ((g_dbg[2].wanted.load() & (Dbg::kMaxGold | Dbg::kWazaComboMax)) || (g_dbg[3].wanted.load() & Dbg::kHpTpMax))
+                ui->text_disabled("The ones written into the save data stay after unticking: don't save unless you want to keep them.");
 
             ui->separator_text("Room jump");
             if (g_points.empty())
@@ -492,6 +509,7 @@ namespace kamite::debug_tools
         ps2xRegisterHostHook("km_dbg_muteki", &mutekiHook);
         ps2xRegisterHostHook("km_dbg_pl_damage", &playerDamageHook);
         ps2xRegisterHostHook("km_dbg_em_damage", &enemyDamageHook);
+        ps2xRegisterHostHook("km_dbg_em_dizzy", &dizzyHook);
         ps2xSetPatchFlag("debug_cheats", true); // the hooks test their switches themselves
 #if defined(KAMITE_HAS_GS_MENU)
         ps2x::menu::addPanel("Debug", &drawPanel);

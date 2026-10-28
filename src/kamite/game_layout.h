@@ -123,7 +123,10 @@ namespace kamite::game
         inline constexpr uint32_t kNoHitBlur = 0x00000800u;   // word 1, DBG_NO_HIT_BLUR
         inline constexpr uint32_t kMaxGold = 0x02000000u;     // word 2, MAX_GOLD: the gold getters write 999999
         inline constexpr uint32_t kAllGodReel = 0x00000002u;  // word 2, DBG_ALL_GOD_REEL: cCoreSave_getGodReel says yes
+        inline constexpr uint32_t kWazaComboMax = 0x01000000u; // word 2, WAZA_COMBO_MAX: cCoreSave_getComboST writes 6
+        inline constexpr uint32_t kWazaFullOpen = 0x00800000u; // word 2, DBG_WAZA_FULL_OPEN: cCoreSave_getSkill says owned
         inline constexpr uint32_t kPathfindingOff = 0x00080000u; // word 3, PATHFINDING OFF
+        inline constexpr uint32_t kHpTpMax = 0x08000000u;     // word 3, DBG_HP_TP_MAX: the save's +0x154..0x156 maxed
     }
     // GameWork.flags5D8 bits the port uses (ours, before the names above).
     inline constexpr uint32_t kFlags5D8PlayerOff = Stp::kPl | Stp::kEm; // the player's Move returns at once (func_001F6C40)

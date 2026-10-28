@@ -333,6 +333,12 @@ address = "0x0028FD38"
 hook = "km_dbg_em_damage"
 flag = "debug_cheats"
 
+# The enemies' add-stun func_0028ED28, before the clamp reads +0x5B4 (Dizzy at once: the gauge full on any stun).
+[[patches.hooks]]
+address = "0x0028ED3C"
+hook = "km_dbg_em_dizzy"
+flag = "debug_cheats"
+
 # Top of the main loop, after the wait for the next frame: frame divider, stick hold (fps60), L3 dash, frame count.
 [[patches.hooks]]
 address = "0x0030ADF4"
