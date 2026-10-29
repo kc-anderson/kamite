@@ -685,6 +685,7 @@ replace = true
 # Door-kun (cOm5a, the door with a face; update func_001AC980, arm swing func_001ACB78): counted in game frames, so at
 # 60 FPS he healed twice as fast and swung twice as fast. HP +0x54A regains 1 every 5 frames (+0x621); the swing waits
 # 15..30 frames (+0x61E), wobbles 8 times, swings out 20 deg/frame to 90, is live 2 frames, swings back 5 deg/frame.
+# Constants, not decrement hooks: the wobble lowers +0x61E only every other frame (claude/fps60-notes.md, Door-kun).
 [[patches.conditional]] # regen: 1 HP every 5 -> 10 frames
 address = "0x001ACA2C"
 value = "0x2404000A"
@@ -728,6 +729,25 @@ flag = "fps60"
 [[patches.conditional]] # face fade 0.02 -> 0.01 a frame
 address = "0x001AC66C"
 value = "0x3C013C23"
+flag = "fps60"
+# The door opening once he breaks (+0x2F4 = 1, func_001AD0D0): the leaves swing open with +0x798 (angle a frame,
+# 0.0393 at the start) growing 3 deg a frame, bounce at 55 deg (x -0.5), for 20 frames (+0x61C), then hold 10.
+# At 60: speed a frame halved, its growth a frame quartered (a per-frame-squared step), both timers doubled.
+[[patches.conditional]] # door: start speed 0.0393 -> 0.0196 a frame
+address = "0x001AD2DC"
+value = "0x3C013CA0"
+flag = "fps60"
+[[patches.conditional]] # door: speed growth 0.0524 -> 0.0131 a frame
+address = "0x001AD360"
+value = "0x3C013C56"
+flag = "fps60"
+[[patches.conditional]] # door: swing 20 -> 40 frames
+address = "0x001AD2E8"
+value = "0x24030028"
+flag = "fps60"
+[[patches.conditional]] # door: hold 10 -> 20 frames
+address = "0x001AD508"
+value = "0x24020014"
 flag = "fps60"
 
 # Move(), the instruction after its call of func_002B9D58 (the collision manager's update and hit tests): the hitbox

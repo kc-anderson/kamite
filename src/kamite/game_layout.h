@@ -20,6 +20,7 @@ namespace kamite::game
         inline constexpr uint32_t kPadPrevious = 0x04u;
         inline constexpr uint32_t kPadBtn = 0x08u;     // decomp: padBtn (the pressed bits)
         inline constexpr uint32_t kPadReleased = 0x0Cu;
+        inline constexpr uint32_t kFrameCount = 0x210u; // ours: game frames, +1 each main loop (func_0030AC40 0x30AF5C)
         inline constexpr uint32_t kTrg = 0x1A0u;        // decomp: trg, the menu command word (held)
         inline constexpr uint32_t kRep = 0x1B0u;        // decomp: rep, the menu command word (repeat)
         inline constexpr uint32_t kLangData = 0x558u;   // decomp: langData, the language data file (core_usa.bin)

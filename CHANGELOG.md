@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## October 29, 2026
 
+- 60 FPS: Door-kun's door swings open at the 30 FPS pace (it was twice as fast).
+- 60 FPS: the frame-paced fixes keep their rhythm across save-state loads (a load could shift them by a frame).
 - Dev: test cases record the commit they were built from.
 - 60 FPS: every button-mash move takes the 30 FPS mashing pace (nine of them needed twice the speed).
 - 60 FPS: Gene's spinning mash attack turns and lasts as at 30 FPS; his post-hit guard lasts as at 30 FPS in every state.

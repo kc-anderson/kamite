@@ -87,6 +87,18 @@ namespace kamite
             return rdram[address & (PS2_RAM_SIZE - 1u)];
         }
 
+        // The game's own frame counter (GameWork +0x210, +1 each main loop): it lives in RAM, so a save state carries
+        // it. The 60 FPS hooks take their every-other-frame cadence from it, not from a host counter: with g_gameFrame a
+        // state saved on one parity and loaded on the other ran every hook a frame out of step (a test case replayed
+        // unfaithfully at 3.85 s on +0x1603, case 2026-10-29_15-45-23).
+        uint32_t gameFrames(uint8_t *rdram)
+        {
+            uint32_t value = 0;
+            std::memcpy(&value, &ram8(rdram, game::GameWork::address(game::GameWork::kFrameCount)), sizeof(value));
+            return value;
+        }
+        bool skipFrame(uint8_t *rdram) { return (gameFrames(rdram) & 1u) != 0u; }
+
         // KAMITE_CALL_PROFILE=1 with KAMITE_CALL_PROFILE_EVERY=<game frames>: a call count report of every function
         // called in each window of that many frames (finding the code behind something seen on screen: compare the
         // windows where it shows with the others).
@@ -389,8 +401,7 @@ namespace kamite
         // store happens once every g_roulettePeriod calls.
         void rouletteTimer(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
-            static uint32_t calls = 0;
-            if (++calls % g_roulettePeriod.load(std::memory_order_relaxed) != 0u)
+            if (gameFrames(rdram) % g_roulettePeriod.load(std::memory_order_relaxed) != 0u)
                 return;
             const uint32_t value = GPR_U32(ctx, 2), address = GPR_U32(ctx, 17) + 0x15B0u;
             std::memcpy(&ram8(rdram, address), &value, sizeof(value));
@@ -401,7 +412,7 @@ namespace kamite
         // slides) are not stepped, so they play at the PS2's speed; positions are still worked out every frame.
         void uiAnimStep(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
-            const uint8_t value = (g_gameFrame & 1u) ? 0u : ram8(rdram, GPR_U32(ctx, 17) + 0x1Cu);
+            const uint8_t value = skipFrame(rdram) ? 0u : ram8(rdram, GPR_U32(ctx, 17) + 0x1Cu);
             SET_GPR_U32(ctx, 2, value);
         }
 
@@ -409,18 +420,18 @@ namespace kamite
         // every-frame emitters (mode 0, interval 0; the beql at 0x303880 lands here with $v1 = 0) emit on even game
         // frames only, so they emit once a PS2 frame like the others now that the children's frames step by 0.5
         // (recomp/kamite.toml, the fps60 effect patches). The slow-motion path arrives with $v1 != 0 and keeps its count.
-        void emitEveryFrame(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        void emitEveryFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
-            if (GPR_U32(ctx, 3) == 0u && (g_gameFrame & 1u))
+            if (GPR_U32(ctx, 3) == 0u && skipFrame(rdram))
                 SET_GPR_S32(ctx, 2, 0);
         }
 
         // Replaces addiu v0,v1,-1 at 0x1F6F8C in TimedButton_tick (an action button prompt's time, +0x32): counts
         // down every other frame, so timed prompts (grab escapes and the like) last as long as on the PS2.
-        void buttonTimer(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        void buttonTimer(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             const int32_t value = GPR_S32(ctx, 3);
-            SET_GPR_S32(ctx, 2, (g_gameFrame & 1u) ? value : value - 1);
+            SET_GPR_S32(ctx, 2, skipFrame(rdram) ? value : value - 1);
         }
 
         // Gene's timer block (the player update func_00108AB0, 0x108D08..0x10917C): every countdown he keeps is lowered
@@ -429,21 +440,21 @@ namespace kamite
         // +0x648 10..90; the stick windows +0x621..0x628 / +0x1600..0x1602; +0x5F8, +0x5FC, float +0x15D0). They now
         // count every other frame: the `addiu v0,v1,-1` sites take km_fps60_button_timer's rule (km_fps60_countdown),
         // the three other forms are below. claude/fps60-notes.md "Families".
-        void countdownSelf(uint8_t *, R5900Context *ctx, PS2Runtime *) // addiu v0,v0,-1 (+0x5FC at 0x108DFC)
+        void countdownSelf(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // addiu v0,v0,-1 (+0x5FC at 0x108DFC)
         {
             const int32_t value = GPR_S32(ctx, 2);
-            SET_GPR_S32(ctx, 2, (g_gameFrame & 1u) ? value : value - 1);
+            SET_GPR_S32(ctx, 2, skipFrame(rdram) ? value : value - 1);
         }
         // addiu rN,rN,-1 on another register (the dodge state's +0x15B4 at 0x10D2CC: a0).
         template <int Reg>
-        void countdownReg(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        void countdownReg(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             const int32_t value = GPR_S32(ctx, Reg);
-            SET_GPR_S32(ctx, Reg, (g_gameFrame & 1u) ? value : value - 1);
+            SET_GPR_S32(ctx, Reg, skipFrame(rdram) ? value : value - 1);
         }
-        void countdownFloat(uint8_t *, R5900Context *ctx, PS2Runtime *) // sub.s f0,f1,f0 (+0x15D0 -= 1.0 at 0x108DE8)
+        void countdownFloat(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // sub.s f0,f1,f0 (+0x15D0 -= 1.0 at 0x108DE8)
         {
-            ctx->f[0] = (g_gameFrame & 1u) ? ctx->f[1] : ctx->f[1] - ctx->f[0];
+            ctx->f[0] = skipFrame(rdram) ? ctx->f[1] : ctx->f[1] - ctx->f[0];
         }
         // Gene's speed rate +0x5A8 (1.0 / 1.3 / 1.5 / 1.6 / 0.1, set by his states; 1.0..2.5 by level in the mash states)
         // is the 30 FPS value at both rates: the game hands it to SetMotionStep, and moveMotion already halves every
@@ -483,10 +494,10 @@ namespace kamite
         }
         // addiu v0,v0,1 on a counter that counts game frames up (the mash states' +0x15B0: frames since the last
         // press): every other frame at 60, the mirror of km_fps60_countdown.
-        void countupSelf(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        void countupSelf(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             const int32_t value = GPR_S32(ctx, 2);
-            SET_GPR_S32(ctx, 2, (g_gameFrame & 1u) ? value : value + 1);
+            SET_GPR_S32(ctx, 2, skipFrame(rdram) ? value : value + 1);
         }
         // `lw v0,X(base)` before a countdown whose `addiu v0,v0,-1` sits in a branch delay slot (no hook there): on the
         // skipped frames the loaded value is raised by one and the decrement stores it back unchanged (the zero test
@@ -497,7 +508,7 @@ namespace kamite
         {
             uint32_t value = 0;
             std::memcpy(&value, rdram + ((GPR_U32(ctx, Base) + Offset) & 0x01FFFFFFu), 4);
-            SET_GPR_U32(ctx, 2, (g_gameFrame & 1u) && value != 0u ? value + 1u : value);
+            SET_GPR_U32(ctx, 2, skipFrame(rdram) && value != 0u ? value + 1u : value);
         }
 
         // The stick-wiggle button prompt (cCockActButton move, type 4, 0x13BF08..0x13C020) swings its stick icon a
@@ -524,7 +535,7 @@ namespace kamite
 
         void wiggleEnd(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
-            if (!(g_gameFrame & 1u) || g_wiggleEntry == 0u || ram32(rdram, GPR_U32(ctx, 6) + 0xD8u) != g_wiggleEntry)
+            if (!skipFrame(rdram) || g_wiggleEntry == 0u || ram32(rdram, GPR_U32(ctx, 6) + 0xD8u) != g_wiggleEntry)
                 return;
             std::memcpy(&ram8(rdram, g_wiggleEntry + 0x48u), &g_wiggleAngle, sizeof(g_wiggleAngle));
             std::memcpy(&ram8(rdram, g_wiggleEntry + 0x38u), &g_wiggleX, sizeof(g_wiggleX));
@@ -532,10 +543,9 @@ namespace kamite
         }
 
         // Replaces addiu v0,v0,-1 at 0x14530C (the roulette TIME dial, cCockRoulette +0x4D0): every other frame.
-        void rouletteDial(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        void rouletteDial(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
-            static uint32_t calls = 0;
-            if (++calls % g_roulettePeriod.load(std::memory_order_relaxed) == 0u)
+            if (gameFrames(rdram) % g_roulettePeriod.load(std::memory_order_relaxed) == 0u)
                 SET_GPR_S32(ctx, 2, GPR_S32(ctx, 2) - 1);
         }
     }
