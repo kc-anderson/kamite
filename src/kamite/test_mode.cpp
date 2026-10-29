@@ -162,11 +162,15 @@ namespace kamite::test_mode
         }
 
         // ---- the pad recording (text: "kamite-pad 1", "divider N", "frames N", then 64 hex characters a frame) ----
+        // One sample per pad poll. PADMAN polls the DualShock once a vblank whatever the game's frame rate, so poll n
+        // after the state is vblank n in both runs: a recording maps onto real time by itself at 30 and at 60, and the
+        // game reads the latest poll when its own pad read comes, as with a real pad (version 1 files kept one sample
+        // per game frame; they are expanded on reading).
         struct Recording
         {
-            std::vector<uint8_t> samples; // frames x kSample
-            uint32_t divider = 2u;        // the recording's vblanks per game frame
-            uint32_t frames() const { return static_cast<uint32_t>(samples.size() / kSample); }
+            std::vector<uint8_t> samples; // polls x kSample
+            uint32_t divider = 2u;        // the frame rate it was recorded at (vblanks per game frame), for the report
+            uint32_t polls() const { return static_cast<uint32_t>(samples.size() / kSample); }
         };
 
         bool parseRecording(const std::string &text, Recording &rec, std::string &error)
@@ -174,10 +178,16 @@ namespace kamite::test_mode
             rec.samples.clear();
             std::istringstream in(text);
             std::string line;
+            int version = 1;
             while (std::getline(in, line))
             {
                 line = trim(line);
-                if (line.empty() || line[0] == '#' || line.rfind("kamite-pad", 0) == 0 || line.rfind("frames", 0) == 0)
+                if (line.rfind("kamite-pad", 0) == 0)
+                {
+                    version = std::atoi(line.c_str() + 10);
+                    continue;
+                }
+                if (line.empty() || line[0] == '#' || line.rfind("frames", 0) == 0 || line.rfind("polls", 0) == 0)
                     continue;
                 if (line.rfind("divider", 0) == 0)
                 {
@@ -202,14 +212,24 @@ namespace kamite::test_mode
                 error = "the pad has no samples";
                 return false;
             }
+            if (version < 2 && rec.divider > 1u) // one sample per game frame: each one for each of its vblanks
+            {
+                std::vector<uint8_t> polls;
+                polls.reserve(rec.samples.size() * rec.divider);
+                for (size_t at = 0; at < rec.samples.size(); at += kSample)
+                    for (uint32_t v = 0; v < rec.divider; ++v)
+                        polls.insert(polls.end(), rec.samples.begin() + static_cast<std::ptrdiff_t>(at),
+                                     rec.samples.begin() + static_cast<std::ptrdiff_t>(at + kSample));
+                rec.samples.swap(polls);
+            }
             return true;
         }
 
         std::string formatRecording(const Recording &rec)
         {
-            std::string out = "kamite-pad 1\ndivider " + std::to_string(rec.divider) + "\nframes " + std::to_string(rec.frames()) + "\n";
+            std::string out = "kamite-pad 2\ndivider " + std::to_string(rec.divider) + "\npolls " + std::to_string(rec.polls()) + "\n";
             char hex[3];
-            for (uint32_t f = 0; f < rec.frames(); ++f)
+            for (uint32_t f = 0; f < rec.polls(); ++f)
             {
                 for (uint32_t i = 0; i < kSample; ++i)
                 {
@@ -511,7 +531,6 @@ namespace kamite::test_mode
             uint32_t vblanks = 0;     // the length in vblanks (real time x 60)
             uint32_t enemies = kDefaultEnemies;
             Recording rec;            // play: the recording; record: filled as it runs
-            std::vector<uint8_t> haveSample;
             Logger log;
 
             uint64_t hookFrames = 0;
@@ -519,46 +538,31 @@ namespace kamite::test_mode
             uint32_t loadsBefore = 0;
             std::chrono::steady_clock::time_point loadRequested;
             uint32_t readsThisFrame = 0, readsLastFrame = 0;
-            int64_t sampleUsed = -1;
-            uint8_t merged[kSample] = {};
+            int64_t sampleUsed = -1;  // the last poll's sample (play: injected; record: kept)
+            bool polling = false;     // the state has loaded: polls count from here
+            uint32_t polls = 0;
         };
         Run g_run;
 
-        // The sample a game frame of this run takes: the one covering the same real time in the recording. Playing a
-        // 60 recording at 30: the pair of samples merged (a press in either counts, the sticks from the later one).
-        const uint8_t *sampleFor(Run &run, uint32_t frame)
-        {
-            const uint64_t index = (static_cast<uint64_t>(frame) * run.divider) / run.rec.divider;
-            const uint64_t last = run.rec.frames() - 1u;
-            const uint64_t first = index < last ? index : last;
-            run.sampleUsed = static_cast<int64_t>(first);
-            if (run.divider <= run.rec.divider)
-                return run.rec.samples.data() + static_cast<size_t>(first) * kSample;
-            const uint64_t second = first + 1u < last ? first + 1u : last;
-            const uint8_t *a = run.rec.samples.data() + static_cast<size_t>(first) * kSample;
-            const uint8_t *b = run.rec.samples.data() + static_cast<size_t>(second) * kSample;
-            std::memcpy(run.merged, b, kSample);
-            run.merged[2] = static_cast<uint8_t>(a[2] & b[2]); // buttons are active low: pressed in either stays pressed
-            run.merged[3] = static_cast<uint8_t>(a[3] & b[3]);
-            for (uint32_t i = 8; i < 20; ++i)                  // pressures: the larger
-                run.merged[i] = std::max(a[i], b[i]);
-            return run.merged;
-        }
-
+        // Poll n after the state loaded takes sample n (the case recorder kept poll n after the state saved).
         void runTap(ps2x::iop::PadInputState &state)
         {
             Run &run = g_run;
             ++run.readsThisFrame;
+            const uint32_t index = run.polls++;
             if (run.record)
             {
-                if (run.frame < run.haveSample.size())
+                if (index < run.rec.polls())
                 {
-                    toStatus(state, run.rec.samples.data() + static_cast<size_t>(run.frame) * kSample);
-                    run.haveSample[run.frame] = 1u;
+                    toStatus(state, run.rec.samples.data() + static_cast<size_t>(index) * kSample);
+                    run.sampleUsed = index;
                 }
                 return;
             }
-            fromStatus(sampleFor(run, run.frame), state);
+            const uint32_t last = run.rec.polls() - 1u;
+            const uint32_t use = index < last ? index : last;
+            fromStatus(run.rec.samples.data() + static_cast<size_t>(use) * kSample, state);
+            run.sampleUsed = use;
         }
 
         void finishRun(PS2Runtime *runtime, bool ok)
@@ -567,11 +571,10 @@ namespace kamite::test_mode
             run.phase = Run::Phase::Done;
             if (ok && run.record)
             {
-                for (size_t f = 1; f < run.haveSample.size(); ++f) // frames without a read keep the previous sample
-                    if (!run.haveSample[f])
-                        std::memcpy(run.rec.samples.data() + f * kSample, run.rec.samples.data() + (f - 1u) * kSample, kSample);
+                if (run.polls < run.rec.polls())
+                    run.rec.samples.resize(static_cast<size_t>(std::max(run.polls, 1u)) * kSample);
                 if (writeFile(run.output, formatRecording(run.rec)))
-                    KM_INFO(Game, "test: recorded " << run.rec.frames() << " frames (divider " << run.rec.divider << ") to " << run.output.string());
+                    KM_INFO(Game, "test: recorded " << run.rec.polls() << " polls (divider " << run.rec.divider << ") to " << run.output.string());
                 else
                 {
                     KM_ERROR(Game, "test: cannot write " << run.output.string());
@@ -595,6 +598,19 @@ namespace kamite::test_mode
             case Run::Phase::Boot:
                 if (run.hookFrames < 3u) // the loop is up; a frame rate switch has been applied
                     return;
+                run.polling = false;
+                run.polls = 0;
+                if (run.record) // neutral until polled
+                {
+                    run.rec.divider = fps60() ? 1u : 2u;
+                    run.rec.samples.assign(static_cast<size_t>(run.vblanks) * kSample, 0u);
+                    for (uint32_t f = 0; f < run.vblanks; ++f)
+                    {
+                        uint8_t *sample = run.rec.samples.data() + static_cast<size_t>(f) * kSample;
+                        sample[2] = sample[3] = 0xFFu;
+                        sample[4] = sample[5] = sample[6] = sample[7] = 0x80u;
+                    }
+                }
                 if (run.state.empty())
                 {
                     run.phase = Run::Phase::Loading; // falls into the start below on this frame
@@ -637,20 +653,7 @@ namespace kamite::test_mode
                 run.divider = fps60() ? 1u : 2u;
                 run.runFrames = run.vblanks / run.divider;
                 run.frame = 0;
-                run.readsThisFrame = run.readsLastFrame = 0;
-                run.sampleUsed = -1;
-                if (run.record)
-                {
-                    run.rec.divider = run.divider;
-                    run.rec.samples.assign(static_cast<size_t>(run.runFrames) * kSample, 0u);
-                    run.haveSample.assign(run.runFrames, 0u);
-                    for (uint32_t f = 0; f < run.runFrames; ++f) // neutral until a read happens
-                    {
-                        uint8_t *s = run.rec.samples.data() + static_cast<size_t>(f) * kSample;
-                        s[2] = s[3] = 0xFFu;
-                        s[4] = s[5] = s[6] = s[7] = 0x80u;
-                    }
-                }
+                run.readsLastFrame = 0;
                 run.log.enemies = run.enemies;
                 run.log.csv = openOut(run.csv);
                 run.log.shapes = run.withShapes ? openOut(run.csv.string().substr(0, run.csv.string().size() - 4) + ".shapes.csv") : nullptr;
@@ -670,15 +673,8 @@ namespace kamite::test_mode
             {
                 run.readsLastFrame = run.readsThisFrame;
                 run.readsThisFrame = 0;
-                const uint8_t *sample = nullptr;
-                if (run.record)
-                {
-                    if (run.frame > 0u && run.haveSample[run.frame - 1u])
-                        sample = run.rec.samples.data() + static_cast<size_t>(run.frame - 1u) * kSample;
-                }
-                else if (run.sampleUsed >= 0)
-                    sample = run.divider > run.rec.divider ? run.merged : run.rec.samples.data() + static_cast<size_t>(run.sampleUsed) * kSample;
-                logFrame(run.log, rdram, run.frame, run.divider, run.readsLastFrame, run.record ? -1 : run.sampleUsed, sample);
+                const uint8_t *sample = run.sampleUsed >= 0 ? run.rec.samples.data() + static_cast<size_t>(run.sampleUsed) * kSample : nullptr;
+                logFrame(run.log, rdram, run.frame, run.divider, run.readsLastFrame, run.sampleUsed, sample);
                 if (++run.frame >= run.runFrames)
                     finishRun(runtime, true);
                 return;
@@ -811,7 +807,7 @@ namespace kamite::test_mode
             }
             run.stateIsTemp = run.state;
             run.record = false;
-            run.vblanks = run.rec.frames() * run.rec.divider;
+            run.vblanks = run.rec.polls();
             if (const std::string enemies = metaValue(c.meta, "enemies"); !enemies.empty())
                 run.enemies = static_cast<uint32_t>(std::strtoul(enemies.c_str(), nullptr, 10));
             if (const char *fps = std::getenv("KAMITE_REPLAY_FPS60"); fps && *fps)
@@ -841,10 +837,9 @@ namespace kamite::test_mode
             uint32_t divider = 2u;
             uint32_t frame = 0;
             uint16_t room = 0;
-            Recording rec;
+            Recording rec;            // poll n after the state saved = sample n
             Logger log;
-            uint8_t lastRead[kSample] = {};
-            bool haveRead = false;
+            bool polling = false;     // the state has saved: every poll is kept
             uint32_t readsThisFrame = 0, readsLastFrame = 0;
             uint16_t prevPressed = 0;   // the pad's pressed bits at the last read (for the hotkey's edge)
             bool toggle = false;        // a press of the hotkey, taken at the next frame hook
@@ -860,9 +855,14 @@ namespace kamite::test_mode
             if (padBit != 0u && (pressed & padBit) != 0u && (rec.prevPressed & padBit) == 0u)
                 rec.toggle = true;
             rec.prevPressed = pressed;
+            if (rec.phase == Recorder::Phase::Saving && !rec.polling && ps2x::savestate::saveCount() != rec.savesBefore)
+                rec.polling = true; // the first poll after the state: the replay's first poll after the load
+            if (!rec.polling)
+                return;
             ++rec.readsThisFrame;
-            toStatus(state, rec.lastRead);
-            rec.haveRead = true;
+            uint8_t sample[kSample];
+            toStatus(state, sample);
+            rec.rec.samples.insert(rec.rec.samples.end(), sample, sample + kSample);
         }
 
         std::string timeStamp()
@@ -883,6 +883,11 @@ namespace kamite::test_mode
             rec.stateFile = dir / (rec.stamp + ".state.tmp");
             rec.liveFile = dir / (rec.stamp + ".live.tmp");
             rec.room = rd16(rdram, GameWork::address(GameWork::kRoom));
+            rec.divider = fps60() ? 1u : 2u;
+            rec.rec.divider = rec.divider;
+            rec.rec.samples.clear();
+            rec.polling = false;
+            rec.readsThisFrame = 0;
             rec.savesBefore = ps2x::savestate::saveCount();
             rec.saveRequested = std::chrono::steady_clock::now();
             ps2x::savestate::requestSave(rec.stateFile);
@@ -899,6 +904,7 @@ namespace kamite::test_mode
             fs::remove(rec.stateFile, ec);
             fs::remove(rec.liveFile, ec);
             rec.phase = Recorder::Phase::Idle;
+            rec.polling = false;
             ps2x::menu::notify(std::string("Case: ") + why, 4.0f);
             KM_ERROR(Game, "case: " << why);
         }
@@ -914,8 +920,9 @@ namespace kamite::test_mode
                 return;
             }
             c.pad = formatRecording(rec.rec);
-            c.meta = "created=" + rec.stamp + "\ndivider=" + std::to_string(rec.divider) + "\nframes=" + std::to_string(rec.rec.frames()) +
-                     "\nseconds=" + std::to_string(static_cast<double>(rec.rec.frames() * rec.divider) / 60.0) + "\nroom=0x";
+            c.meta = "created=" + rec.stamp + "\ndivider=" + std::to_string(rec.divider) + "\nframes=" + std::to_string(rec.frame) +
+                     "\npolls=" + std::to_string(rec.rec.polls()) + "\nseconds=" + std::to_string(static_cast<double>(rec.rec.polls()) / 60.0) +
+                     "\nroom=0x";
             char hex[8];
             std::snprintf(hex, sizeof(hex), "%03X", rec.room);
             c.meta += hex;
@@ -930,9 +937,10 @@ namespace kamite::test_mode
             fs::remove(rec.stateFile, ec);
             fs::remove(rec.liveFile, ec);
             rec.phase = Recorder::Phase::Idle;
+            rec.polling = false;
             ++rec.casesWritten;
-            ps2x::menu::notify("Case saved: " + rec.stamp + " (" + std::to_string(rec.rec.frames()) + " frames)", 4.0f);
-            KM_INFO(Game, "case: wrote " << caseFile.string() << ": " << rec.rec.frames() << " frames at " << (rec.divider == 1u ? 60 : 30)
+            ps2x::menu::notify("Case saved: " + rec.stamp + " (" + std::to_string(rec.rec.polls() / 60u) + " s)", 4.0f);
+            KM_INFO(Game, "case: wrote " << caseFile.string() << ": " << rec.frame << " frames, " << rec.rec.polls() << " polls at " << (rec.divider == 1u ? 60 : 30)
                                          << " FPS, " << c.state.size() / 1024u << " KB of state");
         }
 
@@ -954,13 +962,9 @@ namespace kamite::test_mode
                         recorderAbort("the state did not save (see the log)");
                     return;
                 }
-                // Saved: this is frame 0 of the case.
-                rec.divider = fps60() ? 1u : 2u;
-                rec.rec.divider = rec.divider;
-                rec.rec.samples.clear();
+                // Saved: this is frame 0 of the case (the tap has been keeping polls since the save).
                 rec.frame = 0;
-                rec.haveRead = false;
-                rec.readsThisFrame = rec.readsLastFrame = 0;
+                rec.readsLastFrame = 0;
                 rec.log.enemies = kDefaultEnemies;
                 rec.log.csv = openOut(rec.liveFile);
                 rec.log.shapes = nullptr; // the replays write the shapes; the live log stays small
@@ -977,24 +981,9 @@ namespace kamite::test_mode
             {
                 rec.readsLastFrame = rec.readsThisFrame;
                 rec.readsThisFrame = 0;
-                // The sample of the previous frame: what the game saw (no read: the frame before's, or neutral).
-                if (rec.frame > 0u)
-                {
-                    if (!rec.haveRead)
-                    {
-                        if (rec.rec.samples.empty())
-                        {
-                            std::memset(rec.lastRead, 0, kSample);
-                            rec.lastRead[2] = rec.lastRead[3] = 0xFFu;
-                            rec.lastRead[4] = rec.lastRead[5] = rec.lastRead[6] = rec.lastRead[7] = 0x80u;
-                        }
-                        else
-                            std::memcpy(rec.lastRead, rec.rec.samples.data() + rec.rec.samples.size() - kSample, kSample);
-                    }
-                    rec.rec.samples.insert(rec.rec.samples.end(), rec.lastRead, rec.lastRead + kSample);
-                    rec.haveRead = false;
-                }
-                logFrame(rec.log, rdram, rec.frame, rec.divider, rec.readsLastFrame, -1, rec.frame > 0u ? rec.lastRead : nullptr);
+                const int64_t last = static_cast<int64_t>(rec.rec.polls()) - 1;
+                logFrame(rec.log, rdram, rec.frame, rec.divider, rec.readsLastFrame, last,
+                         last >= 0 ? rec.rec.samples.data() + static_cast<size_t>(last) * kSample : nullptr);
                 ++rec.frame;
                 if (rec.frame % 60u == 0u)
                 {
@@ -1002,10 +991,17 @@ namespace kamite::test_mode
                     std::snprintf(text, sizeof(text), "Recording case... %.0f s (press again to stop)", static_cast<double>(rec.frame * rec.divider) / 60.0);
                     ps2x::menu::notify(text, 1.6f);
                 }
-                if (toggle || rec.frame * rec.divider >= kMaxCaseVblanks)
+                if (toggle || rec.rec.polls() >= kMaxCaseVblanks)
                 {
-                    if (toggle && rec.rec.frames() > 1u) // the stopping press is the last sample: keep it out
+                    // The stopping press is not part of the case: drop the polls at the end that hold it.
+                    const uint16_t padBit = ps2x::hotkeys::binding(ps2x::hotkeys::Action::RecordCase).pad;
+                    while (toggle && padBit != 0u && rec.rec.polls() > 1u)
+                    {
+                        const uint8_t *end = rec.rec.samples.data() + rec.rec.samples.size() - kSample;
+                        if (((~(end[2] | (end[3] << 8))) & padBit) == 0u)
+                            break;
                         rec.rec.samples.resize(rec.rec.samples.size() - kSample);
+                    }
                     recorderStop();
                 }
                 return;
@@ -1019,10 +1015,18 @@ namespace kamite::test_mode
             if (port != 0u || slot != 0u)
                 return;
             std::lock_guard<std::mutex> lock(g_mutex);
-            if (g_run.phase == Run::Phase::Running)
-                runTap(state);
-            else if (g_run.phase == Run::Phase::Off)
+            Run &run = g_run;
+            if (run.phase == Run::Phase::Off)
+            {
                 recorderTap(state);
+                return;
+            }
+            if (run.phase != Run::Phase::Loading && run.phase != Run::Phase::Running)
+                return;
+            if (!run.polling && ps2x::savestate::loadCount() != run.loadsBefore)
+                run.polling = true; // the first poll after the load: sample 0
+            if (run.polling)
+                runTap(state);
         }
     }
 
@@ -1041,7 +1045,7 @@ namespace kamite::test_mode
                 g_run.phase = Run::Phase::Done;
                 return;
             }
-            KM_INFO(Game, "test: replaying " << path.string() << ": " << g_run.rec.frames() << " frames recorded at "
+            KM_INFO(Game, "test: replaying " << path.string() << ": " << g_run.rec.polls() << " polls recorded at "
                                             << (g_run.rec.divider == 1u ? 60 : 30) << " FPS, log " << g_run.csv.string());
         }
         else if (const char *value = std::getenv("KAMITE_TEST"); value && *value)

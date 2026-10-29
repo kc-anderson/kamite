@@ -157,8 +157,17 @@ def faithful(live, replay, div, enemies):
             na, nb = num(a), num(b)
             if na is not None and nb is not None and abs(na - nb) <= 1e-3:
                 continue
+            shifts = []
+            for d in (-2, -1, 0, 1, 2):
+                same = total = 0
+                for k in range(n):
+                    if 0 <= k + d < len(live):
+                        total += 1
+                        same += all(replay[k].get(x) == live[k + d].get(x) for x in ("pl_mode", "pl_phase", "pl_motion"))
+                shifts.append(f"{d:+d}: {100.0 * same / max(total, 1):.0f}%")
             return (f"DIVERGES at frame {i} ({seconds(i, div):.3f} s): {c} live={a!r} replay={b!r}  "
-                    f"(the replay is not trusted past this frame)")
+                    f"(the replay is not trusted past this frame)\n"
+                    f"   Gene's state matching with the replay shifted by n frames against the live run: {', '.join(shifts)}")
     return f"yes: {n} frames agree on {len(cols)} fields ({seconds(n, div):.2f} s)"
 
 
@@ -280,7 +289,7 @@ def main(argv):
     enemies = int(meta.get("enemies", "4"))
 
     print(f"Case {path}")
-    print(f"  created {meta.get('created', '?')}, recorded at {60 // rec_div} FPS, {meta.get('frames', '?')} frames = "
+    print(f"  created {meta.get('created', '?')}, recorded at {60 // rec_div} FPS, {meta.get('frames', '?')} frames, {meta.get('polls', '?')} pad polls = "
           f"{meta.get('seconds', '?')} s, room {meta.get('room', '?')}; live log {len(live)} rows")
     print(f"  replays: 30 FPS {'%d rows' % len(rows30) if rows30 else 'MISSING'}, 60 FPS {'%d rows' % len(rows60) if rows60 else 'MISSING'}")
     print()
