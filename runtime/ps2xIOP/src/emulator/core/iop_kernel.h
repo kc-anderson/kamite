@@ -142,6 +142,11 @@ namespace ps2x::iop::detail
         uint32_t m_nextEventFlagId = 1;
         uint32_t m_nextCallThreadId = kFirstCallThreadId;
         IopThread *m_currentThread = nullptr;
+        // The thread whose timeslice just ended while it could still run (no block, no yield): the IOP kernel has no
+        // timeslicing, so it keeps the CPU unless a more urgent thread is ready (beginNextReady).
+        int m_continueId = 0;
+        int m_heldId = 0;          // the thread kept on the CPU that way, and since when (the vblank safety net)
+        uint64_t m_heldSince = 0u;
 
         static constexpr uint32_t kFirstCallThreadId = 0x40000000u;
     };

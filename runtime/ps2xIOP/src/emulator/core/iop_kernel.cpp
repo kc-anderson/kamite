@@ -38,6 +38,9 @@ namespace ps2x::iop::detail
         m_nextEventFlagId = 1;
         m_nextCallThreadId = kFirstCallThreadId;
         m_currentThread = nullptr;
+        m_continueId = 0;
+        m_heldId = 0;
+        m_heldSince = 0u;
     }
 
     bool IopKernel::dispatchThreadImport(uint16_t ordinal, IopCpuState &cpu, uint64_t currentCycle)
@@ -856,6 +859,43 @@ namespace ps2x::iop::detail
         }
         if (next == nullptr)
             return nullptr;
+        // The IOP kernel never timeslices: a running thread keeps the CPU until it blocks, yields, or a more urgent
+        // thread becomes ready; a ready thread of the same priority waits. The emulator runs threads in slices, and
+        // picking the lowest id at every slice let an equal-priority thread cut in: CRI's main thread (prio 39, its
+        // once-a-vblank SJX tick) ran in the middle of the PSM thread's mix pass (prio 39, left channel freed, right
+        // not yet), handed the left's free space to the EE a tick before the right's, and CRI's EE decoder (which
+        // sizes both channels by the left's free chunk, adxsjd_get_wr) then dropped right-channel samples until the
+        // right ran a whole 16 KB ring ahead: the music doubling (claude/audio-notes.md). PS2X_IOP_EQUAL_PRIORITY_SLICE=1:
+        // the old behaviour.
+        static const bool sliceEqual = [] { const char *v = std::getenv("PS2X_IOP_EQUAL_PRIORITY_SLICE"); return v && *v == '1'; }();
+        // Safety net: a thread that keeps the CPU for a whole vblank of IOP time without blocking while an equal-
+        // priority thread waits is spinning (a real IOP would hang there); let the other one in and say so.
+        if (!sliceEqual && m_continueId != 0)
+        {
+            if (const auto it = m_threads.find(m_continueId);
+                it != m_threads.end() && it->second.state == IopThreadState::Ready && it->second.priority <= next->priority)
+            {
+                if (m_continueId != m_heldId)
+                {
+                    m_heldId = m_continueId;
+                    m_heldSince = currentCycle;
+                }
+                if (&it->second == next || currentCycle - m_heldSince < kVblankPeriodCycles)
+                    next = &it->second;
+                else
+                {
+                    static uint32_t logs = 0u;
+                    if (logs < 4u && ++logs)
+                        std::fprintf(stderr, "[iop-sched] thread %d (prio %u, pc 0x%06x) ran a vblank without blocking; letting "
+                                             "equal-priority thread %d in\n",
+                                     it->second.id, it->second.priority, it->second.cpu.pc, next->id);
+                    m_heldId = 0;
+                }
+            }
+        }
+        if (next->id != m_continueId)
+            m_heldId = 0;
+        m_continueId = 0;
 
         m_currentThread = next;
         next->state = IopThreadState::Running;
@@ -877,10 +917,15 @@ namespace ps2x::iop::detail
 
     void IopKernel::endTimeslice(IopThread &thread, uint32_t returnSentinel)
     {
+        m_continueId = 0;
         if (thread.cpu.pc == returnSentinel || thread.cpu.stopped)
             thread.state = IopThreadState::Dormant;
         else if (thread.state == IopThreadState::Running)
+        {
             thread.state = IopThreadState::Ready;
+            if (!thread.cpu.yielded) // the slice ran out: it was not giving the CPU away
+                m_continueId = thread.id;
+        }
         m_currentThread = nullptr;
         cleanupDeadThreads();
     }

@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## October 29, 2026
 
+- Music: the right channel no longer jumps ahead with a crackle and plays a second copy of the track until it changes.
 - Dev: KAMITE_ADX_DUMP records each stream channel's audio as decoded and as sent to the IOP
   (tools/audio/adx_dump.py reads it), for the music doubling.
 - 60 FPS: the God Hand gauge drains at the 30 FPS pace (it emptied twice as fast); also two of Gene's short timers.
