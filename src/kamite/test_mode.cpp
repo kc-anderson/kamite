@@ -29,6 +29,7 @@
 #include "runtime/ps2_hotkeys.h"
 #include "runtime/ps2_pad_tap.h"
 #include "runtime/ps2_save_state.h"
+#include "ps2_runtime_macros.h" // GPR_U32
 
 #include <algorithm>
 #include <cctype>
@@ -246,6 +247,7 @@ namespace kamite::test_mode
         {
             std::string meta, state, pad, live;
             std::string host; // the Modern controls' camera and turns, a line a frame (HostTrack)
+            std::string reads; // what the game's pad reads returned, a line a read (ReadTrack)
         };
 
         std::string packCase(const CaseFile &c)
@@ -265,6 +267,8 @@ namespace kamite::test_mode
             section("live", c.live);
             if (!c.host.empty())
                 section("host", c.host);
+            if (!c.reads.empty())
+                section("reads", c.reads);
             section("state", c.state); // last: the big one
             out += "end\n";
             return out;
@@ -305,7 +309,7 @@ namespace kamite::test_mode
                     error = "section " + name + " runs past the end of the file";
                     return false;
                 }
-                std::string *target = name == "meta" ? &c.meta : name == "state" ? &c.state : name == "pad" ? &c.pad : name == "live" ? &c.live : name == "host" ? &c.host : nullptr;
+                std::string *target = name == "meta" ? &c.meta : name == "state" ? &c.state : name == "pad" ? &c.pad : name == "live" ? &c.live : name == "host" ? &c.host : name == "reads" ? &c.reads : nullptr;
                 if (target)
                     target->assign(data, at, size);
                 at += size + 1u; // the newline after the bytes
@@ -565,6 +569,64 @@ namespace kamite::test_mode
             return track.divider == 1u || track.divider == 2u;
         }
 
+        // ---- the read track: "kamite-reads 1", "divider N", then "<frame> <n> <hex bytes 2..19>" a pad read ----------
+        // What scePadRead (0x397D20) handed the game for pad 1, every read (n = the read's number within the frame). The
+        // game reads the latest poll PADMAN wrote, and in live play a poll sometimes lands just before the read and
+        // sometimes just after (Oct 29: 189 of 4575 frames read the next poll; at 18 s the fight went otherwise). A
+        // replay hands the game these bytes at the same read instead, so it reads exactly what the tester's game read.
+        constexpr uint32_t kReadFirst = 2u, kReadBytes = 18u; // buttons, sticks, pressures (status bytes 2..19)
+        struct ReadEntry
+        {
+            uint32_t frame = 0, n = 0;
+            uint8_t bytes[kReadBytes] = {};
+        };
+        struct ReadTrack
+        {
+            uint32_t divider = 2u;
+            std::vector<ReadEntry> entries;
+        };
+
+        std::string formatReads(const ReadTrack &track)
+        {
+            std::string out = "kamite-reads 1\ndivider " + std::to_string(track.divider) + "\n";
+            char line[96];
+            for (const ReadEntry &e : track.entries)
+            {
+                int at = std::snprintf(line, sizeof(line), "%u %u ", e.frame, e.n);
+                for (uint32_t i = 0; i < kReadBytes; ++i)
+                    at += std::snprintf(line + at, sizeof(line) - static_cast<size_t>(at), "%02X", e.bytes[i]);
+                out += line;
+                out += "\n";
+            }
+            return out;
+        }
+
+        bool parseReads(const std::string &text, ReadTrack &track)
+        {
+            std::istringstream in(text);
+            std::string line;
+            if (!std::getline(in, line) || trim(line) != "kamite-reads 1")
+                return false;
+            while (std::getline(in, line))
+            {
+                line = trim(line);
+                if (line.rfind("divider ", 0) == 0)
+                {
+                    track.divider = static_cast<uint32_t>(std::strtoul(line.c_str() + 8, nullptr, 10));
+                    continue;
+                }
+                std::istringstream fields(line);
+                ReadEntry e;
+                std::string hex;
+                if (!(fields >> e.frame >> e.n >> hex) || hex.size() != kReadBytes * 2u)
+                    continue;
+                for (uint32_t i = 0; i < kReadBytes; ++i)
+                    e.bytes[i] = static_cast<uint8_t>(std::strtoul(hex.substr(i * 2u, 2u).c_str(), nullptr, 16));
+                track.entries.push_back(e);
+            }
+            return track.divider == 1u || track.divider == 2u;
+        }
+
         // ============================================================================================================
         // A run: a script (KAMITE_TEST) or a case replay (KAMITE_REPLAY_CASE). One at a time; the recorder is off
         // while one is running.
@@ -594,6 +656,10 @@ namespace kamite::test_mode
             Logger log;
             HostTrack host;           // play: the case's host track (empty: none, the controls run live)
             size_t hostNext = 0;      // the first entry not yet played
+            std::FILE *ram = nullptr; // play: <csv stem>.ram.bin, the RAM dump (writeRamFrame)
+            ReadTrack reads;          // play: the case's read track (empty: the polls alone feed the game)
+            size_t readNext = 0;      // the first entry not yet reached
+            uint32_t readFrame = ~0u, readN = 0; // the frame of the last read and the reads in it
 
             uint64_t hookFrames = 0;
             uint32_t frame = 0, runFrames = 0, divider = 2u;
@@ -627,6 +693,27 @@ namespace kamite::test_mode
             run.sampleUsed = use;
         }
 
+        // The RAM dump of a replay (dev-only; tools/fps60/ram_counters.py): a record a frame, the frame number (u32) then
+        // Gene's object (0x1800 bytes), GameWork (0x800) and the save data (0x200, *D_00569B70), zeros where a pointer is
+        // not valid. For finding what counts game frames without knowing where it lives (the God Hand gauge, Oct 29).
+        constexpr uint32_t kRamGene = 0x1800u, kRamGameWork = 0x800u, kRamSave = 0x200u;
+        void writeRamFrame(std::FILE *out, const uint8_t *rdram, uint32_t frame)
+        {
+            if (!out)
+                return;
+            static std::vector<uint8_t> buffer(4u + kRamGene + kRamGameWork + kRamSave);
+            std::fill(buffer.begin(), buffer.end(), 0u);
+            std::memcpy(buffer.data(), &frame, 4u);
+            const auto copy = [&](uint32_t at, uint32_t address, uint32_t size) {
+                if (address >= 0x100000u && address + size <= 0x2000000u)
+                    std::memcpy(buffer.data() + at, rdram + address, size);
+            };
+            copy(4u, rd32(rdram, GameWork::address(GameWork::kPlayerObj)), kRamGene);
+            copy(4u + kRamGene, GameWork::kAddress, kRamGameWork);
+            copy(4u + kRamGene + kRamGameWork, rd32(rdram, 0x569B70u), kRamSave);
+            std::fwrite(buffer.data(), 1u, buffer.size(), out);
+        }
+
         void finishRun(PS2Runtime *runtime, bool ok)
         {
             Run &run = g_run;
@@ -644,6 +731,11 @@ namespace kamite::test_mode
                 }
             }
             closeLogger(run.log);
+            if (run.ram)
+            {
+                std::fclose(run.ram);
+                run.ram = nullptr;
+            }
             if (!ok)
                 run.failed = true;
             KM_INFO(Game, "test: " << (ok ? "done" : "failed") << " after " << run.frame << " frames; stopping the run");
@@ -726,6 +818,8 @@ namespace kamite::test_mode
                     return;
                 }
                 writeHeaders(run.log);
+                if (!run.record)
+                    run.ram = openOut(run.csv.string().substr(0, run.csv.string().size() - 4) + ".ram.bin");
                 run.phase = Run::Phase::Running;
                 KM_INFO(Game, "test: running " << run.runFrames << " frames at " << (run.divider == 1u ? 60 : 30) << " FPS"
                                                << (run.record ? " (recording the pad)" : " (playing the recording)"));
@@ -737,6 +831,7 @@ namespace kamite::test_mode
                 run.readsThisFrame = 0;
                 const uint8_t *sample = run.sampleUsed >= 0 ? run.rec.samples.data() + static_cast<size_t>(run.sampleUsed) * kSample : nullptr;
                 logFrame(run.log, rdram, run.frame, run.divider, run.readsLastFrame, run.sampleUsed, sample);
+                writeRamFrame(run.ram, rdram, run.frame);
                 if (++run.frame >= run.runFrames)
                     finishRun(runtime, true);
                 return;
@@ -861,6 +956,11 @@ namespace kamite::test_mode
                 error = "bad host section";
                 return false;
             }
+            if (!c.reads.empty() && !parseReads(c.reads, run.reads))
+            {
+                error = "bad reads section";
+                return false;
+            }
             if (c.state.empty())
             {
                 error = "the case has no state";
@@ -907,6 +1007,8 @@ namespace kamite::test_mode
             Recording rec;            // poll n after the state saved = sample n
             Logger log;
             HostTrack host;           // the Modern controls' camera and turns, from frame 0
+            ReadTrack reads;          // the game's pad reads, from frame 0
+            uint32_t readFrame = ~0u, readN = 0;
             bool polling = false;     // the state has saved: every poll is kept
             uint32_t readsThisFrame = 0, readsLastFrame = 0;
             uint16_t prevPressed = 0;   // the pad's pressed bits at the last read (for the hotkey's edge)
@@ -956,6 +1058,9 @@ namespace kamite::test_mode
             rec.rec.samples.clear();
             rec.host = HostTrack{};
             rec.host.divider = rec.divider;
+            rec.reads = ReadTrack{};
+            rec.reads.divider = rec.divider;
+            rec.readFrame = ~0u;
             rec.polling = false;
             rec.readsThisFrame = 0;
             rec.savesBefore = ps2x::savestate::saveCount();
@@ -991,6 +1096,7 @@ namespace kamite::test_mode
             }
             c.pad = formatRecording(rec.rec);
             c.host = formatHost(rec.host);
+            c.reads = formatReads(rec.reads);
             c.meta = "created=" + rec.stamp + "\ndivider=" + std::to_string(rec.divider) + "\nframes=" + std::to_string(rec.frame) +
                      "\npolls=" + std::to_string(rec.rec.polls()) + "\nseconds=" + std::to_string(static_cast<double>(rec.rec.polls()) / 60.0) +
                      "\nroom=0x";
@@ -1112,9 +1218,75 @@ namespace kamite::test_mode
         }
     }
 
+    namespace
+    {
+        uint32_t g_readPort = ~0u, g_readSlot = ~0u; // scePadRead's arguments (the entry hook)
+
+        // 0x397D20 daddu a3,a0 (scePadRead's first instruction, the hook runs before it): its port and slot.
+        void padReadEntry(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            g_readPort = GPR_U32(ctx, 4);
+            g_readSlot = GPR_U32(ctx, 5);
+        }
+
+        // 0x397D74 daddu a0,s0 (before the copy to the caller, func_3A5148(data, sp, len)): the status the read got is
+        // at sp. Recording: keep it. Replay: the recorded one instead.
+        void padReadCopy(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            if (g_readPort != 0u || g_readSlot != 0u)
+                return;
+            uint8_t *status = rdram + ((GPR_U32(ctx, 29) + kReadFirst) & 0x1FFFFFFu);
+            std::lock_guard<std::mutex> lock(g_mutex);
+            Run &run = g_run;
+            if (run.phase == Run::Phase::Off)
+            {
+                Recorder &rec = g_rec;
+                if (rec.phase != Recorder::Phase::Recording)
+                    return;
+                if (rec.readFrame != rec.frame)
+                {
+                    rec.readFrame = rec.frame;
+                    rec.readN = 0;
+                }
+                ReadEntry e;
+                e.frame = rec.frame;
+                e.n = rec.readN++;
+                std::memcpy(e.bytes, status, kReadBytes);
+                rec.reads.entries.push_back(e);
+                return;
+            }
+            if (run.phase != Run::Phase::Running || run.reads.entries.empty())
+                return;
+            if (run.readFrame != run.frame)
+            {
+                run.readFrame = run.frame;
+                run.readN = 0;
+            }
+            const uint32_t n = run.readN++;
+            // The recorded frame at or before this one in time (the other rate: frames x divider), and its read n (or
+            // its last).
+            const std::vector<ReadEntry> &entries = run.reads.entries;
+            const uint64_t now = static_cast<uint64_t>(run.frame) * run.divider;
+            while (run.readNext + 1u < entries.size() && static_cast<uint64_t>(entries[run.readNext + 1u].frame) * run.reads.divider <= now)
+                ++run.readNext;
+            size_t at = run.readNext;
+            if (static_cast<uint64_t>(entries[at].frame) * run.reads.divider > now)
+                return; // before the first recorded read: leave the poll's
+            const uint32_t frame = entries[at].frame;
+            while (at > 0u && entries[at - 1u].frame == frame)
+                --at; // read 0 of that frame
+            size_t pick = at;
+            while (pick + 1u < entries.size() && entries[pick + 1u].frame == frame && entries[pick].n < n)
+                ++pick;
+            std::memcpy(status, entries[pick].bytes, kReadBytes);
+        }
+    }
+
     void install(PS2Runtime &, const fs::path &exeDir)
     {
         g_exeDir = exeDir;
+        ps2xRegisterHostHook("km_test_pad_read_entry", &padReadEntry);
+        ps2xRegisterHostHook("km_test_pad_read_copy", &padReadCopy);
         ps2x::pad::setStateTap(&padTap);
         std::string error;
         if (const char *value = std::getenv("KAMITE_REPLAY_CASE"); value && *value)

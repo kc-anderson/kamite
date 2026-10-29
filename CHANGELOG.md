@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## October 29, 2026
 
+- Dev: test cases keep what each pad read returned, so a replay reads exactly what the tester's game read; replays
+  also dump RAM for finding frame counters.
 - 60 FPS: after a hit, Gene (and objects like Door-kun) stay out of reach as long as at 30 FPS (it was half as long).
 - Dev: test cases recorded with the Modern controls replay their camera and Gene's turns; the report compares fights
   per animation.
