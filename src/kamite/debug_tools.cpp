@@ -341,49 +341,6 @@ namespace kamite::debug_tools
         void adxStartHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { adxSlotLine("start", rdram, GPR_U32(ctx, 4), GPR_U32(ctx, 31)); }
         void adxStopHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { adxSlotLine("stop", rdram, GPR_U32(ctx, 18), 0u); }
 
-        // KAMITE_DODGE_PROBE=1 (diagnostic, claude/strip-list.md): Gene's dodge at 30 vs 60 FPS (Thinso, Oct 29: at 60 the
-        // hurt volumes come back after 13 game frames, at 30 after 10, so the 60 window is 0.65x the real time). One
-        // line per game frame while any dodge field is set (and 4 frames after): +0x1603 (upper-body dodge countdown),
-        // +0x1618 (dodge timer), +0x3AC (the motion's SEQ window flags; 0x10 refreshes +0x1603), the state bytes
-        // +0x2F4..+0x2F7, the motion (+0x428) and its frame (+0x41C), and the active bit of each node of the take unit
-        // +0x678 (in list order, 1 = can be hit).
-        bool g_dodgeProbe = false;
-        void dodgeProbe(const uint8_t *rdram)
-        {
-            static uint32_t frame = 0, tail = 0, linesLeft = 3000u;
-            ++frame;
-            const uint32_t pl = rd32(rdram, GameWork::address(GameWork::kPlayerObj));
-            if (!inRam(pl, 0x1700u) || linesLeft == 0u)
-                return;
-            const uint8_t upper = rdram[(pl + 0x1603u) & 0x01FFFFFFu];
-            uint16_t timer = 0, seq = 0;
-            std::memcpy(&timer, rdram + ((pl + 0x1618u) & 0x01FFFFFFu), 2);
-            std::memcpy(&seq, rdram + ((pl + 0x3ACu) & 0x01FFFFFFu), 2);
-            const bool on = upper != 0u || timer != 0u || (seq & 0x10u) != 0u;
-            if (on)
-                tail = 4u;
-            else if (tail == 0u)
-                return;
-            else
-                --tail;
-            --linesLeft;
-            std::string nodes;
-            uint32_t node = rd32(rdram, rd32(rdram, pl + 0x678u) + 0x3Cu);
-            for (int guard = 0; guard < 12 && inRam(node, 0x30u); ++guard, node = rd32(rdram, node + 0x24u))
-            {
-                const uint32_t data = rd32(rdram, node + 0x28u);
-                nodes += inRam(data, 4u) && (rd32(rdram, data) & 2u) ? '1' : '0';
-            }
-            float motionFrame = 0.0f;
-            std::memcpy(&motionFrame, rdram + ((pl + 0x41Cu) & 0x01FFFFFFu), 4);
-            char text[200];
-            std::snprintf(text, sizeof(text), "dodge probe f%u %s upper %u timer %u seq %04X state %u/%u/%u/%u motion %X frame %.2f hurt %s", frame,
-                          rdram[GameWork::address(GameWork::kVblankDivider)] == 1u ? "60" : "30", upper, timer, seq,
-                          rdram[(pl + 0x2F4u) & 0x01FFFFFFu], rdram[(pl + 0x2F5u) & 0x01FFFFFFu], rdram[(pl + 0x2F6u) & 0x01FFFFFFu],
-                          rdram[(pl + 0x2F7u) & 0x01FFFFFFu], rd32(rdram, pl + 0x428u), motionFrame, nodes.c_str());
-            KM_INFO(Game, text);
-        }
-
         // The developers' names (Shift-JIS in the table), in English. "なまえをいれてください" ("please enter a
         // name") and points without a name here are "(unnamed)".
         const char *nameOf(uint16_t room, uint8_t index)
@@ -667,11 +624,6 @@ namespace kamite::debug_tools
         ps2xRegisterHostHook("km_dbg_em_damage", &enemyDamageHook);
         ps2xRegisterHostHook("km_dbg_em_dizzy", &dizzyHook);
         ps2xSetPatchFlag("debug_cheats", true); // the hooks test their switches themselves
-        if (const char *probe = std::getenv("KAMITE_DODGE_PROBE"); probe && *probe == '1')
-        {
-            g_dodgeProbe = true;
-            KM_INFO(Game, "dodge probe: on (KAMITE_DODGE_PROBE)");
-        }
         if (const char *probe = std::getenv("KAMITE_ADX_PROBE"); probe && *probe == '1')
         {
             ps2xRegisterHostHook("km_adx_xfer", &adxTransferHook);
@@ -690,8 +642,6 @@ namespace kamite::debug_tools
     void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         std::memcpy(&g_room, rdram + GameWork::address(GameWork::kRoom), 2);
-        if (g_dodgeProbe)
-            dodgeProbe(rdram);
         // A frame step is one game frame: the game's vblanks per frame (2 at 30 fps, 1 at 60).
         ps2x::timecontrol::setStepVblanks(rdram[GameWork::address(GameWork::kVblankDivider)] == 1u ? 1u : 2u);
         // Cheats.
