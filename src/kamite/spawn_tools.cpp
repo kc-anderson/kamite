@@ -457,6 +457,32 @@ namespace kamite::spawn_tools
             }
         }
 
+        // Why cDvd_ReadAlloc 0x200CB0 said no: no free job (cDvd 0x583F20: 32 jobs of 0x88 from +4, busy while +0 is
+        // set; cDvd_takeFreeJob), the name not in the file table (FindEntryValue_1FF9C0(0x580D40, name, &size, &x) < 0),
+        // or cHeap_allocFirstFit's refusal (DBG word 2 bit 0x80000 makes every allocation fail, or no block fits).
+        void diagnoseReadAlloc(uint8_t *rdram, const R5900Context &base, uint32_t kind)
+        {
+            int busy = 0;
+            for (uint32_t i = 0; i < 32u; ++i)
+                busy += rd32(rdram, kDvd + 4u + 0x88u * i) != 0u ? 1 : 0;
+            const uint32_t dbg2 = rd32(rdram, 0x00747A34u);
+            constexpr uint32_t kName = 0x000FFF80u, kSizeOut = 0x000FFFA0u, kOtherOut = 0x000FFFA4u;
+            char name[16];
+            std::snprintf(name, sizeof(name), "em/em%02x.dat", kind & 0xFFu);
+            std::memset(rdram + kName, 0, 0x20);
+            std::memcpy(rdram + kName, name, std::strlen(name));
+            wr32(rdram, kSizeOut, 0u);
+            wr32(rdram, kOtherOut, 0u);
+            KM_WARN(Game, "spawn: ReadAlloc check: " << busy << " of 32 disc jobs busy, DBG word 2 = 0x" << std::hex << dbg2
+                                                     << (dbg2 & 0x80000u ? " (bit 0x80000 set: the heap refuses every allocation)" : "")
+                                                     << std::dec << "; looking up " << name);
+            queueCall(base, 0x001FF9C0u, {0x00580D40u, kName, kSizeOut, kOtherOut}, [name = std::string(name)](uint32_t found, R5900Context &) {
+                const uint8_t *r = g_runtime->memory().getRDRAM();
+                KM_WARN(Game, "spawn: file table lookup of " << name << ": " << static_cast<int32_t>(found) << ", size "
+                                                             << rd32(r, kSizeOut) << ", second value 0x" << std::hex << rd32(r, kOtherOut));
+            });
+        }
+
         // ---- spawning (game thread)
         void queueSounds(const uint8_t *rdram, const R5900Context &base, uint32_t slot, uint32_t kind, const Kind &k)
         {
@@ -560,6 +586,7 @@ namespace kamite::spawn_tools
                 {
                     logHeapMap(rdram, kHeaps[0].desc);
                     KM_WARN(Game, "spawn: " << heapsLine(rdram) << "; " << tableSummary(rdram, true));
+                    diagnoseReadAlloc(rdram, base, kind);
                 }
                 // Another heap with room for it and 1 MB to spare (its data goes back through the same free).
                 const uint32_t need = k->kb * 1024u + 0x10000u;
