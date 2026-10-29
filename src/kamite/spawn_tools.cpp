@@ -1,9 +1,11 @@
 // The F2 menu's NPCs tab, above Pose NPC (dev-only: claude/strip-list.md; notes in claude/dev-menu.md "Spawn").
 //
-// Test room. Casino rooms 0x002, 0x004 and 0x008 have the blank room module (3201 bytes, no script) and no enemy or
-// object placements on the disc; "Go to test room" door-jumps there (debug_tools::requestJump), "Leave test room"
-// releases the spawns, gives their data back and jumps to the first RoomJmpTbl point of the room it came from.
-// Spawning is offered only in there.
+// Test room: casino room 0x002 ("Meeting room entrance": the blank room module, 3201 bytes, no script, no enemy or
+// object placements on the disc). "Go to test room" door-jumps there (debug_tools::requestJump); in it, SCENARIO
+// (Sta::kScenario, "events locked out": cScenario_isEventStartOk) is held set so a cutscene that is due waits for
+// the next room, and 30 frames in, the enemy/NPC data no enemy uses is let go (cDataManager_resetKind, every hold:
+// left over from earlier rooms, it filled the 32-slot data table). "Leave test room" releases the spawns, lets go of
+// their data and jumps to the first RoomJmpTbl point of the room it came from. Spawning is offered only in there.
 //
 // Spawning, the game's own way in three steps over a few frames (the game thread, at frame start):
 //   1. the kind's data (em/emXX.dat): cDataManager 0x5864E0. Already loaded: on to 3. Else a slot (findKind /
@@ -11,6 +13,7 @@
 //      plus the sound banks loadSeWait would queue (queueSounds, a copy of its rules), then
 //   2. UpdateStateReady(slot) once a frame until the disc read and the banks are in, then the slot is held
 //      (func_001FF090, as cDataManager_loadWait does for cEmManage_EntryEm), then
+//      (a full table or heap: the unused data let go, 30 frames, once more; the table is logged), then
 //   3. cEmManage_EntryEm(0x5864F0, set data, 0, 0) with set data built like func_002951B0 does from a room's set
 //      record (spawn_kinds.inc: the values most rooms use for that kind; +0x31 = 0xFF, so the room save never hears of
 //      it). EntryEm finds everything loaded and does not wait. Its waits (cScenario_sleepFrames -> cTaskWork_sleep)
@@ -87,7 +90,7 @@ namespace kamite::spawn_tools
 
         constexpr uint32_t kEntryEm = 0x002905D0u, kReleaseEm = 0x00290770u, kDefeatAll = 0x001EF978u;
         constexpr uint32_t kIsLoaded = 0x001FE9B8u, kFindKind = 0x001FEE00u, kFindFreeSlot = 0x001FEEA0u;
-        constexpr uint32_t kLoadStart = 0x001FF180u, kReady = 0x001FF238u, kHold = 0x001FF090u, kFreeKind = 0x001FEC90u;
+        constexpr uint32_t kLoadStart = 0x001FF180u, kReady = 0x001FF238u, kHold = 0x001FF090u, kSlotStride = 0x5Cu;
         constexpr uint32_t kAddQueue = 0x001FF4D0u, kSleepFrames = 0x002D5250u, kDvdStep = 0x00200B20u;
         constexpr uint32_t kSndUpdate = 0x002CA470u, kDvd = 0x00583F20u, kSnd = 0x005FEE00u;
         constexpr uint32_t kAttackNow = 0x00262AA8u, kIdleCommon = 0x00211C08u, kIdleBoss = 0x0023D7D0u;
@@ -98,17 +101,10 @@ namespace kamite::spawn_tools
         constexpr uint32_t kSubStep = 0x2F5u, kSubStep2 = 0x2F6u, kSubStep3 = 0x2F7u, kObjData = 0x304u;
         constexpr uint32_t kObjMotion = 0x428u, kObjHpMax = 0x548u, kObjHp = 0x54Au, kObjMotionFlag = 0x17C3u;
 
-        struct TestRoom
-        {
-            uint16_t room;
-            float pos[3]; // used when the jump table has no point for the room (the floor's open middle, from its map)
-            const char *label;
-        };
-        constexpr TestRoom kTestRooms[] = {
-            {0x002, {-18.0f, 0.0f, 22.0f}, "Test room: 002 Meeting room"},
-            {0x004, {2.0f, 0.1f, 2.0f}, "Test room: 004"},
-            {0x008, {2.0f, 0.1f, 2.0f}, "Test room: 008"},
-        };
+        constexpr uint16_t kTestRoom = 0x002;                      // the casino's "Meeting room entrance"
+        constexpr float kTestLanding[3] = {-18.0f, 0.0f, 22.0f};  // if the jump table had no point for it (its open floor)
+        constexpr uint32_t kResetKind = 0x001FED78u; // cDataManager_resetKind(dm, kind, all): one hold off (all = every hold)
+        constexpr uint32_t kSlotCount = 32u;          // func_0028FF80: 32 slots at 0x585960
 
         // ---- UI thread -> game thread
         std::atomic<bool> g_aiOff{false};
@@ -140,6 +136,7 @@ namespace kamite::spawn_tools
         View g_view;
         std::mutex g_statusMutex;
         std::string g_status;
+        std::string g_tableLine; // the data table's use (with the status mutex)
 
         void setStatus(std::string text)
         {
@@ -149,10 +146,12 @@ namespace kamite::spawn_tools
 
         // ---- game thread state
         uint16_t g_room = 0xFFFFu;
-        bool g_entered = false;          // jumped into a test room by the button, and still in it
-        uint16_t g_cameFrom = 0xFFFFu;
+        uint16_t g_cameFrom = 0xFFFFu;   // the room "Go to test room" was pressed in
+        bool g_eventLock = false, g_gameHadLock = false; // Sta::kScenario held set in the test room
+        int g_cleanIn = 0;               // frames until the data nobody uses is let go (after entering the test room)
+        int g_tableIn = 0;               // frames until the data table summary is refreshed
         Clock::time_point g_jumpAt{};
-        int g_jumpPending = 0;           // 1 = into a test room, 2 = out of it
+        int g_jumpPending = 0;           // 1 = into the test room, 2 = out of it
         int g_leavePhase = 0;            // 1 = released, 2 = data given back, then the jump
         std::vector<uint32_t> g_spawned; // enemies spawned here
         std::set<uint32_t> g_loadedKinds; // data kinds loaded by us (held: given back when leaving)
@@ -162,6 +161,8 @@ namespace kamite::spawn_tools
             int phase = 0;
             uint32_t slot = 0;
             bool fresh = false; // our load (held when ready, given back when leaving)
+            bool retried = false;
+            int waitFrames = 0; // before trying (the game's clean-up frees memory over a few frames)
             Clock::time_point start{};
         };
         std::deque<Job> g_jobs;
@@ -299,12 +300,61 @@ namespace kamite::spawn_tools
             forEachEnemy(rdram, [&](uint32_t em) { found = found || em == obj; });
             return found;
         }
-        bool isTestRoom(uint16_t room)
+        // The data table (cDataManager 0x5864E0: count +4, slots *(+8), 0x5C each: +0 state, +4 holds, +8 flags,
+        // +0x10 data, +0x20 kind). A slot is free with no holds, no data and flag bit 2 clear (findFreeSlot).
+        bool slotUsed(const uint8_t *rdram, uint32_t slot)
         {
-            for (const TestRoom &t : kTestRooms)
-                if (t.room == room)
-                    return true;
-            return false;
+            return rd32(rdram, slot + 4u) != 0u || rd32(rdram, slot + 0x10u) != 0u || (rd32(rdram, slot + 8u) & 4u) != 0u;
+        }
+        bool kindInUse(const uint8_t *rdram, uint32_t kind)
+        {
+            bool used = false;
+            forEachEnemy(rdram, [&](uint32_t em) { used = used || rd16(rdram, em + kObjKind) == kind; });
+            return used;
+        }
+        std::string tableSummary(const uint8_t *rdram, bool full)
+        {
+            const uint32_t base = rd32(rdram, kDataManager + 8u);
+            const uint32_t count = std::min(rd32(rdram, kDataManager + 4u), 64u);
+            int used = 0;
+            std::string kinds;
+            for (uint32_t i = 0; i < count && inRam(base, kSlotStride * count); ++i)
+            {
+                const uint32_t slot = base + kSlotStride * i;
+                if (!slotUsed(rdram, slot))
+                    continue;
+                ++used;
+                char one[64];
+                const uint32_t kind = rd32(rdram, slot + 0x20u);
+                if (full)
+                    std::snprintf(one, sizeof(one), " [%u] kind %03x state %u holds %u flags %x data %08x", i, kind,
+                                  rd32(rdram, slot), rd32(rdram, slot + 4u), rd32(rdram, slot + 8u), rd32(rdram, slot + 0x10u));
+                else
+                    std::snprintf(one, sizeof(one), " %03x", kind);
+                kinds += one;
+            }
+            return "Data table: " + std::to_string(used) + " of " + std::to_string(count) + " slots used:" + kinds;
+        }
+        // Lets go of the enemy and NPC data no enemy here uses (left over from earlier rooms), as objects let go of
+        // theirs (cObj_releaseActorData: resetKind), all holds at once: the game's own clean-up then frees it.
+        int releaseUnused(uint8_t *rdram, R5900Context *ctx)
+        {
+            const uint32_t base = rd32(rdram, kDataManager + 8u);
+            const uint32_t count = std::min(rd32(rdram, kDataManager + 4u), 64u);
+            std::vector<uint32_t> kinds;
+            for (uint32_t i = 0; i < count && inRam(base, kSlotStride * count); ++i)
+            {
+                const uint32_t slot = base + kSlotStride * i;
+                const uint32_t kind = rd32(rdram, slot + 0x20u);
+                if (slotUsed(rdram, slot) && kind >= 0x200u && kind < 0x300u && !g_loadedKinds.count(kind) &&
+                    !kindInUse(rdram, kind) && std::find(kinds.begin(), kinds.end(), kind) == kinds.end())
+                    kinds.push_back(kind);
+            }
+            for (uint32_t kind : kinds)
+                call(rdram, ctx, kResetKind, {kDataManager, kind, 1u});
+            if (!kinds.empty())
+                KM_INFO(Game, "spawn: let go of " << kinds.size() << " unused enemy/NPC data kinds in the test room");
+            return static_cast<int>(kinds.size());
         }
 
         // ---- spawning (game thread)
@@ -406,6 +456,11 @@ namespace kamite::spawn_tools
                 g_jobs.pop_front();
                 return;
             }
+            if (job.waitFrames > 0)
+            {
+                --job.waitFrames;
+                return;
+            }
             if (job.phase == 0)
             {
                 job.start = Clock::now();
@@ -420,13 +475,34 @@ namespace kamite::spawn_tools
                     if (fresh)
                         index = static_cast<int>(call(rdram, ctx, kFindFreeSlot, {kDataManager}));
                     if (index < 0)
-                        return fail("the game's data table is full: remove spawned enemies first.");
+                    {
+                        KM_WARN(Game, "spawn: " << tableSummary(rdram, true));
+                        if (releaseUnused(rdram, ctx) > 0)
+                        {
+                            if (job.retried)
+                                return fail("the game's data table is full (the 32 slots: see the line below).");
+                            job.retried = true;
+                            job.phase = 0; // the clean-up frees them over the next frames: try again then
+                            job.waitFrames = 30;
+                            setStatus("Making room in the data table...");
+                            return;
+                        }
+                        return fail("the game's data table is full (the 32 slots: see the line below): remove spawned enemies first.");
+                    }
                     job.slot = dataSlot(rdram, index);
                     job.fresh = fresh;
                     if (fresh)
                     {
                         if (call(rdram, ctx, kLoadStart, {job.slot, kind, kHeapD}) == 0u)
                         {
+                            if (!job.retried && releaseUnused(rdram, ctx) > 0)
+                            {
+                                job.retried = true;
+                                job.phase = 0;
+                                job.waitFrames = 30;
+                                setStatus("Making room in memory...");
+                                return;
+                            }
                             std::snprintf(line, sizeof(line), "not enough memory here for its %.1f MB: remove spawned enemies first.",
                                           k->kb / 1024.0f);
                             return fail(line);
@@ -483,7 +559,7 @@ namespace kamite::spawn_tools
                     ++it;
                     continue;
                 }
-                call(rdram, ctx, kFreeKind, {kDataManager, *it});
+                call(rdram, ctx, kResetKind, {kDataManager, *it, 0u}); // our hold off: the game frees it once unheld
                 it = g_loadedKinds.erase(it);
             }
         }
@@ -674,7 +750,7 @@ namespace kamite::spawn_tools
 #if defined(KAMITE_HAS_GS_MENU)
         std::vector<std::string> g_enemyLabels, g_bossLabels;
         std::vector<uint8_t> g_enemyKinds, g_bossKinds;
-        int g_enemyPick = 0, g_bossPick = 0, g_roomPick = 0, g_movePick = 0; // UI thread
+        int g_enemyPick = 0, g_bossPick = 0, g_movePick = 0; // UI thread
 
         void buildLabels()
         {
@@ -724,19 +800,14 @@ namespace kamite::spawn_tools
             const bool inTest = g_inTest.load();
             if (!inTest)
             {
-                std::vector<const char *> rooms;
-                for (const TestRoom &t : kTestRooms)
-                    rooms.push_back(t.label);
-                ui->set_next_width(260.0f);
-                ui->combo("##testroom", &g_roomPick, rooms.data(), static_cast<int>(rooms.size()));
-                ui->same_line();
                 if (ui->button("Go to test room##gotest"))
-                    g_testRequest = g_roomPick;
+                    g_testRequest = 0;
             }
             else if (ui->button("Leave test room##leavetest"))
                 g_leaveRequest = true;
-            ui->text_disabled("Empty casino rooms with no script, no enemies and no objects. Leaving takes you back to the "
-                              "room you came from, at its first jump point (a save state keeps an exact spot).");
+            ui->text_disabled("Room 002, an empty casino room: no script, no enemies, no objects, and no cutscenes while "
+                              "you are in it (one that is due waits until you leave). Leaving takes you back to the room "
+                              "you came from, at its first jump point (a save state keeps an exact spot).");
 
             int path = debug_tools::pathfindingOff() ? 1 : 0;
             if (ui->checkbox("Enemy pathfinding off (PATHFINDING OFF, the same switch as in Debug)##npcpath", &path))
@@ -763,6 +834,8 @@ namespace kamite::spawn_tools
                 std::lock_guard<std::mutex> lock(g_statusMutex);
                 if (!g_status.empty())
                     ui->text(g_status.c_str());
+                if (!g_tableLine.empty())
+                    ui->text_disabled(g_tableLine.c_str());
             }
 
             ui->spacing();
@@ -889,32 +962,62 @@ namespace kamite::spawn_tools
             g_target = 0;
             g_motionSlot = -1;
             g_leavePhase = 0;
-            if (g_jumpPending == 1 && isTestRoom(room))
+            g_loadedKinds.clear();
+            if (room == kTestRoom)
+            {
+                g_cleanIn = 30; // once the room has settled
                 setStatus("In the test room.");
-            g_entered = g_jumpPending == 1 && isTestRoom(room);
-            if (!g_entered)
-                g_loadedKinds.clear();
+            }
             g_jumpPending = 0;
         }
-        if (g_jumpPending && Clock::now() - g_jumpAt > std::chrono::seconds(4))
+        if (g_jumpPending && Clock::now() - g_jumpAt > std::chrono::seconds(10))
         {
             g_jumpPending = 0;
             setStatus("The jump didn't happen: a cutscene, a door, a talk or a menu was running?");
         }
-        g_inTest = g_entered && isTestRoom(room);
+        g_inTest = room == kTestRoom;
+
+        // No cutscene starts in the test room: SCENARIO (events locked out: cScenario_isEventStartOk) held set, as
+        // the game sets it itself; one that is due waits, and plays where it should once the room is left.
+        {
+            const uint32_t sta = GameWork::address(GameWork::kFlags5E4);
+            const bool lock = room == kTestRoom; // kept on the way out too: the door jump does not ask
+            const uint32_t w = rd32(rdram, sta);
+            if (lock && !g_eventLock)
+            {
+                g_gameHadLock = (w & Sta::kScenario) != 0u;
+                g_eventLock = true;
+            }
+            if (g_eventLock && lock)
+                wr32(rdram, sta, w | Sta::kScenario);
+            else if (g_eventLock)
+            {
+                if (!g_gameHadLock)
+                    wr32(rdram, sta, w & ~Sta::kScenario);
+                g_eventLock = false;
+            }
+        }
+        if (g_cleanIn > 0 && --g_cleanIn == 0 && room == kTestRoom)
+            releaseUnused(rdram, ctx);
+        if (--g_tableIn <= 0)
+        {
+            g_tableIn = 30;
+            std::string line = room == kTestRoom ? tableSummary(rdram, false) : std::string();
+            std::lock_guard<std::mutex> lock(g_statusMutex);
+            g_tableLine.swap(line);
+        }
 
         // Requests from the menu.
-        if (const int pick = g_testRequest.exchange(-1); pick >= 0 && pick < static_cast<int>(std::size(kTestRooms)))
+        if (g_testRequest.exchange(-1) >= 0 && room != kTestRoom)
         {
-            const TestRoom &t = kTestRooms[pick];
             float pos[3];
             float heading = 0.0f;
-            if (!debug_tools::firstJumpPoint(t.room, pos, heading))
-                std::memcpy(pos, t.pos, sizeof(pos));
+            if (!debug_tools::firstJumpPoint(kTestRoom, pos, heading))
+                std::memcpy(pos, kTestLanding, sizeof(pos));
             g_cameFrom = room;
             g_jumpPending = 1;
             g_jumpAt = Clock::now();
-            debug_tools::requestJump(t.room, pos, heading, t.label);
+            debug_tools::requestJump(kTestRoom, pos, heading, "the test room (r002)");
             setStatus("Jumping...");
         }
         if (g_leaveRequest.exchange(false) && g_inTest.load() && g_leavePhase == 0)
@@ -946,7 +1049,7 @@ namespace kamite::spawn_tools
             giveBackData(rdram, ctx);
             float pos[3];
             float heading = 0.0f;
-            if (debug_tools::firstJumpPoint(g_cameFrom, pos, heading))
+            if (g_cameFrom != kTestRoom && g_cameFrom != 0xFFFFu && debug_tools::firstJumpPoint(g_cameFrom, pos, heading))
             {
                 char label[64];
                 std::snprintf(label, sizeof(label), "back to r%x%02x", (g_cameFrom >> 8) & 0xF, g_cameFrom & 0xFF);
@@ -956,7 +1059,10 @@ namespace kamite::spawn_tools
                 setStatus("Leaving...");
             }
             else
-                setStatus("The room you came from has no jump point: use the Debug tab's room jump or a save state.");
+            {
+                setStatus("No way back known (the room you came from has no jump point, or you came another way): use the "
+                          "Debug tab's room jump or a save state.");
+            }
             g_leavePhase = 0;
         }
 
