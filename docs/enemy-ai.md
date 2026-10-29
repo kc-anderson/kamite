@@ -6,7 +6,7 @@ angles in degrees. The game logic runs at 30 updates a second; times below are i
 
 ## No camera involved
 
-The only camera test the enemies have (`cGameObj_isClip`, `IsTargetVisible_14B470` and the per-class copies such as
+The only camera test the enemies have (`cGameObj_isClip`, `cModel_isClip` (0x14B470) and the per-class copies such as
 `func_00279F00`, all virtual slot 0x30) is called by `cModel_Trans` and `func_00319520`: it decides whether a model is
 drawn, and whether its skeleton is animated (`+0x250` bit 0x200000). Nothing in the enemies' decisions reads it. They
 go by distances to Gene and by **the way Gene faces**. The aspect ratio and the field of view therefore do not change

@@ -12,7 +12,7 @@
 // recomp/kamite.toml has the three hooks (flag "widescreen"); they replace the instruction and set $at to the
 // computed float.
 //
-// The camera's own "on screen" test (func_00279F00 and its clones, cGameObj_isClip, IsTargetVisible_14B470: virtual
+// The camera's own "on screen" test (func_00279F00 and its clones, cGameObj_isClip, cModel_isClip (0x14B470): virtual
 // slot 0x30, called by cModel_Trans) clips the model's bounding box against the matrix cCamera_update builds from the
 // camera's fov and from 0x586B88, the value the camera-width hook sets (a 1.6x margin around the visible screen, on
 // the PS2 too). It decides only whether a model is drawn and animated: the enemies' decisions to attack never look at

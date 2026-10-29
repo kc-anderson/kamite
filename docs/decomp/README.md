@@ -8,8 +8,8 @@ Kamite uses the matching decompilation (LucasPicoli/god-hand-decomp) and does no
 
 | File | What |
 |---|---|
-| `issue-camera-eye-target.md` | cCamera's `eye` (0x200) and `target` (0x210) are swapped (sceVu0CameraMatrix's arguments). To post. |
-| `issue-player-mode5.md` | `UpdateBossPhase_10B780` is entry 5 of the player's mode table, not a boss routine. To post. |
+| `issue-camera-eye-target.md` | cCamera's `eye` (0x200) and `target` (0x210) are swapped (sceVu0CameraMatrix's arguments). Posted as their #27; fixed upstream 2026-10-28 (b23f39c: `target` 0x200, `eye` 0x210). |
+| `issue-player-mode5.md` | `UpdateBossPhase_10B780` is entry 5 of the player's mode table, not a boss routine. Posted as their #28; fixed upstream 2026-10-28 (74e33dd: `StepPlayerSubscreenMode_10B780`, and entries 1, 2 and 4 renamed too). |
 | `issue-preview-disc.md` | Findings from the 2006-06-21 preview disc: the game's own names for the flag words at 0x747A78/80/84 and 89 export names retail lacks. To post (K's call: a findings issue, not a correction). |
 | `findings.md` | What Kamite knows that the decomp doesn't name yet, with how sure we are. |
 

@@ -25,7 +25,7 @@
 // Display switches. GameWork +0x5E0 (0x747A80) is the preview's DSP group (game::Dsp): one bit per part of the game,
 // and a SET bit HIDES that part (the dog race and the jukebox set them to hide the world and Gene, the door jump sets
 // DSP_ACTBTN to hide the prompt; func_002BF708 sets them all). Retail still reads most of them: Gene (0x1020F8,
-// 0x107F28), the enemies (12 enemy draw functions), the objects (0x1B80C0, IsTargetVisible_14B470), the stage
+// 0x107F28), the enemies (12 enemy draw functions), the objects (0x1B80C0, cModel_isClip 0x14B470), the stage
 // (0x319848), the screen filters (classCFILTER_TAG_Filter_main), the shadows (cObjBase_KageDraw), the coat
 // (IsTargetVisibleOrForced_1004C8), the action-button prompt (0x1F7360). A ticked box sets its bit at every frame
 // start; untick it and the bit gets the value the game last gave it (a clear by the game while hidden counts; a set

@@ -808,7 +808,7 @@ replace = true
 # Field of view ("fov", [Video] FieldOfView, src/kamite/widescreen.cpp): the player camera's fov eases toward a
 # target (fov*0.9 + target*0.1) at two stores in func_00139FF8 and starts at 31 in cPlCamera_setCamUpdate; the hooks
 # replace those stores so it eases toward target*k. The game builds its projection, clip matrices and the enemies'
-# on-screen test (IsTargetVisible_14B470, the camera's +0x80 matrix) from that fov, so they all follow.
+# on-screen test (cModel_isClip (0x14B470), the camera's +0x80 matrix) from that fov, so they all follow.
 [[patches.hooks]]
 address = "0x0013A6E4"
 hook = "km_fov_ease_a"

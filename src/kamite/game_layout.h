@@ -80,7 +80,7 @@ namespace kamite::game
         inline constexpr uint32_t kFilter = 0x04000000u;      // DSP_FILTER: the screen filters (classCFILTER_TAG_Filter_main)
         inline constexpr uint32_t kCock = 0x02000000u;        // DSP_COCK: the HUD ("cockpit")
         inline constexpr uint32_t kEmitter = 0x01000000u;     // DSP_EMITTER
-        inline constexpr uint32_t kObj = 0x00800000u;         // DSP_OBJ (IsTargetVisible_14B470)
+        inline constexpr uint32_t kObj = 0x00800000u;         // DSP_OBJ (cModel_isClip, 0x14B470)
         inline constexpr uint32_t kKage = 0x00400000u;        // DSP_KAGE: shadows (cObjBase_KageDraw)
         inline constexpr uint32_t kPl01 = 0x00200000u;        // DSP_PL01: Gene's coat (pl01)
         inline constexpr uint32_t kActBtn = 0x00100000u;      // DSP_ACTBTN: the action-button prompt

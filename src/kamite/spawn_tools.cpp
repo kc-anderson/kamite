@@ -343,7 +343,7 @@ namespace kamite::spawn_tools
             return "Data table: " + std::to_string(used) + " of " + std::to_string(count) + " slots used:" + kinds;
         }
         // Lets go of the enemy and NPC data no enemy here uses (left over from earlier rooms), as objects let go of
-        // theirs (cObj_releaseActorData: resetKind), all holds at once: the game's own clean-up then frees it.
+        // theirs (cObj__dtor: resetKind), all holds at once: the game's own clean-up then frees it.
         // The game's heaps (func_0030ECF8: Arena_init; cHeap {+0 first block, +4 size}; block {+0 heap, +4 prev, +8 next,
         // +0xC free after it, +0x10 used}). Enemy data goes into heap D.
         struct Heap
@@ -402,7 +402,7 @@ namespace kamite::spawn_tools
         }
 
         // Lets go of the enemy and NPC data no enemy here uses (left over from earlier rooms), as objects let go of
-        // theirs (cObj_releaseActorData: resetKind), all holds at once: the game's own clean-up then frees it.
+        // theirs (cObj__dtor: resetKind), all holds at once: the game's own clean-up then frees it.
         int releaseUnused(uint8_t *rdram, const R5900Context &base)
         {
             std::vector<uint32_t> kinds;

@@ -367,7 +367,7 @@ namespace kamite::style_presets
         // 0x7474A0): a player (Getplayer's 0x747A94), no sub screen open, Gene not ignoring input or the game frozen
         // (0x747A78 bits 31/30: sub screens, movies, events), no scripted "soft event" (0x747A84 bit 0x40: the casino
         // slots, the dog race), Gene not suspended (+0x250 bit 0x8000) and in his normal mode (+0x2F4 == 0; 5 is the
-        // sub-screen mode: state table 0x3BD0B8 entry 5, 0x10B780, the decomp's UpdateBossPhase_10B780, plays the
+        // sub-screen mode: state table 0x3BD0B8 entry 5, 0x10B780, the decomp's StepPlayerSubscreenMode_10B780, plays the
         // Techniques screen's move demo; 6 the cannon), no tutorial pop-up. Mid-attack counts: the next move of a chain comes from
         // the new set (ComboObj_startNext 0x126918 reads combo[] only when a move starts; a chain shorter than the hit
         // reached starts over).
