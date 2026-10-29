@@ -471,15 +471,39 @@ namespace kamite::spawn_tools
             std::snprintf(name, sizeof(name), "em/em%02x.dat", kind & 0xFFu);
             std::memset(rdram + kName, 0, 0x20);
             std::memcpy(rdram + kName, name, std::strlen(name));
-            wr32(rdram, kSizeOut, 0u);
+            wr32(rdram, kSizeOut, 0xDEADBEEFu); // FindEntryValue writes 0 here first: still DEADBEEF = it never ran
             wr32(rdram, kOtherOut, 0u);
             KM_WARN(Game, "spawn: ReadAlloc check: " << busy << " of 32 disc jobs busy, DBG word 2 = 0x" << std::hex << dbg2
                                                      << (dbg2 & 0x80000u ? " (bit 0x80000 set: the heap refuses every allocation)" : "")
                                                      << std::dec << "; looking up " << name);
+            {
+                // The same lookup called straight (the old way), for comparison: pc 0x1 after it = it ran to its end.
+                R5900Context *ctx = const_cast<R5900Context *>(&base);
+                const R5900Context saved = *ctx;
+                SET_GPR_U32(ctx, 4, 0x00580D40u);
+                SET_GPR_U32(ctx, 5, kName);
+                SET_GPR_U32(ctx, 6, kSizeOut);
+                SET_GPR_U32(ctx, 7, kOtherOut);
+                SET_GPR_U32(ctx, 31, 0x1u);
+                ctx->pc = 0x001FF9C0u;
+                uint32_t v0 = 0xFFFFFFFFu, pc = 0u;
+                if (GuestFunction f = resolve(0x001FF9C0u))
+                {
+                    f(rdram, ctx, g_runtime);
+                    v0 = GPR_U32(ctx, 2);
+                    pc = ctx->pc;
+                }
+                *ctx = saved;
+                KM_WARN(Game, "spawn: file table lookup of " << name << " (direct): " << static_cast<int32_t>(v0) << ", ended at pc 0x"
+                                                             << std::hex << pc << ", size 0x" << rd32(rdram, kSizeOut) << std::dec);
+                wr32(rdram, kSizeOut, 0xDEADBEEFu);
+            }
+            KM_WARN(Game, "spawn: name in RAM: '" << reinterpret_cast<const char *>(rdram + kName) << "', table root 0x" << std::hex
+                                                  << rd32(rdram, 0x00580D40u) << std::dec);
             queueCall(base, 0x001FF9C0u, {0x00580D40u, kName, kSizeOut, kOtherOut}, [name = std::string(name)](uint32_t found, R5900Context &) {
                 const uint8_t *r = g_runtime->memory().getRDRAM();
-                KM_WARN(Game, "spawn: file table lookup of " << name << ": " << static_cast<int32_t>(found) << ", size "
-                                                             << rd32(r, kSizeOut) << ", second value 0x" << std::hex << rd32(r, kOtherOut));
+                KM_WARN(Game, "spawn: file table lookup of " << name << " (queued): " << static_cast<int32_t>(found) << ", size 0x" << std::hex
+                                                             << rd32(r, kSizeOut) << ", second value 0x" << rd32(r, kOtherOut) << std::dec);
             });
         }
 
@@ -641,8 +665,17 @@ namespace kamite::spawn_tools
                 job->fresh = true;
                 job->busy = true;
                 const Kind info = *k;
+                wr32(rdram, job->slot + 0x14u, 0xDEADBEEFu); // FileLoadRec_start writes the heap here first
                 queueCall(base, kLoadStart, {job->slot, kind, kHeaps[job->heap].desc}, [job, kind, info](uint32_t data, R5900Context &owner) {
                     job->busy = false;
+                    {
+                        const uint8_t *r = g_runtime->memory().getRDRAM();
+                        KM_INFO(Game, "spawn: FileLoadRec_start(slot 0x" << std::hex << job->slot << ", kind 0x" << kind << ") = 0x" << data
+                                                                          << "; slot +0x10 0x" << rd32(r, job->slot + 0x10u) << " +0x14 0x"
+                                                                          << rd32(r, job->slot + 0x14u) << " +0x1C 0x" << rd32(r, job->slot + 0x1Cu)
+                                                                          << " +0x20 0x" << rd32(r, job->slot + 0x20u) << "; result sp 0x"
+                                                                          << getRegU32(&owner, 29) << std::dec);
+                    }
                     if (data == 0u)
                     {
                         job->noMemory = true; // cDvd_ReadAlloc found no room in heap D
