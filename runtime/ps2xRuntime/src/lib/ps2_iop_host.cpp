@@ -5,11 +5,13 @@
 #include "ps2_stubs.h"
 #include "Kernel/Stubs/SIF.h"
 #include "runtime/ps2_memory.h"
+#include "runtime/ps2_pad_tap.h"
 #include "runtime/ps2_cd_image.h"
 #include "Kernel/Stubs/MemoryCard.h"
 #include "Kernel/Syscalls/Common.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
@@ -681,15 +683,32 @@ bool PS2IopHostAdapter::callEeRpcServer(uint32_t serverData,
     return true;
 }
 
+namespace
+{
+    std::atomic<ps2x::pad::StateTap> g_padStateTap{nullptr}; // runtime/ps2_pad_tap.h
+}
+
+namespace ps2x::pad
+{
+    void setStateTap(StateTap tap)
+    {
+        g_padStateTap.store(tap, std::memory_order_release);
+    }
+}
+
 bool PS2IopHostAdapter::readPad(uint32_t port, ps2x::iop::PadInputState &state)
 {
     state = ps2_host_input::padState(port);
+    if (const ps2x::pad::StateTap tap = g_padStateTap.load(std::memory_order_acquire))
+        tap(port, 0u, state);
     return state.connected;
 }
 
 bool PS2IopHostAdapter::readPadSlot(uint32_t port, uint32_t slot, ps2x::iop::PadInputState &state)
 {
     state = ps2_host_input::padState(port, slot);
+    if (const ps2x::pad::StateTap tap = g_padStateTap.load(std::memory_order_acquire))
+        tap(port, slot, state);
     return state.connected;
 }
 

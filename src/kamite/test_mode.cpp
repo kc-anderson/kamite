@@ -14,11 +14,13 @@
 // 3. A scripted run (KAMITE_TEST=<script>, --test; [Run] Test): the same machinery driven by a key = value script
 //    (state, mode = record | play, input, frames in 30 FPS game frames, csv, fps60, enemies), for runs without a case.
 //
-// The pad goes through ps2x::pad's read tap on scePadRead, where the host has just filled the 32 status bytes the game
-// parses: the recorder keeps the last read of each game frame; a replay writes bytes 2..31 of the recording's sample
-// for the same real time over them (status and mode stay the game's). A recording made at 30 and played at 60 holds
-// each sample for two game frames, so every input lasts as long as it did; one made at 60 and played at 30 merges each
-// pair of samples (a button pressed in either counts, the sticks take the later), so no tap is lost.
+// The pad goes through ps2x::pad's state tap on the IOP host's pad read (runtime/ps2_pad_tap.h): PADMAN, running on
+// the emulated IOP, polls the virtual DualShock once a vblank, and the host state it is given passes through here (on
+// the IOP thread, hence the mutex). The recorder keeps the last poll of each game frame as a 32-byte DS2 status (the
+// file format); a replay rewrites the state from the recording's sample for the same real time. A recording made at 30
+// and played at 60 holds each sample for two game frames, so every input lasts as long as it did; one made at 60 and
+// played at 30 merges each pair of samples (a button pressed in either counts, the sticks take the later), so no tap
+// is lost.
 #include "kamite/test_mode.h"
 #include "kamite/frame_patches.h"
 #include "kamite/game_layout.h"
@@ -37,6 +39,7 @@
 #include <cstring>
 #include <ctime>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -49,7 +52,37 @@ namespace kamite::test_mode
         namespace GameObj = game::GameObj;
         namespace GameWork = game::GameWork;
 
-        constexpr uint32_t kSample = 32u;                     // scePadRead's status buffer
+        constexpr uint32_t kSample = 32u;                     // a DS2 status (the libpad layout) per game frame
+        std::mutex g_mutex;                                   // the tap (IOP thread) against the frame hook (game thread)
+
+        // PadInputState <-> the DS2 status bytes the recording keeps: +2..3 buttons (active low), +4..7 rx ry lx ly,
+        // +8..19 the pressures in PadPressure order.
+        void toStatus(const ps2x::iop::PadInputState &state, uint8_t *status)
+        {
+            std::memset(status, 0, kSample);
+            status[0] = 0x01u;
+            status[1] = 0x79u;
+            const uint16_t inverted = static_cast<uint16_t>(~state.buttons);
+            status[2] = static_cast<uint8_t>(inverted & 0xFFu);
+            status[3] = static_cast<uint8_t>(inverted >> 8);
+            status[4] = state.rightX;
+            status[5] = state.rightY;
+            status[6] = state.leftX;
+            status[7] = state.leftY;
+            for (size_t i = 0; i < state.pressure.size() && i < 12u; ++i)
+                status[8 + i] = state.pressure[i];
+        }
+        void fromStatus(const uint8_t *status, ps2x::iop::PadInputState &state)
+        {
+            state.connected = true;
+            state.buttons = static_cast<uint16_t>(~(status[2] | (status[3] << 8)) & 0xFFFFu);
+            state.rightX = status[4];
+            state.rightY = status[5];
+            state.leftX = status[6];
+            state.leftY = status[7];
+            for (size_t i = 0; i < state.pressure.size() && i < 12u; ++i)
+                state.pressure[i] = status[8 + i];
+        }
         constexpr uint32_t kEnemyList = 0x5864F0u + 0x500u;   // cEmManage: the first used slot (debug_tools.cpp)
         constexpr uint32_t kCollisionManager = 0x5E8040u;     // D_005E8040 (hitbox_overlay.cpp has the layout)
         constexpr uint32_t kHitStop = 0x574380u + 0xACD0u;    // the damage manager's hit stop word (fps60-notes 4b)
@@ -512,7 +545,7 @@ namespace kamite::test_mode
             return run.merged;
         }
 
-        void runTap(uint8_t *status)
+        void runTap(ps2x::iop::PadInputState &state)
         {
             Run &run = g_run;
             ++run.readsThisFrame;
@@ -520,12 +553,12 @@ namespace kamite::test_mode
             {
                 if (run.frame < run.haveSample.size())
                 {
-                    std::memcpy(run.rec.samples.data() + static_cast<size_t>(run.frame) * kSample, status, kSample);
+                    toStatus(state, run.rec.samples.data() + static_cast<size_t>(run.frame) * kSample);
                     run.haveSample[run.frame] = 1u;
                 }
                 return;
             }
-            std::memcpy(status + 2, sampleFor(run, run.frame) + 2, kSample - 2u);
+            fromStatus(sampleFor(run, run.frame), state);
         }
 
         void finishRun(PS2Runtime *runtime, bool ok)
@@ -819,16 +852,16 @@ namespace kamite::test_mode
         };
         Recorder g_rec;
 
-        void recorderTap(uint8_t *status)
+        void recorderTap(const ps2x::iop::PadInputState &state)
         {
             Recorder &rec = g_rec;
-            const uint16_t pressed = static_cast<uint16_t>(~(status[2] | (status[3] << 8)) & 0xFFFFu);
+            const uint16_t pressed = state.buttons; // PadButton bits, as the hotkey binding names them
             const uint16_t padBit = ps2x::hotkeys::binding(ps2x::hotkeys::Action::RecordCase).pad;
             if (padBit != 0u && (pressed & padBit) != 0u && (rec.prevPressed & padBit) == 0u)
                 rec.toggle = true;
             rec.prevPressed = pressed;
             ++rec.readsThisFrame;
-            std::memcpy(rec.lastRead, status, kSample);
+            toStatus(state, rec.lastRead);
             rec.haveRead = true;
         }
 
@@ -980,22 +1013,23 @@ namespace kamite::test_mode
             }
         }
 
-        // ---- the one pad tap ---------------------------------------------------------------------------------------
-        void padTap(int port, int, uint8_t *status)
+        // ---- the one pad tap (IOP thread) --------------------------------------------------------------------------
+        void padTap(uint32_t port, uint32_t slot, ps2x::iop::PadInputState &state)
         {
-            if (port != 0)
+            if (port != 0u || slot != 0u)
                 return;
+            std::lock_guard<std::mutex> lock(g_mutex);
             if (g_run.phase == Run::Phase::Running)
-                runTap(status);
+                runTap(state);
             else if (g_run.phase == Run::Phase::Off)
-                recorderTap(status);
+                recorderTap(state);
         }
     }
 
     void install(PS2Runtime &, const fs::path &exeDir)
     {
         g_exeDir = exeDir;
-        ps2x::pad::setReadTap(&padTap);
+        ps2x::pad::setStateTap(&padTap);
         std::string error;
         if (const char *value = std::getenv("KAMITE_REPLAY_CASE"); value && *value)
         {
@@ -1033,6 +1067,7 @@ namespace kamite::test_mode
 
     void onFrame(uint8_t *rdram, R5900Context *, PS2Runtime *runtime)
     {
+        std::lock_guard<std::mutex> lock(g_mutex); // the tap on the IOP thread waits while a frame is handled
         if (g_run.phase == Run::Phase::Off)
             recorderFrame(rdram);
         else if (g_run.phase != Run::Phase::Done)
@@ -1046,6 +1081,7 @@ namespace kamite::test_mode
 
     bool recording()
     {
+        std::lock_guard<std::mutex> lock(g_mutex);
         return g_rec.phase != Recorder::Phase::Idle;
     }
 }
