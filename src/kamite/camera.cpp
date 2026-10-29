@@ -516,17 +516,66 @@ namespace kamite
             return std::fabs(rel);
         }
 
+        // TEMPORARY (Oct 29, strip once K's free-camera fights are right): once a second while the free camera has the
+        // view, what the enemies compared: Gene's yaw, the camera's, and per enemy the game's angle, ours and the cone.
+        struct ConeNote
+        {
+            uint32_t enemy;
+            char site;
+            float game, view, cone;
+        };
+        ConeNote g_coneNotes[12];
+        int g_coneCount = 0;
+        std::chrono::steady_clock::time_point g_coneLogAt{};
+        void noteCone(const uint8_t *rdram, R5900Context *ctx, char site, float game, float view, float cone)
+        {
+            if (!g_freeNow)
+                return;
+            const uint32_t enemy = GPR_U32(ctx, 18);
+            for (int i = 0; i < g_coneCount; ++i)
+                if (g_coneNotes[i].enemy == enemy && g_coneNotes[i].site == site)
+                {
+                    g_coneNotes[i] = {enemy, site, game, view, cone};
+                    goto logged;
+                }
+            if (g_coneCount < 12)
+                g_coneNotes[g_coneCount++] = {enemy, site, game, view, cone};
+        logged:
+            const auto now = std::chrono::steady_clock::now();
+            if (now - g_coneLogAt < std::chrono::seconds(1))
+                return;
+            g_coneLogAt = now;
+            uint32_t gene = 0;
+            std::memcpy(&gene, rdram + 0x747A94u, 4);
+            const float geneYaw = (gene & 0x1FFFFFFFu) >= 0x100000u ? loadFloat(rdram, gene + 0x104u) : 0.0f;
+            char line[1024];
+            int n = std::snprintf(line, sizeof(line), "enemy cones (deg): camera yaw %.0f, Gene %.0f;", g_freeYaw / kDegToRad,
+                                  geneYaw / kDegToRad);
+            for (int i = 0; i < g_coneCount && n < static_cast<int>(sizeof(line)) - 80; ++i)
+            {
+                const ConeNote &c = g_coneNotes[i];
+                n += std::snprintf(line + n, sizeof(line) - static_cast<size_t>(n), " %x %c %.0f->%.0f /%.0f", c.enemy & 0xFFFFFFu, c.site,
+                                   c.game / kDegToRad, c.view / kDegToRad, c.cone / kDegToRad);
+            }
+            KM_INFO(Game, line);
+            g_coneCount = 0;
+        }
+
         // Before c.le.s $f0,$f1 in func_00211C08 ($f0 = the 60-degree wedge, $f1 = the angle)
         void enemyWedge(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
+            const float game = ctx->f[1];
             ctx->f[1] = viewAngle(rdram, ctx, ctx->f[1]);
             ctx->f[0] = scaledCone(ctx->f[0], enemyDistance(rdram, ctx));
+            noteCone(rdram, ctx, 'w', game, ctx->f[1], ctx->f[0]);
         }
         // Before c.lt.s $f0,$f1 in func_00262AA8 ($f0 = the angle, $f1 = the level's lunge cone)
         void enemyLunge(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
+            const float game = ctx->f[0];
             ctx->f[0] = viewAngle(rdram, ctx, ctx->f[0]);
             ctx->f[1] = scaledCone(ctx->f[1], enemyDistance(rdram, ctx));
+            noteCone(rdram, ctx, 'l', game, ctx->f[0], ctx->f[1]);
         }
 
         // ---- Camera shake -----------------------------------------------------------------------------------------

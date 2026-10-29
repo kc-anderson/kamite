@@ -7,7 +7,8 @@
 // left over from earlier rooms, it filled the 32-slot data table). "Leave test room" releases the spawns, lets go of
 // their data and jumps to the first RoomJmpTbl point of the room it came from. Spawning is offered only in there.
 //
-// Spawning, the game's own way in three steps over a few frames (the game thread, at frame start):
+// Spawning, the game's own way in three steps over a few frames (decided at frame start; every call into the game
+// runs from the game's frame update, Move, as guest code: see queueCall):
 //   1. the kind's data (em/emXX.dat): cDataManager 0x5864E0. Already loaded: on to 3. Else a slot (findKind /
 //      findFreeSlot) and FileLoadRec_start(slot, kind, heap D 0x754220) (0 = the heap has no room: "not enough memory"),
 //      plus the sound banks loadSeWait would queue (queueSounds, a copy of its rules), then
@@ -38,7 +39,6 @@
 #include "ps2_runtime_macros.h" // GPR_U32 / SET_GPR_U32
 #include "runtime/ps2_memory.h"
 
-#include "runtime/ee_scheduler.h"
 #include "runtime/ps2_game_menu.h"
 #if __has_include("pcsx2gs_api.h")
 #include "pcsx2gs_api.h"
@@ -224,50 +224,100 @@ namespace kamite::spawn_tools
             return g_runtime && g_runtime->hasFunction(address) ? g_runtime->lookupFunction(address) : nullptr;
         }
 
-        // A guest function called to its end from host code, on the game's registers (given back after). Two things
-        // make that safe (dd6a3b9..bc60a79 learned both): the EE scheduler must not unwind it part-way at a checkpoint
-        // (it would expect to resume it from its pc, which a host caller never does), so the call runs inside
-        // beginHostCall/endHostCall; and queued GuestInvocations do not help (from the frame hook they completed
-        // without running). ra = 1 marks the end; a tail jump (J to another function) leaves pc at that function, which
-        // is run next, until pc is 1. `done` gets $v0 and the registers (for nested calls), at once.
-        int g_inFlight = 0;
-        void queueCall(const R5900Context &base, uint32_t address, std::initializer_list<uint32_t> args,
+        // Calls into the game's code go through the game's own frame update (Move 0x30EEE8, called once a frame by
+        // cGame_gameLoop): at its entry, a queued call is tail-called with ra = Move's entry, so it runs as guest code
+        // on the game's thread; when it returns (Move entered with ra still Move), the next one goes, then Move itself
+        // with its caller's ra. Run from host code instead (up to f58e712), a call that switches threads part-way
+        // (the disc read: cDvd_ReadAlloc -> the CRI file system's svm lock, ChangeThreadPriority/SuspendThread) was
+        // cut off and left the sound threads locked: the game hung. `done` gets $v0 and the registers on return.
+        struct Call
+        {
+            uint32_t address = 0;
+            uint32_t args[8] = {};
+            int count = 0;
+            bool hasF12 = false;
+            float f12 = 0.0f;
+            std::function<void(uint32_t, R5900Context &)> done;
+        };
+        std::deque<Call> g_calls;     // game thread only (onFrame and Move)
+        Call g_running;
+        bool g_callActive = false;
+        uint32_t g_moveRa = 0;        // Move's caller, given back before Move runs
+        int g_moveQuiet = 0;          // frames with calls waiting and no Move seen
+        constexpr uint32_t kMove = 0x0030EEE8u;
+        GuestFunction g_origMove = nullptr;
+
+        void queueCall(const R5900Context &, uint32_t address, std::initializer_list<uint32_t> args,
                        std::function<void(uint32_t, R5900Context &)> done = {}, const float *f12 = nullptr)
         {
-            R5900Context *ctx = const_cast<R5900Context *>(&base);
-            uint8_t *rdram = g_runtime->memory().getRDRAM();
-            const R5900Context saved = *ctx;
-            int reg = 4;
+            Call c;
+            c.address = address;
             for (uint32_t a : args)
-            {
-                const int r = reg++; // SET_GPR_U32 evaluates its index twice: never pass it reg++ (every argument
-                SET_GPR_U32(ctx, r, a); // landed two registers on: the cause of every failed spawn up to e6f98f4)
-            }
+                if (c.count < 8)
+                    c.args[c.count++] = a;
             if (f12)
-                ctx->f[12] = *f12;
-            constexpr uint32_t kEnd = 0x1u;
-            SET_GPR_U32(ctx, 31, kEnd);
-            ctx->pc = address;
-            EeScheduler &scheduler = g_runtime->eeScheduler();
-            scheduler.beginHostCall();
-            int steps = 0;
-            while (ctx->pc != kEnd && ctx->pc != 0u && steps++ < 64)
             {
-                GuestFunction f = resolve(ctx->pc);
-                if (!f)
-                    break;
-                f(rdram, ctx, g_runtime);
+                c.hasF12 = true;
+                c.f12 = *f12;
             }
-            scheduler.endHostCall();
-            const bool ended = ctx->pc == kEnd;
-            const uint32_t v0 = ended ? GPR_U32(ctx, 2) : 0u;
-            if (!ended)
-                KM_ERROR(Game, "spawn: guest call 0x" << std::hex << address << " stopped at pc 0x" << ctx->pc << std::dec
-                                                      << " (not run to its end)");
-            R5900Context after = *ctx;
-            *ctx = saved;
-            if (done)
-                done(v0, after);
+            c.done = std::move(done);
+            g_calls.push_back(std::move(c));
+        }
+
+        void startCall(uint8_t *rdram, R5900Context *ctx)
+        {
+            g_running = std::move(g_calls.front());
+            g_calls.pop_front();
+            GuestFunction f = resolve(g_running.address);
+            if (!f)
+            {
+                KM_ERROR(Game, "spawn: no function at 0x" << std::hex << g_running.address << std::dec);
+                return;
+            }
+            for (int i = 0; i < g_running.count; ++i)
+            {
+                const int r = 4 + i; // SET_GPR_U32 evaluates its index twice: never pass it reg++ (every argument
+                SET_GPR_U32(ctx, r, g_running.args[i]); // landed two registers on up to e6f98f4)
+            }
+            if (g_running.hasF12)
+                ctx->f[12] = g_running.f12;
+            SET_GPR_U32(ctx, 31, kMove);
+            g_callActive = true;
+            ctx->pc = g_running.address;
+            f(rdram, ctx, g_runtime); // an unwind inside resumes from ctx->pc, as in any guest code
+        }
+
+        void moveHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (ctx->pc != kMove)
+                return g_origMove(rdram, ctx, runtime); // a resume inside Move
+            g_moveQuiet = 0;
+            const bool back = g_callActive && GPR_U32(ctx, 31) == kMove;
+            if (g_callActive && !back)
+            {
+                // Move called by the game while ours was out: a save state loaded, or the room changed, mid-call.
+                KM_WARN(Game, "spawn: a call to 0x" << std::hex << g_running.address << std::dec << " never came back");
+                g_callActive = false;
+                g_running = Call{};
+                g_calls.clear();
+            }
+            if (back)
+            {
+                g_callActive = false;
+                Call done = std::move(g_running);
+                g_running = Call{};
+                if (done.done)
+                {
+                    R5900Context after = *ctx;
+                    done.done(GPR_U32(ctx, 2), after); // may queue more
+                }
+            }
+            else
+                g_moveRa = GPR_U32(ctx, 31);
+            if (!g_calls.empty())
+                return startCall(rdram, ctx);
+            SET_GPR_U32(ctx, 31, g_moveRa);
+            g_origMove(rdram, ctx, runtime);
         }
 
         // Inside a replaced guest function: hand over to another function as if it had been jumped to (its return goes
@@ -474,56 +524,6 @@ namespace kamite::spawn_tools
             }
         }
 
-        // Why cDvd_ReadAlloc 0x200CB0 said no: no free job (cDvd 0x583F20: 32 jobs of 0x88 from +4, busy while +0 is
-        // set; cDvd_takeFreeJob), the name not in the file table (FindEntryValue_1FF9C0(0x580D40, name, &size, &x) < 0),
-        // or cHeap_allocFirstFit's refusal (DBG word 2 bit 0x80000 makes every allocation fail, or no block fits).
-        void diagnoseReadAlloc(uint8_t *rdram, const R5900Context &base, uint32_t kind)
-        {
-            int busy = 0;
-            for (uint32_t i = 0; i < 32u; ++i)
-                busy += rd32(rdram, kDvd + 4u + 0x88u * i) != 0u ? 1 : 0;
-            const uint32_t dbg2 = rd32(rdram, 0x00747A34u);
-            constexpr uint32_t kName = 0x000FFF80u, kSizeOut = 0x000FFFA0u, kOtherOut = 0x000FFFA4u;
-            char name[16];
-            std::snprintf(name, sizeof(name), "em/em%02x.dat", kind & 0xFFu);
-            std::memset(rdram + kName, 0, 0x20);
-            std::memcpy(rdram + kName, name, std::strlen(name));
-            wr32(rdram, kSizeOut, 0xDEADBEEFu); // FindEntryValue writes 0 here first: still DEADBEEF = it never ran
-            wr32(rdram, kOtherOut, 0u);
-            KM_WARN(Game, "spawn: ReadAlloc check: " << busy << " of 32 disc jobs busy, DBG word 2 = 0x" << std::hex << dbg2
-                                                     << (dbg2 & 0x80000u ? " (bit 0x80000 set: the heap refuses every allocation)" : "")
-                                                     << std::dec << "; looking up " << name);
-            {
-                // The same lookup called straight (the old way), for comparison: pc 0x1 after it = it ran to its end.
-                R5900Context *ctx = const_cast<R5900Context *>(&base);
-                const R5900Context saved = *ctx;
-                SET_GPR_U32(ctx, 4, 0x00580D40u);
-                SET_GPR_U32(ctx, 5, kName);
-                SET_GPR_U32(ctx, 6, kSizeOut);
-                SET_GPR_U32(ctx, 7, kOtherOut);
-                SET_GPR_U32(ctx, 31, 0x1u);
-                ctx->pc = 0x001FF9C0u;
-                uint32_t v0 = 0xFFFFFFFFu, pc = 0u;
-                if (GuestFunction f = resolve(0x001FF9C0u))
-                {
-                    f(rdram, ctx, g_runtime);
-                    v0 = GPR_U32(ctx, 2);
-                    pc = ctx->pc;
-                }
-                *ctx = saved;
-                KM_WARN(Game, "spawn: file table lookup of " << name << " (direct): " << static_cast<int32_t>(v0) << ", ended at pc 0x"
-                                                             << std::hex << pc << ", size 0x" << rd32(rdram, kSizeOut) << std::dec);
-                wr32(rdram, kSizeOut, 0xDEADBEEFu);
-            }
-            KM_WARN(Game, "spawn: name in RAM: '" << reinterpret_cast<const char *>(rdram + kName) << "', table root 0x" << std::hex
-                                                  << rd32(rdram, 0x00580D40u) << std::dec);
-            queueCall(base, 0x001FF9C0u, {0x00580D40u, kName, kSizeOut, kOtherOut}, [name = std::string(name)](uint32_t found, R5900Context &) {
-                const uint8_t *r = g_runtime->memory().getRDRAM();
-                KM_WARN(Game, "spawn: file table lookup of " << name << " (queued): " << static_cast<int32_t>(found) << ", size 0x" << std::hex
-                                                             << rd32(r, kSizeOut) << ", second value 0x" << rd32(r, kOtherOut) << std::dec);
-            });
-        }
-
         // ---- spawning (game thread)
         void queueSounds(const uint8_t *rdram, const R5900Context &base, uint32_t slot, uint32_t kind, const Kind &k)
         {
@@ -627,7 +627,6 @@ namespace kamite::spawn_tools
                 {
                     logHeapMap(rdram, kHeaps[0].desc);
                     KM_WARN(Game, "spawn: " << heapsLine(rdram) << "; " << tableSummary(rdram, true));
-                    diagnoseReadAlloc(rdram, base, kind);
                 }
                 // Another heap with room for it and 1 MB to spare (its data goes back through the same free).
                 const uint32_t need = k->kb * 1024u + 0x10000u;
@@ -690,8 +689,7 @@ namespace kamite::spawn_tools
                         KM_INFO(Game, "spawn: FileLoadRec_start(slot 0x" << std::hex << job->slot << ", kind 0x" << kind << ") = 0x" << data
                                                                           << "; slot +0x10 0x" << rd32(r, job->slot + 0x10u) << " +0x14 0x"
                                                                           << rd32(r, job->slot + 0x14u) << " +0x1C 0x" << rd32(r, job->slot + 0x1Cu)
-                                                                          << " +0x20 0x" << rd32(r, job->slot + 0x20u) << "; result sp 0x"
-                                                                          << getRegU32(&owner, 29) << std::dec);
+                                                                          << " +0x20 0x" << rd32(r, job->slot + 0x20u) << std::dec);
                     }
                     if (data == 0u)
                     {
@@ -1177,6 +1175,7 @@ namespace kamite::spawn_tools
         ok = replace(kIdleBoss, "cEm00_idleChooseNext (AI off)", &idleHook<kIdleBoss, &g_origIdleBoss>, g_origIdleBoss) && ok;
         ok = replace(kSleepFrames, "cScenario_sleepFrames (spawn)", &sleepFramesHook, g_origSleep) && ok;
         ok = replace(kReady, "cDataManager slot ready (spawn)", &readyHook, g_origReady) && ok;
+        ok = replace(kMove, "Move (spawn tools' calls)", &moveHook, g_origMove) && ok;
         g_startMotion = resolve(kStartMotion);
         g_moveMotion = resolve(kMoveMotion);
         g_dvdStep = resolve(kDvdStep);
@@ -1190,7 +1189,7 @@ namespace kamite::spawn_tools
 
     void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
-        if (!ctx || !runtime || !g_origAttack || !g_origSleep || !g_origReady)
+        if (!ctx || !runtime || !g_origAttack || !g_origSleep || !g_origReady || !g_origMove)
             return;
         g_runtime = runtime;
         const uint16_t room = rd16(rdram, GameWork::address(GameWork::kRoom));
@@ -1200,6 +1199,7 @@ namespace kamite::spawn_tools
             g_room = room;
             g_spawned.clear();
             g_jobs.clear();
+            g_calls.clear(); // not started: for the old room
             g_steady.clear();
             g_target = 0;
             g_motionSlot = -1;
@@ -1218,6 +1218,8 @@ namespace kamite::spawn_tools
             setStatus("The jump didn't happen: a cutscene, a door, a talk or a menu was running?");
         }
         g_inTest = room == kTestRoom;
+        if (!g_calls.empty() && ++g_moveQuiet == 300)
+            KM_WARN(Game, "spawn: " << g_calls.size() << " calls waiting and no Move (the game's frame update) for 300 frames");
 
         // No cutscene starts in the test room: SCENARIO (events locked out: cScenario_isEventStartOk) held set, as
         // the game sets it itself; one that is due waits, and plays where it should once the room is left.
