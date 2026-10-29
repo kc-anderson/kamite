@@ -1287,6 +1287,7 @@ namespace kamite::test_mode
         g_exeDir = exeDir;
         ps2xRegisterHostHook("km_test_pad_read_entry", &padReadEntry);
         ps2xRegisterHostHook("km_test_pad_read_copy", &padReadCopy);
+        ps2xSetPatchFlag("test_cases", true); // always: the hooks check the recorder / replay state themselves
         ps2x::pad::setStateTap(&padTap);
         std::string error;
         if (const char *value = std::getenv("KAMITE_REPLAY_CASE"); value && *value)

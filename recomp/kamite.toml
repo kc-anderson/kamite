@@ -224,9 +224,11 @@ replace = true
 [[patches.hooks]] # test cases: scePadRead's port and slot (dev-only, claude/test-mode.md "reads")
 address = "0x00397D20"
 hook = "km_test_pad_read_entry"
+flag = "test_cases"
 [[patches.hooks]] # test cases: the status a pad read hands the game (kept while recording, replaced in a replay)
 address = "0x00397D74"
 hook = "km_test_pad_read_copy"
+flag = "test_cases"
 [[patches.hooks]] # post-hit guard +0x54C -= +0x5A8 x rate: objects left at 1.0 (Gene, Door-kun, ...) take 0.5 at 60
 address = "0x001FD4F8"
 hook = "km_fps60_flash_guard_rate"
