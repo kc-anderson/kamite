@@ -1,6 +1,7 @@
 #include "runtime/ps2_hotkeys.h"
 
 #include "ps2_host_backend.h"
+#include "ps2x/iop/iop_pad.h"
 
 #include <array>
 #include <atomic>
@@ -19,6 +20,7 @@ namespace ps2x::hotkeys
             {"Menu", "Dev menu (F2 menu)", {KEY_F2}},
             {"SaveState", "Save state", {KEY_F5}},
             {"LoadState", "Load state", {KEY_F9}},
+            {"RecordCase", "Record a test case (again: stop)", {0, false, false, ps2x::iop::PadButton::R3}},
             {"FpsOverlay", "FPS overlay", {KEY_F3}},
             {"Fullscreen", "Full screen", {KEY_F11}},
             {"HudLayout", "HUD layout 16:9 / 4:3", {KEY_F7}},
@@ -34,11 +36,35 @@ namespace ps2x::hotkeys
             {"FrameStep", "Step one frame (pauses first)", {KEY_F4, true}},
         };
 
-        std::mutex g_mutex;
-        Binding g_bindings[kCount] = {
-            kInfo[0].def, kInfo[1].def, kInfo[2].def, kInfo[3].def, kInfo[4].def, kInfo[5].def, kInfo[6].def,
-            kInfo[7].def, kInfo[8].def, kInfo[9].def, kInfo[10].def, kInfo[11].def, kInfo[12].def,
+        constexpr PadName kPadNames[] = {
+            {"L3", ps2x::iop::PadButton::L3},         {"R3", ps2x::iop::PadButton::R3},
+            {"Select", ps2x::iop::PadButton::Select}, {"Start", ps2x::iop::PadButton::Start},
+            {"L1", ps2x::iop::PadButton::L1},         {"R1", ps2x::iop::PadButton::R1},
+            {"L2", ps2x::iop::PadButton::L2},         {"R2", ps2x::iop::PadButton::R2},
+            {"Triangle", ps2x::iop::PadButton::Triangle}, {"Circle", ps2x::iop::PadButton::Circle},
+            {"Cross", ps2x::iop::PadButton::Cross},   {"Square", ps2x::iop::PadButton::Square},
+            {"DpadUp", ps2x::iop::PadButton::Up},     {"DpadDown", ps2x::iop::PadButton::Down},
+            {"DpadLeft", ps2x::iop::PadButton::Left}, {"DpadRight", ps2x::iop::PadButton::Right},
         };
+
+        struct Defaults
+        {
+            Binding bindings[kCount];
+            constexpr Defaults() : bindings{}
+            {
+                for (int i = 0; i < kCount; ++i)
+                    bindings[i] = kInfo[i].def;
+            }
+        };
+        constexpr Defaults kDefaults;
+
+        std::mutex g_mutex;
+        Binding g_bindings[kCount];
+        const bool g_bindingsInit = [] {
+            for (int i = 0; i < kCount; ++i)
+                g_bindings[i] = kDefaults.bindings[i];
+            return true;
+        }();
         std::atomic<uint32_t> g_fired[kCount];
         std::atomic<uint32_t> g_taken[kCount];
 
@@ -129,7 +155,7 @@ namespace ps2x::hotkeys
 
     Action conflict(Action action, Binding binding)
     {
-        if (binding.key == 0)
+        if (!binding.bound())
             return Action::Count;
         std::lock_guard<std::mutex> lock(g_mutex);
         for (int i = 0; i < kCount; ++i)
@@ -169,8 +195,21 @@ namespace ps2x::hotkeys
         return "";
     }
 
+    const PadName *padNames(int &count)
+    {
+        count = static_cast<int>(sizeof(kPadNames) / sizeof(kPadNames[0]));
+        return kPadNames;
+    }
+
     std::string text(Binding binding)
     {
+        if (binding.pad != 0)
+        {
+            for (const PadName &p : kPadNames)
+                if (p.bit == binding.pad)
+                    return p.name;
+            return {};
+        }
         if (binding.key == 0)
             return {};
         const char *name = keyName(binding.key);
@@ -197,6 +236,12 @@ namespace ps2x::hotkeys
             out = Binding{};
             return true;
         }
+        for (const PadName &p : kPadNames)
+            if (sameText(rest, p.name))
+            {
+                out = Binding{0, false, false, p.bit};
+                return true;
+            }
         for (;;)
         {
             if (rest.size() > 5u && sameText(rest.substr(0, 5), "Ctrl+"))

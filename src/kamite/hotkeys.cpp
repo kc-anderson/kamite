@@ -65,7 +65,7 @@ namespace kamite::hotkeys
         for (int i = 0; i < kCount; ++i)
         {
             const rt::Binding binding = rt::binding(action(i));
-            ini.set("Hotkeys", rt::info(action(i)).id, binding.key ? rt::text(binding) : "none");
+            ini.set("Hotkeys", rt::info(action(i)).id, binding.bound() ? rt::text(binding) : "none");
         }
         const bool saved = ini.save();
         status = saved ? "Hotkeys saved to kamite.ini." : "Could not write kamite.ini.";
@@ -82,8 +82,8 @@ namespace kamite::hotkeys
         }
         if (!ui->collapsing_header("Hotkeys", 0))
             return;
-        ui->text_disabled("The port's own keys. Click one, then press the key (with Shift or Ctrl held if you want); "
-                          "Esc keeps the old one. F1 (the Controls screen) stays as it is.");
+        ui->text_disabled("The port's own keys. Click one, then press the key (with Shift or Ctrl held if you want) or "
+                          "pick a controller button; Esc keeps the old one. F1 (the Controls screen) stays as it is.");
         // A capture that finished: take the key. One the menu dropped (it was closed meanwhile): forget it.
         int key = 0;
         bool shift = false, ctrl = false;
@@ -120,7 +120,7 @@ namespace kamite::hotkeys
             if (g_capturing == i)
                 std::snprintf(label, sizeof(label), "press a key...##hk");
             else
-                std::snprintf(label, sizeof(label), "%s##hk", binding.key ? rt::text(binding).c_str() : "(none)");
+                std::snprintf(label, sizeof(label), "%s##hk", binding.bound() ? rt::text(binding).c_str() : "(none)");
             ui->set_next_width(160.0f);
             ui->begin_disabled(g_capturing >= 0 && g_capturing != i);
             if (ui->button(label))
@@ -150,6 +150,38 @@ namespace kamite::hotkeys
                 }
             }
             ui->pop_id();
+        }
+        if (g_capturing >= 0)
+        {
+            // Or a controller button, as the game sees it: the game layer watches the pad data for it.
+            ui->text_disabled("...or a controller button:");
+            int padCount = 0;
+            const rt::PadName *pads = rt::padNames(padCount);
+            for (int p = 0; p < padCount; ++p)
+            {
+                if (p % 8 != 0)
+                    ui->same_line();
+                ui->push_id(2000 + p);
+                char padLabel[32];
+                std::snprintf(padLabel, sizeof(padLabel), "%s##hkpad", pads[p].name);
+                if (ui->small_button(padLabel))
+                {
+                    const rt::Binding binding{0, false, false, pads[p].bit};
+                    const rt::Action target = action(g_capturing);
+                    const rt::Action other = rt::conflict(target, binding);
+                    if (other != rt::Action::Count)
+                        g_warning = rt::text(binding) + " is already " + rt::info(other).label + "; not changed.";
+                    else
+                    {
+                        rt::setBinding(target, binding);
+                        g_warning = rt::text(binding) + ": the game sees the button too.";
+                        save(g_status);
+                    }
+                    g_capturing = -1;
+                    ps2x::menu::cancelKeyCapture();
+                }
+                ui->pop_id();
+            }
         }
         if (g_capturing >= 0 && ui->small_button("No key for it (unbind)##hknone"))
         {

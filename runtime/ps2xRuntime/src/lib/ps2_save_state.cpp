@@ -155,10 +155,16 @@ namespace ps2x::savestate
     }
 
     std::atomic<uint32_t> g_loadCount{0};
+    std::atomic<uint32_t> g_saveCount{0};
 
     uint32_t loadCount()
     {
         return g_loadCount.load(std::memory_order_acquire);
+    }
+
+    uint32_t saveCount()
+    {
+        return g_saveCount.load(std::memory_order_acquire);
     }
 
     std::filesystem::path quickSlotPath()
@@ -718,6 +724,7 @@ bool EeScheduler::serviceStateRequests()
             std::filesystem::rename(temp, path, ec);
             if (ec)
                 throw ps2x::state::Error("could not replace " + path.string() + ": " + ec.message());
+            ps2x::savestate::g_saveCount.fetch_add(1u, std::memory_order_acq_rel);
             notify("State saved (field " + std::to_string(field) + ")");
         }
         catch (const std::exception &error)

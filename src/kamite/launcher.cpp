@@ -985,7 +985,7 @@ namespace kamite::launcher
         void storeHotkey(State &state, hk::Action action, hk::Binding binding)
         {
             hk::setBinding(action, binding);
-            state.ini.set("Hotkeys", hk::info(action).id, binding.key ? hk::text(binding) : "none");
+            state.ini.set("Hotkeys", hk::info(action).id, binding.bound() ? hk::text(binding) : "none");
         }
 
         void drawHotkeys(State &state)
@@ -999,9 +999,9 @@ namespace kamite::launcher
             ImGui::Spacing();
             ImGui::SeparatorText("Hotkeys");
             ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
-            ImGui::TextWrapped("The port's own keys. Click one, then press the key (with Shift or Ctrl held if you want). "
-                               "Right-click clears it. F1 (the Controls screen) stays as it is. The F2 menu's Controls "
-                               "tab edits the same list.");
+            ImGui::TextWrapped("The port's own keys. Click one, then press the key (with Shift or Ctrl held if you want), "
+                               "or pick a controller button. Right-click clears it. F1 (the Controls screen) stays as it "
+                               "is. The F2 menu's Controls tab edits the same list.");
             ImGui::PopStyleColor();
             if (ImGui::BeginTable("hotkeys", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX | ImGuiTableFlags_RowBg))
             {
@@ -1019,7 +1019,7 @@ namespace kamite::launcher
                     ImGui::TextUnformatted(info.label);
                     ImGui::TableSetColumnIndex(1);
                     ImGui::PushID(1000 + i);
-                    const std::string label = (binding.key ? hk::text(binding) : std::string("-")) + "##hk";
+                    const std::string label = (binding.bound() ? hk::text(binding) : std::string("-")) + "##hk";
                     if (ImGui::Button(label.c_str(), ImVec2(-1.0f, 0.0f)))
                     {
                         g_hotkeyCapture = i;
@@ -1088,6 +1088,34 @@ namespace kamite::launcher
                             g_hotkeyStatus += "   (also " + use + " in the game's controls: it will do both)";
                     }
                     done = true;
+                }
+                // Or a controller button, as the game sees it (R3, Select...): the game layer watches the pad data for it.
+                if (!done)
+                {
+                    ImGui::TextColored(kTextDim, "...or a controller button:");
+                    int padCount = 0;
+                    const hk::PadName *pads = hk::padNames(padCount);
+                    for (int p = 0; p < padCount; ++p)
+                    {
+                        if (p % 8 != 0)
+                            ImGui::SameLine();
+                        ImGui::PushID(2000 + p);
+                        if (ImGui::SmallButton(pads[p].name))
+                        {
+                            const hk::Binding binding{0, false, false, pads[p].bit};
+                            const hk::Action other = hk::conflict(action, binding);
+                            if (other != hk::Action::Count)
+                                g_hotkeyStatus = hk::text(binding) + " is already " + hk::info(other).label + "; not changed.";
+                            else
+                            {
+                                storeHotkey(state, action, binding);
+                                g_hotkeyStatus = std::string(hk::info(action).label) + ": " + hk::text(binding) +
+                                                 "   (the game sees the button too)";
+                            }
+                            done = true;
+                        }
+                        ImGui::PopID();
+                    }
                 }
                 if (done)
                 {

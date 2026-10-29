@@ -681,7 +681,7 @@ namespace
     void printUsage()
     {
         std::cout << "usage: kamite [--iso <path-to-" << kamite::kSerial << ".iso>] [--headless|--window] [--time-limit <seconds>]\n"
-                  << "               [--test <script>] [--write-settings]\n"
+                  << "               [--replay-case <file.case> [--fps60 0|1]] [--test <script>] [--write-settings]\n"
                   << "settings: kamite.ini next to kamite.exe (environment variables of the same name win)\n"
                   << "exit codes: 0 ok, 1 init failed, 2 no disc, 3 wrong disc, 4 CPU, 5 missing function (stop), 6 crash, 7 test failed,\n"
                   << "            124 time limit\n";
@@ -708,6 +708,10 @@ int main(int argc, char *argv[])
             setEnv("KAMITE_TIME_LIMIT_SECONDS", argv[++i]);
         else if (arg == "--test" && i + 1 < argc)
             setEnv("KAMITE_TEST", argv[++i]);
+        else if (arg == "--replay-case" && i + 1 < argc)
+            setEnv("KAMITE_REPLAY_CASE", argv[++i]);
+        else if (arg == "--fps60" && i + 1 < argc)
+            setEnv("KAMITE_REPLAY_FPS60", argv[++i]);
         else if (arg == "--write-settings")
             writeSettingsOnly = true;
         else if (arg == "--help" || arg == "-h")
@@ -1005,7 +1009,7 @@ int main(int argc, char *argv[])
         kamite::installMovieWatchdog(runtime); // sweep R3: ending/movie-list movie polls cannot spin forever
         // 60 FPS mode, L3 dash, and the game-frame count for the F3 overlay (a hook at the top of the main loop).
         kamite::installFramePatches(runtime);
-        kamite::test_mode::install(runtime, exeDir); // KAMITE_TEST / [Run] Test / --test: the scripted, self-measuring run (dev-only)
+        kamite::test_mode::install(runtime, exeDir); // the case recorder (R3), --replay-case and --test runs (dev-only)
         kamite::installGameOptions(runtime); // [Game] UnlockHard, [Sound] MuteMusic
         kamite::texture_slots::install(); // the per-frame texture slots reserve a texture's real VRAM footprint
         kamite::installSteadyIdleCamera(runtime); // [Video] SteadyIdleCamera

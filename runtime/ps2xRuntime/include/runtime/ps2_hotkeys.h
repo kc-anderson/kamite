@@ -5,7 +5,8 @@
 #include <string_view>
 
 // The port's keyboard shortcuts (the F keys), as a table the game layer and its menus can show and rebind. Each
-// action has one binding: a raylib key with optional Shift / Ctrl. The window loop asks pressed() for the actions it
+// action has one binding: a raylib key with optional Shift / Ctrl, or a PS2 pad button (the button the game would
+// see, e.g. "R3"; the game layer watches the pad data for it). The window loop asks pressed() for the actions it
 // handles itself and fire()s the others, which the game thread picks up with take(). F1 (the Controls screen) and
 // Esc are not here: they stay fixed.
 //
@@ -17,6 +18,7 @@ namespace ps2x::hotkeys
         Menu,        // the F2 menu
         SaveState,   // F5
         LoadState,   // F9
+        RecordCase,  // R3 on the pad: start / stop recording a test case (kamite/test_mode.cpp); listed under the states
         FpsOverlay,  // F3
         Fullscreen,  // F11
         HudLayout,   // F7: 16:9 / 4:3 HUD
@@ -35,11 +37,13 @@ namespace ps2x::hotkeys
 
     struct Binding
     {
-        int key = 0; // raylib KEY_*, 0 = unbound
+        int key = 0; // raylib KEY_*, 0 = unbound (unless pad is set)
         bool shift = false;
         bool ctrl = false;
-        bool operator==(const Binding &o) const noexcept { return key == o.key && shift == o.shift && ctrl == o.ctrl; }
+        uint16_t pad = 0; // a PS2 pad button bit (ps2x::iop::PadButton), 0 = none; a binding is a key or a pad button
+        bool operator==(const Binding &o) const noexcept { return key == o.key && shift == o.shift && ctrl == o.ctrl && pad == o.pad; }
         bool operator!=(const Binding &o) const noexcept { return !(*this == o); }
+        bool bound() const noexcept { return key != 0 || pad != 0; }
     };
 
     struct Info
@@ -55,8 +59,16 @@ namespace ps2x::hotkeys
     // Another action that already uses this binding (Count = none).
     [[nodiscard]] Action conflict(Action action, Binding binding);
 
-    // "Shift+F8", "F5", "" (unbound) <-> Binding. parse() takes the same text (case does not matter; "none" clears).
+    // "Shift+F8", "F5", "R3" (a pad button), "" (unbound) <-> Binding. parse() takes the same text (case does not
+    // matter; "none" clears).
     [[nodiscard]] std::string text(Binding binding);
+    // The pad buttons a binding may name ("R3" = PadButton::R3 ...), for menus that offer them.
+    struct PadName
+    {
+        const char *name;
+        uint16_t bit;
+    };
+    [[nodiscard]] const PadName *padNames(int &count);
     [[nodiscard]] bool parse(std::string_view text, Binding &out);
     [[nodiscard]] const char *keyName(int raylibKey); // "" for a key that cannot be named
     // The keys a hotkey may use: the F keys, letters, digits, keypad, and the named keys; not Esc or F1.

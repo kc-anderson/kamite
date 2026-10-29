@@ -3426,6 +3426,8 @@ void PS2Runtime::run()
             ps2x::hotkeys::fire(Action::HudLayout); // the game layer's HUD module takes it on the game thread
         if (!shortcutsOff && ps2x::hotkeys::pressed(Action::Dump2D))
             ps2x::hotkeys::fire(Action::Dump2D);
+        if (!shortcutsOff && ps2x::hotkeys::pressed(Action::RecordCase))
+            ps2x::hotkeys::fire(Action::RecordCase); // the game layer's test mode takes it (a pad button is read there)
         if (!shortcutsOff && ps2x::hotkeys::pressed(Action::RamDump))
         {
             // Debug capture: VU1 trace of the next 2 fields (vu1trace_<tick>.bin) plus the EE RAM (ram_<tick>.bin).
