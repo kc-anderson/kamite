@@ -255,6 +255,16 @@ file(WRITE "${KAMITE_MODULE_INDEX}.tmp"
 file(COPY_FILE "${KAMITE_MODULE_INDEX}.tmp" "${KAMITE_MODULE_INDEX}" ONLY_IF_DIFFERENT)
 
 add_executable(kamite ${KAMITE_HOST_SOURCES} "${KAMITE_MODULE_INDEX}")
+# The checkout's commit for the test cases' meta (kamite_generated/kamite/git_commit.h), refreshed at every build.
+set(KAMITE_COMMIT_HEADER "${CMAKE_CURRENT_BINARY_DIR}/kamite_generated/kamite/git_commit.h")
+execute_process(COMMAND "${CMAKE_COMMAND}" -DSRC=${CMAKE_SOURCE_DIR} -DOUT=${KAMITE_COMMIT_HEADER}
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/git_commit.cmake")
+add_custom_target(kamite_git_commit
+    COMMAND "${CMAKE_COMMAND}" -DSRC=${CMAKE_SOURCE_DIR} -DOUT=${KAMITE_COMMIT_HEADER}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/git_commit.cmake"
+    BYPRODUCTS "${KAMITE_COMMIT_HEADER}"
+    VERBATIM)
+add_dependencies(kamite kamite_git_commit)
 if(KAMITE_MODULE_LIBRARIES)
     target_link_libraries(kamite PRIVATE ${KAMITE_MODULE_LIBRARIES})
 endif()

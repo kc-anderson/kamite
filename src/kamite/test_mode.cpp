@@ -24,6 +24,7 @@
 #include "kamite/test_mode.h"
 #include "kamite/frame_patches.h"
 #include "kamite/game_layout.h"
+#include "kamite/git_commit.h" // KAMITE_GIT_COMMIT (generated at build time)
 #include "kamite/log.h"
 #include "runtime/ps2_game_menu.h"
 #include "runtime/ps2_hotkeys.h"
@@ -1157,6 +1158,7 @@ namespace kamite::test_mode
                     c.meta += "build=" + std::to_string(size) + ":" +
                               std::to_string(static_cast<long long>(time.time_since_epoch().count())) + "\n";
             }
+            c.meta += std::string("commit=") + KAMITE_GIT_COMMIT + "\n"; // the build's source commit
             const fs::path caseFile = g_exeDir / "cases" / (rec.stamp + ".case");
             std::error_code ec;
             if (!writeFile(caseFile, packCase(c)))

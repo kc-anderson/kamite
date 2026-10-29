@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## October 29, 2026
 
+- Dev: test cases record the commit they were built from.
 - 60 FPS: every button-mash move takes the 30 FPS mashing pace (nine of them needed twice the speed).
 - 60 FPS: Gene's spinning mash attack turns and lasts as at 30 FPS; his post-hit guard lasts as at 30 FPS in every state.
 - 60 FPS: removed the old patch to Gene's attacks that the God Hand meter fix replaces.

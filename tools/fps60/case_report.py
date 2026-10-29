@@ -425,7 +425,7 @@ def main(argv):
 
     print(f"Case {path}")
     print(f"  created {meta.get('created', '?')}, recorded at {60 // rec_div} FPS, {meta.get('frames', '?')} frames, {meta.get('polls', '?')} pad polls = "
-          f"{meta.get('seconds', '?')} s, room {meta.get('room', '?')}; live log {len(live)} rows")
+          f"{meta.get('seconds', '?')} s, room {meta.get('room', '?')}; live log {len(live)} rows; commit {meta.get('commit', '?')}")
     print(f"  replays: 30 FPS {'%d rows' % len(rows30) if rows30 else 'MISSING'}, 60 FPS {'%d rows' % len(rows60) if rows60 else 'MISSING'}")
     print()
 
