@@ -434,6 +434,13 @@ namespace kamite
             const int32_t value = GPR_S32(ctx, 2);
             SET_GPR_S32(ctx, 2, (g_gameFrame & 1u) ? value : value - 1);
         }
+        // addiu rN,rN,-1 on another register (the dodge state's +0x15B4 at 0x10D2CC: a0).
+        template <int Reg>
+        void countdownReg(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            const int32_t value = GPR_S32(ctx, Reg);
+            SET_GPR_S32(ctx, Reg, (g_gameFrame & 1u) ? value : value - 1);
+        }
         void countdownFloat(uint8_t *, R5900Context *ctx, PS2Runtime *) // sub.s f0,f1,f0 (+0x15D0 -= 1.0 at 0x108DE8)
         {
             ctx->f[0] = (g_gameFrame & 1u) ? ctx->f[1] : ctx->f[1] - ctx->f[0];
@@ -515,6 +522,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_countdown", &buttonTimer);
         ps2xRegisterHostHook("km_fps60_countdown_self", &countdownSelf);
         ps2xRegisterHostHook("km_fps60_countdown_float", &countdownFloat);
+        ps2xRegisterHostHook("km_fps60_countdown_a0", &countdownReg<4>);
         ps2xRegisterHostHook("km_fps60_countdown_5f8", &countdownLoad<17, 0x5F8u>);
         ps2xRegisterHostHook("km_fps60_countdown_em510", &countdownLoad<16, 0x510u>);
         ps2xRegisterHostHook("km_fps60_countdown_em514", &countdownLoad<16, 0x514u>);

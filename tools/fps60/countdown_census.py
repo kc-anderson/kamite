@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """List every countdown site (claude/fps60-notes.md family 1) in a PS2 ELF: an `addiu rt, rs, -1` with a load of rs
-and a store of rt to the same base+offset within three instructions. At 60 FPS each such counter, if it runs once a
+and a store of rt to the same base+offset within eight instructions. At 60 FPS each such counter, if it runs once a
 game frame, runs twice as fast; the sites of one function/class are fixed together with the km_fps60_countdown hooks.
 
 Usage: countdown_census.py <SLUS_215.03> [recomp/kamite_functions.csv] [--function NAME] [--range LO HI]
@@ -60,14 +60,20 @@ def main():
                 continue
             rs, rt = (w >> 21) & 31, (w >> 16) & 31
             ld = None
-            for b in range(a - 4, a - 16, -4):
+            # Up to 8 instructions back (0x10D2CC's lw sat 5 before its addiu; the old 3-instruction window missed it),
+            # stopping at any other instruction that writes rs.
+            for b in range(a - 4, a - 36, -4):
                 x = rd(b)
                 if x >> 26 in LOADS and ((x >> 16) & 31) == rs:
                     ld = (b, (x >> 21) & 31, x & 0xFFFF, LOADS[x >> 26])
                     break
+                op = x >> 26
+                dest = (x >> 11) & 31 if op == 0 else (x >> 16) & 31 if 8 <= op <= 15 or op in LOADS else -1
+                if dest == rs:
+                    break
             if not ld:
                 continue
-            for c in range(a + 4, a + 16, 4):
+            for c in range(a + 4, a + 36, 4):
                 x = rd(c)
                 if x >> 26 in STORES and ((x >> 16) & 31) == rt and ((x >> 21) & 31) == ld[1] and (x & 0xFFFF) == ld[2]:
                     sites.append((a, fn(a), ld[3], ld[2], ld[1], rs, rt, is_branch(rd(a - 4))))

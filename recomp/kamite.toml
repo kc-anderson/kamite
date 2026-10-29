@@ -307,6 +307,16 @@ hook = "km_fps60_countdown"
 flag = "fps60"
 replace = true
 
+# The dodge state (0x10D0E0, phase 7; entered at 0x124178): while +0x15B4 is non-zero it lowers it by one a frame and
+# writes 2 into +0x1603, the upper-body dodge that keeps Gene's head/chest hurt volumes off; the timer-block countdown
+# only starts once the refresh stops. Counted in game frames, so at 60 FPS the hurt volumes came back after half the
+# time (test cases Oct 29: refreshed 9 game frames at both rates = 0.300 s at 30, 0.150 s at 60). Every other frame.
+[[patches.hooks]] # +0x15B4 dodge refresh (addiu a0,a0,-1)
+address = "0x0010D2CC"
+hook = "km_fps60_countdown_a0"
+flag = "fps60"
+replace = true
+
 # The enemy manager's timers (cEmManage_Main 0x290284..0x29038C, once a game frame; the manager is the enemies' shared
 # state at 0x5864F0): words +0x510/+0x514/+0x530 and bytes +0x538..+0x53D, +0x540, +0x541, half +0x542 count down a
 # frame, so at 60 FPS they ran twice as fast (its float +0x544 already steps by the speed rate +0x548). Every other
