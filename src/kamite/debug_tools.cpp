@@ -43,6 +43,7 @@
 #include "kamite/disc_files.h"
 #include "kamite/hitbox_overlay.h"
 #include "kamite/game_layout.h"
+#include "kamite/spawn_tools.h"
 #include "kamite/log.h"
 #include "ps2_runtime_macros.h" // GPR_U32 / SET_GPR_U32
 #include "runtime/ps2_memory.h"
@@ -63,6 +64,7 @@
 #include <cstring>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -168,6 +170,8 @@ namespace kamite::debug_tools
         std::vector<Point> g_points;
         std::vector<std::string> g_labels; // for the combo
         std::atomic<int> g_request{-1};     // a point to jump to, taken at the next frame start
+        std::mutex g_customMutex;           // a jump to any spot (the NPCs tab's test room), same frame start
+        std::optional<Point> g_custom;
         int g_selected = 0;                 // UI thread
         std::mutex g_statusMutex;
         std::string g_status;
@@ -236,6 +240,8 @@ namespace kamite::debug_tools
             if (g_oneHitKills.load(std::memory_order_relaxed))
                 setHp(rdram, obj, 0);
             else if (g_enemiesNoDeath.load(std::memory_order_relaxed) && getHp(rdram, obj) < 1)
+                setHp(rdram, obj, 1);
+            if (spawn_tools::cantDie(obj) && getHp(rdram, obj) < 1) // the NPCs tab's target (wins over one-hit kills)
                 setHp(rdram, obj, 1);
         }
 
@@ -811,5 +817,48 @@ namespace kamite::debug_tools
         const int request = g_request.exchange(-1);
         if (request >= 0 && request < static_cast<int>(g_points.size()) && ctx && runtime)
             jump(rdram, ctx, runtime, g_points[static_cast<size_t>(request)]);
+        std::optional<Point> custom;
+        {
+            std::lock_guard<std::mutex> lock(g_customMutex);
+            custom.swap(g_custom);
+        }
+        if (custom && ctx && runtime)
+            jump(rdram, ctx, runtime, *custom);
+    }
+
+    bool pathfindingOff() { return (g_dbg[3].wanted.load() & Dbg::kPathfindingOff) != 0u; }
+    void setPathfindingOff(bool on)
+    {
+        const uint32_t want = g_dbg[3].wanted.load();
+        g_dbg[3].wanted.store(on ? (want | Dbg::kPathfindingOff) : (want & ~Dbg::kPathfindingOff));
+    }
+
+    void requestJump(uint16_t room, const float pos[3], float heading, const char *label)
+    {
+        Point p;
+        p.room = room;
+        std::memcpy(p.pos, pos, sizeof(p.pos));
+        p.heading = heading;
+        p.label = label ? label : "";
+        std::lock_guard<std::mutex> lock(g_customMutex);
+        g_custom = std::move(p);
+    }
+
+    bool firstJumpPoint(uint16_t room, float pos[3], float &heading)
+    {
+        for (const Point &p : g_points)
+            if (p.room == room)
+            {
+                std::memcpy(pos, p.pos, sizeof(p.pos));
+                heading = p.heading;
+                return true;
+            }
+        return false;
+    }
+
+    const char *roomName(uint16_t room)
+    {
+        const char *name = nameOf(room, 0);
+        return std::strcmp(name, "(unnamed)") == 0 ? "" : name;
     }
 }

@@ -16,4 +16,14 @@ namespace kamite::debug_tools
     // Game frame start (frame_patches.cpp): keeps the hidden parts hidden and starts a requested jump. The registers
     // are the game's at that point; the jump runs on them and gives them back after.
     void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
+
+    // Shared with the NPCs tab (spawn_tools.cpp).
+    bool pathfindingOff();
+    void setPathfindingOff(bool on);
+    // A door jump to any spot, taken at the next frame start like the Debug tab's (any thread).
+    void requestJump(uint16_t room, const float pos[3], float heading, const char *label);
+    // The room's first point in RoomJmpTbl.dat; false when the table has none for it.
+    bool firstJumpPoint(uint16_t room, float pos[3], float &heading);
+    // The jump table's name for the room's first point, "" when it has none.
+    const char *roomName(uint16_t room);
 }

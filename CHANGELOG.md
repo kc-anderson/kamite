@@ -4,6 +4,10 @@ Newest first, one line per change; the code comments say how.
 
 ## October 29, 2026
 
+- Dev: F2 > NPCs has a Spawn section: a jump to an empty test room, enemy and boss spawns there, Remove spawned,
+  Kill all enemies, the pathfinding switch and AI off (enemies stand idle and take hits but never attack or walk).
+- Dev: F2 > NPCs > Target enemy: lock onto the nearest enemy, make it unkillable, and have it repeat one of its motions
+  (with a pause between repeats, or once).
 - 60 FPS: Door-kun's door swings open at the 30 FPS pace (it was twice as fast).
 - 60 FPS: the frame-paced fixes keep their rhythm across save-state loads (a load could shift them by a frame).
 - Dev: test cases record the commit they were built from.
