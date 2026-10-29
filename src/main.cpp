@@ -23,7 +23,7 @@
 #include "kamite/style_presets.h"
 #include "kamite/npc_poses.h"
 #include "kamite/debug_tools.h"
-#include "kamite/spawn_tools.h"
+#include "kamite/npc_tools.h"
 #include "kamite/hitbox_overlay.h"
 #include "kamite/dev_menu.h"
 #include "kamite/hotkeys.h"
@@ -1004,7 +1004,7 @@ int main(int argc, char *argv[])
         kamite::hotkeys::install(exeDir / "kamite.ini"); // [Hotkeys]: the port's shortcut keys
         kamite::dev_menu::install(exeDir / "kamite.ini"); // F2: the dev menu's tab order, Display and Gameplay
         kamite::style_presets::install(runtime); // style presets: d-pad swaps in play, the Techniques screen's list and Y + d-pad
-        kamite::spawn_tools::install(runtime);       // F2: NPCs > Spawn, Target enemy (first: above Pose NPC; dev-only)
+        kamite::npc_tools::install(runtime);       // F2: NPCs > Enemies, Target enemy (first: above Pose NPC; dev-only)
         kamite::npc_poses::install(runtime, exeDir); // NPCs who lean on their counter (F2: NPCs; npc_poses.txt)
         kamite::debug_tools::install(runtime); // F2: Debug (the game's display switches, room jump; dev-only)
         kamite::hitbox_overlay::install();     // F2: Debug > Hitboxes (dev-only)

@@ -51,7 +51,7 @@ set(KAMITE_HOST_SOURCES
     kamite/camera.cpp
     kamite/npc_poses.cpp
     kamite/debug_tools.cpp
-    kamite/spawn_tools.cpp
+    kamite/npc_tools.cpp
     kamite/hitbox_overlay.cpp
     kamite/menu_buttons.cpp
     kamite/modern_controls.cpp
