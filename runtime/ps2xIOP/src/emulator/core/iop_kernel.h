@@ -142,9 +142,11 @@ namespace ps2x::iop::detail
         uint32_t m_nextEventFlagId = 1;
         uint32_t m_nextCallThreadId = kFirstCallThreadId;
         IopThread *m_currentThread = nullptr;
-        // The thread whose timeslice just ended while it could still run (no block, no yield): the IOP kernel has no
-        // timeslicing, so it keeps the CPU unless a more urgent thread is ready (beginNextReady).
-        int m_continueId = 0;
+        // Threads that were running and can still run (their slice ran out, or a more urgent thread preempted them),
+        // most recent first: they resume before other ready threads of their priority (beginNextReady).
+        std::vector<int> m_resume;
+        // Lowest priority value among ready threads other than `id` (INT32_MAX if none).
+        [[nodiscard]] int32_t bestReadyPriorityExcept(int id) const;
         int m_heldId = 0;          // the thread kept on the CPU that way, and since when (the vblank safety net)
         uint64_t m_heldSince = 0u;
 
