@@ -345,6 +345,17 @@ public:
         return m_unwinding;
     }
 
+    // Host code calling a recompiled function to its end (the port's tools, from a frame hook): while the depth is
+    // non-zero, checkpointDue() never unwinds (the cycles are still charged), so the call cannot be cut off part-way
+    // and left for a resume a host caller would never do. Pending events wait until the guest's next checkpoint
+    // after the call. Blocking syscalls inside such a call still transfer: call only code that does not wait.
+    void beginHostCall() noexcept { ++m_hostCallDepth; }
+    void endHostCall() noexcept
+    {
+        if (m_hostCallDepth > 0u)
+            --m_hostCallDepth;
+    }
+
     int createSemaphore(int initCount, int maxCount, uint32_t attr, uint32_t option);
     int deleteSemaphore(int id, bool interruptSafe);
     int signalSemaphore(int id, bool interruptSafe);
@@ -495,6 +506,7 @@ private:
     int m_currentThreadId = 0;
     bool m_rescheduleRequested = false;
     bool m_unwinding = false;
+    uint32_t m_hostCallDepth = 0u; // beginHostCall / endHostCall
     bool m_sharedVu0RandomValid = false;
     __m128 m_sharedVu0Random{};
     bool m_timeSliceExpired = false;

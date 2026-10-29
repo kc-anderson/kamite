@@ -807,6 +807,11 @@ bool EeScheduler::checkpointDue(uint32_t cycles) noexcept
         g_inlineCheckpoint = !(inlineValue && *inlineValue == '0');
     }
     const uint64_t charge = std::max<uint64_t>(1u, cycles);
+    if (m_hostCallDepth != 0u && !m_stopRequested.load(std::memory_order_acquire))
+    {
+        g_ps2xEeDeferred += charge; // a host call runs to its end (beginHostCall); accounted at the next checkpoint
+        return false;
+    }
     if (g_deferCycles != 0 && m_eeCycle + g_ps2xEeDeferred + charge < g_deferUntil &&
         !m_checkpointPending.load(std::memory_order_acquire) && !m_stopRequested.load(std::memory_order_acquire))
     {

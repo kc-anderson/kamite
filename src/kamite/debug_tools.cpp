@@ -48,6 +48,7 @@
 #include "ps2_runtime_macros.h" // GPR_U32 / SET_GPR_U32
 #include "runtime/ps2_memory.h"
 
+#include "runtime/ee_scheduler.h"
 #include "runtime/ps2_game_menu.h"
 #include "runtime/ps2_hotkeys.h"
 #include "runtime/ps2_time_control.h"
@@ -609,7 +610,9 @@ namespace kamite::debug_tools
             SET_GPR_U32(ctx, 8, kFadeBlack);
             SET_GPR_U32(ctx, 9, 0u);
             ctx->f[12] = p.heading;
+            runtime->eeScheduler().beginHostCall(); // run to its end, never unwound part-way (EeScheduler::beginHostCall)
             g_jump(rdram, ctx, runtime);
+            runtime->eeScheduler().endHostCall();
             *ctx = saved;
             KM_INFO(Game, "debug: room jump to " << p.label);
             setStatus("Jumped to " + p.label + ".");

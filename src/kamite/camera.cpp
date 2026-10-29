@@ -488,10 +488,46 @@ namespace kamite
             return std::sqrt(std::fmax(squared, 0.0f));
         }
 
-        // Before c.le.s $f0,$f1 in func_00211C08 ($f0 = the 60-degree wedge)
-        void enemyWedge(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { ctx->f[0] = scaledCone(ctx->f[0], enemyDistance(rdram, ctx)); }
-        // Before c.lt.s $f0,$f1 in func_00262AA8 ($f1 = the level's lunge cone)
-        void enemyLunge(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { ctx->f[1] = scaledCone(ctx->f[1], enemyDistance(rdram, ctx)); }
+        // With the Modern free camera turned away from Gene, "in front" means in front of the camera: the angle the
+        // enemy compares (from Gene's facing to it, +0x768) is measured from the camera's yaw instead, so the enemies
+        // that close in and lunge are the ones on screen, as with the camera behind Gene.
+        float viewAngle(const uint8_t *rdram, R5900Context *ctx, float gameAngle)
+        {
+            if (!g_freeNow || !g_enemyView.load(std::memory_order_relaxed))
+                return gameAngle;
+            auto word = [&](uint32_t address) {
+                uint32_t v = 0;
+                std::memcpy(&v, rdram + (address & 0x01FFFFFFu), 4);
+                return v;
+            };
+            const uint32_t enemy = GPR_U32(ctx, 18), gene = word(0x747A94u); // s2; GameWork playerObj
+            const uint32_t ep = word(enemy + 0xF0u), gp = word(gene + 0xF0u); // cGameObj pos pointers
+            auto ok = [](uint32_t a) { return (a & 0x1FFFFFFFu) >= 0x100000u && (a & 0x1FFFFFFFu) + 12u <= PS2_RAM_SIZE; };
+            if (!ok(enemy) || !ok(gene) || !ok(ep) || !ok(gp))
+                return gameAngle;
+            const float dx = loadFloat(rdram, ep) - loadFloat(rdram, gp), dz = loadFloat(rdram, ep + 8u) - loadFloat(rdram, gp + 8u);
+            if (dx == 0.0f && dz == 0.0f)
+                return gameAngle;
+            float rel = std::atan2(dx, dz) - g_freeYaw; // headings: atan(dx / dz) (Turn_dest's convention)
+            while (rel > kPi)
+                rel -= 2.0f * kPi;
+            while (rel < -kPi)
+                rel += 2.0f * kPi;
+            return std::fabs(rel);
+        }
+
+        // Before c.le.s $f0,$f1 in func_00211C08 ($f0 = the 60-degree wedge, $f1 = the angle)
+        void enemyWedge(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            ctx->f[1] = viewAngle(rdram, ctx, ctx->f[1]);
+            ctx->f[0] = scaledCone(ctx->f[0], enemyDistance(rdram, ctx));
+        }
+        // Before c.lt.s $f0,$f1 in func_00262AA8 ($f0 = the angle, $f1 = the level's lunge cone)
+        void enemyLunge(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            ctx->f[0] = viewAngle(rdram, ctx, ctx->f[0]);
+            ctx->f[1] = scaledCone(ctx->f[1], enemyDistance(rdram, ctx));
+        }
 
         // ---- Camera shake -----------------------------------------------------------------------------------------
 

@@ -40,6 +40,7 @@
 #include "ps2_runtime_macros.h" // GPR_U32 / SET_GPR_U32
 #include "runtime/ps2_memory.h"
 
+#include "runtime/ee_scheduler.h"
 #include "runtime/ps2_game_menu.h"
 #if __has_include("pcsx2gs_api.h")
 #include "pcsx2gs_api.h"
@@ -1220,7 +1221,9 @@ namespace kamite::npc_poses
             ctx->f[12] = npc.fargs[0];
             ctx->f[13] = npc.fargs[1];
             ctx->f[14] = npc.fargs[2];
+            runtime->eeScheduler().beginHostCall(); // run to its end, never unwound part-way (EeScheduler::beginHostCall)
             g_start(rdram, ctx, runtime);
+            runtime->eeScheduler().endHostCall();
             *ctx = saved;
         }
         // The nearest NPC to Gene, by where each started its idle (the actors themselves are not read here: one

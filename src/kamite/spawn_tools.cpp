@@ -224,33 +224,47 @@ namespace kamite::spawn_tools
             return g_runtime && g_runtime->hasFunction(address) ? g_runtime->lookupFunction(address) : nullptr;
         }
 
-        // A guest function run to its end by the EE scheduler, as a queued invocation (its own context and stack; the
-        // way the runtime runs RPC callbacks), at the scheduler's next safe point: right after the frame hook. Calling a
-        // recompiled function straight from host code is not safe: at any call or loop the scheduler may unwind it to
-        // service an event and resume it later from its pc, which a host caller never does (it got half a function:
-        // findFreeSlot said "none" on an empty table). Invocations run in the order queued; `done` gets $v0.
-        int g_inFlight = 0; // queued and not finished (game thread)
+        // A guest function called to its end from host code, on the game's registers (given back after). Two things
+        // make that safe (dd6a3b9..bc60a79 learned both): the EE scheduler must not unwind it part-way at a checkpoint
+        // (it would expect to resume it from its pc, which a host caller never does), so the call runs inside
+        // beginHostCall/endHostCall; and queued GuestInvocations do not help (from the frame hook they completed
+        // without running). ra = 1 marks the end; a tail jump (J to another function) leaves pc at that function, which
+        // is run next, until pc is 1. `done` gets $v0 and the registers (for nested calls), at once.
+        int g_inFlight = 0;
         void queueCall(const R5900Context &base, uint32_t address, std::initializer_list<uint32_t> args,
                        std::function<void(uint32_t, R5900Context &)> done = {}, const float *f12 = nullptr)
         {
-            GuestInvocation invocation{};
-            invocation.kind = GuestInvocationKind::HleCall;
-            invocation.context = base;
-            invocation.context.pc = address;
+            R5900Context *ctx = const_cast<R5900Context *>(&base);
+            uint8_t *rdram = g_runtime->memory().getRDRAM();
+            const R5900Context saved = *ctx;
             int reg = 4;
             for (uint32_t a : args)
-                SET_GPR_U32(&invocation.context, reg++, a);
+                SET_GPR_U32(ctx, reg++, a);
             if (f12)
-                invocation.context.f[12] = *f12;
-            SET_GPR_U32(&invocation.context, 29, 0u); // the invocation stack
-            SET_GPR_U32(&invocation.context, 31, 0u); // returning to 0 ends it
-            ++g_inFlight;
-            invocation.onComplete = [done = std::move(done)](const R5900Context &result, R5900Context &owner) {
-                --g_inFlight;
-                if (done)
-                    done(getRegU32(&result, 2), owner);
-            };
-            g_runtime->eeScheduler().queueInvocation(std::move(invocation));
+                ctx->f[12] = *f12;
+            constexpr uint32_t kEnd = 0x1u;
+            SET_GPR_U32(ctx, 31, kEnd);
+            ctx->pc = address;
+            EeScheduler &scheduler = g_runtime->eeScheduler();
+            scheduler.beginHostCall();
+            int steps = 0;
+            while (ctx->pc != kEnd && ctx->pc != 0u && steps++ < 64)
+            {
+                GuestFunction f = resolve(ctx->pc);
+                if (!f)
+                    break;
+                f(rdram, ctx, g_runtime);
+            }
+            scheduler.endHostCall();
+            const bool ended = ctx->pc == kEnd;
+            const uint32_t v0 = ended ? GPR_U32(ctx, 2) : 0u;
+            if (!ended)
+                KM_ERROR(Game, "spawn: guest call 0x" << std::hex << address << " stopped at pc 0x" << ctx->pc << std::dec
+                                                      << " (not run to its end)");
+            R5900Context after = *ctx;
+            *ctx = saved;
+            if (done)
+                done(v0, after);
         }
 
         // Inside a replaced guest function: hand over to another function as if it had been jumped to (its return goes

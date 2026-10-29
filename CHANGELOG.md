@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## October 29, 2026
 
+- Modern controls: with the free camera turned away from Gene, enemies close in and lunge by what the camera shows
+  (their "in front of Gene" is now in front of the camera).
 - Dev: F2 > NPCs has a Spawn section: a jump to an empty test room, enemy and boss spawns there, Remove spawned,
   Kill all enemies, the pathfinding switch and AI off (enemies stand idle and take hits but never attack or walk).
 - Dev: F2 > NPCs > Target enemy: lock onto the nearest enemy, make it unkillable, and have it repeat one of its motions
