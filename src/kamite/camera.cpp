@@ -488,46 +488,32 @@ namespace kamite
             return std::sqrt(std::fmax(squared, 0.0f));
         }
 
-        // With the Modern free camera turned away from Gene, "in front" means in front of the camera: the angle the
-        // enemy compares (from Gene's facing to it, +0x768) is measured from the camera's yaw instead, so the enemies
-        // that close in and lunge are the ones on screen, as with the camera behind Gene.
-        float viewAngle(const uint8_t *rdram, R5900Context *ctx, float gameAngle)
+        // With the Modern free camera turned away from Gene, "in front" means in front of the camera. The enemies'
+        // common update (func_00208BE0, and its twin near 0x2096A0) works out once a frame Turn_dest(Gene's position,
+        // the enemy's, Gene's yaw): +0x764 signed and +0x768 = |angle| from his facing to the enemy, and every AI
+        // decision builds on those (the idle wedge, the circling side, the guard/approach value, the lunges). Swapping
+        // the camera's yaw in for his there (just after it is loaded into $f12) keeps all of them in agreement. e6f98f4
+        // swapped it at the compares only: the rest still saw Gene's back turned, and enemies in view froze in guard
+        // (K, Oct 29). Gene's own readers of +0x768 (func_001269E0, the grab prompt) see the camera's too.
+        void enemyFacing(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
-            if (!g_freeNow || !g_enemyView.load(std::memory_order_relaxed))
-                return gameAngle;
-            auto word = [&](uint32_t address) {
-                uint32_t v = 0;
-                std::memcpy(&v, rdram + (address & 0x01FFFFFFu), 4);
-                return v;
-            };
-            const uint32_t enemy = GPR_U32(ctx, 18), gene = word(0x747A94u); // s2; GameWork playerObj
-            const uint32_t ep = word(enemy + 0xF0u), gp = word(gene + 0xF0u); // cGameObj pos pointers
-            auto ok = [](uint32_t a) { return (a & 0x1FFFFFFFu) >= 0x100000u && (a & 0x1FFFFFFFu) + 12u <= PS2_RAM_SIZE; };
-            if (!ok(enemy) || !ok(gene) || !ok(ep) || !ok(gp))
-                return gameAngle;
-            const float dx = loadFloat(rdram, ep) - loadFloat(rdram, gp), dz = loadFloat(rdram, ep + 8u) - loadFloat(rdram, gp + 8u);
-            if (dx == 0.0f && dz == 0.0f)
-                return gameAngle;
-            float rel = std::atan2(dx, dz) - g_freeYaw; // headings: atan(dx / dz) (Turn_dest's convention)
-            while (rel > kPi)
-                rel -= 2.0f * kPi;
-            while (rel < -kPi)
-                rel += 2.0f * kPi;
-            return std::fabs(rel);
+            if (g_freeNow && g_enemyView.load(std::memory_order_relaxed))
+                ctx->f[12] = g_freeYaw;
         }
 
         // TEMPORARY (Oct 29, strip once K's free-camera fights are right): once a second while the free camera has the
-        // view, what the enemies compared: Gene's yaw, the camera's, and per enemy the game's angle, ours and the cone.
+        // view, what the enemies compared: the camera's yaw, Gene's, and per enemy the angle (from the camera's
+        // facing) and the cone.
         struct ConeNote
         {
             uint32_t enemy;
             char site;
-            float game, view, cone;
+            float angle, cone;
         };
         ConeNote g_coneNotes[12];
         int g_coneCount = 0;
         std::chrono::steady_clock::time_point g_coneLogAt{};
-        void noteCone(const uint8_t *rdram, R5900Context *ctx, char site, float game, float view, float cone)
+        void noteCone(const uint8_t *rdram, R5900Context *ctx, char site, float angle, float cone)
         {
             if (!g_freeNow)
                 return;
@@ -535,11 +521,11 @@ namespace kamite
             for (int i = 0; i < g_coneCount; ++i)
                 if (g_coneNotes[i].enemy == enemy && g_coneNotes[i].site == site)
                 {
-                    g_coneNotes[i] = {enemy, site, game, view, cone};
+                    g_coneNotes[i] = {enemy, site, angle, cone};
                     goto logged;
                 }
             if (g_coneCount < 12)
-                g_coneNotes[g_coneCount++] = {enemy, site, game, view, cone};
+                g_coneNotes[g_coneCount++] = {enemy, site, angle, cone};
         logged:
             const auto now = std::chrono::steady_clock::now();
             if (now - g_coneLogAt < std::chrono::seconds(1))
@@ -554,8 +540,8 @@ namespace kamite
             for (int i = 0; i < g_coneCount && n < static_cast<int>(sizeof(line)) - 80; ++i)
             {
                 const ConeNote &c = g_coneNotes[i];
-                n += std::snprintf(line + n, sizeof(line) - static_cast<size_t>(n), " %x %c %.0f->%.0f /%.0f", c.enemy & 0xFFFFFFu, c.site,
-                                   c.game / kDegToRad, c.view / kDegToRad, c.cone / kDegToRad);
+                n += std::snprintf(line + n, sizeof(line) - static_cast<size_t>(n), " %x %c %.0f /%.0f", c.enemy & 0xFFFFFFu, c.site,
+                                   c.angle / kDegToRad, c.cone / kDegToRad);
             }
             KM_INFO(Game, line);
             g_coneCount = 0;
@@ -564,18 +550,14 @@ namespace kamite
         // Before c.le.s $f0,$f1 in func_00211C08 ($f0 = the 60-degree wedge, $f1 = the angle)
         void enemyWedge(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
-            const float game = ctx->f[1];
-            ctx->f[1] = viewAngle(rdram, ctx, ctx->f[1]);
             ctx->f[0] = scaledCone(ctx->f[0], enemyDistance(rdram, ctx));
-            noteCone(rdram, ctx, 'w', game, ctx->f[1], ctx->f[0]);
+            noteCone(rdram, ctx, 'w', ctx->f[1], ctx->f[0]);
         }
         // Before c.lt.s $f0,$f1 in func_00262AA8 ($f0 = the angle, $f1 = the level's lunge cone)
         void enemyLunge(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
-            const float game = ctx->f[0];
-            ctx->f[0] = viewAngle(rdram, ctx, ctx->f[0]);
             ctx->f[1] = scaledCone(ctx->f[1], enemyDistance(rdram, ctx));
-            noteCone(rdram, ctx, 'l', game, ctx->f[0], ctx->f[1]);
+            noteCone(rdram, ctx, 'l', ctx->f[0], ctx->f[1]);
         }
 
         // ---- Camera shake -----------------------------------------------------------------------------------------
@@ -998,6 +980,7 @@ namespace kamite
         ps2xRegisterHostHook("km_cam_yaw", &orbitYaw);
         ps2xRegisterHostHook("km_em_wedge", &enemyWedge);
         ps2xRegisterHostHook("km_em_lunge", &enemyLunge);
+        ps2xRegisterHostHook("km_em_facing", &enemyFacing);
         ps2xSetPatchFlag("fov", true);
         ps2xSetPatchFlag("keep_walls", g_seeThrough.load());
         ps2xSetPatchFlag("enemy_view", true);

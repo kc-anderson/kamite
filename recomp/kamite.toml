@@ -895,6 +895,18 @@ hook = "km_cam_distance"
 flag = "fov"
 replace = true
 
+# With the Modern free camera, the enemies take the camera's yaw for Gene's facing (camera.cpp enemyFacing): right
+# after Gene's yaw is loaded into $f12 for Turn_dest in the enemies' common update (+0x764/+0x768).
+[[patches.hooks]]
+address = "0x00208CA8"
+hook = "km_em_facing"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x002096D8"
+hook = "km_em_facing"
+flag = "enemy_view"
+
 # Enemies' facing cones follow the view (camera.cpp, docs/enemy-ai.md): run before the compare, they scale the cone's
 # register. func_00211C08: c.le.s $f0,$f1 with $f0 = the 60-degree wedge.
 [[patches.hooks]]
