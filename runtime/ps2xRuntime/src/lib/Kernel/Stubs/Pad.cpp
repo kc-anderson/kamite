@@ -1,5 +1,8 @@
 #include "Common.h"
 #include "Pad.h"
+#include "runtime/ps2_pad_tap.h"
+
+#include <atomic>
 
 namespace ps2_stubs
 {
@@ -66,6 +69,7 @@ namespace ps2_stubs
         PadInputState g_padOverrideState{};
         PadPortState g_padPorts[kPadPortCount]{};
         int g_padReadLogCount = 0;
+        std::atomic<ps2x::pad::ReadTap> g_readTap{nullptr}; // runtime/ps2_pad_tap.h
 
         uint8_t axisToByte(float axis)
         {
@@ -642,6 +646,8 @@ namespace ps2_stubs
             setReturnS32(ctx, 0);
             return;
         }
+        if (const ps2x::pad::ReadTap tap = g_readTap.load(std::memory_order_acquire))
+            tap(port, slot, data);
 
         PS2_IF_AGRESSIVE_LOGS({
             if (g_padReadLogCount < 48)
@@ -859,5 +865,13 @@ namespace ps2_stubs
         std::lock_guard<std::mutex> lock(g_padOverrideMutex);
         g_padOverrideEnabled = false;
         g_padOverrideState = PadInputState{};
+    }
+}
+
+namespace ps2x::pad
+{
+    void setReadTap(ReadTap tap)
+    {
+        ps2_stubs::g_readTap.store(tap, std::memory_order_release);
     }
 }

@@ -1,0 +1,7 @@
+# Test script (claude/test-mode.md). Record Gene's RS-up dodge: load the state, play the dodge, the pad is written.
+# Run with a window (--window) so the pad is yours; the run quits by itself after `frames`.
+state  = states\dodge.state
+mode   = record
+input  = tests\dodge.pad
+frames = 150            # 5 s at 30 FPS game frames
+csv    = tests\dodge_record.csv

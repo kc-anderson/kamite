@@ -41,6 +41,7 @@
 #include "kamite/log.h"
 #include "kamite/movie_watchdog.h"
 #include "kamite/frame_patches.h"
+#include "kamite/test_mode.h"
 #include "kamite/game_options.h"
 #include "kamite/character_mods.h"
 #include "kamite/widescreen.h"
@@ -122,6 +123,7 @@ namespace
     constexpr int kExitCpu = 4;             // the CPU lacks SSE4.1 (or AVX2 for an AVX2 build)
     constexpr int kExitMissingFunction = 5; // stopped on a call to a guest address with no recompiled function (policy Stop)
     constexpr int kExitCrash = 6;           // unhandled exception, std::terminate or abort (see the [crash] lines)
+    constexpr int kExitTestFailed = 7;      // KAMITE_TEST: the scripted run could not be carried out (see the "test:" lines)
     constexpr int kExitTimeLimit = 124;     // KAMITE_TIME_LIMIT_SECONDS reached (same code as GNU timeout)
 
     const fs::file_time_type g_startFileTime = fs::file_time_type::clock::now();
@@ -399,6 +401,7 @@ namespace
         {"run", "missingfunction", "KAMITE_MISSING_FUNCTION"},
         {"run", "dlllog", "KAMITE_DLL_LOG"},
         {"run", "logfile", "KAMITE_LOG_FILE"},
+        {"run", "test", "KAMITE_TEST"},
         {"video", "renderer", "PS2X_GS_RENDERER"},
         {"video", "internalresolution", "PS2X_GS_SCALE"},
         {"video", "startmaximized", "KAMITE_START_MAXIMIZED"},
@@ -678,9 +681,10 @@ namespace
     void printUsage()
     {
         std::cout << "usage: kamite [--iso <path-to-" << kamite::kSerial << ".iso>] [--headless|--window] [--time-limit <seconds>]\n"
-                  << "               [--write-settings]\n"
+                  << "               [--test <script>] [--write-settings]\n"
                   << "settings: kamite.ini next to kamite.exe (environment variables of the same name win)\n"
-                  << "exit codes: 0 ok, 1 init failed, 2 no disc, 3 wrong disc, 4 CPU, 5 missing function (stop), 6 crash, 124 time limit\n";
+                  << "exit codes: 0 ok, 1 init failed, 2 no disc, 3 wrong disc, 4 CPU, 5 missing function (stop), 6 crash, 7 test failed,\n"
+                  << "            124 time limit\n";
     }
 }
 
@@ -702,6 +706,8 @@ int main(int argc, char *argv[])
             setEnv("KAMITE_HEADLESS", "0");
         else if (arg == "--time-limit" && i + 1 < argc)
             setEnv("KAMITE_TIME_LIMIT_SECONDS", argv[++i]);
+        else if (arg == "--test" && i + 1 < argc)
+            setEnv("KAMITE_TEST", argv[++i]);
         else if (arg == "--write-settings")
             writeSettingsOnly = true;
         else if (arg == "--help" || arg == "-h")
@@ -999,6 +1005,7 @@ int main(int argc, char *argv[])
         kamite::installMovieWatchdog(runtime); // sweep R3: ending/movie-list movie polls cannot spin forever
         // 60 FPS mode, L3 dash, and the game-frame count for the F3 overlay (a hook at the top of the main loop).
         kamite::installFramePatches(runtime);
+        kamite::test_mode::install(runtime, exeDir); // KAMITE_TEST / [Run] Test / --test: the scripted, self-measuring run (dev-only)
         kamite::installGameOptions(runtime); // [Game] UnlockHard, [Sound] MuteMusic
         kamite::texture_slots::install(); // the per-frame texture slots reserve a texture's real VRAM footprint
         kamite::installSteadyIdleCamera(runtime); // [Video] SteadyIdleCamera
@@ -1037,6 +1044,11 @@ int main(int argc, char *argv[])
         {
             code = kExitMissingFunction;
             reason = "stopped on a missing function (see [guest-branch:missing-target] above)";
+        }
+        else if (kamite::test_mode::failed())
+        {
+            code = kExitTestFailed;
+            reason = "the test could not be carried out (see the test: lines above)";
         }
         KM_INFO(Boot, "runtime exited: " << reason << "; exit code " << code << " after " << kamite::log::elapsedSeconds() << " s");
         std::cout.flush();

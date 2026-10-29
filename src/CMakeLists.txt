@@ -63,6 +63,7 @@ set(KAMITE_HOST_SOURCES
     kamite/radar_glow.cpp
     kamite/ini_file.cpp
     kamite/counter_finder.cpp
+    kamite/test_mode.cpp
     kamite/message_guard.cpp
     kamite/bone_tweaks.cpp
     kamite/pc_sampler.cpp

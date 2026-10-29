@@ -2,6 +2,11 @@
 
 Newest first, one line per change; the code comments say how.
 
+## October 29, 2026
+
+- Dev: a test mode (KAMITE_TEST) that loads a save state, records or plays back the pad frame by frame, logs the game
+  per frame to CSV and quits by itself.
+
 ## October 28, 2026
 
 - 60 FPS: Door-kun heals, shakes and swings his arms at the same speed as at 30 FPS.

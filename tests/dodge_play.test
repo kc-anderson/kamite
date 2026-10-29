@@ -1,0 +1,8 @@
+# Test script (claude/test-mode.md). Play the recorded dodge back; one run at 30, one at 60, then diff the CSVs:
+#   python tools\fps60\test_windows.py tests\dodge_30.csv tests\dodge_60.csv
+state  = states\dodge.state
+mode   = play
+input  = tests\dodge.pad
+frames = 150
+fps60  = 0              # 1 for the 60 FPS run (and csv = tests\dodge_60.csv)
+csv    = tests\dodge_30.csv

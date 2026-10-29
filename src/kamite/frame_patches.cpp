@@ -42,6 +42,7 @@
 #include "kamite/bone_tweaks.h"
 #include "kamite/call_profile.h"
 #include "kamite/counter_finder.h"
+#include "kamite/test_mode.h"
 #include "kamite/pc_sampler.h"
 #include "kamite/log.h"
 #include "kamite/game_layout.h"
@@ -300,6 +301,7 @@ namespace kamite
             debug_tools::onFrame(rdram, ctx, runtime);
             hitbox_overlay::onFrame();
             bone_tweaks::onFrame(rdram, ctx, runtime);
+            test_mode::onFrame(rdram, ctx, runtime); // KAMITE_TEST: the scripted run (dev-only)
             // The game's frame divider: 2 (the PS2's, written once at boot by func_0030B298) or 1 for 60 frames a
             // second. Written in both modes: a save state made at 60 carries a 1, and loaded at 30 nothing put the 2
             // back, so the game ran at 60 with none of the mode's fixes ("the old broken 60 FPS", Thinso, Oct 27).
