@@ -38,6 +38,7 @@
 #include "ps2_runtime_macros.h" // GPR_U32 / SET_GPR_U32
 #include "runtime/ps2_memory.h"
 
+#include "runtime/ee_scheduler.h"
 #include "runtime/ps2_game_menu.h"
 #if __has_include("pcsx2gs_api.h")
 #include "pcsx2gs_api.h"
@@ -51,6 +52,8 @@
 #include <cstdio>
 #include <cstring>
 #include <deque>
+#include <functional>
+#include <memory>
 #include <cstdlib>
 #include <initializer_list>
 #include <iterator>
@@ -89,7 +92,6 @@ namespace kamite::spawn_tools
         constexpr uint32_t kSeTable = 0x0042C540u; // loadSeWait's jump table by kind - 0x200 (flags2 bit 0)
 
         constexpr uint32_t kEntryEm = 0x002905D0u, kReleaseEm = 0x00290770u, kDefeatAll = 0x001EF978u;
-        constexpr uint32_t kIsLoaded = 0x001FE9B8u, kFindKind = 0x001FEE00u, kFindFreeSlot = 0x001FEEA0u;
         constexpr uint32_t kLoadStart = 0x001FF180u, kReady = 0x001FF238u, kHold = 0x001FF090u, kSlotStride = 0x5Cu;
         constexpr uint32_t kAddQueue = 0x001FF4D0u, kSleepFrames = 0x002D5250u, kDvdStep = 0x00200B20u;
         constexpr uint32_t kSndUpdate = 0x002CA470u, kDvd = 0x00583F20u, kSnd = 0x005FEE00u;
@@ -99,7 +101,7 @@ namespace kamite::spawn_tools
         // cGameObj / cEm00 fields used here.
         constexpr uint32_t kObjPos = 0x0F0u, kObjHeading = 0x104u, kObjFlags = 0x250u, kObjKind = 0x2FEu;
         constexpr uint32_t kSubStep = 0x2F5u, kSubStep2 = 0x2F6u, kSubStep3 = 0x2F7u, kObjData = 0x304u;
-        constexpr uint32_t kObjMotion = 0x428u, kObjHpMax = 0x548u, kObjHp = 0x54Au, kObjMotionFlag = 0x17C3u;
+        constexpr uint32_t kObjMotion = 0x428u, kObjLoops = 0x436u, kObjHpMax = 0x548u, kObjHp = 0x54Au, kObjMotionFlag = 0x17C3u;
 
         constexpr uint16_t kTestRoom = 0x002;                      // the casino's "Meeting room entrance"
         constexpr float kTestLanding[3] = {-18.0f, 0.0f, 22.0f};  // if the jump table had no point for it (its open floor)
@@ -155,17 +157,6 @@ namespace kamite::spawn_tools
         int g_leavePhase = 0;            // 1 = released, 2 = data given back, then the jump
         std::vector<uint32_t> g_spawned; // enemies spawned here
         std::set<uint32_t> g_loadedKinds; // data kinds loaded by us (held: given back when leaving)
-        struct Job
-        {
-            uint8_t kind = 0;
-            int phase = 0;
-            uint32_t slot = 0;
-            bool fresh = false; // our load (held when ready, given back when leaving)
-            bool retried = false;
-            int waitFrames = 0; // before trying (the game's clean-up frees memory over a few frames)
-            Clock::time_point start{};
-        };
-        std::deque<Job> g_jobs;
         int g_freeIn = 0;                // frames until the released kinds' data is given back
 
         uint32_t g_target = 0;
@@ -180,7 +171,6 @@ namespace kamite::spawn_tools
 
         // Waits inside EntryEm (see the top).
         std::atomic<bool> g_inEntry{false};
-        std::thread::id g_gameThread;
         Clock::time_point g_entryStart{};
         Clock::time_point g_lastSnd{};
         bool g_fakeReady = false;
@@ -233,27 +223,44 @@ namespace kamite::spawn_tools
                 return o;
             return g_runtime && g_runtime->hasFunction(address) ? g_runtime->lookupFunction(address) : nullptr;
         }
-        // A guest function on the game's registers (given back after); returns $v0.
-        uint32_t call(uint8_t *rdram, R5900Context *ctx, uint32_t address, std::initializer_list<uint32_t> args,
-                      const float *f12 = nullptr, bool *ok = nullptr)
+
+        // A guest function run to its end by the EE scheduler, as a queued invocation (its own context and stack; the
+        // way the runtime runs RPC callbacks), at the scheduler's next safe point: right after the frame hook. Calling a
+        // recompiled function straight from host code is not safe: at any call or loop the scheduler may unwind it to
+        // service an event and resume it later from its pc, which a host caller never does (it got half a function:
+        // findFreeSlot said "none" on an empty table). Invocations run in the order queued; `done` gets $v0.
+        int g_inFlight = 0; // queued and not finished (game thread)
+        void queueCall(const R5900Context &base, uint32_t address, std::initializer_list<uint32_t> args,
+                       std::function<void(uint32_t, R5900Context &)> done = {}, const float *f12 = nullptr)
         {
-            GuestFunction f = resolve(address);
-            if (ok)
-                *ok = f != nullptr;
-            if (!f)
-                return 0;
-            const R5900Context saved = *ctx;
+            GuestInvocation invocation{};
+            invocation.kind = GuestInvocationKind::HleCall;
+            invocation.context = base;
+            invocation.context.pc = address;
             int reg = 4;
             for (uint32_t a : args)
-                SET_GPR_U32(ctx, reg++, a);
+                SET_GPR_U32(&invocation.context, reg++, a);
             if (f12)
-                ctx->f[12] = *f12;
+                invocation.context.f[12] = *f12;
+            SET_GPR_U32(&invocation.context, 29, 0u); // the invocation stack
+            SET_GPR_U32(&invocation.context, 31, 0u); // returning to 0 ends it
+            ++g_inFlight;
+            invocation.onComplete = [done = std::move(done)](const R5900Context &result, R5900Context &owner) {
+                --g_inFlight;
+                if (done)
+                    done(getRegU32(&result, 2), owner);
+            };
+            g_runtime->eeScheduler().queueInvocation(std::move(invocation));
+        }
+
+        // Inside a replaced guest function: hand over to another function as if it had been jumped to (its return goes
+        // where ours would). A scheduler unwind inside it resumes properly, as in any guest code.
+        void tailCall(uint8_t *rdram, R5900Context *ctx, GuestFunction f, uint32_t address)
+        {
             ctx->pc = address;
             f(rdram, ctx, g_runtime);
-            const uint32_t v0 = GPR_U32(ctx, 2);
-            *ctx = saved;
-            return v0;
         }
+
         void returnNow(R5900Context *ctx, uint32_t v0)
         {
             SET_GPR_U32(ctx, 2, v0);
@@ -337,28 +344,51 @@ namespace kamite::spawn_tools
         }
         // Lets go of the enemy and NPC data no enemy here uses (left over from earlier rooms), as objects let go of
         // theirs (cObj_releaseActorData: resetKind), all holds at once: the game's own clean-up then frees it.
-        int releaseUnused(uint8_t *rdram, R5900Context *ctx)
+        uint32_t dataSlot(const uint8_t *rdram, int index) { return rd32(rdram, kDataManager + 8u) + kSlotStride * static_cast<uint32_t>(index); }
+        int slotCount(const uint8_t *rdram) { return static_cast<int>(std::min(rd32(rdram, kDataManager + 4u), 64u)); }
+        // cDataManager_findKind / findFreeSlot read straight from the table (no side effects in either).
+        int findKind(const uint8_t *rdram, uint32_t kind)
         {
-            const uint32_t base = rd32(rdram, kDataManager + 8u);
-            const uint32_t count = std::min(rd32(rdram, kDataManager + 4u), 64u);
-            std::vector<uint32_t> kinds;
-            for (uint32_t i = 0; i < count && inRam(base, kSlotStride * count); ++i)
+            for (int i = slotCount(rdram) - 1; i >= 0; --i)
             {
-                const uint32_t slot = base + kSlotStride * i;
+                const uint32_t slot = dataSlot(rdram, i);
+                const bool held = rd32(rdram, slot + 4u) != 0u;
+                const bool inUse = held || (!(rd32(rdram, slot + 8u) & 4u) && rd32(rdram, slot + 0x10u) != 0u);
+                if (inUse && rd32(rdram, slot + 0x20u) == kind)
+                    return i;
+            }
+            return -1;
+        }
+        int findFreeSlot(const uint8_t *rdram)
+        {
+            for (int i = 0; i < slotCount(rdram); ++i)
+                if (!slotUsed(rdram, dataSlot(rdram, i)))
+                    return i;
+            return -1;
+        }
+
+        // Lets go of the enemy and NPC data no enemy here uses (left over from earlier rooms), as objects let go of
+        // theirs (cObj_releaseActorData: resetKind), all holds at once: the game's own clean-up then frees it.
+        int releaseUnused(uint8_t *rdram, const R5900Context &base)
+        {
+            std::vector<uint32_t> kinds;
+            for (int i = 0; i < slotCount(rdram); ++i)
+            {
+                const uint32_t slot = dataSlot(rdram, i);
                 const uint32_t kind = rd32(rdram, slot + 0x20u);
                 if (slotUsed(rdram, slot) && kind >= 0x200u && kind < 0x300u && !g_loadedKinds.count(kind) &&
                     !kindInUse(rdram, kind) && std::find(kinds.begin(), kinds.end(), kind) == kinds.end())
                     kinds.push_back(kind);
             }
             for (uint32_t kind : kinds)
-                call(rdram, ctx, kResetKind, {kDataManager, kind, 1u});
+                queueCall(base, kResetKind, {kDataManager, kind, 1u});
             if (!kinds.empty())
                 KM_INFO(Game, "spawn: let go of " << kinds.size() << " unused enemy/NPC data kinds in the test room");
             return static_cast<int>(kinds.size());
         }
 
         // ---- spawning (game thread)
-        void queueSounds(uint8_t *rdram, R5900Context *ctx, uint32_t slot, uint32_t kind, const Kind &k)
+        void queueSounds(const uint8_t *rdram, const R5900Context &base, uint32_t slot, uint32_t kind, const Kind &k)
         {
             uint32_t bank = 0x200u + k.sound;
             if ((k.flags2 & 1u) && kind - 0x200u < 0x4Au)
@@ -379,27 +409,37 @@ namespace kamite::spawn_tools
             }
             if (rd16(rdram, GameWork::address(GameWork::kRoom)) == 0x504u && bank - 0x250u < 2u)
                 return;
-            call(rdram, ctx, kAddQueue, {slot, bank});
+            queueCall(base, kAddQueue, {slot, bank});
             if (kind == 0x264u)
-                call(rdram, ctx, kAddQueue, {slot, 0x263u});
+                queueCall(base, kAddQueue, {slot, 0x263u});
             else if (kind == 0x211u)
                 for (uint32_t b : {0x200u, 0x203u, 0x227u, 0x22Au})
-                    call(rdram, ctx, kAddQueue, {slot, b});
+                    queueCall(base, kAddQueue, {slot, b});
             else if (kind == 0x278u)
-                call(rdram, ctx, kAddQueue, {slot, 0x20Fu});
+                queueCall(base, kAddQueue, {slot, 0x20Fu});
         }
 
-        uint32_t dataSlot(const uint8_t *rdram, int index) { return rd32(rdram, kDataManager + 8u) + 0x5Cu * static_cast<uint32_t>(index); }
+        struct Job
+        {
+            uint8_t kind = 0;
+            enum Phase { Start, Ready, Entry, Done } phase = Start;
+            uint32_t slot = 0;
+            bool fresh = false;    // our load (held when ready, let go of when leaving)
+            bool retried = false;
+            bool busy = false;     // a queued call not back yet
+            bool noMemory = false;
+            int waitFrames = 0;    // before going on (the game's clean-up frees things over a few frames)
+            uint32_t enemy = 0;    // EntryEm's answer
+            Clock::time_point start{};
+        };
+        std::deque<std::shared_ptr<Job>> g_jobs;
 
-        void spawnNow(uint8_t *rdram, R5900Context *ctx, const Kind &k)
+        bool buildSetData(uint8_t *rdram, const Kind &k)
         {
             const uint32_t gene = player(rdram);
             float here[3];
             if (!position(rdram, gene, here))
-            {
-                setStatus("No Gene to spawn in front of.");
-                return;
-            }
+                return false;
             const float heading = rdf(rdram, gene + kObjHeading);
             std::memset(rdram + kSetData, 0, 0x40);
             wr32(rdram, kSetData + 0x00u, 0x200u + k.kind);
@@ -413,153 +453,157 @@ namespace kamite::spawn_tools
             wr32(rdram, kSetData + 0x2Cu, k.flags2);
             wr8(rdram, kSetData + 0x30u, k.byte30);
             wr8(rdram, kSetData + 0x31u, 0xFFu); // no room-save record
-
-            g_gameThread = std::this_thread::get_id();
-            g_entryStart = g_lastSnd = Clock::now();
-            g_fakeReady = false;
-            g_inEntry = true;
-            bool ok = false;
-            const uint32_t em = call(rdram, ctx, kEntryEm, {kEmManage, kSetData, 0u, 0u}, nullptr, &ok);
-            g_inEntry = false;
-            char line[160];
-            if (!ok || !inRam(em, 0x1800u))
-            {
-                std::snprintf(line, sizeof(line), "em%02x: the game would not create it.", k.kind);
-                KM_WARN(Game, "spawn: " << line);
-                setStatus(line);
-                return;
-            }
-            g_spawned.push_back(em);
-            std::snprintf(line, sizeof(line), "Spawned em%02x.%s", k.kind,
-                          g_fakeReady ? " (It waited too long for its data: it may misbehave.)" : "");
-            KM_INFO(Game, "spawn: em" << std::hex << unsigned(k.kind) << " at 0x" << em << std::dec
-                                      << (g_fakeReady ? " (wait cut short)" : ""));
-            setStatus(line);
+            return true;
         }
 
-        void stepJobs(uint8_t *rdram, R5900Context *ctx)
+        void stepJobs(uint8_t *rdram, const R5900Context &base)
         {
             if (g_jobs.empty())
                 return;
-            Job &job = g_jobs.front();
-            const Kind *k = kindInfo(job.kind);
-            const uint32_t kind = 0x200u + job.kind;
+            const std::shared_ptr<Job> job = g_jobs.front();
+            const Kind *k = kindInfo(job->kind);
+            const uint32_t kind = 0x200u + job->kind;
             char line[192];
             auto fail = [&](const char *why) {
-                std::snprintf(line, sizeof(line), "em%02x: %s", job.kind, why);
+                std::snprintf(line, sizeof(line), "em%02x: %s", job->kind, why);
                 KM_WARN(Game, "spawn: " << line);
                 setStatus(line);
                 g_jobs.pop_front();
             };
             if (!k)
+                return (void)g_jobs.pop_front();
+            if (job->phase != Job::Start && Clock::now() - job->start > std::chrono::seconds(30))
+                return fail("it did not finish loading in 30 seconds.");
+            if (job->busy)
+                return;
+            if (job->waitFrames > 0)
             {
+                --job->waitFrames;
+                return;
+            }
+            if (job->noMemory)
+            {
+                job->noMemory = false;
+                if (job->retried || releaseUnused(rdram, base) == 0)
+                {
+                    std::snprintf(line, sizeof(line), "not enough memory here for its %.1f MB: remove spawned enemies first.", k->kb / 1024.0f);
+                    return fail(line);
+                }
+                job->retried = true;
+                job->phase = Job::Start;
+                job->waitFrames = 30;
+                setStatus("Making room in memory...");
+                return;
+            }
+            switch (job->phase)
+            {
+            case Job::Start:
+            {
+                job->start = Clock::now();
+                int index = findKind(rdram, kind);
+                if (index >= 0)
+                {
+                    job->slot = dataSlot(rdram, index);
+                    job->fresh = false;
+                    job->phase = Job::Ready;
+                    return;
+                }
+                index = findFreeSlot(rdram);
+                if (index < 0)
+                {
+                    KM_WARN(Game, "spawn: " << tableSummary(rdram, true));
+                    if (job->retried || releaseUnused(rdram, base) == 0)
+                        return fail("the game's data table is full (the 32 slots: see the line below): remove spawned enemies first.");
+                    job->retried = true;
+                    job->waitFrames = 30;
+                    setStatus("Making room in the data table...");
+                    return;
+                }
+                job->slot = dataSlot(rdram, index);
+                job->fresh = true;
+                job->busy = true;
+                const Kind info = *k;
+                queueCall(base, kLoadStart, {job->slot, kind, kHeapD}, [job, kind, info](uint32_t data, R5900Context &owner) {
+                    job->busy = false;
+                    if (data == 0u)
+                    {
+                        job->noMemory = true; // cDvd_ReadAlloc found no room in heap D
+                        return;
+                    }
+                    g_loadedKinds.insert(kind);
+                    queueSounds(g_runtime->memory().getRDRAM(), owner, job->slot, kind, info);
+                    job->phase = Job::Ready;
+                });
+                std::snprintf(line, sizeof(line), "Loading em%02x...", job->kind);
+                setStatus(line);
+                return;
+            }
+            case Job::Ready:
+                job->busy = true;
+                queueCall(base, kReady, {job->slot}, [job](uint32_t ready, R5900Context &) {
+                    job->busy = false;
+                    if (ready)
+                        job->phase = Job::Entry;
+                });
+                return;
+            case Job::Entry:
+            {
+                if (!buildSetData(rdram, *k))
+                    return fail("no Gene to spawn in front of.");
+                if (job->fresh)
+                    queueCall(base, kHold, {job->slot}); // held as cDataManager_loadWait(.., 1) holds it
+                job->busy = true;
+                g_entryStart = g_lastSnd = Clock::now();
+                g_fakeReady = false;
+                g_inEntry = true;
+                queueCall(base, kEntryEm, {kEmManage, kSetData, 0u, 0u}, [job](uint32_t enemy, R5900Context &) {
+                    g_inEntry = false;
+                    job->busy = false;
+                    job->enemy = enemy;
+                    job->phase = Job::Done;
+                });
+                return;
+            }
+            case Job::Done:
+                if (!inRam(job->enemy, 0x1800u))
+                    return fail("the game would not create it.");
+                g_spawned.push_back(job->enemy);
+                std::snprintf(line, sizeof(line), "Spawned em%02x.%s", job->kind,
+                              g_fakeReady ? " (It waited too long for its data: it may misbehave.)" : "");
+                KM_INFO(Game, "spawn: em" << std::hex << unsigned(job->kind) << " at 0x" << job->enemy << std::dec
+                                          << (g_fakeReady ? " (wait cut short)" : ""));
+                setStatus(line);
                 g_jobs.pop_front();
                 return;
             }
-            if (job.waitFrames > 0)
-            {
-                --job.waitFrames;
-                return;
-            }
-            if (job.phase == 0)
-            {
-                job.start = Clock::now();
-                if (call(rdram, ctx, kIsLoaded, {kDataManager, kind}) != 0u)
-                {
-                    job.phase = 2;
-                }
-                else
-                {
-                    int index = static_cast<int>(call(rdram, ctx, kFindKind, {kDataManager, kind}));
-                    const bool fresh = index < 0;
-                    if (fresh)
-                        index = static_cast<int>(call(rdram, ctx, kFindFreeSlot, {kDataManager}));
-                    if (index < 0)
-                    {
-                        KM_WARN(Game, "spawn: " << tableSummary(rdram, true));
-                        if (releaseUnused(rdram, ctx) > 0)
-                        {
-                            if (job.retried)
-                                return fail("the game's data table is full (the 32 slots: see the line below).");
-                            job.retried = true;
-                            job.phase = 0; // the clean-up frees them over the next frames: try again then
-                            job.waitFrames = 30;
-                            setStatus("Making room in the data table...");
-                            return;
-                        }
-                        return fail("the game's data table is full (the 32 slots: see the line below): remove spawned enemies first.");
-                    }
-                    job.slot = dataSlot(rdram, index);
-                    job.fresh = fresh;
-                    if (fresh)
-                    {
-                        if (call(rdram, ctx, kLoadStart, {job.slot, kind, kHeapD}) == 0u)
-                        {
-                            if (!job.retried && releaseUnused(rdram, ctx) > 0)
-                            {
-                                job.retried = true;
-                                job.phase = 0;
-                                job.waitFrames = 30;
-                                setStatus("Making room in memory...");
-                                return;
-                            }
-                            std::snprintf(line, sizeof(line), "not enough memory here for its %.1f MB: remove spawned enemies first.",
-                                          k->kb / 1024.0f);
-                            return fail(line);
-                        }
-                        g_loadedKinds.insert(kind);
-                        queueSounds(rdram, ctx, job.slot, kind, *k);
-                    }
-                    job.phase = 1;
-                    std::snprintf(line, sizeof(line), "Loading em%02x...", job.kind);
-                    setStatus(line);
-                    return; // the read takes frames
-                }
-            }
-            if (job.phase == 1)
-            {
-                if (call(rdram, ctx, kReady, {job.slot}) == 0u)
-                {
-                    if (Clock::now() - job.start > std::chrono::seconds(20))
-                        fail("its data did not finish loading in 20 seconds.");
-                    return;
-                }
-                if (job.fresh)
-                    call(rdram, ctx, kHold, {job.slot});
-                job.phase = 2;
-            }
-            spawnNow(rdram, ctx, *k);
-            g_jobs.pop_front();
         }
 
-        void releaseSpawned(uint8_t *rdram, R5900Context *ctx)
+        void releaseSpawned(uint8_t *rdram, const R5900Context &base)
         {
             int n = 0;
             for (uint32_t em : g_spawned)
                 if (listed(rdram, em))
                 {
-                    call(rdram, ctx, kReleaseEm, {kEmManage, em});
+                    queueCall(base, kReleaseEm, {kEmManage, em});
                     ++n;
                 }
             g_spawned.clear();
-            if (g_target && !listed(rdram, g_target))
-                g_target = 0;
+            g_target = 0;
+            g_motionSlot = -1;
             g_freeIn = 4; // ReleaseObj may finish a frame later: the data waits a few frames
             setStatus("Removed " + std::to_string(n) + " spawned.");
         }
-        // The data of kinds we loaded, once no enemy of that kind is left.
-        void giveBackData(uint8_t *rdram, R5900Context *ctx)
+        // Our hold off the kinds we loaded, once no enemy of that kind is left: the game frees them once unheld.
+        void giveBackData(uint8_t *rdram, const R5900Context &base)
         {
             for (auto it = g_loadedKinds.begin(); it != g_loadedKinds.end();)
             {
-                bool used = false;
-                forEachEnemy(rdram, [&](uint32_t em) { used = used || rd16(rdram, em + kObjKind) == *it; });
-                if (used)
+                if (kindInUse(rdram, *it))
                 {
                     ++it;
                     continue;
                 }
-                call(rdram, ctx, kResetKind, {kDataManager, *it, 0u}); // our hold off: the game frees it once unheld
+                queueCall(base, kResetKind, {kDataManager, *it, 0u});
                 it = g_loadedKinds.erase(it);
             }
         }
@@ -567,14 +611,8 @@ namespace kamite::spawn_tools
         // ---- the target and its motion (game thread)
         void listMotions(const uint8_t *rdram, uint32_t em)
         {
-            View v;
-            {
-                std::lock_guard<std::mutex> lock(g_viewMutex);
-                v.labels.swap(g_view.labels);
-                v.slots.swap(g_view.slots);
-            }
-            v.labels.clear();
-            v.slots.clear();
+            std::vector<std::string> labels;
+            std::vector<int> slots;
             const uint32_t base = inRam(em, 0x1800u) ? rd32(rdram, em + kObjData) : 0u;
             const uint32_t n = inRam(base, 8u) ? rd32(rdram, base) : 0u;
             if (n > 0 && n < 8192u && inRam(base, 8u + 8u * n))
@@ -588,13 +626,13 @@ namespace kamite::spawn_tools
                     const uint32_t mot = base + rd32(rdram, base + 4u + 4u * i);
                     char label[64];
                     std::snprintf(label, sizeof(label), "Motion %u  (%u frames)", i, inRam(mot, 8u) ? rd16(rdram, mot + 4u) : 0u);
-                    v.labels.push_back(label);
-                    v.slots.push_back(static_cast<int>(i));
+                    labels.push_back(label);
+                    slots.push_back(static_cast<int>(i));
                 }
             }
             std::lock_guard<std::mutex> lock(g_viewMutex);
-            g_view.labels.swap(v.labels);
-            g_view.slots.swap(v.slots);
+            g_view.labels.swap(labels);
+            g_view.slots.swap(slots);
         }
 
         void faceGene(uint8_t *rdram, uint32_t em)
@@ -604,11 +642,16 @@ namespace kamite::spawn_tools
                 wrf(rdram, em + kObjHeading, std::atan2(g[0] - e[0], g[2] - e[2]));
         }
 
-        // In the target's idle chooser: true when this frame is ours (the motion playing), false to let the chooser run.
+        GuestFunction g_startMotion = nullptr, g_moveMotion = nullptr, g_dvdStep = nullptr, g_sndUpdate = nullptr;
+        bool g_started = false;   // the motion's first frame seen (its pointer and loop count noted)
+        uint8_t g_loops = 0;      // +0x436 when it started: moveMotion counts it up at the motion's end
+
+        // In the target's idle chooser (at its entry): true when the frame is ours (the motion started or moved on by a
+        // tail call), false to let the chooser run.
         bool driveTarget(uint8_t *rdram, R5900Context *ctx, uint32_t em)
         {
             g_lastDriven = Clock::now();
-            if (g_motionSlot < 0)
+            if (g_motionSlot < 0 || !g_startMotion || !g_moveMotion)
                 return false;
             const uint32_t base = rd32(rdram, em + kObjData);
             const uint32_t n = inRam(base, 8u) ? rd32(rdram, base) : 0u;
@@ -617,40 +660,53 @@ namespace kamite::spawn_tools
                 g_motionSlot = -1;
                 return false;
             }
-            if (g_phase == Phase::Play && rd32(rdram, em + kObjMotion) != g_ourMotion)
+            const auto pause = std::chrono::milliseconds(static_cast<int>(g_pause.load() * 1000.0f));
+            if (g_phase == Phase::Play)
             {
-                g_phase = Phase::Wait; // cut off (a hit): again after the pause
-                g_nextStart = Clock::now() + std::chrono::milliseconds(static_cast<int>(g_pause.load() * 1000.0f));
-            }
-            if (g_phase == Phase::Wait)
-            {
-                if (Clock::now() < g_nextStart)
-                    return false; // the idle, for the pause
-                const uint32_t mot = base + rd32(rdram, base + 4u + 4u * static_cast<uint32_t>(g_motionSlot));
-                const uint32_t seq = base + rd32(rdram, base + 8u + 4u * static_cast<uint32_t>(g_motionSlot));
-                if (!inRam(mot, 8u) || !inRam(seq, 8u))
+                if (!g_started)
                 {
-                    g_motionSlot = -1;
+                    g_ourMotion = rd32(rdram, em + kObjMotion);
+                    g_loops = rd8(rdram, em + kObjLoops);
+                    g_started = true;
+                }
+                const bool ended = rd8(rdram, em + kObjLoops) != g_loops;
+                if (ended || rd32(rdram, em + kObjMotion) != g_ourMotion)
+                {
+                    // Over (or cut off by a hit): the idle for the pause, then again.
+                    g_phase = Phase::Wait;
+                    g_nextStart = Clock::now() + pause;
+                    wr8(rdram, em + kSubStep2, 0); // the idle starts over (its own motion again)
+                    if (ended && g_once)
+                    {
+                        g_motionSlot = -1;
+                        g_once = false;
+                    }
                     return false;
                 }
-                faceGene(rdram, em);
-                const float blend = 0.0f;
-                call(rdram, ctx, kStartMotion, {em, mot, seq, 3u, rd8(rdram, em + kObjMotionFlag) ? 2u : 0u, 0u}, &blend);
-                g_ourMotion = rd32(rdram, em + kObjMotion);
-                g_phase = Phase::Play;
-                return true; // the start has its first frame
+                SET_GPR_U32(ctx, 4, em);
+                tailCall(rdram, ctx, g_moveMotion, kMoveMotion); // runs the SEQ (attack windows, sounds, effects)
+                return true;
             }
-            if (call(rdram, ctx, kMoveMotion, {em}) != 0u)
+            if (Clock::now() < g_nextStart)
+                return false; // the idle, for the pause
+            const uint32_t mot = base + rd32(rdram, base + 4u + 4u * static_cast<uint32_t>(g_motionSlot));
+            const uint32_t seq = base + rd32(rdram, base + 8u + 4u * static_cast<uint32_t>(g_motionSlot));
+            if (!inRam(mot, 8u) || !inRam(seq, 8u))
             {
-                g_phase = Phase::Wait;
-                g_nextStart = Clock::now() + std::chrono::milliseconds(static_cast<int>(g_pause.load() * 1000.0f));
-                wr8(rdram, em + kSubStep2, 0); // the idle starts over (its own motion again)
-                if (g_once)
-                {
-                    g_motionSlot = -1;
-                    g_once = false;
-                }
+                g_motionSlot = -1;
+                return false;
             }
+            faceGene(rdram, em);
+            SET_GPR_U32(ctx, 4, em);
+            SET_GPR_U32(ctx, 5, mot);
+            SET_GPR_U32(ctx, 6, seq);
+            SET_GPR_U32(ctx, 7, 3u);
+            SET_GPR_U32(ctx, 8, rd8(rdram, em + kObjMotionFlag) ? 2u : 0u);
+            SET_GPR_U32(ctx, 9, 0u);
+            ctx->f[12] = 0.0f; // no blend
+            g_phase = Phase::Play;
+            g_started = false;
+            tailCall(rdram, ctx, g_startMotion, kStartMotion);
             return true;
         }
 
@@ -659,26 +715,31 @@ namespace kamite::spawn_tools
             return (g_aiOff.load(std::memory_order_relaxed) && isEnemy(rdram, em)) || (em != 0u && em == g_target);
         }
 
-        // ---- the hooks (game thread, inside the enemies' update)
+        // ---- the hooks (game thread, inside the enemies' update). A call that does not come in at the entry is the
+        // scheduler resuming the function after an unwind: straight to the original.
         void attackNowHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
-            if (dummy(rdram, GPR_U32(ctx, 4)))
+            if (ctx->pc == kAttackNow && dummy(rdram, GPR_U32(ctx, 4)))
                 return returnNow(ctx, 0u);
             g_origAttack(rdram, ctx, runtime);
         }
 
-        template <GuestFunction *Original>
+        template <uint32_t Entry, GuestFunction *Original>
         void idleHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const uint32_t em = GPR_U32(ctx, 4);
-            if (!inRam(em, 0x1800u) || !dummy(rdram, em))
+            if (ctx->pc != Entry || !inRam(em, 0x1800u) || !dummy(rdram, em))
                 return (*Original)(rdram, ctx, runtime);
             if (em == g_target && driveTarget(rdram, ctx, em))
-                return returnNow(ctx, 0u);
+                return;
+            const uint32_t ra = GPR_U32(ctx, 31);
             const uint8_t step = rd8(rdram, em + kSubStep), step2 = rd8(rdram, em + kSubStep2), step3 = rd8(rdram, em + kSubStep3);
             float pos[3];
             const bool hasPos = position(rdram, em, pos);
+            ctx->pc = Entry;
             (*Original)(rdram, ctx, runtime);
+            if (ctx->pc != ra)
+                return; // unwound part-way (it resumes on its own): no undo this frame
             if (rd8(rdram, em + kSubStep) != step)
             {
                 // A decision (a walk, a taunt, a move): undone. Back to the idle's resting step.
@@ -697,29 +758,38 @@ namespace kamite::spawn_tools
             }
         }
 
+        // The waits of cDataManager_loadWait / loadSeWait (sleepFrames, then UpdateStateReady, in a loop) inside our
+        // EntryEm, told apart by where they return to.
+        bool ourWait(const R5900Context *ctx, uint32_t a, uint32_t b)
+        {
+            const uint32_t ra = GPR_U32(ctx, 31);
+            return g_inEntry.load(std::memory_order_relaxed) && (ra == a || ra == b);
+        }
         void sleepFramesHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
-            if (!g_inEntry.load(std::memory_order_relaxed) || std::this_thread::get_id() != g_gameThread)
+            if (ctx->pc != kSleepFrames || !ourWait(ctx, 0x1FE948u, 0x1FEC48u) || !g_dvdStep || !g_sndUpdate)
                 return g_origSleep(rdram, ctx, runtime);
-            // Inside our EntryEm on the main thread: no sleeping here. Move the disc and the sound along instead.
-            call(rdram, ctx, kDvdStep, {kDvd});
-            const auto now = Clock::now();
-            if (now - g_lastSnd > std::chrono::milliseconds(16))
-            {
-                call(rdram, ctx, kSndUpdate, {kSnd});
-                g_lastSnd = now;
-            }
+            // No sleeping on the main thread: move the disc (or the sound, every 16 ms) along instead, then back to
+            // the loop's readiness check.
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            const auto now = Clock::now();
             if (!g_fakeReady && now - g_entryStart > std::chrono::seconds(15))
             {
                 g_fakeReady = true;
                 KM_ERROR(Game, "spawn: the new enemy waited 15 s for its data; going on without it");
             }
-            ctx->pc = GPR_U32(ctx, 31);
+            if (now - g_lastSnd > std::chrono::milliseconds(16))
+            {
+                g_lastSnd = now;
+                SET_GPR_U32(ctx, 4, kSnd);
+                return tailCall(rdram, ctx, g_sndUpdate, kSndUpdate);
+            }
+            SET_GPR_U32(ctx, 4, kDvd);
+            tailCall(rdram, ctx, g_dvdStep, kDvdStep);
         }
         void readyHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
-            if (g_fakeReady && g_inEntry.load(std::memory_order_relaxed) && std::this_thread::get_id() == g_gameThread)
+            if (ctx->pc == kReady && g_fakeReady && ourWait(ctx, 0x1FE954u, 0x1FEC54u))
                 return returnNow(ctx, 1u);
             g_origReady(rdram, ctx, runtime);
         }
@@ -935,10 +1005,14 @@ namespace kamite::spawn_tools
             return true;
         };
         bool ok = replace(kAttackNow, "enemy attack-now check (AI off)", &attackNowHook, g_origAttack);
-        ok = replace(kIdleCommon, "enemy idle chooser (AI off)", &idleHook<&g_origIdleCommon>, g_origIdleCommon) && ok;
-        ok = replace(kIdleBoss, "cEm00_idleChooseNext (AI off)", &idleHook<&g_origIdleBoss>, g_origIdleBoss) && ok;
+        ok = replace(kIdleCommon, "enemy idle chooser (AI off)", &idleHook<kIdleCommon, &g_origIdleCommon>, g_origIdleCommon) && ok;
+        ok = replace(kIdleBoss, "cEm00_idleChooseNext (AI off)", &idleHook<kIdleBoss, &g_origIdleBoss>, g_origIdleBoss) && ok;
         ok = replace(kSleepFrames, "cScenario_sleepFrames (spawn)", &sleepFramesHook, g_origSleep) && ok;
         ok = replace(kReady, "cDataManager slot ready (spawn)", &readyHook, g_origReady) && ok;
+        g_startMotion = resolve(kStartMotion);
+        g_moveMotion = resolve(kMoveMotion);
+        g_dvdStep = resolve(kDvdStep);
+        g_sndUpdate = resolve(kSndUpdate);
         KM_INFO(Game, "spawn tools: " << std::size(kKinds) << " kinds" << (ok ? "" : " (some hooks missing)"));
 #if defined(KAMITE_HAS_GS_MENU)
         buildLabels();
@@ -998,7 +1072,7 @@ namespace kamite::spawn_tools
             }
         }
         if (g_cleanIn > 0 && --g_cleanIn == 0 && room == kTestRoom)
-            releaseUnused(rdram, ctx);
+            releaseUnused(rdram, *ctx);
         if (--g_tableIn <= 0)
         {
             g_tableIn = 30;
@@ -1022,14 +1096,14 @@ namespace kamite::spawn_tools
         }
         if (g_leaveRequest.exchange(false) && g_inTest.load() && g_leavePhase == 0)
         {
-            releaseSpawned(rdram, ctx);
+            releaseSpawned(rdram, *ctx);
             g_leavePhase = 1;
         }
         if (g_removeRequest.exchange(false))
-            releaseSpawned(rdram, ctx);
+            releaseSpawned(rdram, *ctx);
         if (g_killRequest.exchange(false))
         {
-            call(rdram, ctx, kDefeatAll, {});
+            queueCall(*ctx, kDefeatAll, {});
             setStatus("Every enemy defeated.");
         }
         {
@@ -1037,16 +1111,20 @@ namespace kamite::spawn_tools
             while (!g_spawnQueue.empty())
             {
                 if (g_inTest.load())
-                    g_jobs.push_back(Job{g_spawnQueue.front()});
+                {
+                    auto job = std::make_shared<Job>();
+                    job->kind = g_spawnQueue.front();
+                    g_jobs.push_back(std::move(job));
+                }
                 g_spawnQueue.pop_front();
             }
         }
-        stepJobs(rdram, ctx);
+        stepJobs(rdram, *ctx);
         if (g_freeIn > 0 && --g_freeIn == 0)
-            giveBackData(rdram, ctx);
+            giveBackData(rdram, *ctx);
         if (g_leavePhase == 1 && g_freeIn == 0)
         {
-            giveBackData(rdram, ctx);
+            giveBackData(rdram, *ctx);
             float pos[3];
             float heading = 0.0f;
             if (g_cameFrom != kTestRoom && g_cameFrom != 0xFFFFu && debug_tools::firstJumpPoint(g_cameFrom, pos, heading))
