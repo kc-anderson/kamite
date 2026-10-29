@@ -10,10 +10,12 @@ Reads the case (its metadata and the live log the tester's run wrote) and the tw
    only when they agree (same animations, states, positions, hits). A divergence is reported with its first frame.
 2. Episodes.  Each run cut into Gene's animations (runs of frames with the same motion id), with the timer windows
    inside each (as seconds from the animation's start), the frames his hurt volumes are off, and the hit stops.
-3. 30 vs 60.  The episodes matched by animation, in order (the same animation is the same interaction whenever it
-   happened and whatever came before it), and every duration compared in real seconds. A difference above the
-   tolerance (default one 30 FPS frame) is flagged: that is the field to fix. Enemies the same way, by kind and
-   motion.
+3. 30 vs 60 per animation.  Episodes grouped by motion id in each run (Gene's; enemies by kind and motion over all
+   slots) and compared per id: count, median duration, each timer's median window (start offset, length), hurt-off
+   and hit stop. A fight's 30 replay drifts from the 60 run wherever 60 is still broken, so the runs are not paired in
+   order; medians per id survive the drift. Episodes cut by the case's first or last frame are left out. A median
+   differing by more than the tolerance (default one 30 FPS frame) is flagged: that is the field to fix.
+4. Sequence (short cases only, <= 8 s): the old in-order pairing, and section 2's episode list.
 
 Durations are real time: frames x (vblanks per frame) / 60.
 """
@@ -106,14 +108,21 @@ def runs_of(rows, col, lo, hi):
 
 
 def episodes(rows, col):
-    """[(value, start, end)] runs of equal col values."""
+    """[(value, start, end)] runs of equal col values; a restart of the animation frame (pl_mframe / mframe going
+    back) starts a new run too, so the same move done twice in a row counts twice."""
     out = []
     if not rows:
         return out
+    fcol = col.replace("motion", "mframe")
+    fcol = fcol if fcol in rows[0] else None
     start, value = 0, rows[0].get(col)
     for i in range(1, len(rows)):
         v = rows[i].get(col)
-        if v != value:
+        restart = False
+        if fcol:
+            a, b = num(rows[i - 1].get(fcol)), num(rows[i].get(fcol))
+            restart = a is not None and b is not None and b < a
+        if v != value or restart:
             out.append((value, start, i))
             start, value = i, v
     out.append((value, start, len(rows)))
@@ -265,6 +274,131 @@ def compare_enemies(rows30, rows60, enemies, tol):
     return out, flagged
 
 
+# ---- per animation -----------------------------------------------------------------------------------------------
+def median(xs):
+    xs = sorted(xs)
+    n = len(xs)
+    if n == 0:
+        return None
+    return xs[n // 2] if n % 2 else 0.5 * (xs[n // 2 - 1] + xs[n // 2])
+
+
+def group_by_id(rows, mcol, key=None):
+    """{id: [(lo, hi)]} of whole episodes (not cut by the run's first or last frame)."""
+    out = {}
+    for value, lo, hi in episodes(rows, mcol):
+        if value in ("", None) or lo == 0 or hi == len(rows):
+            continue
+        k = key(rows[lo], value) if key else value
+        out.setdefault(k, []).append((lo, hi))
+    return out
+
+
+def id_stats(rows, div, eps, cols):
+    """count, median duration (s) and per column (episodes with it, median start, median length) for one id."""
+    st = {"n": len(eps), "dur": median([seconds(hi - lo, div) for lo, hi in eps]), "cols": {}}
+    for col in cols:
+        starts, totals = [], []
+        for lo, hi in eps:
+            rs = runs_of(rows, col, lo, hi)
+            if rs:
+                starts.append(seconds(rs[0][0] - lo, div))
+                totals.append(seconds(sum(n for _, n in rs), div))
+        if starts:
+            st["cols"][col] = (len(starts), median(starts), median(totals))
+    return st
+
+
+def compare_ids(rows30, rows60, mcol, cols, tol, key=None, label_of=str):
+    """Lines for flagged ids, the list of agreeing ids, ids seen at one rate only; and the flag count."""
+    g30, g60 = group_by_id(rows30, mcol, key), group_by_id(rows60, mcol, key)
+    flagged_lines, ok, one_side, flagged = [], [], [], 0
+    for k in sorted(set(g30) | set(g60), key=lambda x: str(x)):
+        if k not in g30 or k not in g60:
+            side, eps = ("30", g30[k]) if k in g30 else ("60", g60[k])
+            one_side.append(f"{label_of(k)} ({side}, x{len(eps)})")
+            continue
+        a, b = id_stats(rows30, 2, g30[k], cols), id_stats(rows60, 1, g60[k], cols)
+        notes = []
+        if abs(b["dur"] - a["dur"]) > tol:
+            notes.append(f"duration {a['dur']:.3f} -> {b['dur']:.3f} s ({b['dur'] - a['dur']:+.3f})")
+        for col in cols:
+            ca, cb = a["cols"].get(col), b["cols"].get(col)
+            name = "hurt OFF" if col == "pl_hurt" else col
+            if ca is None and cb is None:
+                continue
+            if ca is None or cb is None:
+                have, n = ("30", a["n"]) if cb is None else ("60", b["n"])
+                c = ca or cb
+                # A window seen in only a few episodes at one rate is usually a different situation, not a bug.
+                if c[0] * 2 > n:
+                    notes.append(f"{name} only at {have} (in {c[0]}/{n}, +{c[1]:.3f}s x{c[2]:.3f}s)")
+                continue
+            ds, dl = cb[1] - ca[1], cb[2] - ca[2]
+            if abs(ds) > tol or abs(dl) > tol:
+                notes.append(f"{name} +{ca[1]:.3f}s x{ca[2]:.3f}s -> +{cb[1]:.3f}s x{cb[2]:.3f}s")
+        head = f"{label_of(k)} (x{a['n']} at 30, x{b['n']} at 60, {a['dur']:.3f} s)"
+        if notes:
+            flagged += len(notes)
+            flagged_lines.append(f"  !! {head}: " + "; ".join(notes))
+        else:
+            ok.append(f"{label_of(k)} x{a['n']}/{b['n']}")
+    return flagged_lines, ok, one_side, flagged
+
+
+def enemy_rows(rows, enemies):
+    """One row list per enemy slot with the columns renamed to em_*, so all slots group together."""
+    out = []
+    for i in range(enemies):
+        pre = f"em{i}_"
+        if not any(r.get(pre + "motion") for r in rows):
+            continue
+        out.append([{c[len(pre):]: v for c, v in r.items() if c.startswith(pre)} | {"hitstop": r.get("hitstop")} for r in rows])
+    return out
+
+
+def compare_enemy_ids(rows30, rows60, enemies, tol):
+    """Enemy episodes of every slot grouped by (kind, motion)."""
+    s30, s60 = enemy_rows(rows30, enemies), enemy_rows(rows60, enemies)
+    key = lambda r, m: (r.get("kind") or "?", m)
+    g30, g60 = {}, {}
+    # Group per slot, then merge (episodes are slot-local: a slot can change occupant mid-run).
+    for slots, g, div in ((s30, g30, 2), (s60, g60, 1)):
+        for rows in slots:
+            for k, eps in group_by_id(rows, "motion", key).items():
+                g.setdefault(k, []).extend((rows, lo, hi) for lo, hi in eps)
+    flagged_lines, ok, one_side, flagged = [], [], [], 0
+    for k in sorted(set(g30) | set(g60), key=str):
+        label = f"kind {k[0]} motion {k[1]}"
+        if k not in g30 or k not in g60:
+            side, eps = ("30", g30[k]) if k in g30 else ("60", g60[k])
+            one_side.append(f"{label} ({side}, x{len(eps)})")
+            continue
+        def stats(items, div):
+            st = {"n": len(items), "dur": median([seconds(hi - lo, div) for _, lo, hi in items]), "cols": {}}
+            for col in ("speed", "guard"):
+                tot = [seconds(sum(n for _, n in runs_of(r, col, lo, hi)), div) for r, lo, hi in items]
+                tot = [t for t in tot if t > 0]
+                if tot:
+                    st["cols"][col] = median(tot)
+            return st
+        a, b = stats(g30[k], 2), stats(g60[k], 1)
+        notes = []
+        if abs(b["dur"] - a["dur"]) > tol:
+            notes.append(f"duration {a['dur']:.3f} -> {b['dur']:.3f} s ({b['dur'] - a['dur']:+.3f})")
+        for col in ("speed", "guard"):
+            ca, cb = a["cols"].get(col), b["cols"].get(col)
+            if ca is not None and cb is not None and abs(cb - ca) > tol:
+                notes.append(f"{col} on {ca:.3f} -> {cb:.3f} s")
+        head = f"{label} (x{a['n']} at 30, x{b['n']} at 60, {a['dur']:.3f} s)"
+        if notes:
+            flagged += len(notes)
+            flagged_lines.append(f"  !! {head}: " + "; ".join(notes))
+        else:
+            ok.append(f"{k[1]} x{a['n']}/{b['n']}")
+    return flagged_lines, ok, one_side, flagged
+
+
 def main(argv):
     tol, cols, files = 1.0 / 30.0 + 1e-6, TIMER_COLS, []
     i = 0
@@ -315,22 +449,47 @@ def main(argv):
         print("Both replays are needed for the comparison.")
         return 2
 
-    print("2. Episodes")
-    for label, rows, div in (("30 FPS", rows30, 2), ("60 FPS", rows60, 1)):
-        print(f"  [{label}] {len(rows)} frames = {seconds(len(rows), div):.2f} s")
-        for ep in episodes(rows, "pl_motion"):
-            if ep[0] in ("", None):
-                continue
-            print(describe_episode(rows, div, ep, cols))
+    short = seconds(len(rows30), 2) <= 8.0
+    total = 0
+    print(f"2. 30 vs 60 per animation (median per motion id; tolerance {tol:.3f} s; !! = differs)")
+    fl, ok, one, n = compare_ids(rows30, rows60, "pl_motion", cols + ["pl_hurt", "hitstop"], tol,
+                                 label_of=lambda m: f"Gene motion {m}")
+    total += n
+    print(f"  Gene: {len(fl)} motion(s) flagged, {len(ok)} agree")
+    print("\n".join(fl) if fl else "     (none flagged)")
+    if ok:
+        print("     agree: " + ", ".join(o.replace("Gene motion ", "") for o in ok))
+    if one:
+        print("     one rate only (a drifted fight, not a bug by itself): " + ", ".join(o.replace("Gene motion ", "") for o in one[:16])
+              + (f" ... (+{len(one) - 16})" if len(one) > 16 else ""))
+    fl, ok, one, n = compare_enemy_ids(rows30, rows60, enemies, tol)
+    total += n
+    print(f"  Enemies: {len(fl)} motion(s) flagged, {len(ok)} agree")
+    if fl:
+        print("\n".join(fl))
+    if ok:
+        print("     agree: " + ", ".join(ok))
+    if one:
+        print("     one rate only: " + ", ".join(one[:16]) + (f" ... (+{len(one) - 16})" if len(one) > 16 else ""))
     print()
 
-    print(f"3. 30 vs 60 (tolerance {tol:.3f} s; !! = differs)")
-    lines, flagged = compare(rows30, rows60, cols, tol)
-    print("\n".join(lines))
-    elines, eflagged = compare_enemies(rows30, rows60, enemies, tol)
-    print("\n".join(elines))
-    print()
-    print(f"Flagged: {flagged + eflagged} difference(s)." if flagged + eflagged else "No differences above the tolerance.")
+    if short:
+        print("3. Episodes (short case)")
+        for label, rows, div in (("30 FPS", rows30, 2), ("60 FPS", rows60, 1)):
+            print(f"  [{label}] {len(rows)} frames = {seconds(len(rows), div):.2f} s")
+            for ep in episodes(rows, "pl_motion"):
+                if ep[0] in ("", None):
+                    continue
+                print(describe_episode(rows, div, ep, cols))
+        print()
+        print(f"4. 30 vs 60 in sequence (short case)")
+        lines, flagged = compare(rows30, rows60, cols, tol)
+        print("\n".join(lines))
+        elines, eflagged = compare_enemies(rows30, rows60, enemies, tol)
+        print("\n".join(elines))
+        print()
+
+    print(f"Flagged per animation: {total} difference(s)." if total else "No per-animation differences above the tolerance.")
     return 0
 
 
