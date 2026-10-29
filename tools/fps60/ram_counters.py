@@ -31,7 +31,8 @@ def views(frames):
         for typ, width, dt in (("b", 1, np.uint8), ("h", 2, np.int16), ("w", 4, np.int32), ("f", 4, np.float32)):
             arr = block.view(dt)
             for k in range(arr.shape[1]):
-                out[(name, k * width, typ)] = arr[:, k].astype(np.float64)
+                with np.errstate(invalid="ignore"):
+                    out[(name, k * width, typ)] = arr[:, k].astype(np.float64)
         at += size
     return out
 
@@ -54,7 +55,7 @@ def runs(values, min_len):
     out = []
     for st, n in zip(starts[lengths >= min_len], lengths[lengths >= min_len]):
         step = d[st]
-        if step != 0 and np.isfinite(step) and abs(step) < 1e6:
+        if step != 0 and np.isfinite(step) and 1e-20 < abs(step) < 1e6:  # floats: no denormals (an int seen as float)
             out.append((float(f"{step:.3g}"), int(n)))
     return out
 

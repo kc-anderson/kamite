@@ -6,6 +6,7 @@ Newest first, one line per change; the code comments say how.
 
 - Dev: KAMITE_ADX_DUMP records each stream channel's audio as decoded and as sent to the IOP
   (tools/audio/adx_dump.py reads it), for the music doubling.
+- 60 FPS: the God Hand gauge drains at the 30 FPS pace (it emptied twice as fast); also two of Gene's short timers.
 - Dev: test cases keep what each pad read returned, so a replay reads exactly what the tester's game read; replays
   also dump RAM for finding frame counters.
 - 60 FPS: after a hit, Gene (and objects like Door-kun) stay out of reach as long as at 30 FPS (it was half as long).

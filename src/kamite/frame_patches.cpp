@@ -538,6 +538,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_countdown_em514", &countdownLoad<16, 0x514u>);
         ps2xRegisterHostHook("km_fps60_countdown_em530", &countdownLoad<16, 0x530u>);
         ps2xRegisterHostHook("km_fps60_countdown_hitstop", &countdownLoad<3, 0x2CD0u>);
+        ps2xRegisterHostHook("km_fps60_countdown_pl1658", &countdownLoad<16, 0x1658u>); // Gene's 15-frame cooldown, 0x126840
         ps2xRegisterHostHook("km_fps60_emit_every_frame", &emitEveryFrame);
         ps2xRegisterHostHook("km_fps60_wiggle_begin", &wiggleBegin);
         ps2xRegisterHostHook("km_fps60_wiggle_end", &wiggleEnd);

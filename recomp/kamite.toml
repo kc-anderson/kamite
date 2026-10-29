@@ -78,7 +78,8 @@ address = "0x003038BC"
 hook = "km_fps60_emit_every_frame"
 flag = "fps60"
 
-# Unleash gauge drain: 0.5 instead of 1.0 (the pnach's).
+# The pnach's "Unleash gauge drain": Gene's speed rate +0x5A8 and +0x5DC 0.5 instead of 1.0 in func_0010D3A8 (kept as
+# the pnach had it; the gauge itself is +0x568, hooked with the other +0x568 countdowns).
 [[patches.conditional]]
 address = "0x0010D694"
 value = "0x3C013F00"
@@ -229,6 +230,112 @@ flag = "test_cases"
 address = "0x00397D74"
 hook = "km_test_pad_read_copy"
 flag = "test_cases"
+# Gene's +0x568 (halfword) counted down once a frame in 17 pl00 states: the God Hand (Unleash) gauge (~1000 when
+# unleashed, refilled by hits; Oct 29 case 12-07-44: -30 per half second at 60 against -15 at 30) and the dash
+# countdown (0xB). Every decrement counts every other frame at 60 (family 1). The pnach's "Unleash gauge drain"
+# patch at 0x10D694 halves Gene's speed rate +0x5A8/+0x5DC in func_0010D3A8, not the gauge.
+[[patches.hooks]] # +0x568 in func at 0x10d028
+address = "0x0010D028"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x568 in func at 0x10d668
+address = "0x0010D668"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x568 in func at 0x10e0dc
+address = "0x0010E0DC"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x568 in func at 0x10e464
+address = "0x0010E464"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x568 in func at 0x10e7e8
+address = "0x0010E7E8"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x568 in func at 0x10ed68
+address = "0x0010ED68"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x568 in func at 0x1148d8
+address = "0x001148D8"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x568 in func at 0x116818
+address = "0x00116818"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x568 in func at 0x117238
+address = "0x00117238"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x568 in func at 0x117bf4
+address = "0x00117BF4"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x568 in func at 0x118334
+address = "0x00118334"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x568 in func at 0x118870
+address = "0x00118870"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x568 in func at 0x118d9c
+address = "0x00118D9C"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x568 in func at 0x11948c
+address = "0x0011948C"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x568 in func at 0x119934
+address = "0x00119934"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x568 in func at 0x119dd4
+address = "0x00119DD4"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x568 in func at 0x11b7dc
+address = "0x0011B7DC"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+# Gene's +0x5F0 (two pl00 states, set to 10) and +0x1658 (a 15-frame cooldown, func_00126820, decrement in a delay
+# slot: the load-raise template on its lw). Oct 29 cases: both stepped -1 per game frame at 30 and 60 (ram_counters).
+[[patches.hooks]] # +0x5F0 in func_0010D3A8
+address = "0x0010DC00"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x5F0 in func_0010E5B8 (addiu a0,a0,-1)
+address = "0x0010EB9C"
+hook = "km_fps60_countdown_a0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # +0x1658: lw v0,0x1658(s0) before the delay-slot decrement
+address = "0x00126840"
+hook = "km_fps60_countdown_pl1658"
+flag = "fps60"
+replace = true
 [[patches.hooks]] # post-hit guard +0x54C -= +0x5A8 x rate: objects left at 1.0 (Gene, Door-kun, ...) take 0.5 at 60
 address = "0x001FD4F8"
 hook = "km_fps60_flash_guard_rate"
