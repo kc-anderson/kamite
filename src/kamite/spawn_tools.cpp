@@ -239,7 +239,10 @@ namespace kamite::spawn_tools
             const R5900Context saved = *ctx;
             int reg = 4;
             for (uint32_t a : args)
-                SET_GPR_U32(ctx, reg++, a);
+            {
+                const int r = reg++; // SET_GPR_U32 evaluates its index twice: never pass it reg++ (every argument
+                SET_GPR_U32(ctx, r, a); // landed two registers on: the cause of every failed spawn up to e6f98f4)
+            }
             if (f12)
                 ctx->f[12] = *f12;
             constexpr uint32_t kEnd = 0x1u;
