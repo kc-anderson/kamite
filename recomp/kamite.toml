@@ -395,6 +395,16 @@ address = "0x00340334"
 hook = "km_adx_stop"
 flag = "adx_probe"
 
+# The damage manager's hit stop (func_001FDFD8: while D_00574380+0xACD0 is non-zero it skips every hit test that frame
+# and counts it down; set from 0x3BF190 / 0x3BF194 when Gene hits / is hit): counted in game frames, so at 60 FPS the
+# freeze after a hit was half as long and a multi-frame attack could land again inside it. Every other frame here
+# (the decrement is in a delay slot: the load is raised; claude/fps60-notes.md family 1).
+[[patches.hooks]]
+address = "0x001FDFF8"
+hook = "km_fps60_countdown_hitstop"
+flag = "fps60"
+replace = true
+
 # Button-mash meter, two copies (pl00 states at 0x10FC84 and 0x1201A8): each direction press (GameWork pressed & 0xF0)
 # raises the level (+0x15B4) when the game frames since the last one (+0x15B0, +1 a frame) are under the level's limit
 # (jump tables 0x41BDC0 / 0x41C6D0: the limits are the immediates of the table's cases), and the level decays when
@@ -507,9 +517,9 @@ flag = "fps60"
 address = "0x001ACDC4"
 value = "0x3C013E32"
 flag = "fps60"
-[[patches.conditional]] # swing live 2 -> 4 frames (delay slot)
-address = "0x001ACEB4"
-value = "0x24060004"
+[[patches.conditional]] # swing live 2 -> 3 frames (delay slot): the arm then covers the same arc as in 30 FPS's two
+address = "0x001ACEB4"  # frames (top, 5 deg back); 4 reached 7.5 deg and hit Gene a second time (Thinso, Oct 29)
+value = "0x24060003"
 flag = "fps60"
 [[patches.conditional]] # swing back 5 -> 2.5 deg a frame
 address = "0x001ACEF0"

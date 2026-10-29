@@ -416,7 +416,8 @@ namespace kamite
         }
         // `lw v0,X(base)` before a countdown whose `addiu v0,v0,-1` sits in a branch delay slot (no hook there): on the
         // skipped frames the loaded value is raised by one and the decrement stores it back unchanged (the zero test
-        // is not affected: a non-zero value stays non-zero). Gene's +0x5F8 (0x108D08), cEmManage +0x510/+0x514/+0x530.
+        // is not affected: a non-zero value stays non-zero). Gene's +0x5F8 (0x108D08), cEmManage +0x510/+0x514/+0x530, the
+        // damage manager's hit stop (0x1FDFF8).
         template <int Base, uint32_t Offset>
         void countdownLoad(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
@@ -494,6 +495,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_countdown_em510", &countdownLoad<16, 0x510u>);
         ps2xRegisterHostHook("km_fps60_countdown_em514", &countdownLoad<16, 0x514u>);
         ps2xRegisterHostHook("km_fps60_countdown_em530", &countdownLoad<16, 0x530u>);
+        ps2xRegisterHostHook("km_fps60_countdown_hitstop", &countdownLoad<3, 0x2CD0u>);
         ps2xRegisterHostHook("km_fps60_emit_every_frame", &emitEveryFrame);
         ps2xRegisterHostHook("km_fps60_wiggle_begin", &wiggleBegin);
         ps2xRegisterHostHook("km_fps60_wiggle_end", &wiggleEnd);
