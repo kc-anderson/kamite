@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## October 29, 2026
 
+- 60 FPS: loading a save state no longer pushes the left stick by itself for a frame.
 - Dev: test cases: R3 (the "Record a test case" hotkey) starts and stops a recording; one cases\<date-time>.case file
   per case; Replay-Cases.cmd replays every new case at 30 and 60 FPS and writes the comparison report.
 - Hotkeys can be a controller button (R3, Select...) as well as a key; the launcher and the F2 menu offer them.

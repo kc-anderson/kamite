@@ -49,6 +49,7 @@
 #include "ps2_runtime_macros.h" // FPU_CVT_W_S (the recompiled CVT.W.S)
 #include "runtime/ps2_async_vif.h"
 #include "runtime/ps2_display_options.h"
+#include "runtime/ps2_save_state.h"
 
 #include <atomic>
 #include <cstdlib>
@@ -284,10 +285,31 @@ namespace kamite
             KM_INFO(Game, "frame rate switched: " << (on ? "60 FPS mode" : "30 FPS, as on the PS2"));
         }
 
+        // A save state was loaded: the stick hold's memory belongs to the frames before it. Without this the hold
+        // compared the loaded stick bytes with what it saw before the load (at boot, before the pad was up, the
+        // libpad buffer reads 0 = full deflection) and wrote a full push over the first frame after the load: at 60
+        // FPS Gene turned or dashed by himself right after a state loaded (the first test-case replays, Oct 29).
+        void forgetStickAfterLoad()
+        {
+            static uint32_t loads = 0;
+            const uint32_t now = ps2x::savestate::loadCount();
+            if (now == loads)
+                return;
+            loads = now;
+            for (int axis = 0; axis < 4; ++axis)
+            {
+                g_stickHeld[axis] = 0u;
+                g_stickLast[axis] = 0u;
+                g_stickInjected[axis] = -1;
+                g_stickRaw[axis] = 0x80u;
+            }
+        }
+
         void frameStart(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             pcsampler::noteMainContext(ctx);
             ++g_gameFrame;
+            forgetStickAfterLoad();
             if (const int request = g_fps60Request.exchange(-1); request >= 0)
                 setFps60(request != 0);
             if (g_rouletteRequest.exchange(0) != 0)
