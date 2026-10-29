@@ -18,6 +18,7 @@ Reads the case (its metadata and the live log the tester's run wrote) and the tw
 Durations are real time: frames x (vblanks per frame) / 60.
 """
 import csv
+import os
 import io
 import sys
 
@@ -166,7 +167,7 @@ def faithful(live, replay, div, enemies):
                         same += all(replay[k].get(x) == live[k + d].get(x) for x in ("pl_mode", "pl_phase", "pl_motion"))
                 shifts.append(f"{d:+d}: {100.0 * same / max(total, 1):.0f}%")
             return (f"DIVERGES at frame {i} ({seconds(i, div):.3f} s): {c} live={a!r} replay={b!r}  "
-                    f"(the replay is not trusted past this frame)\n"
+                    f"(with the same build this means the replay is not faithful)\n"
                     f"   Gene's state matching with the replay shifted by n frames against the live run: {', '.join(shifts)}")
     return f"yes: {n} frames agree on {len(cols)} fields ({seconds(n, div):.2f} s)"
 
@@ -296,7 +297,18 @@ def main(argv):
 
     same_rate = rows60 if rec_div == 1 else rows30
     print(f"1. Faithful? (the {60 // rec_div} FPS replay against what the tester saw)")
-    print("   " + (faithful(live, same_rate, rec_div, enemies) if same_rate else "no replay at the case's rate yet"))
+    verdict = faithful(live, same_rate, rec_div, enemies) if same_rate else "no replay at the case's rate yet"
+    # Same build? (kamite.exe next to cases\, where Replay-Cases.cmd runs this.)
+    recorded = meta.get("build", "")
+    exe = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(path))), "kamite.exe")
+    same_build = None
+    if recorded and os.path.exists(exe):
+        size = recorded.split(":")[0]
+        same_build = size == str(os.path.getsize(exe))  # the size changes with nearly every build; the time is kept for reading
+    if verdict.startswith("DIVERGES") and same_build is not True:
+        verdict = ("recorded with an earlier build " + ("" if same_build is False else "(or unknown) ") +
+                   "- a divergence here is expected where a fix changed the game; trust the comparison below.\n   " + verdict)
+    print("   " + verdict)
     print()
 
     if rows30 is None or rows60 is None:

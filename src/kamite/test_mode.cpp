@@ -927,6 +927,17 @@ namespace kamite::test_mode
             std::snprintf(hex, sizeof(hex), "%03X", rec.room);
             c.meta += hex;
             c.meta += "\nenemies=" + std::to_string(kDefaultEnemies) + "\n";
+            // The build that recorded it (kamite.exe's size and time): a replay with another build may differ from the
+            // live log where a fix changed the game, and the report says so.
+            {
+                std::error_code buildError;
+                const fs::path exe = g_exeDir / "kamite.exe";
+                const auto size = fs::file_size(exe, buildError);
+                const auto time = fs::last_write_time(exe, buildError);
+                if (!buildError)
+                    c.meta += "build=" + std::to_string(size) + ":" +
+                              std::to_string(static_cast<long long>(time.time_since_epoch().count())) + "\n";
+            }
             const fs::path caseFile = g_exeDir / "cases" / (rec.stamp + ".case");
             std::error_code ec;
             if (!writeFile(caseFile, packCase(c)))
