@@ -445,6 +445,15 @@ namespace kamite
         {
             ctx->f[0] = (g_gameFrame & 1u) ? ctx->f[1] : ctx->f[1] - ctx->f[0];
         }
+        // The post-hit guard (FlashDriver_resetFlash 0x1FD4F8 mul.s f1,f1,f0: +0x54C -= +0x5A8 x 0x747A14, a frame; the
+        // hit loop func_001FCF20 skips a target while it is > 0). Objects on the speed rate have +0x5A8 = 0.5 at 60;
+        // Gene and every class whose update never writes it keep 1.0, so their guard lasted half the time (Gene's
+        // 3/15/30 after a hit; Door-kun's second roundhouse contact). Family 2 in claude/fps60-notes.md.
+        void flashGuardRate(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            const float rate = ctx->f[1] == 1.0f ? 0.5f : ctx->f[1];
+            ctx->f[1] = rate * ctx->f[0];
+        }
         // `lw v0,X(base)` before a countdown whose `addiu v0,v0,-1` sits in a branch delay slot (no hook there): on the
         // skipped frames the loaded value is raised by one and the decrement stores it back unchanged (the zero test
         // is not affected: a non-zero value stays non-zero). Gene's +0x5F8 (0x108D08), cEmManage +0x510/+0x514/+0x530, the
@@ -522,6 +531,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_countdown", &buttonTimer);
         ps2xRegisterHostHook("km_fps60_countdown_self", &countdownSelf);
         ps2xRegisterHostHook("km_fps60_countdown_float", &countdownFloat);
+        ps2xRegisterHostHook("km_fps60_flash_guard_rate", &flashGuardRate);
         ps2xRegisterHostHook("km_fps60_countdown_a0", &countdownReg<4>);
         ps2xRegisterHostHook("km_fps60_countdown_5f8", &countdownLoad<17, 0x5F8u>);
         ps2xRegisterHostHook("km_fps60_countdown_em510", &countdownLoad<16, 0x510u>);

@@ -221,6 +221,11 @@ address = "0x00108D08"
 hook = "km_fps60_countdown_5f8"
 flag = "fps60"
 replace = true
+[[patches.hooks]] # post-hit guard +0x54C -= +0x5A8 x rate: objects left at 1.0 (Gene, Door-kun, ...) take 0.5 at 60
+address = "0x001FD4F8"
+hook = "km_fps60_flash_guard_rate"
+flag = "fps60"
+replace = true
 [[patches.hooks]] # float +0x15D0 -= 1.0
 address = "0x00108DE8"
 hook = "km_fps60_countdown_float"
@@ -502,10 +507,6 @@ flag = "fps60"
 [[patches.conditional]] # regen: 1 HP every 5 -> 10 frames
 address = "0x001ACA2C"
 value = "0x2404000A"
-flag = "fps60"
-[[patches.conditional]] # after a hit, +0x54C (no further hit while > 0, -= +0x5A8 a frame, which his update leaves at
-address = "0x001ACA84"  # 1.0 where other objects get the 0.5 speed rate) 3.0 -> 6.0: the roundhouse's second contact,
-value = "0x3C0140C0"    # 3 frames later at 60, hit again (door probe, Oct 28: 2 x 12 at 60, 1 x 12 at 30)
 flag = "fps60"
 [[patches.conditional]] # hit shake 8 -> 16 frames
 address = "0x001ACADC"

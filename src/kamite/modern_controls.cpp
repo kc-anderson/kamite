@@ -34,6 +34,7 @@
 #include "kamite/log.h"
 #include "kamite/menu_buttons.h"
 #include "kamite/style_presets.h"
+#include "kamite/test_mode.h"
 #include "kamite/game_layout.h"
 #include "ps2_host_input.h"
 #include "runtime/ps2_game_menu.h"
@@ -504,7 +505,50 @@ namespace kamite::modern
         g_lastCameraMs.store(now, std::memory_order_relaxed);
     }
 
+    namespace
+    {
+        bool g_turned = false;     // updateCameraLive turned Gene this call...
+        float g_turnedYaw = 0.0f;  // ... to this yaw
+    }
+
+    FreeCamera updateCameraLive(uint8_t *rdram, float gameYaw, float geneYaw, float dt);
+
+    // A case replay plays the recorded camera and turns back (not in the save state: test_mode.h HostCamera); a case
+    // being recorded keeps them.
     FreeCamera updateCamera(uint8_t *rdram, float gameYaw, float geneYaw, float dt)
+    {
+        test_mode::HostCamera host;
+        if (test_mode::replayHost(host))
+        {
+            takeMouse();
+            float yaw = geneYaw;
+            const uint32_t player = ram32(rdram, kPlayerPointer);
+            if (host.turned && validPointer(player))
+            {
+                yaw = host.geneYaw;
+                std::memcpy(rdram + ((player + 0x104u) & 0x1FFFFFFu), &yaw, sizeof(yaw));
+            }
+            g_geneYaw.store(yaw, std::memory_order_relaxed);
+            g_cameraYaw.store(host.yaw, std::memory_order_relaxed);
+            g_free = host.free;
+            FreeCamera out;
+            out.free = host.free;
+            out.yaw = host.yaw;
+            out.pitch = host.pitch;
+            return out;
+        }
+        g_turned = false;
+        const FreeCamera out = updateCameraLive(rdram, gameYaw, geneYaw, dt);
+        host.free = out.free;
+        host.yaw = out.yaw;
+        host.pitch = out.pitch;
+        host.turned = g_turned;
+        host.geneYaw = g_turnedYaw;
+        test_mode::recordHost(host);
+        return out;
+    }
+
+    FreeCamera updateCameraLive(uint8_t *rdram, float gameYaw, float geneYaw, float dt)
     {
         FreeCamera out;
         g_geneYaw.store(geneYaw, std::memory_order_relaxed);
@@ -578,6 +622,8 @@ namespace kamite::modern
                 const float turned = wrapAngle(geneYaw + step);
                 std::memcpy(rdram + ((player + 0x104u) & 0x1FFFFFFu), &turned, sizeof(turned));
                 g_geneYaw.store(turned, std::memory_order_relaxed);
+                g_turned = true;
+                g_turnedYaw = turned;
             }
         }
         g_cameraYaw.store(g_yaw, std::memory_order_relaxed);

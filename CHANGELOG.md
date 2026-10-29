@@ -4,6 +4,9 @@ Newest first, one line per change; the code comments say how.
 
 ## October 29, 2026
 
+- 60 FPS: after a hit, Gene (and objects like Door-kun) stay out of reach as long as at 30 FPS (it was half as long).
+- Dev: test cases recorded with the Modern controls replay their camera and Gene's turns; the report compares fights
+  per animation.
 - 60 FPS: the dodges keep Gene's head and chest out of reach as long as at 30 FPS (they came back after half the time).
 - 60 FPS: loading a save state no longer pushes the left stick by itself for a frame.
 - Dev: test cases: R3 (the "Record a test case" hotkey) starts and stops a recording; one cases\<date-time>.case file

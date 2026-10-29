@@ -245,6 +245,7 @@ namespace kamite::test_mode
         struct CaseFile
         {
             std::string meta, state, pad, live;
+            std::string host; // the Modern controls' camera and turns, a line a frame (HostTrack)
         };
 
         std::string packCase(const CaseFile &c)
@@ -262,6 +263,8 @@ namespace kamite::test_mode
             section("meta", c.meta);
             section("pad", c.pad);
             section("live", c.live);
+            if (!c.host.empty())
+                section("host", c.host);
             section("state", c.state); // last: the big one
             out += "end\n";
             return out;
@@ -302,7 +305,7 @@ namespace kamite::test_mode
                     error = "section " + name + " runs past the end of the file";
                     return false;
                 }
-                std::string *target = name == "meta" ? &c.meta : name == "state" ? &c.state : name == "pad" ? &c.pad : name == "live" ? &c.live : nullptr;
+                std::string *target = name == "meta" ? &c.meta : name == "state" ? &c.state : name == "pad" ? &c.pad : name == "live" ? &c.live : name == "host" ? &c.host : nullptr;
                 if (target)
                     target->assign(data, at, size);
                 at += size + 1u; // the newline after the bytes
@@ -505,6 +508,63 @@ namespace kamite::test_mode
             log.csv = log.shapes = nullptr;
         }
 
+        // ---- the host track: "kamite-host 1", "divider N", then "<frame> <free> <yaw> <pitch> <gene yaw | ->" ----------
+        struct HostEntry
+        {
+            uint32_t frame = 0; // the recorder's frame counter when the camera hook ran (frame k's update: k + 1)
+            test_mode::HostCamera camera;
+        };
+        struct HostTrack
+        {
+            uint32_t divider = 2u;
+            std::vector<HostEntry> entries;
+        };
+
+        std::string formatHost(const HostTrack &track)
+        {
+            std::string out = "kamite-host 1\ndivider " + std::to_string(track.divider) + "\n";
+            char line[128];
+            for (const HostEntry &e : track.entries)
+            {
+                char turn[32] = "-";
+                if (e.camera.turned)
+                    std::snprintf(turn, sizeof(turn), "%.9g", static_cast<double>(e.camera.geneYaw));
+                std::snprintf(line, sizeof(line), "%u %d %.9g %.9g %s\n", e.frame, e.camera.free ? 1 : 0,
+                              static_cast<double>(e.camera.yaw), static_cast<double>(e.camera.pitch), turn);
+                out += line;
+            }
+            return out;
+        }
+
+        bool parseHost(const std::string &text, HostTrack &track)
+        {
+            std::istringstream in(text);
+            std::string line;
+            if (!std::getline(in, line) || trim(line) != "kamite-host 1")
+                return false;
+            while (std::getline(in, line))
+            {
+                line = trim(line);
+                if (line.rfind("divider ", 0) == 0)
+                {
+                    track.divider = static_cast<uint32_t>(std::strtoul(line.c_str() + 8, nullptr, 10));
+                    continue;
+                }
+                std::istringstream fields(line);
+                HostEntry e;
+                int free = 0;
+                std::string turn;
+                if (!(fields >> e.frame >> free >> e.camera.yaw >> e.camera.pitch >> turn))
+                    continue;
+                e.camera.free = free != 0;
+                e.camera.turned = turn != "-";
+                if (e.camera.turned)
+                    e.camera.geneYaw = std::strtof(turn.c_str(), nullptr);
+                track.entries.push_back(e);
+            }
+            return track.divider == 1u || track.divider == 2u;
+        }
+
         // ============================================================================================================
         // A run: a script (KAMITE_TEST) or a case replay (KAMITE_REPLAY_CASE). One at a time; the recorder is off
         // while one is running.
@@ -532,6 +592,8 @@ namespace kamite::test_mode
             uint32_t enemies = kDefaultEnemies;
             Recording rec;            // play: the recording; record: filled as it runs
             Logger log;
+            HostTrack host;           // play: the case's host track (empty: none, the controls run live)
+            size_t hostNext = 0;      // the first entry not yet played
 
             uint64_t hookFrames = 0;
             uint32_t frame = 0, runFrames = 0, divider = 2u;
@@ -794,6 +856,11 @@ namespace kamite::test_mode
                 return false;
             if (!parseRecording(c.pad, run.rec, error))
                 return false;
+            if (!c.host.empty() && !parseHost(c.host, run.host))
+            {
+                error = "bad host section";
+                return false;
+            }
             if (c.state.empty())
             {
                 error = "the case has no state";
@@ -839,6 +906,7 @@ namespace kamite::test_mode
             uint16_t room = 0;
             Recording rec;            // poll n after the state saved = sample n
             Logger log;
+            HostTrack host;           // the Modern controls' camera and turns, from frame 0
             bool polling = false;     // the state has saved: every poll is kept
             uint32_t readsThisFrame = 0, readsLastFrame = 0;
             uint16_t prevPressed = 0;   // the pad's pressed bits at the last read (for the hotkey's edge)
@@ -886,6 +954,8 @@ namespace kamite::test_mode
             rec.divider = fps60() ? 1u : 2u;
             rec.rec.divider = rec.divider;
             rec.rec.samples.clear();
+            rec.host = HostTrack{};
+            rec.host.divider = rec.divider;
             rec.polling = false;
             rec.readsThisFrame = 0;
             rec.savesBefore = ps2x::savestate::saveCount();
@@ -920,6 +990,7 @@ namespace kamite::test_mode
                 return;
             }
             c.pad = formatRecording(rec.rec);
+            c.host = formatHost(rec.host);
             c.meta = "created=" + rec.stamp + "\ndivider=" + std::to_string(rec.divider) + "\nframes=" + std::to_string(rec.frame) +
                      "\npolls=" + std::to_string(rec.rec.polls()) + "\nseconds=" + std::to_string(static_cast<double>(rec.rec.polls()) / 60.0) +
                      "\nroom=0x";
@@ -1098,5 +1169,45 @@ namespace kamite::test_mode
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         return g_rec.phase != Recorder::Phase::Idle;
+    }
+
+    bool replayHost(HostCamera &out)
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        Run &run = g_run;
+        if (run.phase != Run::Phase::Running || run.host.entries.empty())
+            return false;
+        // Frame counters are taken at the same point at either rate (frame k's update sees k + 1); the other rate's
+        // entries are matched by time (frames x divider = vblanks). Camera: the last entry at or before now; a turn:
+        // the last one since the previous frame, so none is lost at 30 and none repeats at 60.
+        const uint64_t now = static_cast<uint64_t>(run.frame) * run.divider;
+        const std::vector<HostEntry> &entries = run.host.entries;
+        const HostEntry *camera = nullptr;
+        const HostEntry *turn = nullptr;
+        while (run.hostNext < entries.size() && static_cast<uint64_t>(entries[run.hostNext].frame) * run.host.divider <= now)
+        {
+            const HostEntry &e = entries[run.hostNext++];
+            camera = &e;
+            if (e.camera.turned)
+                turn = &e;
+        }
+        if (!camera)
+            camera = run.hostNext > 0 ? &entries[run.hostNext - 1] : &entries.front();
+        out = camera->camera;
+        out.turned = turn != nullptr;
+        out.geneYaw = turn ? turn->camera.geneYaw : 0.0f;
+        return true;
+    }
+
+    void recordHost(const HostCamera &in)
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        Recorder &rec = g_rec;
+        if (g_run.phase != Run::Phase::Off || rec.phase != Recorder::Phase::Recording)
+            return;
+        HostEntry e;
+        e.frame = rec.frame;
+        e.camera = in;
+        rec.host.entries.push_back(e);
     }
 }

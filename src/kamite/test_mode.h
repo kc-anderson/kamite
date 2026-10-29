@@ -21,4 +21,20 @@ namespace kamite::test_mode
     [[nodiscard]] bool failed();
     // A case is being recorded (any thread; for menus).
     [[nodiscard]] bool recording();
+
+    // The Modern controls' host side (modern_controls.cpp updateCamera, game thread, once a game frame): the free
+    // camera and the turn it gives Gene (his yaw +0x104) are not in a save state, so a case keeps them per frame (its
+    // `host` section) and a replay plays them back instead of computing them.
+    struct HostCamera
+    {
+        bool free = false;
+        float yaw = 0.0f;
+        float pitch = 0.0f;
+        bool turned = false; // Gene's yaw was written this frame...
+        float geneYaw = 0.0f; // ... to this
+    };
+    // A replay of a case with a host section: the recorded values for this frame (true), else false.
+    [[nodiscard]] bool replayHost(HostCamera &out);
+    // While a case records: keep this frame's values.
+    void recordHost(const HostCamera &in);
 }
