@@ -5,9 +5,10 @@ Newest first, one line per change; the code comments say how.
 ## October 29, 2026
 
 - Music: the right channel no longer jumps ahead with a crackle and plays a second copy of the track until it changes.
+- Dev: replays also take a snapshot of the whole RAM once a second, for values that live outside Gene's object.
 - Dev: KAMITE_ADX_DUMP records each stream channel's audio as decoded and as sent to the IOP
   (tools/audio/adx_dump.py reads it), for the music doubling.
-- 60 FPS: the God Hand gauge drains at the 30 FPS pace (it emptied twice as fast); also two of Gene's short timers.
+- 60 FPS: several of Gene's timers in his attack and dash states count at the 30 FPS pace (they ran twice as fast).
 - Dev: test cases keep what each pad read returned, so a replay reads exactly what the tester's game read; replays
   also dump RAM for finding frame counters.
 - 60 FPS: after a hit, Gene (and objects like Door-kun) stay out of reach as long as at 30 FPS (it was half as long).

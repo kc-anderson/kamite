@@ -657,6 +657,8 @@ namespace kamite::test_mode
             HostTrack host;           // play: the case's host track (empty: none, the controls run live)
             size_t hostNext = 0;      // the first entry not yet played
             std::FILE *ram = nullptr; // play: <csv stem>.ram.bin, the RAM dump (writeRamFrame)
+            std::FILE *snap = nullptr; // play: <csv stem>.snap.bin, the whole RAM once a second (writeSnapshot)
+            std::vector<uint32_t> snapPrev;
             ReadTrack reads;          // play: the case's read track (empty: the polls alone feed the game)
             size_t readNext = 0;      // the first entry not yet reached
             uint32_t readFrame = ~0u, readN = 0; // the frame of the last read and the reads in it
@@ -714,6 +716,35 @@ namespace kamite::test_mode
             std::fwrite(buffer.data(), 1u, buffer.size(), out);
         }
 
+        // The whole of EE RAM once a second of game time (dev-only; tools/fps60/ram_snapshots.py), as the words that
+        // changed since the last snapshot (the first: every non-zero word): "KSNP" then per snapshot u32 frame, u32
+        // count, count x (u32 word index, u32 value). For a value that lives in no object the per-frame dump covers
+        // (the God Hand meter, Oct 29).
+        void writeSnapshot(Run &run, const uint8_t *rdram)
+        {
+            if (!run.snap)
+                return;
+            constexpr uint32_t kWords = 0x2000000u / 4u;
+            if (run.snapPrev.empty())
+            {
+                run.snapPrev.assign(kWords, 0u);
+                std::fwrite("KSNP", 1u, 4u, run.snap);
+            }
+            std::vector<uint32_t> out;
+            const uint32_t *words = reinterpret_cast<const uint32_t *>(rdram);
+            for (uint32_t i = 0x100000u / 4u; i < kWords; ++i)
+                if (words[i] != run.snapPrev[i])
+                {
+                    out.push_back(i);
+                    out.push_back(words[i]);
+                    run.snapPrev[i] = words[i];
+                }
+            const uint32_t header[2] = {run.frame, static_cast<uint32_t>(out.size() / 2u)};
+            std::fwrite(header, 4u, 2u, run.snap);
+            if (!out.empty())
+                std::fwrite(out.data(), 4u, out.size(), run.snap);
+        }
+
         void finishRun(PS2Runtime *runtime, bool ok)
         {
             Run &run = g_run;
@@ -735,6 +766,11 @@ namespace kamite::test_mode
             {
                 std::fclose(run.ram);
                 run.ram = nullptr;
+            }
+            if (run.snap)
+            {
+                std::fclose(run.snap);
+                run.snap = nullptr;
             }
             if (!ok)
                 run.failed = true;
@@ -819,7 +855,11 @@ namespace kamite::test_mode
                 }
                 writeHeaders(run.log);
                 if (!run.record)
-                    run.ram = openOut(run.csv.string().substr(0, run.csv.string().size() - 4) + ".ram.bin");
+                {
+                    const std::string stem = run.csv.string().substr(0, run.csv.string().size() - 4);
+                    run.ram = openOut(stem + ".ram.bin");
+                    run.snap = openOut(stem + ".snap.bin");
+                }
                 run.phase = Run::Phase::Running;
                 KM_INFO(Game, "test: running " << run.runFrames << " frames at " << (run.divider == 1u ? 60 : 30) << " FPS"
                                                << (run.record ? " (recording the pad)" : " (playing the recording)"));
@@ -832,6 +872,8 @@ namespace kamite::test_mode
                 const uint8_t *sample = run.sampleUsed >= 0 ? run.rec.samples.data() + static_cast<size_t>(run.sampleUsed) * kSample : nullptr;
                 logFrame(run.log, rdram, run.frame, run.divider, run.readsLastFrame, run.sampleUsed, sample);
                 writeRamFrame(run.ram, rdram, run.frame);
+                if ((run.frame * run.divider) % 60u == 0u)
+                    writeSnapshot(run, rdram);
                 if (++run.frame >= run.runFrames)
                     finishRun(runtime, true);
                 return;

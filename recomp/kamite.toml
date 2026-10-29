@@ -230,10 +230,10 @@ flag = "test_cases"
 address = "0x00397D74"
 hook = "km_test_pad_read_copy"
 flag = "test_cases"
-# Gene's +0x568 (halfword) counted down once a frame in 17 pl00 states: the God Hand (Unleash) gauge (~1000 when
-# unleashed, refilled by hits; Oct 29 case 12-07-44: -30 per half second at 60 against -15 at 30) and the dash
-# countdown (0xB). Every decrement counts every other frame at 60 (family 1). The pnach's "Unleash gauge drain"
-# patch at 0x10D694 halves Gene's speed rate +0x5A8/+0x5DC in func_0010D3A8, not the gauge.
+# Gene's +0x568 (halfword) counted down once a frame in 17 pl00 states (~1000 in fights, topped up by hits; Oct 29
+# case 12-07-44: -30 per half second at 60 against -15 at 30) and the dash countdown (0xB). NOT the God Hand meter
+# (it stays 0 while the meter runs down: cases 12-49-59 / 13-00-05). Every decrement counts every other frame at 60
+# (family 1). The pnach's "Unleash gauge drain" patch at 0x10D694 halves Gene's speed rate +0x5A8/+0x5DC instead.
 [[patches.hooks]] # +0x568 in func at 0x10d028
 address = "0x0010D028"
 hook = "km_fps60_countdown"
