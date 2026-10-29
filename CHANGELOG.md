@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## October 29, 2026
 
+- 60 FPS: the God Hand meter lasts as long as at 30 FPS (it ran out in half the time), and its bar moves at the 30 FPS pace.
 - Music: the right channel no longer jumps ahead with a crackle and plays a second copy of the track until it changes.
 - Dev: replays also take a snapshot of the whole RAM once a second, for values that live outside Gene's object.
 - Dev: KAMITE_ADX_DUMP records each stream channel's audio as decoded and as sent to the IOP

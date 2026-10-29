@@ -78,6 +78,17 @@ address = "0x003038BC"
 hook = "km_fps60_emit_every_frame"
 flag = "fps60"
 
+# The HUD's tension bar (func_00142060) eases its shown value toward the gauge by 0.1 of the gap a frame (0x1426BC
+# lui / 0x1426C0 ori = 0.1): 1 - 0.9^0.5 = 0.0513 at 60 (0x3D523176), the same easing in real time.
+[[patches.conditional]]
+address = "0x001426BC"
+value = "0x3C013D52"
+flag = "fps60"
+[[patches.conditional]]
+address = "0x001426C0"
+value = "0x34213176"
+flag = "fps60"
+
 # The pnach's "Unleash gauge drain": Gene's speed rate +0x5A8 and +0x5DC 0.5 instead of 1.0 in func_0010D3A8 (kept as
 # the pnach had it; the gauge itself is +0x568, hooked with the other +0x568 countdowns).
 [[patches.conditional]]
@@ -336,6 +347,10 @@ address = "0x00126840"
 hook = "km_fps60_countdown_pl1658"
 flag = "fps60"
 replace = true
+[[patches.hooks]] # God Hand (tension) drain: Gene's speed rate into func_2A9AD0's amount, halved at 60
+address = "0x0012354C"
+hook = "km_fps60_tension_drain"
+flag = "fps60"
 [[patches.hooks]] # post-hit guard +0x54C -= +0x5A8 x rate: objects left at 1.0 (Gene, Door-kun, ...) take 0.5 at 60
 address = "0x001FD4F8"
 hook = "km_fps60_flash_guard_rate"

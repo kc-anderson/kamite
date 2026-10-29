@@ -454,6 +454,16 @@ namespace kamite
             const float rate = ctx->f[1] == 1.0f ? 0.5f : ctx->f[1];
             ctx->f[1] = rate * ctx->f[0];
         }
+        // The God Hand (tension) drain: pl00 0x123550 calls the gauge helper func_2A9AD0(D_005CB000, 1) with
+        // f12 = drain x Gene's speed rate +0x5A8 (loaded at 0x123538, multiplied in the call's delay slot). Gene's
+        // rate is not scaled at 60 (1.0 / 1.3 / 1.5 / 1.6 / 0.1, as at 30) except in func_0010D3A8, where the pnach's
+        // 0x10D694 patch makes it 0.5: halve it here unless it is that 0.5 (no state sets 0.5 at 30). Hook before the
+        // addiu at 0x12354C (plain; f12 still holds the rate). K timed the meter: 12 s at 30, 6 s at 60 (Oct 29).
+        void tensionDrainRate(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            if (ctx->f[12] != 0.5f)
+                ctx->f[12] *= 0.5f;
+        }
         // `lw v0,X(base)` before a countdown whose `addiu v0,v0,-1` sits in a branch delay slot (no hook there): on the
         // skipped frames the loaded value is raised by one and the decrement stores it back unchanged (the zero test
         // is not affected: a non-zero value stays non-zero). Gene's +0x5F8 (0x108D08), cEmManage +0x510/+0x514/+0x530, the
@@ -532,6 +542,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_countdown_self", &countdownSelf);
         ps2xRegisterHostHook("km_fps60_countdown_float", &countdownFloat);
         ps2xRegisterHostHook("km_fps60_flash_guard_rate", &flashGuardRate);
+        ps2xRegisterHostHook("km_fps60_tension_drain", &tensionDrainRate);
         ps2xRegisterHostHook("km_fps60_countdown_a0", &countdownReg<4>);
         ps2xRegisterHostHook("km_fps60_countdown_5f8", &countdownLoad<17, 0x5F8u>);
         ps2xRegisterHostHook("km_fps60_countdown_em510", &countdownLoad<16, 0x510u>);
