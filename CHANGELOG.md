@@ -4,6 +4,10 @@ Newest first, one line per change; the code comments say how.
 
 ## October 29, 2026
 
+- Launcher: Skip intro (Gameplay): the game starts at the main menu, without the logos and the "Press Start" screen.
+- Launcher: Play is selected when the title opens, so A / Enter starts the game at once.
+- HUD: the gold counter sits under the minimap at both HUD layouts and grows to the left, its G lined up with the
+  minimap's right edge.
 - Modern controls: with the free camera turned away from Gene, enemies treat the camera's direction as his facing
   (those on screen act as enemies he faces, those off screen as enemies at his back).
 - Dev: F2 > NPCs has an Enemies section: the pathfinding switch, AI off (enemies stand idle and take hits but never

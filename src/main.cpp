@@ -394,6 +394,7 @@ namespace
         {"game", "l3dash", "KAMITE_L3_DASH"},
         {"game", "roulettetimer", "KAMITE_ROULETTE_TIMER"},
         {"game", "unlockhard", "KAMITE_UNLOCK_HARD"},
+        {"game", "skipintro", "KAMITE_SKIP_INTRO"},
         {"sound", "mutemusic", "KAMITE_MUTE_MUSIC"},
         {"mods", "character", "KAMITE_CHARACTER"},
         {"run", "headless", "KAMITE_HEADLESS"},
@@ -1012,7 +1013,7 @@ int main(int argc, char *argv[])
         // 60 FPS mode, L3 dash, and the game-frame count for the F3 overlay (a hook at the top of the main loop).
         kamite::installFramePatches(runtime);
         kamite::test_mode::install(runtime, exeDir); // the case recorder (R3), --replay-case and --test runs (dev-only)
-        kamite::installGameOptions(runtime); // [Game] UnlockHard, [Sound] MuteMusic
+        kamite::installGameOptions(runtime); // [Game] UnlockHard, SkipIntro, [Sound] MuteMusic
         kamite::texture_slots::install(); // the per-frame texture slots reserve a texture's real VRAM footprint
         kamite::installSteadyIdleCamera(runtime); // [Video] SteadyIdleCamera
         kamite::jukebox::install(runtime); // the shop's radio: Gene stays in the picture while it plays

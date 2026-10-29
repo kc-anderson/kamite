@@ -1,9 +1,16 @@
-// Optional changes to the game ([Game] UnlockHard / MuteMusic). See game_options.h.
+// Optional changes to the game ([Game] UnlockHard / SkipIntro / MuteMusic). See game_options.h.
 //
 // UnlockHard: the difficulty select is in the title room DLL r020 (cR020::titleLevelSel, 0x79B0E0). It reads the save's
 // "Hard unlocked" bit (0x747A28 & 0x200000, set by clearing the game) three times: for the menu's item animation
 // (0x79B25C), the confirm (0x79B374, a locked Hard buzzes) and the item sprites (0x79B924, Hard or the locked plate).
 // recomp/modules/r020.toml turns each of those 'and' into 'or rX,zero,0x200000' under the flag "unlock_hard".
+//
+// SkipIntro: also r020 (symbols in the module: cR020::Initialize, MoveWait, MoveLogo, titlePressWait). The room plays
+// the logos (state 1, MoveLogo) only while GameWork +0x584 (0x747A24) bit 0x800 is clear, then sets it: coming back
+// to the title skips them already. Under "skip_intro" both tests of the bit (Initialize 0x7995A4, MoveWait 0x799970)
+// read it as set, so the room waits 40 frames and opens the title. titlePressWait tests the pad's new presses
+// (0x747640 & Start/Circle) at 0x79A204: read as pressed, the title goes on to the main menu by itself, with its own
+// sound and animation.
 //
 // MuteMusic: the music is CRI ADX streams driven by the SDE sound library. Every stream volume change goes through
 // func_00373FF0(node a0, category a1, volume f12) for a one-channel node, or func_003745C0(node a0, category a1,
@@ -70,11 +77,13 @@ namespace kamite
     {
         const bool unlockHard = envOn("KAMITE_UNLOCK_HARD");
         const bool muteMusic = envOn("KAMITE_MUTE_MUSIC");
+        const bool skipIntro = envOn("KAMITE_SKIP_INTRO");
+        ps2xSetPatchFlag("skip_intro", skipIntro);
         ps2xRegisterHostHook("km_mute_music_volume", &muteMusicVolume);
         ps2xSetPatchFlag("unlock_hard", unlockHard);
         ps2xSetPatchFlag("mute_music", muteMusic);
         KM_INFO(Game, "options: Hard " << (unlockHard ? "unlocked from the start" : "as saved") << "; music "
-                                       << (muteMusic ? "muted" : "on"));
+                                       << (muteMusic ? "muted" : "on") << (skipIntro ? "; boot straight to the main menu" : ""));
     }
 
     bool muteMusic()

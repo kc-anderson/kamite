@@ -51,3 +51,23 @@ flag = "unlock_hard"
 address = "0x00799530"
 value = "0x00031025"
 flag = "unlock_hard"
+
+# [Game] SkipIntro (KAMITE_SKIP_INTRO, src/kamite/game_options.cpp): boot straight to the main menu.
+# The logos play only while 0x747A24 bit 0x800 ("logos shown") is clear: 'andi v0,v0,0x800' -> 'ori v0,zero,0x800'
+#   0x7995A4  cR020::Initialize (logos, or the wait before the title)
+#   0x799970  cR020::MoveWait (the same test once more)
+[[patches.conditional]]
+address = "0x007995A4"
+value = "0x34020800"
+flag = "skip_intro"
+
+[[patches.conditional]]
+address = "0x00799970"
+value = "0x34020800"
+flag = "skip_intro"
+
+# titlePressWait: the Start/Circle press test 'and v0,v0,v1' (v1 = 0x8010 << 24) -> 'or v0,zero,v1': pressed at once.
+[[patches.conditional]]
+address = "0x0079A204"
+value = "0x00031025"
+flag = "skip_intro"

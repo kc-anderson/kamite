@@ -62,7 +62,12 @@ namespace kamite::hud
         // 0x1F5EE4) over the live scene with an invisible backdrop bigger than the screen (texture 0x3800, alpha 0):
         // an in-world screen like the tutorial pop-up, not a menu (counted as one, the picture went 4:3, Oct 25).
         constexpr uint32_t kJukeBoxTransReturn = 0x001F5EE4u;
-        constexpr uint32_t kPlayerBar = 0xF0000001u, kRadar = 0xF0000002u, kRoulette = 0xF0000003u;
+        constexpr uint32_t kPlayerBar = 0xF0000001u, kRadar = 0xF0000002u, kRoulette = 0xF0000003u, kMoney = 0xF0000004u;
+        // The gold counter under the minimap (cCockMoney, its trans func_00143998 is a cockpit vtable method, not in
+        // the radar's trans): the cIDBase_trans of its own layout returns to 0x1439E0, its "+gold" pop-ups' to
+        // 0x143A4C. Its number and shadow are the text entries at +0x9C / +0xA0 (message 0x3010, func_00143670).
+        constexpr uint32_t kMoneyTransReturn = 0x001439E0u, kMoneyPopTransReturn = 0x00143A4Cu;
+        constexpr uint32_t kMoneyText = 0x9Cu, kMoneyShadow = 0xA0u;
 
         namespace ent = game::IDBaseEnt;
         namespace idb = game::IDBase;
@@ -126,6 +131,8 @@ namespace kamite::hud
         };
         Region g_region = Region::None;
         Context g_regionCtx, g_lastEntry;
+        uint32_t g_moneyLayout = 0u;                              // cCockMoney (its layout), once seen
+        float g_radarRightSeen = -1e9f, g_radarRight = std::nanf(""); // the minimap's right edge (before narrowing)
         bool g_inIdTrans = false;
         uint32_t g_idCaller = 0u; // the return address of the cIDBase_trans being drawn
         uint32_t g_curLayout = 0u; // the cIDBase being drawn (every caller)
@@ -276,6 +283,9 @@ namespace kamite::hud
             }
             if (g_inIdTrans)
                 roulette_bar::onDraw(g_curLayout, g_entry, x0, x1, !withOffset);
+            // The minimap's right edge, for the gold counter (at every aspect and layout: both use the same mapping).
+            if (g_ctx.active && g_ctx.key == kRadar && x1 - x0 < 0.9f * width && !menuNow())
+                g_radarRightSeen = std::max(g_radarRightSeen, x1);
             const float none = std::nanf("");
             if (n >= 2 && x1 - x0 >= 0.9f * width)
             {
@@ -421,6 +431,20 @@ namespace kamite::hud
             }
             if (g_region == Region::Forced)
                 return; // g_ctx is the region's
+            // The gold counter goes with the minimap above it: the radar's anchor (in 16:9 it moved to the screen edge
+            // while the counter stayed at its 4:3 place, K Oct 29). Its own key, so it does not widen the radar's extent.
+            {
+                const uint32_t caller = read32(rdram, GPR_U32(ctx, 29) + 0x40u);
+                if (caller == kMoneyTransReturn || caller == kMoneyPopTransReturn)
+                {
+                    if (caller == kMoneyTransReturn)
+                        g_moneyLayout = g_curLayout;
+                    const float width = screenWidth(rdram);
+                    g_ctx = Context{true, kMoney, anchorFor(kRadar, width - 0.5f * width * (1.0f - g_edgeShare), width)};
+                    g_lastEntry = g_ctx;
+                    return;
+                }
+            }
             // Only the in-game HUD widgets (by who called cIDBase_trans) keep to the screen edges; every other layout
             // (menus, the pause and status screens) is drawn as on the PS2, in the middle 4:3 of the screen.
             const uint32_t caller = read32(rdram, GPR_U32(ctx, 29) + 0x40u);
@@ -489,6 +513,36 @@ namespace kamite::hud
             g_idCaller = 0u;
             g_inIdTrans = false;
             g_ctx = g_region == Region::Forced ? g_regionCtx : g_region == Region::Inherit ? g_lastEntry : Context{};
+        }
+
+        // cMessDrawFont_draw at 0x2AF770, right after it measured the text (font $s2: +0x20 x, +0x28 position mode, bit 0
+        // = centred; +0x70 the width). The gold counter's number and its shadow: placed so they END at the minimap's
+        // right edge, so the number grows to the left and the G stays put (the font has no right alignment: they were
+        // drawn from a fixed left x, K Oct 29). Shadow kept at its offset from the number.
+        void moneyText(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            if (!g_inIdTrans || g_moneyLayout == 0u || g_curLayout != g_moneyLayout || g_entryOverride || menuNow() ||
+                !std::isfinite(g_radarRight))
+                return;
+            const uint32_t text = read32(rdram, g_moneyLayout + kMoneyText) & 0x01FFFFFFu;
+            const uint32_t shadow = read32(rdram, g_moneyLayout + kMoneyShadow) & 0x01FFFFFFu;
+            if (g_entry == 0u || (g_entry != text && g_entry != shadow))
+                return;
+            auto loadF = [&](uint32_t a) {
+                float v;
+                std::memcpy(&v, rdram + (a & (PS2_RAM_SIZE - 1u)), sizeof(v));
+                return v;
+            };
+            const uint32_t font = GPR_U32(ctx, 18) & 0x01FFFFFFu;
+            const float textWidth = loadF(font + 0x70u);
+            if (!(textWidth > 0.0f && textWidth < 640.0f))
+                return;
+            const float base = std::min(loadF(text + ent::kDrawX), loadF(shadow + ent::kDrawX));
+            const float right = g_radarRight + (loadF(g_entry + ent::kDrawX) - base);
+            float x = right - textWidth;
+            if (read32(rdram, font + 0x28u) & 1u)
+                x += 0.5f * textWidth; // centred: the draw takes half the width off again
+            std::memcpy(rdram + ((font + 0x20u) & (PS2_RAM_SIZE - 1u)), &x, sizeof(x));
         }
 
         template <uint32_t Key, Region Mode>
@@ -568,6 +622,9 @@ namespace kamite::hud
     void onFrame(uint8_t *rdram)
     {
         roulette_bar::onFrame();
+        if (g_radarRightSeen > -1e8f)
+            g_radarRight = g_radarRightSeen; // a frame without the minimap (menus) keeps the last
+        g_radarRightSeen = -1e9f;
         // The pause menu's own screens (Techniques, the move list...) can be drawn over the 3D view with no
         // full-screen background: an open sub screen counts as a menu too (cSubScr D_003BD930, +0x48 the open screen's
         // kind, -1 when closed; decomp include/godhand/cSubScr.h). Narrowed, their layers came apart (the Techniques
@@ -670,6 +727,7 @@ namespace kamite::hud
         ps2xRegisterHostHook("km_hud_sprite_db30", &gpVertices<2, 0x30u>);
         ps2xRegisterHostHook("km_hud_strip", &stripVertex);
         ps2xRegisterHostHook("km_hud_font_sprite", &fontSprite);
+        ps2xRegisterHostHook("km_hud_money_text", &moneyText);
         ps2xRegisterHostHook("km_hud_id_begin", &idBegin);
         ps2xRegisterHostHook("km_hud_id_entry", &idEntry);
         ps2xRegisterHostHook("km_hud_id_end", &idEnd);

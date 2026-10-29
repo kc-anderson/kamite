@@ -482,13 +482,18 @@ namespace kamite::launcher
             }
             else
             {
+                // Play starts selected, its highlight showing, so A / Enter plays at once (SetItemDefaultFocus alone
+                // left the cursor hidden until a d-pad press, K Oct 29).
+                if (state.focusFirst)
+                {
+                    ImGui::SetKeyboardFocusHere();
+                    ImGui::SetNavCursorVisible(true);
+                }
                 if (bigButton(state, "Play", buttonWidth, true))
                 {
                     state.result = Result::Play;
                     state.done = true;
                 }
-                if (state.focusFirst)
-                    ImGui::SetItemDefaultFocus();
                 if (bigButton(state, "Options", buttonWidth, false))
                 {
                     state.screen = Screen::Options;
@@ -1422,6 +1427,9 @@ namespace kamite::launcher
                         settingLabel("Unlock Hard", "Hard can be picked from the start instead of after a clear. Your "
                                                     "save is not changed.");
                         iniCheckbox(state, "On##hard", "Game", "UnlockHard", false);
+                        settingLabel("Skip intro", "Start at the main menu: no Capcom and Clover logos and no "
+                                                   "\"Press Start\" screen.");
+                        iniCheckbox(state, "On##skipintro", "Game", "SkipIntro", false);
                         settingLabel("Better shop & casino poses", "The shop and casino girls lean on their counters "
                                                                    "and tables in poses made for each, instead of the "
                                                                    "game's standing idle.",

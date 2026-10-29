@@ -1028,6 +1028,12 @@ address = "0x002A5704"
 hook = "km_hud_font_sprite"
 flag = "hud2d"
 
+# cMessDrawFont_draw, after it measured the text: the gold counter right-aligned under the minimap (hud_layout.cpp)
+[[patches.hooks]]
+address = "0x002AF770"
+hook = "km_hud_money_text"
+flag = "hud2d"
+
 # func_0015C410 (strips), before sw $a3,0x40($sp)
 [[patches.hooks]]
 address = "0x0015C780"
