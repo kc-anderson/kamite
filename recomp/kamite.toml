@@ -415,6 +415,12 @@ flag = "adx_probe"
 address = "0x00340334"
 hook = "km_adx_stop"
 flag = "adx_probe"
+# KAMITE_ADX_DUMP: each chunk the ADX decoder commits to its source ring (the EE SJRBF PutChunk wrapper's first
+# instruction: a0 = SJ, a1 = line, a2 -> {addr, len}).
+[[patches.hooks]]
+address = "0x00339A98"
+hook = "km_adx_put"
+flag = "adx_probe"
 
 # The damage manager's hit stop (func_001FDFD8: while D_00574380+0xACD0 is non-zero it skips every hit test that frame
 # and counts it down; set from 0x3BF190 / 0x3BF194 when Gene hits / is hit): counted in game frames, so at 60 FPS the

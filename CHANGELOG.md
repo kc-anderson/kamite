@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## October 29, 2026
 
+- Dev: KAMITE_ADX_DUMP records each stream channel's audio as decoded and as sent to the IOP
+  (tools/audio/adx_dump.py reads it), for the music doubling.
 - Dev: test cases keep what each pad read returned, so a replay reads exactly what the tester's game read; replays
   also dump RAM for finding frame counters.
 - 60 FPS: after a hit, Gene (and objects like Door-kun) stay out of reach as long as at 30 FPS (it was half as long).

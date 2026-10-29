@@ -247,6 +247,8 @@ namespace kamite::debug_tools
         // km_adx_xfer at 0x3400E0 (func_0033FDC0 right after a successful sceSifSetDma, s2 = the slot): the bytes each
         // slot has moved since its stream started; a line whenever a pair's left-minus-right count moves by 2 KB or
         // more (at most 400 lines). A jump of 16 KB at the hitch = the EE side; a steady count = the IOP side.
+        void adxDumpRecord(const uint8_t *rdram, char kind, uint32_t slot, uint32_t sj, uint32_t addr, uint32_t len);
+        void adxRingPairLine(const uint8_t *rdram, uint32_t k);
         uint64_t g_adxMoved[32] = {};
         uint32_t g_adxSource[32] = {};
         int64_t g_adxLogged[16] = {};
@@ -261,6 +263,9 @@ namespace kamite::debug_tools
             if (slot < kSlots || slot >= kSlots + 32u * 0x40u || (slot - kSlots) % 0x40u != 0u)
                 return;
             const uint32_t k = (slot - kSlots) / 0x40u, pair = k / 2u;
+            adxDumpRecord(rdram, 'T', k, rd32(rdram, slot + 4u), rd32(rdram, slot + 0x1Cu), rd32(rdram, slot + 0x24u));
+            if ((k & 1u) != 0u && rdram[kSlots + (k - 1u) * 0x40u] == 1u)
+                adxRingPairLine(rdram, k);
             if (rd32(rdram, slot + 4u) != source[k])
             {
                 source[k] = rd32(rdram, slot + 4u);
@@ -318,6 +323,7 @@ namespace kamite::debug_tools
             if (slot >= 0x3EBC20u && slot < 0x3EBC20u + 32u * 0x40u)
             {
                 const uint32_t k = (slot - 0x3EBC20u) / 0x40u;
+                adxDumpRecord(rdram, 'C', k, rd32(rdram, slot + 4u), rd32(rdram, slot + 8u), 0u);
                 g_adxMoved[k] = 0u;
                 g_adxSource[k] = rd32(rdram, slot + 4u);
                 g_adxLogged[k / 2u] = 0;
@@ -337,7 +343,108 @@ namespace kamite::debug_tools
                 }
             }
         }
-        void adxDestroyHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { adxSlotLine("destroy", rdram, GPR_U32(ctx, 16), 0u); }
+        // KAMITE_ADX_DUMP=<file> (with KAMITE_ADX_PROBE=1; diagnostic, claude/audio-notes.md, strip-list): the bytes of
+        // every stream channel at two points, to find where the right channel gains its 16 KB lap. 'P' = a chunk the
+        // ADX decoder commits to its source ring (the EE SJRBF PutChunk wrapper 0x339A98, hook km_adx_put: a0 = SJ,
+        // a1 = line, 1 = data, a2 -> {addr, len}; only SJs that are a DTR slot's source); 'T' = a chunk the transfer
+        // server sends to the IOP (km_adx_xfer: slot +0x1C source, +0x24 size). 'C' / 'X' = slot create / destroy (sj =
+        // source SJ, addr = destination SJ). Record: char kind, u8 slot, u16 0, u32 sj, u32 addr, u32 len, f64 seconds
+        // (the log's clock), then len bytes for P and T. tools/audio/adx_dump.py reads it. KAMITE_ADX_DUMP_MB caps the
+        // file (default 512).
+        std::mutex g_adxDumpLock;
+        std::FILE *g_adxDump = nullptr;
+        uint64_t g_adxDumpLeft = 0u;
+        void adxDumpRecord(const uint8_t *rdram, char kind, uint32_t slot, uint32_t sj, uint32_t addr, uint32_t len)
+        {
+            if (g_adxDump == nullptr)
+                return;
+            const bool payload = kind == 'P' || kind == 'T';
+            if (payload && (len == 0u || len > 0x10000u || !inRam(addr, len)))
+                return;
+            std::lock_guard<std::mutex> lock(g_adxDumpLock);
+            const uint64_t size = 24u + (payload ? len : 0u);
+            if (g_adxDump == nullptr || g_adxDumpLeft < size)
+            {
+                if (g_adxDump != nullptr)
+                {
+                    std::fclose(g_adxDump);
+                    g_adxDump = nullptr;
+                    KM_INFO(Game, "adx dump: size cap reached, file closed");
+                }
+                return;
+            }
+            g_adxDumpLeft -= size;
+            uint8_t head[24] = {};
+            head[0] = static_cast<uint8_t>(kind);
+            head[1] = static_cast<uint8_t>(slot);
+            std::memcpy(head + 4, &sj, 4);
+            std::memcpy(head + 8, &addr, 4);
+            std::memcpy(head + 12, &len, 4);
+            const double seconds = kamite::log::elapsedSeconds();
+            std::memcpy(head + 16, &seconds, 8);
+            std::fwrite(head, 1, sizeof(head), g_adxDump);
+            if (payload)
+                std::fwrite(rdram + (addr & 0x01FFFFFFu), 1, len, g_adxDump);
+            static uint64_t sinceFlush = 0u;
+            if ((sinceFlush += size) >= (256u << 10)) // the game is often closed, not quit: keep the file current
+            {
+                sinceFlush = 0u;
+                std::fflush(g_adxDump);
+            }
+        }
+        // km_adx_put at 0x339A98 (the EE SJRBF PutChunk wrapper's first instruction).
+        void adxPutHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            constexpr uint32_t kSlots = 0x3EBC20u;
+            if (g_adxDump == nullptr || GPR_U32(ctx, 5) != 1u)
+                return;
+            const uint32_t sj = GPR_U32(ctx, 4), chunk = GPR_U32(ctx, 6);
+            for (uint32_t k = 0; k < 32u; ++k)
+                if (rdram[kSlots + k * 0x40u] == 1u && rd32(rdram, kSlots + k * 0x40u + 4u) == sj)
+                {
+                    if (inRam(chunk, 8u))
+                        adxDumpRecord(rdram, 'P', k, sj, rd32(rdram, chunk), rd32(rdram, chunk + 4u));
+                    return;
+                }
+        }
+        // The source rings of a stereo pair (slots k-1, k), at each transfer of the right slot: a line when the two
+        // rings' data or free positions part (mod 16 KB) or the decoder's / transfer server's byte totals part by
+        // 1 KB. EE SJRBF: +0xC data bytes, +0x10 free bytes, +0x14 free pos, +0x18 data pos, +0x28/+0x2C free taken /
+        // returned, +0x30/+0x34 data taken / committed (the IOP SJRBF's layout).
+        void adxRingPairLine(const uint8_t *rdram, uint32_t k)
+        {
+            static uint32_t linesLeft = 300u;
+            static uint32_t lastPos[16][2] = {};
+            static int64_t lastTotals[16][2] = {};
+            const uint32_t left = rd32(rdram, 0x3EBC20u + (k - 1u) * 0x40u + 4u), right = rd32(rdram, 0x3EBC20u + k * 0x40u + 4u);
+            if (linesLeft == 0u || !inRam(left, 0x40u) || !inRam(right, 0x40u))
+                return;
+            const auto f = [rdram](uint32_t sj, uint32_t off) { return rd32(rdram, sj + off); };
+            const uint32_t dataPos = (f(left, 0x18u) - f(right, 0x18u)) & 0x3FFFu, freePos = (f(left, 0x14u) - f(right, 0x14u)) & 0x3FFFu;
+            const int64_t put = int64_t(f(left, 0x34u)) - int64_t(f(right, 0x34u)), sent = int64_t(f(left, 0x30u)) - int64_t(f(right, 0x30u));
+            const uint32_t pair = k / 2u;
+            uint32_t *pos = lastPos[pair];
+            int64_t *totals = lastTotals[pair];
+            if (dataPos == pos[0] && freePos == pos[1] && std::llabs(put - totals[0]) < 1024 && std::llabs(sent - totals[1]) < 1024)
+                return;
+            pos[0] = dataPos;
+            pos[1] = freePos;
+            totals[0] = put;
+            totals[1] = sent;
+            --linesLeft;
+            KM_INFO(Game, "adx probe: rings " << (k - 1u) << "/" << k << " data pos 0x" << std::hex << f(left, 0x18u) << "/0x" << f(right, 0x18u)
+                                              << " free pos 0x" << f(left, 0x14u) << "/0x" << f(right, 0x14u) << std::dec << " data "
+                                              << f(left, 0xCu) << "/" << f(right, 0xCu) << " free " << f(left, 0x10u) << "/" << f(right, 0x10u)
+                                              << "; decoder put L-R " << put << ", sent L-R " << sent << " (totals put " << f(left, 0x34u)
+                                              << "/" << f(right, 0x34u) << ", sent " << f(left, 0x30u) << "/" << f(right, 0x30u) << ")");
+        }
+        void adxDestroyHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t slot = GPR_U32(ctx, 16);
+            adxSlotLine("destroy", rdram, slot, 0u);
+            if (slot >= 0x3EBC20u && slot < 0x3EBC20u + 32u * 0x40u)
+                adxDumpRecord(rdram, 'X', (slot - 0x3EBC20u) / 0x40u, rd32(rdram, slot + 4u), rd32(rdram, slot + 8u), 0u);
+        }
         void adxStartHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { adxSlotLine("start", rdram, GPR_U32(ctx, 4), GPR_U32(ctx, 31)); }
         void adxStopHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) { adxSlotLine("stop", rdram, GPR_U32(ctx, 18), 0u); }
 
@@ -631,8 +738,16 @@ namespace kamite::debug_tools
             ps2xRegisterHostHook("km_adx_destroy", &adxDestroyHook);
             ps2xRegisterHostHook("km_adx_start", &adxStartHook);
             ps2xRegisterHostHook("km_adx_stop", &adxStopHook);
+            ps2xRegisterHostHook("km_adx_put", &adxPutHook);
             ps2xSetPatchFlag("adx_probe", true);
             KM_INFO(Game, "adx probe: on (KAMITE_ADX_PROBE)");
+            if (const char *path = std::getenv("KAMITE_ADX_DUMP"); path && *path)
+            {
+                const char *mb = std::getenv("KAMITE_ADX_DUMP_MB");
+                g_adxDumpLeft = static_cast<uint64_t>(mb && *mb ? std::strtoul(mb, nullptr, 10) : 512ul) << 20;
+                g_adxDump = std::fopen(path, "wb");
+                KM_INFO(Game, "adx dump: " << (g_adxDump ? "writing " : "can't open ") << path << " (cap " << (g_adxDumpLeft >> 20) << " MB)");
+            }
         }
 #if defined(KAMITE_HAS_GS_MENU)
         ps2x::menu::addPanel("Debug", &drawPanel);
