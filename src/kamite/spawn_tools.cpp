@@ -344,6 +344,40 @@ namespace kamite::spawn_tools
         }
         // Lets go of the enemy and NPC data no enemy here uses (left over from earlier rooms), as objects let go of
         // theirs (cObj_releaseActorData: resetKind), all holds at once: the game's own clean-up then frees it.
+        // The game's heaps (func_0030ECF8: Arena_init; cHeap {+0 first block, +4 size}; block {+0 heap, +4 prev, +8 next,
+        // +0xC free after it, +0x10 used}). Enemy data goes into heap D.
+        struct Heap
+        {
+            uint32_t desc;
+            const char *name;
+        };
+        constexpr Heap kHeaps[] = {{0x00754220u, "D"}, {0x00754200u, "A"}, {0x00754210u, "B"}};
+        void heapRoom(const uint8_t *rdram, uint32_t desc, uint32_t &largest, uint32_t &total)
+        {
+            largest = total = 0u;
+            uint32_t block = rd32(rdram, desc) & 0x01FFFFFFu;
+            for (uint32_t n = 0; block && block + 0x14u <= PS2_RAM_SIZE && n < 8192u; ++n)
+            {
+                const uint32_t freeBytes = rd32(rdram, block + 0xCu);
+                largest = std::max(largest, freeBytes);
+                total += freeBytes;
+                block = rd32(rdram, block + 8u) & 0x01FFFFFFu;
+            }
+        }
+        std::string heapsLine(const uint8_t *rdram)
+        {
+            std::string out = "Heaps (largest free block / free):";
+            for (const Heap &h : kHeaps)
+            {
+                uint32_t largest = 0, total = 0;
+                heapRoom(rdram, h.desc, largest, total);
+                char one[64];
+                std::snprintf(one, sizeof(one), " %s %.2f / %.2f MB", h.name, largest / 1048576.0, total / 1048576.0);
+                out += one;
+            }
+            return out;
+        }
+
         uint32_t dataSlot(const uint8_t *rdram, int index) { return rd32(rdram, kDataManager + 8u) + kSlotStride * static_cast<uint32_t>(index); }
         int slotCount(const uint8_t *rdram) { return static_cast<int>(std::min(rd32(rdram, kDataManager + 4u), 64u)); }
         // cDataManager_findKind / findFreeSlot read straight from the table (no side effects in either).
@@ -387,6 +421,42 @@ namespace kamite::spawn_tools
             return static_cast<int>(kinds.size());
         }
 
+        void logHeapMap(const uint8_t *rdram, uint32_t desc)
+        {
+            struct Owner
+            {
+                uint32_t data, kind, manager;
+            };
+            std::vector<Owner> owners;
+            for (uint32_t manager : {kDataManager, 0x00580D20u})
+            {
+                const uint32_t base = rd32(rdram, manager + 8u);
+                const uint32_t count = std::min(rd32(rdram, manager + 4u), 96u);
+                for (uint32_t i = 0; i < count && inRam(base, kSlotStride * count); ++i)
+                {
+                    const uint32_t slot = base + kSlotStride * i;
+                    if (rd32(rdram, slot + 0x10u))
+                        owners.push_back({rd32(rdram, slot + 0x10u), rd32(rdram, slot + 0x20u), manager});
+                }
+            }
+            KM_WARN(Game, "spawn: heap 0x" << std::hex << desc << " map (block, used, free after, owner):" << std::dec);
+            uint32_t block = rd32(rdram, desc) & 0x01FFFFFFu;
+            for (uint32_t n = 0; block && block + 0x14u <= PS2_RAM_SIZE && n < 400u; ++n)
+            {
+                const uint32_t used = rd32(rdram, block + 0x10u), freeBytes = rd32(rdram, block + 0xCu);
+                std::string owner;
+                for (const Owner &o : owners)
+                    if (o.data >= block && o.data < block + 0x20u + used)
+                    {
+                        char one[48];
+                        std::snprintf(one, sizeof(one), " kind %03x (%s)", o.kind, o.manager == kDataManager ? "enemy table" : "object table");
+                        owner += one;
+                    }
+                KM_WARN(Game, "spawn:   0x" << std::hex << block << std::dec << " " << used << " " << freeBytes << owner);
+                block = rd32(rdram, block + 8u) & 0x01FFFFFFu;
+            }
+        }
+
         // ---- spawning (game thread)
         void queueSounds(const uint8_t *rdram, const R5900Context &base, uint32_t slot, uint32_t kind, const Kind &k)
         {
@@ -428,6 +498,7 @@ namespace kamite::spawn_tools
             bool retried = false;
             bool busy = false;     // a queued call not back yet
             bool noMemory = false;
+            int heap = 0;          // kHeaps index tried (D first, then one with room)
             int waitFrames = 0;    // before going on (the game's clean-up frees things over a few frames)
             uint32_t enemy = 0;    // EntryEm's answer
             Clock::time_point start{};
@@ -465,9 +536,10 @@ namespace kamite::spawn_tools
             const uint32_t kind = 0x200u + job->kind;
             char line[192];
             auto fail = [&](const char *why) {
-                std::snprintf(line, sizeof(line), "em%02x: %s", job->kind, why);
-                KM_WARN(Game, "spawn: " << line);
-                setStatus(line);
+                char message[256];
+                std::snprintf(message, sizeof(message), "em%02x: %s", job->kind, why);
+                KM_WARN(Game, "spawn: " << message);
+                setStatus(message);
                 g_jobs.pop_front();
             };
             if (!k)
@@ -484,6 +556,25 @@ namespace kamite::spawn_tools
             if (job->noMemory)
             {
                 job->noMemory = false;
+                if (job->heap == 0)
+                {
+                    logHeapMap(rdram, kHeaps[0].desc);
+                    KM_WARN(Game, "spawn: " << heapsLine(rdram) << "; " << tableSummary(rdram, true));
+                }
+                // Another heap with room for it and 1 MB to spare (its data goes back through the same free).
+                const uint32_t need = k->kb * 1024u + 0x10000u;
+                for (int h = job->heap + 1; h < static_cast<int>(std::size(kHeaps)); ++h)
+                {
+                    uint32_t largest = 0, total = 0;
+                    heapRoom(rdram, kHeaps[h].desc, largest, total);
+                    if (largest >= need + 0x100000u)
+                    {
+                        job->heap = h;
+                        job->phase = Job::Start;
+                        KM_INFO(Game, "spawn: em" << std::hex << unsigned(job->kind) << std::dec << " goes into heap " << kHeaps[h].name);
+                        return;
+                    }
+                }
                 if (job->retried || releaseUnused(rdram, base) == 0)
                 {
                     std::snprintf(line, sizeof(line), "not enough memory here for its %.1f MB: remove spawned enemies first.", k->kb / 1024.0f);
@@ -523,7 +614,7 @@ namespace kamite::spawn_tools
                 job->fresh = true;
                 job->busy = true;
                 const Kind info = *k;
-                queueCall(base, kLoadStart, {job->slot, kind, kHeapD}, [job, kind, info](uint32_t data, R5900Context &owner) {
+                queueCall(base, kLoadStart, {job->slot, kind, kHeaps[job->heap].desc}, [job, kind, info](uint32_t data, R5900Context &owner) {
                     job->busy = false;
                     if (data == 0u)
                     {
@@ -1076,7 +1167,7 @@ namespace kamite::spawn_tools
         if (--g_tableIn <= 0)
         {
             g_tableIn = 30;
-            std::string line = room == kTestRoom ? tableSummary(rdram, false) : std::string();
+            std::string line = room == kTestRoom ? tableSummary(rdram, false) + "\n" + heapsLine(rdram) : std::string();
             std::lock_guard<std::mutex> lock(g_statusMutex);
             g_tableLine.swap(line);
         }
