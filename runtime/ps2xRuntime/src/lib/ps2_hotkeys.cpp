@@ -37,7 +37,8 @@ namespace ps2x::hotkeys
         };
 
         constexpr PadName kPadNames[] = {
-            {"L3", ps2x::iop::PadButton::L3},         {"R3", ps2x::iop::PadButton::R3},
+            // The stick presses by what they are on every controller (L3 / R3 on a DualShock); "L3" / "R3" still parse.
+            {"Left Stick Press", ps2x::iop::PadButton::L3}, {"Right Stick Press", ps2x::iop::PadButton::R3},
             {"Select", ps2x::iop::PadButton::Select}, {"Start", ps2x::iop::PadButton::Start},
             {"L1", ps2x::iop::PadButton::L1},         {"R1", ps2x::iop::PadButton::R1},
             {"L2", ps2x::iop::PadButton::L2},         {"R2", ps2x::iop::PadButton::R2},
@@ -242,6 +243,12 @@ namespace ps2x::hotkeys
                 out = Binding{0, false, false, p.bit};
                 return true;
             }
+        if (sameText(rest, "L3") || sameText(rest, "R3") || sameText(rest, "LeftStickPress") || sameText(rest, "RightStickPress"))
+        {
+            const bool left = rest.front() == 'L' || rest.front() == 'l';
+            out = Binding{0, false, false, left ? ps2x::iop::PadButton::L3 : ps2x::iop::PadButton::R3};
+            return true;
+        }
         for (;;)
         {
             if (rest.size() > 5u && sameText(rest.substr(0, 5), "Ctrl+"))

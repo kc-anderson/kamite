@@ -6,8 +6,8 @@
 
 // The port's keyboard shortcuts (the F keys), as a table the game layer and its menus can show and rebind. Each
 // action has one binding: a raylib key with optional Shift / Ctrl, or a PS2 pad button (the button the game would
-// see, e.g. "R3"; the game layer watches the pad data for it). The window loop asks pressed() for the actions it
-// handles itself and fire()s the others, which the game thread picks up with take(). F1 (the Controls screen) and
+// see, e.g. "Right Stick Press"; the game layer watches the pad data for it). The window loop asks pressed() for the
+// actions it handles itself and fire()s the others, which the game thread picks up with take(). F1 (the Controls screen) and
 // Esc are not here: they stay fixed.
 //
 // The game layer keeps the bindings (kamite.ini [Hotkeys], one line per action id); this table is the live copy.
@@ -18,7 +18,7 @@ namespace ps2x::hotkeys
         Menu,        // the F2 menu
         SaveState,   // F5
         LoadState,   // F9
-        RecordCase,  // R3 on the pad: start / stop recording a test case (kamite/test_mode.cpp); listed under the states
+        RecordCase,  // the right stick press (R3): start / stop recording a test case (kamite/test_mode.cpp); listed under the states
         FpsOverlay,  // F3
         Fullscreen,  // F11
         HudLayout,   // F7: 16:9 / 4:3 HUD
@@ -59,10 +59,10 @@ namespace ps2x::hotkeys
     // Another action that already uses this binding (Count = none).
     [[nodiscard]] Action conflict(Action action, Binding binding);
 
-    // "Shift+F8", "F5", "R3" (a pad button), "" (unbound) <-> Binding. parse() takes the same text (case does not
-    // matter; "none" clears).
+    // "Shift+F8", "F5", "Right Stick Press" (a pad button; "R3" also parses), "" (unbound) <-> Binding. parse() takes
+    // the same text (case does not matter; "none" clears).
     [[nodiscard]] std::string text(Binding binding);
-    // The pad buttons a binding may name ("R3" = PadButton::R3 ...), for menus that offer them.
+    // The pad buttons a binding may name ("Right Stick Press" = PadButton::R3 ...), for menus that offer them.
     struct PadName
     {
         const char *name;

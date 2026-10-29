@@ -445,24 +445,48 @@ namespace kamite
         {
             ctx->f[0] = (g_gameFrame & 1u) ? ctx->f[1] : ctx->f[1] - ctx->f[0];
         }
-        // The post-hit guard (FlashDriver_resetFlash 0x1FD4F8 mul.s f1,f1,f0: +0x54C -= +0x5A8 x 0x747A14, a frame; the
-        // hit loop func_001FCF20 skips a target while it is > 0). Objects on the speed rate have +0x5A8 = 0.5 at 60;
-        // Gene and every class whose update never writes it keep 1.0, so their guard lasted half the time (Gene's
-        // 3/15/30 after a hit; Door-kun's second roundhouse contact). Family 2 in claude/fps60-notes.md.
-        void flashGuardRate(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        // Gene's speed rate +0x5A8 (1.0 / 1.3 / 1.5 / 1.6 / 0.1, set by his states; 1.0..2.5 by level in the mash states)
+        // is the 30 FPS value at both rates: the game hands it to SetMotionStep, and moveMotion already halves every
+        // motion's advance at 60, so it must stay unscaled. Every per-frame use of it is halved at its reader instead
+        // (claude/fps60-notes.md family 2). Enemies and objects on cEmManage's rate have 0.5 at 60 already.
+        bool isGene(uint8_t *rdram, uint32_t object)
         {
-            const float rate = ctx->f[1] == 1.0f ? 0.5f : ctx->f[1];
+            uint32_t gene = 0;
+            std::memcpy(&gene, &ram8(rdram, game::GameWork::address(game::GameWork::kPlayerObj)), sizeof(gene));
+            return object != 0u && object == gene;
+        }
+        // The post-hit guard (FlashDriver_resetFlash 0x1FD4F8 mul.s f1,f1,f0: +0x54C -= +0x5A8 x 0x747A14, a frame; the
+        // hit loop func_001FCF20 skips a target while it is > 0). Gene's rate is halved whatever it is; every class
+        // whose update never writes +0x5A8 keeps 1.0 and takes 0.5 (Door-kun's second roundhouse contact); objects on
+        // the speed rate are 0.5 at 60 already.
+        void flashGuardRate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            float rate = ctx->f[1];
+            if (isGene(rdram, GPR_U32(ctx, 2)) || rate == 1.0f)
+                rate *= 0.5f;
             ctx->f[1] = rate * ctx->f[0];
         }
         // The God Hand (tension) drain: pl00 0x123550 calls the gauge helper func_2A9AD0(D_005CB000, 1) with
-        // f12 = drain x Gene's speed rate +0x5A8 (loaded at 0x123538, multiplied in the call's delay slot). Gene's
-        // rate is not scaled at 60 (1.0 / 1.3 / 1.5 / 1.6 / 0.1, as at 30) except in func_0010D3A8, where the pnach's
-        // 0x10D694 patch makes it 0.5: halve it here unless it is that 0.5 (no state sets 0.5 at 30). Hook before the
-        // addiu at 0x12354C (plain; f12 still holds the rate). K timed the meter: 12 s at 30, 6 s at 60 (Oct 29).
+        // f12 = drain x Gene's speed rate +0x5A8 (loaded at 0x123538, multiplied in the call's delay slot). Hook before
+        // the addiu at 0x12354C (plain; f12 still holds the rate): halved at 60. K timed the meter: 12 s at 30, 6 s at
+        // 60 before the hook (Oct 29).
         void tensionDrainRate(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
-            if (ctx->f[12] != 0.5f)
-                ctx->f[12] *= 0.5f;
+            ctx->f[12] *= 0.5f;
+        }
+        // Gene's rate just loaded into f0 for a per-frame step (the spin mash state func_001162C0: its turn toward the
+        // target, rate x 22.5 degrees a frame, and its float timer +0x15C0 -= rate): halved at 60. Hook before the
+        // instruction after the lwc1.
+        void geneRateHalfF0(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            ctx->f[0] *= 0.5f;
+        }
+        // addiu v0,v0,1 on a counter that counts game frames up (the mash states' +0x15B0: frames since the last
+        // press): every other frame at 60, the mirror of km_fps60_countdown.
+        void countupSelf(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            const int32_t value = GPR_S32(ctx, 2);
+            SET_GPR_S32(ctx, 2, (g_gameFrame & 1u) ? value : value + 1);
         }
         // `lw v0,X(base)` before a countdown whose `addiu v0,v0,-1` sits in a branch delay slot (no hook there): on the
         // skipped frames the loaded value is raised by one and the decrement stores it back unchanged (the zero test
@@ -550,6 +574,10 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_countdown_em530", &countdownLoad<16, 0x530u>);
         ps2xRegisterHostHook("km_fps60_countdown_hitstop", &countdownLoad<3, 0x2CD0u>);
         ps2xRegisterHostHook("km_fps60_countdown_pl1658", &countdownLoad<16, 0x1658u>); // Gene's 15-frame cooldown, 0x126840
+        ps2xRegisterHostHook("km_fps60_countdown_pl15b8", &countdownLoad<17, 0x15B8u>);    // the mash states' decay (s1)
+        ps2xRegisterHostHook("km_fps60_countdown_pl15b8_s0", &countdownLoad<16, 0x15B8u>); // the same in func_0011FD10 (s0)
+        ps2xRegisterHostHook("km_fps60_countup_self", &countupSelf);
+        ps2xRegisterHostHook("km_fps60_gene_rate_half", &geneRateHalfF0);
         ps2xRegisterHostHook("km_fps60_emit_every_frame", &emitEveryFrame);
         ps2xRegisterHostHook("km_fps60_wiggle_begin", &wiggleBegin);
         ps2xRegisterHostHook("km_fps60_wiggle_end", &wiggleEnd);

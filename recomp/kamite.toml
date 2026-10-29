@@ -89,12 +89,9 @@ address = "0x001426C0"
 value = "0x34213176"
 flag = "fps60"
 
-# The pnach's "Unleash gauge drain": Gene's speed rate +0x5A8 and +0x5DC 0.5 instead of 1.0 in func_0010D3A8 (kept as
-# the pnach had it; the gauge itself is +0x568, hooked with the other +0x568 countdowns).
-[[patches.conditional]]
-address = "0x0010D694"
-value = "0x3C013F00"
-flag = "fps60"
+# (The pnach's "Unleash gauge drain" patch at 0x10D694, Gene's speed rate 0.5 in func_0010D3A8, is gone: Gene's rate
+# stays the 30 FPS value, which SetMotionStep needs, and its per-frame readers are halved: the God Hand drain 0x12354C,
+# the post-hit guard 0x1FD4F8, the spin mash state. claude/fps60-notes.md family 2.)
 
 # The pnach also halved SetMotionStep's 1.0 at 0x10B7B8 ("gene menu": the player's sub-screen state, the Techniques
 # screen's move demo). moveMotion already halves every motion's advance when the frame divider is 1 (0x157C7C), so
@@ -244,7 +241,7 @@ flag = "test_cases"
 # Gene's +0x568 (halfword) counted down once a frame in 17 pl00 states (~1000 in fights, topped up by hits; Oct 29
 # case 12-07-44: -30 per half second at 60 against -15 at 30) and the dash countdown (0xB). NOT the God Hand meter
 # (it stays 0 while the meter runs down: cases 12-49-59 / 13-00-05). Every decrement counts every other frame at 60
-# (family 1). The pnach's "Unleash gauge drain" patch at 0x10D694 halves Gene's speed rate +0x5A8/+0x5DC instead.
+# (family 1).
 [[patches.hooks]] # +0x568 in func at 0x10d028
 address = "0x0010D028"
 hook = "km_fps60_countdown"
@@ -351,7 +348,19 @@ replace = true
 address = "0x0012354C"
 hook = "km_fps60_tension_drain"
 flag = "fps60"
-[[patches.hooks]] # post-hit guard +0x54C -= +0x5A8 x rate: objects left at 1.0 (Gene, Door-kun, ...) take 0.5 at 60
+[[patches.hooks]] # spin mash state func_001162C0 step 1: turn toward the target, Gene's rate x 22.5 deg a frame
+address = "0x001163D0"
+hook = "km_fps60_gene_rate_half"
+flag = "fps60"
+[[patches.hooks]] # spin mash state step 3: the same turn
+address = "0x0011671C"
+hook = "km_fps60_gene_rate_half"
+flag = "fps60"
+[[patches.hooks]] # spin mash state step 3: its timer +0x15C0 (30.0) -= Gene's rate a frame
+address = "0x001167A4"
+hook = "km_fps60_gene_rate_half"
+flag = "fps60"
+[[patches.hooks]] # post-hit guard +0x54C -= +0x5A8 x rate: Gene (any rate) and objects left at 1.0 (Door-kun...) halved at 60
 address = "0x001FD4F8"
 hook = "km_fps60_flash_guard_rate"
 flag = "fps60"
@@ -556,86 +565,122 @@ hook = "km_fps60_countdown_hitstop"
 flag = "fps60"
 replace = true
 
-# Button-mash meter, two copies (pl00 states at 0x10FC84 and 0x1201A8): each direction press (GameWork pressed & 0xF0)
-# raises the level (+0x15B4) when the game frames since the last one (+0x15B0, +1 a frame) are under the level's limit
-# (jump tables 0x41BDC0 / 0x41C6D0: the limits are the immediates of the table's cases), and the level decays when
-# +0x15B8 (counted down a frame) runs out. All in game frames, so at 60 FPS mashing had to be twice as fast. Doubled.
-[[patches.conditional]] # level 1 limit 6 -> 12 (delay slot)
-address = "0x0010FCE8"
-value = "0x2403000C"
+# Button-mash meter, eleven pl00 states (func_0010F720, 001162C0, 00116A88, 001179C8, 00118158, 00118690, 00118B68,
+# 001191A0, 00119750, 00119BF0, 0011FD10): each direction press (GameWork pressed & 0xF0) raises the level (+0x15B4)
+# when the game frames since the last one (+0x15B0, +1 a frame) are under the level's limit (the jump tables' case
+# immediates) and lowers it when over; the level also decays when +0x15B8 (counted down a frame; 10 after a press,
+# 5 per level) runs out. At 60 both counters count every other frame (family 1; replaces the doubled limits of the
+# two copies 1f88879 patched; the other nine had none).
+[[patches.hooks]] # mash +0x15B0 (frames since the last press) +1, func_0010F720
+address = "0x0010FC9C"
+hook = "km_fps60_countup_self"
 flag = "fps60"
-[[patches.conditional]] # level 2 limit 5 -> 10 (delay slot)
-address = "0x0010FCF0"
-value = "0x2403000A"
+replace = true
+[[patches.hooks]] # mash decay +0x15B8: lw before the delay-slot decrement, func_0010F720
+address = "0x0010FC84"
+hook = "km_fps60_countdown_pl15b8"
 flag = "fps60"
-[[patches.conditional]] # level 3 limit 4 -> 8 (delay slot)
-address = "0x0010FCF8"
-value = "0x24030008"
+replace = true
+[[patches.hooks]] # mash +0x15B0 (frames since the last press) +1, func_001162C0
+address = "0x001164DC"
+hook = "km_fps60_countup_self"
 flag = "fps60"
-[[patches.conditional]] # level 4 limit 3 -> 6 (delay slot)
-address = "0x0010FD00"
-value = "0x24030006"
+replace = true
+[[patches.hooks]] # mash decay +0x15B8: lw before the delay-slot decrement, func_001162C0
+address = "0x001164C4"
+hook = "km_fps60_countdown_pl15b8"
 flag = "fps60"
-[[patches.conditional]] # level 5 limit 2 -> 4
-address = "0x0010FD04"
-value = "0x24030004"
+replace = true
+[[patches.hooks]] # mash +0x15B0 (frames since the last press) +1, func_00116A88
+address = "0x00117060"
+hook = "km_fps60_countup_self"
 flag = "fps60"
-[[patches.conditional]] # decay after a press 10 -> 20 (delay slot)
-address = "0x0010FD54"
-value = "0x24020014"
+replace = true
+[[patches.hooks]] # mash decay +0x15B8: lw before the delay-slot decrement, func_00116A88
+address = "0x00117048"
+hook = "km_fps60_countdown_pl15b8"
 flag = "fps60"
-[[patches.conditional]] # decay after a press 10 -> 20
-address = "0x0010FD60"
-value = "0x24020014"
+replace = true
+[[patches.hooks]] # mash +0x15B0 (frames since the last press) +1, func_001179C8
+address = "0x00117C14"
+hook = "km_fps60_countup_self"
 flag = "fps60"
-[[patches.conditional]] # decay per level 5 -> 10
-address = "0x0010FD7C"
-value = "0x2403000A"
+replace = true
+[[patches.hooks]] # mash decay +0x15B8: lw before the delay-slot decrement, func_001179C8
+address = "0x00117BFC"
+hook = "km_fps60_countdown_pl15b8"
 flag = "fps60"
-[[patches.conditional]] # level 0 limit 9 -> 18 (delay slot)
-address = "0x00120204"
-value = "0x24030012"
+replace = true
+[[patches.hooks]] # mash +0x15B0 (frames since the last press) +1, func_00118158
+address = "0x00118354"
+hook = "km_fps60_countup_self"
 flag = "fps60"
-[[patches.conditional]] # level 1 limit 8 -> 16 (delay slot)
-address = "0x0012020C"
-value = "0x24030010"
+replace = true
+[[patches.hooks]] # mash decay +0x15B8: lw before the delay-slot decrement, func_00118158
+address = "0x0011833C"
+hook = "km_fps60_countdown_pl15b8"
 flag = "fps60"
-[[patches.conditional]] # level 2 limit 7 -> 14 (delay slot)
-address = "0x00120214"
-value = "0x2403000E"
+replace = true
+[[patches.hooks]] # mash +0x15B0 (frames since the last press) +1, func_00118690
+address = "0x00118890"
+hook = "km_fps60_countup_self"
 flag = "fps60"
-[[patches.conditional]] # level 3 limit 6 -> 12 (delay slot)
-address = "0x0012021C"
-value = "0x2403000C"
+replace = true
+[[patches.hooks]] # mash decay +0x15B8: lw before the delay-slot decrement, func_00118690
+address = "0x00118878"
+hook = "km_fps60_countdown_pl15b8"
 flag = "fps60"
-[[patches.conditional]] # level 4 limit 5 -> 10 (delay slot)
-address = "0x00120224"
-value = "0x2403000A"
+replace = true
+[[patches.hooks]] # mash +0x15B0 (frames since the last press) +1, func_00118B68
+address = "0x00118DBC"
+hook = "km_fps60_countup_self"
 flag = "fps60"
-[[patches.conditional]] # level 5 limit 4 -> 8 (delay slot)
-address = "0x0012022C"
-value = "0x24030008"
+replace = true
+[[patches.hooks]] # mash decay +0x15B8: lw before the delay-slot decrement, func_00118B68
+address = "0x00118DA4"
+hook = "km_fps60_countdown_pl15b8"
 flag = "fps60"
-[[patches.conditional]] # level 6 limit 3 -> 6 (delay slot)
-address = "0x00120234"
-value = "0x24030006"
+replace = true
+[[patches.hooks]] # mash +0x15B0 (frames since the last press) +1, func_001191A0
+address = "0x001194AC"
+hook = "km_fps60_countup_self"
 flag = "fps60"
-[[patches.conditional]] # level 7 limit 2 -> 4
-address = "0x00120238"
-value = "0x24030004"
+replace = true
+[[patches.hooks]] # mash decay +0x15B8: lw before the delay-slot decrement, func_001191A0
+address = "0x00119494"
+hook = "km_fps60_countdown_pl15b8"
 flag = "fps60"
-[[patches.conditional]] # decay after a press 10 -> 20 (delay slot)
-address = "0x00120288"
-value = "0x24020014"
+replace = true
+[[patches.hooks]] # mash +0x15B0 (frames since the last press) +1, func_00119750
+address = "0x00119954"
+hook = "km_fps60_countup_self"
 flag = "fps60"
-[[patches.conditional]] # decay after a press 10 -> 20
-address = "0x00120294"
-value = "0x24020014"
+replace = true
+[[patches.hooks]] # mash decay +0x15B8: lw before the delay-slot decrement, func_00119750
+address = "0x0011993C"
+hook = "km_fps60_countdown_pl15b8"
 flag = "fps60"
-[[patches.conditional]] # decay per level 5 -> 10
-address = "0x001202B0"
-value = "0x2403000A"
+replace = true
+[[patches.hooks]] # mash +0x15B0 (frames since the last press) +1, func_00119BF0
+address = "0x00119DF4"
+hook = "km_fps60_countup_self"
 flag = "fps60"
+replace = true
+[[patches.hooks]] # mash decay +0x15B8: lw before the delay-slot decrement, func_00119BF0
+address = "0x00119DDC"
+hook = "km_fps60_countdown_pl15b8"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # mash +0x15B0 (frames since the last press) +1, func_0011FD10
+address = "0x001201C0"
+hook = "km_fps60_countup_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # mash decay +0x15B8: lw before the delay-slot decrement, func_0011FD10
+address = "0x001201A8"
+hook = "km_fps60_countdown_pl15b8_s0"
+flag = "fps60"
+replace = true
 
 # Door-kun (cOm5a, the door with a face; update func_001AC980, arm swing func_001ACB78): counted in game frames, so at
 # 60 FPS he healed twice as fast and swung twice as fast. HP +0x54A regains 1 every 5 frames (+0x621); the swing waits

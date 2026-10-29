@@ -4,6 +4,10 @@ Newest first, one line per change; the code comments say how.
 
 ## October 29, 2026
 
+- 60 FPS: every button-mash move takes the 30 FPS mashing pace (nine of them needed twice the speed).
+- 60 FPS: Gene's spinning mash attack turns and lasts as at 30 FPS; his post-hit guard lasts as at 30 FPS in every state.
+- 60 FPS: removed the old patch to Gene's attacks that the God Hand meter fix replaces.
+- Dev: the "Record a test case" hotkey is named Right Stick Press (R3 in older ini files still works).
 - 60 FPS: the God Hand meter lasts as long as at 30 FPS (it ran out in half the time), and its bar moves at the 30 FPS pace.
 - Music: the right channel no longer jumps ahead with a crackle and plays a second copy of the track until it changes.
 - Dev: replays also take a snapshot of the whole RAM once a second, for values that live outside Gene's object.

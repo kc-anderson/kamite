@@ -1089,7 +1089,7 @@ namespace kamite::launcher
                     }
                     done = true;
                 }
-                // Or a controller button, as the game sees it (R3, Select...): the game layer watches the pad data for it.
+                // Or a controller button, as the game sees it (Right Stick Press, Select...): the game layer watches the pad data for it.
                 if (!done)
                 {
                     ImGui::TextColored(kTextDim, "...or a controller button:");

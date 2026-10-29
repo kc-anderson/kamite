@@ -2,8 +2,8 @@
 //
 // Three things live here, sharing one per-frame logger and one pad path:
 //
-// 1. The case recorder (always on; the RecordCase hotkey, R3 by default): press once and the port saves a state of
-//    its own (never the players' slots) and starts keeping the pad; press again and everything goes into one file,
+// 1. The case recorder (always on; the RecordCase hotkey, the right stick press by default): press once and the port
+//    saves a state of its own (never the players' slots) and starts keeping the pad; press again and everything goes into one file,
 //    cases\<date-time>.case: the state, the pad (one 32-byte status per game frame), a live per-frame log of what the
 //    game did while the tester played, and a few lines of metadata. Nothing to type, nothing to edit.
 // 2. The case replay (KAMITE_REPLAY_CASE=<file>, --replay-case <file> [--fps60 0|1]): loads the case's state, plays
