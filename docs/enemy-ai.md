@@ -102,4 +102,9 @@ With the Modern controls' free camera turned away from Gene, the enemies take th
 everywhere their AI reads it: the common update's `+0x764`/`+0x768` (`0x208CA8`, `0x2096D8`), the attack decision's
 own angle (`func_00262AA8`, `0x263524`: the per-kind rules that keep enemies at his back from attacking), sub-steps
 13, 17 and 18, and the queue's spots, which are turned from his matrix (`+0x80`) to the camera's facing. The back-grab
-prompt (a stunned enemy right behind him, `func_00271148`) keeps his real facing.
+prompt (a stunned enemy right behind him, `func_00271148`) keeps his real facing. Within point-blank range (2.5 m, 2 m
+on Level 1) Gene's own facing counts too: whichever of the two gives the smaller angle is used, so an enemy he swings
+at in front of him fights back even with the camera behind it.
+
+In both camera styles the attack decision's own cones (the hold by level at `0x263608`, the per-kind 30° attack
+cones) widen with the view like the wedge and the lunges.

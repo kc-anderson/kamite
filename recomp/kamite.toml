@@ -947,11 +947,12 @@ flag = "enemy_view"
 
 [[patches.hooks]]
 address = "0x002096D8"
-hook = "km_em_facing"
+hook = "km_em_facing_sp"
 flag = "enemy_view"
 
 # ... and where the AI works the angle from Gene's facing out again (lwc1 $f12,0x104(v0) just before): the attack
-# decision func_00262AA8 and the common sub-steps 13, 17, 18 (camera.cpp enemyFacing).
+# decision func_00262AA8 (s2 = the enemy) and the common sub-steps 13, 17, 18 (s1; camera.cpp enemyFacing). The hook
+# names say where the enemy's position is (km_em_facing: s2, _s1: s1, _sp: the twin's position on the stack).
 [[patches.hooks]]
 address = "0x00263528"
 hook = "km_em_facing"
@@ -959,32 +960,32 @@ flag = "enemy_view"
 
 [[patches.hooks]]
 address = "0x00216988"
-hook = "km_em_facing"
+hook = "km_em_facing_s1"
 flag = "enemy_view"
 
 [[patches.hooks]]
 address = "0x002175D8"
-hook = "km_em_facing"
+hook = "km_em_facing_s1"
 flag = "enemy_view"
 
 [[patches.hooks]]
 address = "0x00217774"
-hook = "km_em_facing"
+hook = "km_em_facing_s1"
 flag = "enemy_view"
 
 [[patches.hooks]]
 address = "0x00217850"
-hook = "km_em_facing"
+hook = "km_em_facing_s1"
 flag = "enemy_view"
 
 [[patches.hooks]]
 address = "0x00217D9C"
-hook = "km_em_facing"
+hook = "km_em_facing_s1"
 flag = "enemy_view"
 
 [[patches.hooks]]
 address = "0x002187A4"
-hook = "km_em_facing"
+hook = "km_em_facing_s1"
 flag = "enemy_view"
 
 # The queue's walk-to spot, just put into the world by Gene's matrix (sceVu0ApplyMatrix returns; s4 = the spot):
@@ -1004,6 +1005,73 @@ flag = "enemy_view"
 [[patches.hooks]]
 address = "0x002127D0"
 hook = "km_em_wedge"
+flag = "enemy_view"
+
+# func_00262AA8's own facing cones on f21 (camera.cpp enemyHoldF0/F1, both camera styles): the default rule's hold by
+# level (c.lt.s $f1,$f21, $f1 = 60/90/135/180 deg) and the per-kind 30-degree attack cones (c.lt.s $f21,$f0).
+[[patches.hooks]]
+address = "0x00263608"
+hook = "km_em_hold_f1"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00266628"
+hook = "km_em_hold_f0"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x002667D4"
+hook = "km_em_hold_f0"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00266C60"
+hook = "km_em_hold_f0"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00266D1C"
+hook = "km_em_hold_f0"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00266DD8"
+hook = "km_em_hold_f0"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00266EAC"
+hook = "km_em_hold_f0"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00266F80"
+hook = "km_em_hold_f0"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x0026700C"
+hook = "km_em_hold_f0"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x0026712C"
+hook = "km_em_hold_f0"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00267370"
+hook = "km_em_hold_f0"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x002675E4"
+hook = "km_em_hold_f0"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00267B6C"
+hook = "km_em_hold_f0"
 flag = "enemy_view"
 
 # func_00262AA8: c.lt.s $f0,$f1 with $f1 = the level's lunge cone (one per enemy-kind block).

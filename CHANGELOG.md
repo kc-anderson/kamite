@@ -6,6 +6,10 @@ Newest first, one line per change; the code comments say how.
 
 - Modern controls: enemies right behind Gene but in the free camera's view attack and take their places around him
   like enemies in front of him (they stood idle).
+- Modern controls: an enemy right in front of Gene (within point-blank range) fights back even when the camera is
+  behind it.
+- Wide view: enemies the wider picture shows at Gene's side no longer hold back (the game's at-his-back hold and the
+  per-enemy attack cones widen with the view, as the other enemy cones do).
 - Skip intro also skips the Clover Studio movie.
 - Roulette double timer: Gene's casting pose lasts until the timer runs out, and the highlighted move is used then.
 - Styles: with F2 "Every technique owned" on, a style loads all its moves; turning it off removes the equipped moves

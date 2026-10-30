@@ -501,10 +501,66 @@ namespace kamite
         // common sub-steps 13, 17 and 18 (0x216984, 0x2175D4 / 0x217770 / 0x21784C, 0x217D98 / 0x2187A0); all hooked
         // after their `lwc1 $f12,0x104(v0)`. Left on his real facing: the back-grab prompt (func_00271148/00271298,
         // a stunned enemy at his back) and cEmManage's func_00292F70.
-        void enemyFacing(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        // Modern rule (K, Oct 30): an enemy is judged from the camera's view, so on screen = in front. Within the game's
+        // point-blank range (2.5 m, 2 m on Level 1: Level 1 = the level gauge's points, save +0x1C, below the first
+        // threshold at 0x3BF160, as cCoreSave_getGameLevel reads them) Gene facing it counts too: there the yaw that
+        // gives the smaller angle (his or the camera's) is used, so an enemy he swings at right in front of him fights
+        // back even with the camera behind it. Classic (no free camera): untouched.
+        float facingYawFor(const uint8_t *rdram, float ex, float ez)
         {
-            if (g_freeNow && g_enemyView.load(std::memory_order_relaxed))
-                ctx->f[12] = g_freeYaw;
+            uint32_t gene = 0, pos = 0;
+            std::memcpy(&gene, rdram + 0x747A94u, 4);
+            gene &= 0x1FFFFFFFu;
+            if (gene < 0x100000u || gene + 0x200u > PS2_RAM_SIZE)
+                return g_freeYaw;
+            std::memcpy(&pos, rdram + gene + 0xF0u, 4);
+            pos &= 0x1FFFFFFFu;
+            if (pos < 0x100000u || pos + 12u > PS2_RAM_SIZE)
+                return g_freeYaw;
+            const float dx = ex - loadFloat(rdram, pos), dz = ez - loadFloat(rdram, pos + 8u);
+            uint32_t save = 0, first = 0;
+            std::memcpy(&save, rdram + 0x569B70u, 4);
+            std::memcpy(&first, rdram + 0x3BF160u, 4);
+            save &= 0x1FFFFFFFu;
+            int16_t points = 0x7FFF;
+            if (save >= 0x100000u && save + 0x20u <= PS2_RAM_SIZE)
+                std::memcpy(&points, rdram + save + 0x1Cu, 2);
+            const float pointBlank = static_cast<int32_t>(points) < static_cast<int32_t>(first) ? 2.0f : 2.5f;
+            if (dx * dx + dz * dz >= pointBlank * pointBlank)
+                return g_freeYaw;
+            const float geneYaw = loadFloat(rdram, gene + 0x104u);
+            const auto off = [&](float yaw) {
+                float a = std::atan2(dx, dz) - yaw;
+                while (a > kPi)
+                    a -= 2.0f * kPi;
+                while (a < -kPi)
+                    a += 2.0f * kPi;
+                return std::fabs(a);
+            };
+            return off(geneYaw) < off(g_freeYaw) ? geneYaw : g_freeYaw;
+        }
+
+        bool facingSwap() { return g_freeNow && g_enemyView.load(std::memory_order_relaxed); }
+
+        // The enemy's position from its object (GPR `reg` = the enemy; +0xF0 -> its position).
+        template <int reg>
+        void enemyFacing(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            if (!facingSwap())
+                return;
+            uint32_t pos = 0;
+            std::memcpy(&pos, rdram + ((GPR_U32(ctx, reg) + 0xF0u) & (PS2_RAM_SIZE - 1u)), 4);
+            pos &= 0x1FFFFFFFu;
+            ctx->f[12] = pos >= 0x100000u && pos + 12u <= PS2_RAM_SIZE ? facingYawFor(rdram, loadFloat(rdram, pos), loadFloat(rdram, pos + 8u))
+                                                                        : g_freeYaw;
+        }
+        // The twin at 0x2096D8 passes a position on the stack (a1 = sp).
+        void enemyFacingSp(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            if (!facingSwap())
+                return;
+            const uint32_t at = GPR_U32(ctx, 29);
+            ctx->f[12] = facingYawFor(rdram, loadFloat(rdram, at), loadFloat(rdram, at + 8u));
         }
 
         // The queue's walk-to spots (+0x16A0, func_0020F3C0) are offsets in Gene's own frame put into the world by his
@@ -582,6 +638,20 @@ namespace kamite
         {
             ctx->f[0] = scaledCone(ctx->f[0], enemyDistance(rdram, ctx));
             noteCone(rdram, ctx, 'w', ctx->f[1], ctx->f[0]);
+        }
+        // The attack decision's own facing cones (func_00262AA8, f21 = |angle from the facing| worked out at 0x263524):
+        // the default rule's hold by level (c.lt.s $f1,$f21 at 0x263608, $f1 = 60/90/135/180 deg: outside it the
+        // enemy waits) and the per-kind 30-degree attack cones (c.lt.s $f21,$f0, 12 compares 0x266628..0x267B6C) widen
+        // with the view like the wedge and the lunges (K, Oct 30: an enemy visible at the side at FOV 153% was held).
+        void enemyHoldF1(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            ctx->f[1] = scaledCone(ctx->f[1], enemyDistance(rdram, ctx));
+            noteCone(rdram, ctx, 'h', ctx->f[21], ctx->f[1]);
+        }
+        void enemyHoldF0(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            ctx->f[0] = scaledCone(ctx->f[0], enemyDistance(rdram, ctx));
+            noteCone(rdram, ctx, 'a', ctx->f[21], ctx->f[0]);
         }
         // Before c.lt.s $f0,$f1 in func_00262AA8 ($f0 = the angle, $f1 = the level's lunge cone)
         void enemyLunge(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
@@ -1010,7 +1080,11 @@ namespace kamite
         ps2xRegisterHostHook("km_cam_yaw", &orbitYaw);
         ps2xRegisterHostHook("km_em_wedge", &enemyWedge);
         ps2xRegisterHostHook("km_em_lunge", &enemyLunge);
-        ps2xRegisterHostHook("km_em_facing", &enemyFacing);
+        ps2xRegisterHostHook("km_em_facing", &enemyFacing<18>);    // s2 = the enemy
+        ps2xRegisterHostHook("km_em_facing_s1", &enemyFacing<17>); // s1 = the enemy
+        ps2xRegisterHostHook("km_em_facing_sp", &enemyFacingSp);
+        ps2xRegisterHostHook("km_em_hold_f0", &enemyHoldF0);
+        ps2xRegisterHostHook("km_em_hold_f1", &enemyHoldF1);
         ps2xRegisterHostHook("km_em_spot", &enemySpot);
         ps2xSetPatchFlag("fov", true);
         ps2xSetPatchFlag("keep_walls", g_seeThrough.load());
