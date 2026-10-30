@@ -23,6 +23,8 @@
 // is lost.
 #include "kamite/test_mode.h"
 #include "kamite/frame_patches.h"
+#include "kamite/debug_tools.h"
+#include "kamite/npc_tools.h"
 #include "kamite/game_layout.h"
 #include "kamite/git_commit.h" // KAMITE_GIT_COMMIT (generated at build time)
 #include "kamite/log.h"
@@ -1020,6 +1022,14 @@ namespace kamite::test_mode
             run.vblanks = run.rec.polls();
             if (const std::string enemies = metaValue(c.meta, "enemies"); !enemies.empty())
                 run.enemies = static_cast<uint32_t>(std::strtoul(enemies.c_str(), nullptr, 10));
+            // The F2 switches the recording had (God mode, the enemy cheats, developer switches, AI off): without them
+            // a replay of a fight with God mode on loses Gene at the first hit (case af12321_fight, Oct 30).
+            if (const std::string cheats = metaValue(c.meta, "cheats"); !cheats.empty())
+            {
+                debug_tools::applyCheatState(cheats);
+                npc_tools::setAiOff(cheats.find("aioff=1") != std::string::npos);
+                KM_INFO(Game, "case replay: switches " << cheats);
+            }
             if (const char *fps = std::getenv("KAMITE_REPLAY_FPS60"); fps && *fps)
                 run.fps60 = *fps == '1' ? 1 : 0;
             const bool at60 = run.fps60 >= 0 ? run.fps60 != 0 : fps60();
@@ -1057,6 +1067,7 @@ namespace kamite::test_mode
             uint16_t prevPressed = 0;   // the pad's pressed bits at the last read (for the hotkey's edge)
             bool toggle = false;        // a press of the hotkey, taken at the next frame hook
             uint32_t casesWritten = 0;
+            std::string cheats;         // the F2 switches that change play, when the state was saved
         };
         Recorder g_rec;
 
@@ -1106,6 +1117,7 @@ namespace kamite::test_mode
             rec.readFrame = ~0u;
             rec.polling = false;
             rec.readsThisFrame = 0;
+            rec.cheats = debug_tools::cheatState() + (npc_tools::aiOff() ? " aioff=1" : " aioff=0");
             rec.savesBefore = ps2x::savestate::saveCount();
             rec.saveRequested = std::chrono::steady_clock::now();
             ps2x::savestate::requestSave(rec.stateFile);
@@ -1147,6 +1159,7 @@ namespace kamite::test_mode
             std::snprintf(hex, sizeof(hex), "%03X", rec.room);
             c.meta += hex;
             c.meta += "\nenemies=" + std::to_string(kDefaultEnemies) + "\n";
+            c.meta += "cheats=" + rec.cheats + "\n"; // God mode etc.: the replay sets the same (readCaseForReplay)
             // The build that recorded it (kamite.exe's size and time): a replay with another build may differ from the
             // live log where a fix changed the game, and the report says so.
             {

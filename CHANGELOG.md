@@ -4,6 +4,9 @@ Newest first, one line per change; the code comments say how.
 
 ## October 30, 2026
 
+- 60 FPS: enemies' own timers (flinches, waits, attack cooldowns, recoveries) run at the 30 FPS pace.
+- Sprint attack traversal: a window marked on a thick wall covers its far side too; the first windows ship marked.
+- Test cases carry the F2 switches (God mode, enemy cheats, developer switches, AI off) into their replays.
 - 60 FPS: enemies no longer act as if slowed down all the time (the devil only taunting in front of Gene, guard
   and evade checks, voices).
 - Sprint attack traversal: windows, any number per wall, marked in F2 > Debug > Stage collision; sprint + X / Y dive

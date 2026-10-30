@@ -15,4 +15,7 @@ namespace kamite::npc_tools
     void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
     // The enemies' damage step (debug_tools' km_dbg_em_damage): the locked target with "Can't die" keeps 1 HP.
     bool cantDie(uint32_t enemy);
+    // F2 > NPCs "AI off" (a test case records it and its replay sets it).
+    bool aiOff();
+    void setAiOff(bool on);
 }

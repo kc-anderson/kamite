@@ -30,11 +30,12 @@ namespace kamite::sprint_traversal
     // or sprint + Y. Any number per wall. Marked from where Gene stood facing the wall: (x, y, z) the point hit on the
     // wall with y = Gene's floor, (dx, dz) the wall's direction (unit, horizontal); the opening is `width` wide centred
     // `offset` metres along the wall from that point, from `sill` to `sill + height` above the floor (drawn only: K's
-    // choice, Oct 30, the height is not checked).
+    // choice, Oct 30, the height is not checked). `depth`: the wall's far face, metres along (-dz, dx) from the marked one
+    // (a thick wall is two faces, often two groups); the window covers both and the space between.
     struct Window
     {
         float x = 0.0f, y = 0.0f, z = 0.0f, dx = 1.0f, dz = 0.0f;
-        float offset = 0.0f, sill = 0.4f, width = 1.2f, height = 1.4f;
+        float offset = 0.0f, sill = 0.4f, width = 1.2f, height = 1.4f, depth = 0.0f;
     };
     struct WindowRef
     {

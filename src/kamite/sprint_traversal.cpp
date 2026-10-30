@@ -2,7 +2,7 @@
 //
 // The marks: sprint_traversal.txt, one line per room and group: `r100 Fx_2h00 jump slide` (jump = sprint + X / Y, slide
 // = sprint + A; `none` clears a shipped mark). Windows: one line each, `r100 H02_w00 window x y z dx dz offset sill
-// width height` (sprint_traversal.h has the fields); a wall's windows come all from one file (the user's, when it has
+// width height depth` (sprint_traversal.h has the fields; depth may be left out: 0); a wall's windows come all from one file (the user's, when it has
 // any line for that wall; `r100 H02_w00 window none` drops the shipped ones). resources/sprint_traversal.txt ships with the port; the one next to the
 // exe holds the marks set in F2 > Debug > Stage collision and wins line by line. Groups are the stage collision's named
 // groups (cCollisionScroll D_005CAE50, hitbox_overlay.cpp has the layout and claude/sprint-traversal.md the findings).
@@ -16,7 +16,8 @@
 //
 // Windows: walls are never switched off. km_trav_window at 0x1094C8 (the hit path: the pushed-out x / z at sp+0x20 /
 // sp+0x28 are about to be written to Gene's position, f0 already holds x) gives back Gene's own x / z when he is in
-// sprint + X / Y within a marked window's width and 1 m of its wall, so the push-out does nothing.
+// sprint + X / Y within a marked window's width and 1 m of its wall (of either face, with a depth), so the push-out
+// does nothing.
 #include "kamite/sprint_traversal.h"
 #include "kamite/game_layout.h"
 #include "kamite/log.h"
@@ -107,9 +108,9 @@ namespace kamite::sprint_traversal
 
         std::string windowText(const Window &w)
         {
-            char text[200];
-            std::snprintf(text, sizeof(text), "%.3f %.3f %.3f %.4f %.4f %.3f %.3f %.3f %.3f", w.x, w.y, w.z, w.dx, w.dz, w.offset,
-                          w.sill, w.width, w.height);
+            char text[220];
+            std::snprintf(text, sizeof(text), "%.3f %.3f %.3f %.4f %.4f %.3f %.3f %.3f %.3f %.3f", w.x, w.y, w.z, w.dx, w.dz,
+                          w.offset, w.sill, w.width, w.height, w.depth);
             return text;
         }
         bool sameWindows(const Windows &a, const Windows &b)
@@ -168,6 +169,8 @@ namespace kamite::sprint_traversal
                     Window w;
                     if (words >> w.x >> w.y >> w.z >> w.dx >> w.dz >> w.offset >> w.sill >> w.width >> w.height)
                     {
+                        if (!(words >> w.depth))
+                            w.depth = 0.0f;
                         const float len = std::sqrt(w.dx * w.dx + w.dz * w.dz);
                         if (len > 0.0f)
                         {
@@ -196,7 +199,7 @@ namespace kamite::sprint_traversal
                    "# Set in F2 > Debug > Stage collision. One line per room and group: jump = sprint + X / Y,\n"
                    "# slide = sprint + A, none = clears a mark resources/sprint_traversal.txt ships. These lines win\n"
                    "# over that file; a group marked as it ships (or unmarked and not shipped) has no line here.\n"
-                   "# Windows (sprint + X / Y dive through): `window x y z dx dz offset sill width height`, one line each;\n"
+                   "# Windows (sprint + X / Y dive through): `window x y z dx dz offset sill width height depth`, one each;\n"
                    "# a wall listed here takes its windows from here only (`window none` = no windows on it).\n";
             for (const auto &[key, bits] : g_userMarks)
             {
@@ -320,7 +323,8 @@ namespace kamite::sprint_traversal
                     const float cx = w.x + w.dx * w.offset, cz = w.z + w.dz * w.offset;
                     const float along = (px - cx) * w.dx + (pz - cz) * w.dz;
                     const float across = (px - cx) * -w.dz + (pz - cz) * w.dx;
-                    if (std::fabs(along) <= 0.5f * w.width && std::fabs(across) <= 1.0f)
+                    if (std::fabs(along) <= 0.5f * w.width && across >= std::min(0.0f, w.depth) - 1.0f &&
+                        across <= std::max(0.0f, w.depth) + 1.0f)
                     {
                         inside = true;
                         break;

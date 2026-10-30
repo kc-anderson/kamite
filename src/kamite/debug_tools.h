@@ -8,6 +8,7 @@
 #include "ps2_runtime.h"
 
 #include <cstdint>
+#include <string>
 
 namespace kamite::debug_tools
 {
@@ -18,6 +19,11 @@ namespace kamite::debug_tools
     void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
 
     // Shared with the NPCs tab (npc_tools.cpp).
+    // The switches that change how the game plays (God mode, the enemy cheats, the developer switches), as one line
+    // for a test case's meta ("god=1 nodeath=0 onehit=0 dizzy=0 dbg=0,0,0,0"), and back: a replay runs as recorded.
+    std::string cheatState();
+    void applyCheatState(const std::string &text);
+
     bool pathfindingOff();
     void setPathfindingOff(bool on);
 }

@@ -487,9 +487,13 @@ namespace kamite::hitbox_overlay
             const bool mark = g_markWindow.exchange(false);
             const float heading = rdf(rdram, player + game::GameObj::kRot + 4u);
             const Vec3 rayFrom{gene.x, gene.y + kMarkHeight, gene.z}, rayDir{std::sin(heading), 0.0f, std::cos(heading)};
-            float markT = kMarkReach;
-            int markGroup = -2; // -2 nothing hit
-            Vec3 markNormal{0.0f, 0.0f, 0.0f};
+            struct WallHit
+            {
+                float t;
+                int group;
+                Vec3 normal;
+            };
+            std::vector<WallHit> wallHits; // every wall the ray crosses within reach + 3 m (the far face of a thick wall)
             auto rayTriangle = [&](Vec3 a, Vec3 b, Vec3 c) -> float { // Moller-Trumbore; < 0 = miss
                 const Vec3 e1{b.x - a.x, b.y - a.y, b.z - a.z}, e2{c.x - a.x, c.y - a.y, c.z - a.z};
                 const Vec3 pv{rayDir.y * e2.z - rayDir.z * e2.y, rayDir.z * e2.x - rayDir.x * e2.z, rayDir.x * e2.y - rayDir.y * e2.x};
@@ -556,12 +560,8 @@ namespace kamite::hitbox_overlay
                         if (t2 >= 0.0f && (t < 0.0f || t2 < t))
                             t = t2;
                     }
-                    if (t >= 0.0f && t < markT)
-                    {
-                        markT = t;
-                        markGroup = group;
-                        markNormal = n;
-                    }
+                    if (t >= 0.0f && t < kMarkReach + 3.0f)
+                        wallHits.push_back({t, group, n});
                 }
                 if (dump)
                 {
@@ -588,8 +588,13 @@ namespace kamite::hitbox_overlay
             }
             if (mark)
             {
+                std::sort(wallHits.begin(), wallHits.end(), [](const WallHit &a, const WallHit &b) { return a.t < b.t; });
+                const bool hit = !wallHits.empty() && wallHits[0].t <= kMarkReach;
+                const Vec3 markNormal = hit ? wallHits[0].normal : Vec3{0.0f, 0.0f, 0.0f};
+                const int markGroup = hit ? wallHits[0].group : -2;
+                const float markT = hit ? wallHits[0].t : 0.0f;
                 const float h = std::sqrt(markNormal.x * markNormal.x + markNormal.z * markNormal.z);
-                if (markGroup == -2 || h <= 0.0f)
+                if (!hit || h <= 0.0f)
                     g_markResult.store(2, std::memory_order_relaxed);
                 else
                 {
@@ -599,6 +604,18 @@ namespace kamite::hitbox_overlay
                     w.z = rayFrom.z + rayDir.z * markT;
                     w.dx = -markNormal.z / h; // along the wall
                     w.dz = markNormal.x / h;
+                    // The wall's far face: the next parallel wall the ray crosses within 3 m (a thick wall).
+                    for (size_t k = 1; k < wallHits.size(); ++k)
+                    {
+                        const WallHit &far = wallHits[k];
+                        const float fh = std::sqrt(far.normal.x * far.normal.x + far.normal.z * far.normal.z);
+                        if (far.t <= markT + 0.05f || far.t > markT + 3.0f || fh <= 0.0f)
+                            continue;
+                        if (std::fabs((far.normal.x * markNormal.x + far.normal.z * markNormal.z) / (fh * h)) < 0.9f)
+                            continue;
+                        w.depth = (far.t - markT) * (rayDir.x * -w.dz + rayDir.z * w.dx);
+                        break;
+                    }
                     const std::string name = markGroup >= 0 ? groups[markGroup].name : "-";
                     g_markResult.store(sprint_traversal::addWindow(static_cast<uint16_t>(room), name, w) ? 1 : 3,
                                        std::memory_order_relaxed);
@@ -612,7 +629,7 @@ namespace kamite::hitbox_overlay
                 const float y0 = w.y + w.sill, y1 = w.y + w.sill + w.height;
                 const Vec3 a0{cx - w.dx * half, y0, cz - w.dz * half}, b0{cx + w.dx * half, y0, cz + w.dz * half};
                 const Vec3 a1{a0.x, y1, a0.z}, b1{b0.x, y1, b0.z};
-                if (g_colors.size() + 6u > kMaxLines)
+                if (g_colors.size() + 10u > kMaxLines)
                     break;
                 line(a0, b0, kWindowColor);
                 line(b0, b1, kWindowColor);
@@ -620,6 +637,14 @@ namespace kamite::hitbox_overlay
                 line(a1, a0, kWindowColor);
                 line(a0, b1, kWindowColor);
                 line(b0, a1, kWindowColor);
+                if (std::fabs(w.depth) > 0.01f) // the far face
+                {
+                    const Vec3 off{-w.dz * w.depth, 0.0f, w.dx * w.depth};
+                    line(a0 + off, b0 + off, kWindowColor);
+                    line(b0 + off, b1 + off, kWindowColor);
+                    line(b1 + off, a1 + off, kWindowColor);
+                    line(a1 + off, a0 + off, kWindowColor);
+                }
             }
             for (uint32_t i = 0; i < s.groupCount; ++i)
                 groups[i].state = offCount[i] == 0 ? 0 : onCount[i] == 0 ? 1 : 2;
@@ -793,8 +818,8 @@ namespace kamite::hitbox_overlay
             return;
         const uint16_t r = static_cast<uint16_t>(room);
         ui->text_wrapped("Windows (white): sprint + X / Y dive through them with \"Sprint attack traversal\" on. Stand facing "
-                         "the window, within 3 m, and mark it; then size and place it with the sliders. Any number per "
-                         "wall.");
+                         "the window, within 3 m, and mark it; then size and place it with the sliders. A thick wall's far "
+                         "side is found by itself (the second rectangle; 0 = none). Any number per wall.");
         if (ui->button("Mark window (the wall Gene faces)##markwin"))
         {
             g_markResult.store(0);
@@ -836,6 +861,9 @@ namespace kamite::hitbox_overlay
                 ui->same_line();
                 ui->set_next_width(220.0f);
                 changed |= ui->slider_float("Sill##wsill", &w.sill, 0.0f, 3.0f, "%.2f m") != 0;
+                dragging |= ui->is_item_active() != 0;
+                ui->set_next_width(220.0f);
+                changed |= ui->slider_float("Wall thickness (far side)##wdepth", &w.depth, -3.0f, 3.0f, "%.2f m") != 0;
                 dragging |= ui->is_item_active() != 0;
                 ui->separator();
                 ui->pop_id();

@@ -575,6 +575,9 @@ namespace kamite::npc_tools
 #endif
     }
 
+    bool aiOff() { return g_aiOff.load(); }
+    void setAiOff(bool on) { g_aiOff = on; }
+
     bool cantDie(uint32_t enemy) { return enemy != 0u && enemy == g_target && g_cantDie.load(std::memory_order_relaxed); }
 
     void install(PS2Runtime &runtime)

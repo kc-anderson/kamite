@@ -467,6 +467,13 @@ namespace kamite
             const int32_t value = GPR_S32(ctx, Reg);
             SET_GPR_S32(ctx, Reg, skipFrame(rdram) ? value : value - 1);
         }
+        // addiu Dst,Src,-1 (the enemy countdowns, generated hooks in kamite.toml).
+        template <int Dst, int Src>
+        void countdownPair(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const int32_t value = GPR_S32(ctx, Src);
+            SET_GPR_S32(ctx, Dst, skipFrame(rdram) ? value : value - 1);
+        }
         void countdownFloat(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // sub.s f0,f1,f0 (+0x15D0 -= 1.0 at 0x108DE8)
         {
             ctx->f[0] = skipFrame(rdram) ? ctx->f[1] : ctx->f[1] - ctx->f[0];
@@ -553,6 +560,15 @@ namespace kamite
             SET_GPR_U32(ctx, 2, skipFrame(rdram) && value != 0u ? value + 1u : value);
         }
 
+        // countdownLoad for any load: `l[w|hu|bu] Dst,Offset(Base)` (Bytes 4 / 2 / 1) before a decrement in a delay slot.
+        template <int Base, uint32_t Offset, int Dst, int Bytes>
+        void countdownLoadAny(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            uint32_t value = 0;
+            std::memcpy(&value, rdram + ((GPR_U32(ctx, Base) + Offset) & 0x01FFFFFFu), Bytes);
+            SET_GPR_U32(ctx, Dst, skipFrame(rdram) && value != 0u ? value + 1u : value);
+        }
+
         // The stick-wiggle button prompt (cCockActButton move, type 4, 0x13BF08..0x13C020) swings its stick icon a
         // fixed 30 degrees and 5 units per frame (a 4-frame cycle). At 60 frames/s the swing of every other frame is
         // undone: the icon's angle (+0x48) and x (+0x38) of the entry at +0xD8 and the swing direction (0x3BD6E0).
@@ -621,6 +637,23 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_flash_guard_rate", &flashGuardRate);
         ps2xRegisterHostHook("km_fps60_tension_drain", &tensionDrainRate);
         ps2xRegisterHostHook("km_fps60_countdown_a0", &countdownReg<4>);
+        // The common enemy code's countdowns (kamite.toml, generated Oct 30).
+        ps2xRegisterHostHook("km_fps60_countdown_v0a0", &countdownPair<2, 4>);
+        ps2xRegisterHostHook("km_fps60_countdown_v1", &countdownPair<3, 3>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s0_5f0", &countdownLoadAny<16, 0x5F0u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s0_5f8", &countdownLoadAny<16, 0x5F8u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s1_5f0", &countdownLoadAny<17, 0x5F0u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s1_5f4", &countdownLoadAny<17, 0x5F4u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s2_16dc", &countdownLoadAny<18, 0x16DCu, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s2_16e0", &countdownLoadAny<18, 0x16E0u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s2_16ec", &countdownLoadAny<18, 0x16ECu, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s2_16f8_v1", &countdownLoadAny<18, 0x16F8u, 3, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s2_17b0_1", &countdownLoadAny<18, 0x17B0u, 2, 1>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s2_5f0", &countdownLoadAny<18, 0x5F0u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s2_5f4", &countdownLoadAny<18, 0x5F4u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s2_5f8", &countdownLoadAny<18, 0x5F8u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s2_5fc", &countdownLoadAny<18, 0x5FCu, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s3_5f0", &countdownLoadAny<19, 0x5F0u, 2, 4>);
         ps2xRegisterHostHook("km_fps60_countdown_5f8", &countdownLoad<17, 0x5F8u>);
         ps2xRegisterHostHook("km_fps60_countdown_em510", &countdownLoad<16, 0x510u>);
         ps2xRegisterHostHook("km_fps60_countdown_em514", &countdownLoad<16, 0x514u>);

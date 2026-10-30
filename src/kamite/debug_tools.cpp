@@ -66,6 +66,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -818,6 +819,44 @@ namespace kamite::debug_tools
         const int request = g_request.exchange(-1);
         if (request >= 0 && request < static_cast<int>(g_points.size()) && ctx && runtime)
             jump(rdram, ctx, runtime, g_points[static_cast<size_t>(request)]);
+    }
+
+    std::string cheatState()
+    {
+        char text[160];
+        std::snprintf(text, sizeof(text), "god=%d nodeath=%d onehit=%d dizzy=%d dbg=%X,%X,%X,%X", g_godMode.load() ? 1 : 0,
+                      g_enemiesNoDeath.load() ? 1 : 0, g_oneHitKills.load() ? 1 : 0, g_enemiesDizzy.load() ? 1 : 0,
+                      g_dbg[0].wanted.load(), g_dbg[1].wanted.load(), g_dbg[2].wanted.load(), g_dbg[3].wanted.load());
+        return text;
+    }
+
+    void applyCheatState(const std::string &text)
+    {
+        std::istringstream words(text);
+        std::string word;
+        while (words >> word)
+        {
+            const size_t eq = word.find('=');
+            if (eq == std::string::npos)
+                continue;
+            const std::string key = word.substr(0, eq), value = word.substr(eq + 1);
+            const bool on = value == "1";
+            if (key == "god")
+                g_godMode = on;
+            else if (key == "nodeath")
+                g_enemiesNoDeath = on;
+            else if (key == "onehit")
+                g_oneHitKills = on;
+            else if (key == "dizzy")
+                g_enemiesDizzy = on;
+            else if (key == "dbg")
+            {
+                std::istringstream parts(value);
+                std::string part;
+                for (int i = 0; i < 4 && std::getline(parts, part, ','); ++i)
+                    g_dbg[i].wanted = static_cast<uint32_t>(std::strtoul(part.c_str(), nullptr, 16));
+            }
+        }
     }
 
     bool pathfindingOff() { return (g_dbg[3].wanted.load() & Dbg::kPathfindingOff) != 0u; }
