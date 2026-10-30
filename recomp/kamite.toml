@@ -390,6 +390,33 @@ flag = "fps60"
 address = "0x002CDB68"
 hook = "km_fps60_em_rate_f1_v0"
 flag = "fps60"
+# Gene's charged attacks (frame_patches.cpp floatSubHalf / floatAddHalf; case charged_punch): the charge drain and the
+# power build-up, half a step a frame at 60.
+[[patches.hooks]] # func_0010D3A8: +0x15C4 -= 0.025 (sub.s f0,f0,f1)
+address = "0x0010D8AC"
+hook = "km_fps60_charge_sub_f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0010D3A8: +0x15C4 -= 0.1 / 0.025 (sub.s f1,f1,f0; f0 is also the rate)
+address = "0x0010D8D4"
+hook = "km_fps60_charge_sub_f1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0010D3A8: +0x15C0 += 0.05 (add.s f2,f2,f1)
+address = "0x0010D904"
+hook = "km_fps60_charge_add_f2f1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0010E5B8: +0x15C4 -= 0.025 (sub.s f1,f1,f0)
+address = "0x0010E8DC"
+hook = "km_fps60_charge_sub_f1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0010E5B8: +0x15C0 += 0.05 (add.s f2,f2,f0)
+address = "0x0010E900"
+hook = "km_fps60_charge_add_f2f0"
+flag = "fps60"
+replace = true
 [[patches.hooks]] # spin mash state func_001162C0 step 1: turn toward the target, Gene's rate x 22.5 deg a frame
 address = "0x001163D0"
 hook = "km_fps60_gene_rate_half"
