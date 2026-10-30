@@ -10,14 +10,14 @@ namespace kamite
         const char *name;
         float fieldOfView;      // [Video] FieldOfView, percent
         float fightFieldOfView; // [Video] FightFieldOfView, percent
-        float cameraDistance;   // [Video] CameraDistance, percent (100 = Gene keeps his size)
+        float cameraZoomOut;    // [Video] CameraZoomOut, percent (0 = Gene keeps his size, 100 = zoomed out)
         float cameraTilt;       // [Video] CameraTilt, degrees
     };
 
     inline constexpr CameraPreset kCameraPresets[] = {
-        {"As on the PS2", 100.0f, 100.0f, 100.0f, 0.0f},
-        {"Wider", 125.0f, 100.0f, 100.0f, 0.0f},
-        {"Widest", 150.0f, 110.0f, 100.0f, 5.0f},
-        {"Action", 153.0f, 117.0f, 45.1f, 14.88f}, // K's way to play
+        {"As on the PS2", 100.0f, 100.0f, 0.0f, 0.0f},
+        {"Wider", 125.0f, 100.0f, 0.0f, 0.0f},
+        {"Widest", 150.0f, 110.0f, 0.0f, 5.0f},
+        {"Action", 153.0f, 117.0f, 54.9f, 14.88f}, // K's way to play
     };
 }

@@ -52,8 +52,8 @@ namespace kamite::launcher
         constexpr Choice kWindowModes[] = {{"Window", "window"}, {"Fullscreen (borderless)", "fullscreen"}, {"Maximized window", "maximized"}};
         constexpr Choice kFovs[] = {{"100%: as on the PS2", "100"}, {"110%", "110"}, {"120%", "120"}, {"130%", "130"},
                                     {"140%", "140"}, {"150%", "150"}};
-        constexpr Choice kCameraDistances[] = {{"Stays: wider view looks zoomed out", "0"}, {"Halfway in", "50"},
-                                               {"Comes in: Gene keeps his size", "100"}};
+        constexpr Choice kCameraDistances[] = {{"0%: Gene keeps his size", "0"}, {"50%: halfway out", "50"},
+                                               {"100%: wider view looks zoomed out", "100"}};
         constexpr Choice kControlStyles[] = {{"Classic", "classic"}, {"Modern", "modern"}};
         constexpr Choice kModernL1[] = {{"Hold", "hold"}, {"Toggle", "toggle"}};
         constexpr Choice kButtonPrompts[] = {{"Automatic (follows your controller)", "auto"}, {"Xbox", "xbox"},
@@ -693,14 +693,14 @@ namespace kamite::launcher
                 return text.empty() ? fallback : static_cast<float>(std::atof(text.c_str()));
             };
             const float fov = value("FieldOfView", 100.0f), fight = value("FightFieldOfView", 100.0f);
-            const float distance = value("CameraDistance", 100.0f), tilt = value("CameraTilt", 0.0f);
+            const float distance = value("CameraZoomOut", 0.0f), tilt = value("CameraTilt", 0.0f);
             const auto same = [](float a, float b) { return std::fabs(a - b) < 0.05f; };
             int current = -1;
             for (size_t i = 0; i < std::size(kCameraPresets); ++i)
             {
                 const CameraPreset &preset = kCameraPresets[i];
                 if (same(fov, preset.fieldOfView) && same(fight, preset.fightFieldOfView) &&
-                    same(distance, preset.cameraDistance) && same(tilt, preset.cameraTilt))
+                    same(distance, preset.cameraZoomOut) && same(tilt, preset.cameraTilt))
                     current = static_cast<int>(i);
             }
             ImGui::SetNextItemWidth(-1.0f);
@@ -719,7 +719,7 @@ namespace kamite::launcher
                         };
                         state.ini.set("Video", "FieldOfView", text(preset.fieldOfView));
                         state.ini.set("Video", "FightFieldOfView", text(preset.fightFieldOfView));
-                        state.ini.set("Video", "CameraDistance", text(preset.cameraDistance));
+                        state.ini.set("Video", "CameraZoomOut", text(preset.cameraZoomOut));
                         state.ini.set("Video", "CameraTilt", text(preset.cameraTilt));
                     }
                 }
@@ -1307,9 +1307,9 @@ namespace kamite::launcher
                                                                   "has an enemy targeted). 100% frames fights as on the PS2.");
                             iniCombo(state, "##fightfov", "Video", "FightFieldOfView", "100",
                                      [](const char *id, std::string &value) { return choiceCombo(id, kFovs, value); });
-                            subSetting("Camera distance", "At a wider field of view, how far the camera comes in toward "
-                                                          "Gene. Coming all the way in keeps him the size he is at 100%.");
-                            iniCombo(state, "##camdist", "Video", "CameraDistance", "100",
+                            subSetting("Camera distance", "At a wider field of view, how far back the camera stays. "
+                                                          "0% keeps Gene the size he is at 100%; 100% shows more round him.");
+                            iniCombo(state, "##camdist", "Video", "CameraZoomOut", "0",
                                      [](const char *id, std::string &value) { return choiceCombo(id, kCameraDistances, value); });
                             subSetting("Camera tilt", "At a wider field of view, the camera also rises and looks down at "
                                                       "Gene by this much: more of the floor ahead, less sky.");
@@ -1525,6 +1525,13 @@ namespace kamite::launcher
         state.context = &context;
         if (!state.ini.load(context.iniPath))
             KM_WARN(Boot, "launcher: cannot read " << utf8(context.iniPath));
+        // [Video] CameraDistance (100 = Gene keeps his size) became CameraZoomOut (0 = that) on Oct 30: carry it over.
+        if (state.ini.get("Video", "CameraZoomOut").empty() && !state.ini.get("Video", "CameraDistance").empty())
+        {
+            char text[32];
+            std::snprintf(text, sizeof(text), "%g", 100.0 - std::atof(state.ini.get("Video", "CameraDistance").c_str()));
+            state.ini.set("Video", "CameraZoomOut", text);
+        }
         std::error_code error;
         state.installed = !context.iso.empty() && fs::is_regular_file(context.iso, error) && context.message.empty();
         if (!context.iso.empty())

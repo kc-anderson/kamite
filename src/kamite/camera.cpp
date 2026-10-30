@@ -777,7 +777,7 @@ namespace kamite
         std::string presetLine()
         {
             return "{\"Name\", " + number(g_fovPercent.load()) + "f, " + number(g_fightPercent.load()) + "f, " +
-                   number(g_closerPercent.load()) + "f, " + number(g_tiltDegrees.load()) + "f},";
+                   number(100.0f - g_closerPercent.load()) + "f, " + number(g_tiltDegrees.load()) + "f},";
         }
 
         std::mutex g_statusMutex;
@@ -810,7 +810,7 @@ namespace kamite
             }
             ini.set("Video", "FieldOfView", number(g_fovPercent.load()));
             ini.set("Video", "FightFieldOfView", number(g_fightPercent.load()));
-            ini.set("Video", "CameraDistance", number(g_closerPercent.load()));
+            ini.set("Video", "CameraZoomOut", number(100.0f - g_closerPercent.load()));
             ini.set("Video", "CameraTilt", number(g_tiltDegrees.load()));
             ini.setBool("Video", "SteadyIdleCamera", g_steadyIdle.load());
             ini.setBool("Game", "EnemiesFollowView", g_enemyView.load());
@@ -842,7 +842,9 @@ namespace kamite
             }
             g_fovPercent = iniValue(ini, "Video", "FieldOfView", 100.0f, 50.0f, 200.0f);
             g_fightPercent = iniValue(ini, "Video", "FightFieldOfView", 100.0f, 50.0f, 200.0f);
-            g_closerPercent = iniValue(ini, "Video", "CameraDistance", 100.0f, 0.0f, 100.0f);
+            g_closerPercent = ini.get("Video", "CameraZoomOut").empty()
+                                  ? iniValue(ini, "Video", "CameraDistance", 100.0f, 0.0f, 100.0f)
+                                  : 100.0f - iniValue(ini, "Video", "CameraZoomOut", 0.0f, 0.0f, 100.0f);
             g_tiltDegrees = iniValue(ini, "Video", "CameraTilt", 0.0f, -30.0f, 30.0f);
             g_steadyIdle = ini.getBool("Video", "SteadyIdleCamera", false);
             g_enemyView = ini.getBool("Game", "EnemiesFollowView", true);
@@ -883,7 +885,7 @@ namespace kamite
                 {
                     g_fovPercent = preset.fieldOfView;
                     g_fightPercent = preset.fightFieldOfView;
-                    g_closerPercent = preset.cameraDistance;
+                    g_closerPercent = 100.0f - preset.cameraZoomOut;
                     g_tiltDegrees = preset.cameraTilt;
                 }
                 ui->same_line();
@@ -893,8 +895,14 @@ namespace kamite
             ui->separator_text("Camera");
             slider(ui, "Field of view##fov", g_fovPercent, 50.0f, 200.0f, "%.0f%%");
             slider(ui, "Field of view in fights##fight", g_fightPercent, 50.0f, 200.0f, "%.0f%%");
-            slider(ui, "Camera comes in##closer", g_closerPercent, 0.0f, 100.0f, "%.0f%%");
-            ui->text_disabled("0% = stays where it was (the view looks zoomed out); 100% = Gene keeps his size.");
+            {
+                // Shown as the distance (K, Oct 30): 0% = Gene keeps his size, 100% = the view looks zoomed out.
+                float zoomOut = 100.0f - g_closerPercent.load(std::memory_order_relaxed);
+                ui->set_next_width(340.0f);
+                if (ui->slider_float("Camera distance##zoomout", &zoomOut, 0.0f, 100.0f, "%.0f%%"))
+                    g_closerPercent.store(100.0f - zoomOut, std::memory_order_relaxed);
+            }
+            ui->text_disabled("0% = Gene keeps his size; 100% = the camera stays back (the view looks zoomed out).");
             slider(ui, "Camera tilt##tilt", g_tiltDegrees, -15.0f, 30.0f, "%.1f deg");
             ui->text_disabled("How much the camera rises and looks down at Gene at the field of view above.");
             int steady = g_steadyIdle.load() ? 1 : 0;
@@ -1043,11 +1051,16 @@ namespace kamite
     {
         g_aspect = aspect;
         // [Video] FieldOfView / FightFieldOfView: percent of the game's own (100 = the PS2's), 50..200;
-        // CameraDistance: 0..100 (100 = Gene keeps his size on screen); CameraTilt: degrees, -30..30;
+        // CameraZoomOut: 0..100 (0 = Gene keeps his size on screen; the older CameraDistance = 100 - it, read when
+        // CameraZoomOut is missing); CameraTilt: degrees, -30..30;
         // [Game] EnemiesFollowView: 0/1 (default 1)
         g_fovPercent = envValue("KAMITE_FOV", 100.0f, 50.0f, 200.0f);
         g_fightPercent = envValue("KAMITE_FIGHT_FOV", 100.0f, 50.0f, 200.0f);
-        g_closerPercent = envValue("KAMITE_CAMERA_DISTANCE", 100.0f, 0.0f, 100.0f);
+        {
+            const char *zoomOut = std::getenv("KAMITE_CAMERA_ZOOM_OUT");
+            g_closerPercent = zoomOut && *zoomOut ? 100.0f - envValue("KAMITE_CAMERA_ZOOM_OUT", 0.0f, 0.0f, 100.0f)
+                                                  : envValue("KAMITE_CAMERA_DISTANCE", 100.0f, 0.0f, 100.0f);
+        }
         g_tiltDegrees = envValue("KAMITE_CAMERA_TILT", 0.0f, -30.0f, 30.0f);
         {
             const char *steady = std::getenv("KAMITE_STEADY_IDLE_CAMERA");
@@ -1090,7 +1103,7 @@ namespace kamite
         ps2xSetPatchFlag("keep_walls", g_seeThrough.load());
         ps2xSetPatchFlag("enemy_view", true);
         KM_INFO(Game, "camera: field of view " << g_fovPercent.load() << "%, " << g_fightPercent.load()
-                                               << "% in fights; comes in " << g_closerPercent.load() << "%, tilt "
+                                               << "% in fights; camera distance " << 100.0f - g_closerPercent.load() << "%, tilt "
                                                << g_tiltDegrees.load() << " degrees; enemies follow the view: "
                                                << (g_enemyView.load() ? "on" : "off") << "; see-through: "
                                                << (g_seeThrough.load() ? "on" : "off"));

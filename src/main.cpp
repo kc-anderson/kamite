@@ -413,7 +413,8 @@ namespace
         {"video", "menulayout", "KAMITE_MENUS"},
         {"video", "fieldofview", "KAMITE_FOV"},
         {"video", "fightfieldofview", "KAMITE_FIGHT_FOV"},
-        {"video", "cameradistance", "KAMITE_CAMERA_DISTANCE"},
+        {"video", "cameradistance", "KAMITE_CAMERA_DISTANCE"}, // before CameraZoomOut (Oct 30): 100 - zoom out
+        {"video", "camerazoomout", "KAMITE_CAMERA_ZOOM_OUT"},
         {"video", "cameratilt", "KAMITE_CAMERA_TILT"},
         {"video", "steadyidlecamera", "KAMITE_STEADY_IDLE_CAMERA"},
         {"game", "styleswitching", "KAMITE_STYLE_SWITCHING"},

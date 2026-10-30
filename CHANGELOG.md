@@ -8,6 +8,8 @@ Newest first, one line per change; the code comments say how.
   like enemies in front of him (they stood idle).
 - Modern controls: an enemy right in front of Gene (within point-blank range) fights back even when the camera is
   behind it.
+- Launcher / F2: "Camera comes in" is now "Camera distance", the other way round (0% = Gene keeps his size, 100% = the
+  zoomed-out view); saved settings carry over.
 - Wide view: enemies the wider picture shows at Gene's side no longer hold back (the game's at-his-back hold and the
   per-enemy attack cones widen with the view, as the other enemy cones do).
 - Skip intro also skips the Clover Studio movie.
