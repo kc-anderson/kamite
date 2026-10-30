@@ -3,7 +3,7 @@
 // The marks: sprint_traversal.txt, one line per room and group: `r100 Fx_2h00 jump slide` (jump = sprint + X / Y, slide
 // = sprint + A; `none` clears a shipped mark). resources/sprint_traversal.txt ships with the port; the one next to the
 // exe holds the marks set in F2 > Debug > Stage collision and wins line by line. Groups are the stage collision's named
-// groups (cCollisionScroll D_005CAE50, hitbox_overlay.cpp has the layout and claude/action-vaulting.md the findings).
+// groups (cCollisionScroll D_005CAE50, hitbox_overlay.cpp has the layout and claude/sprint-traversal.md the findings).
 //
 // Gene only: his update func_00108AB0 checks walls once a frame with ChkCollScrWall (jal at 0x1094B8: a0 Gene, a1 the
 // old position, a2 the attribute mask 0x200 / 0x224, f12 0.4 m, a3 the result) and the floor after it (func_001329C0
