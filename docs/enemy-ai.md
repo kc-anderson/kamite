@@ -70,6 +70,10 @@ Per enemy kind, before the queue logic:
   (`D_00444990` and its copies): none on Level 1, ±45° on Level 2, ±60° on Level 3, **±90°** at Level DIE; then a
   10 s wait (`+0x16E0` = 300).
 
+- **Held at his back:** the common kinds' rule (`0x263584..0x263650`) measures the enemy's angle from Gene's facing
+  again (`0x263524`) against a cone by level (`0x444510`: ±60° Level 1, ±90° Level 2, ±135° Level 3, ±180° DIE).
+  Outside it, `+0x171C` counts down and the enemy does not attack while it lasts: enemies at Gene's back hold off.
+
 ## Difficulty and the level gauge
 
 `cCoreSave_getGameLevel` turns the gauge's points into Level 1, 2, 3 or DIE (5); the thresholds are 1000, 3000, 4000
