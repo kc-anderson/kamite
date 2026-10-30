@@ -356,6 +356,11 @@ replace = true
 address = "0x0012354C"
 hook = "km_fps60_tension_drain"
 flag = "fps60"
+[[patches.hooks]] # cEmManage_SetSpeedRate: the enemies' slow-motion rate (manager +0x548), half at 60 (enemySlowRate)
+address = "0x00292F38"
+hook = "km_fps60_enemy_slow_rate"
+replace = true
+flag = "fps60"
 # Enemies' speed rate +0x5A8 read as a state ("slowed"), not a step: x2 for cEmManage's list at 60 (frame_patches.cpp
 # enemyRate30). Hooks right after the lwc1 (or on the compare when the load sits in a delay slot).
 [[patches.hooks]] # func_0020CAC8 (guard / evade check): rate < 1.0 -> no
@@ -390,8 +395,8 @@ flag = "fps60"
 address = "0x002CDB68"
 hook = "km_fps60_em_rate_f1_v0"
 flag = "fps60"
-# Gene's charged attacks (frame_patches.cpp floatSubHalf / floatAddHalf; case charged_punch): the charge drain and the
-# power build-up, half a step a frame at 60.
+# Gene's charged attacks (frame_patches.cpp floatSubParity / floatAddParity; case charged_punch): the charge drain and the
+# power build-up, a full step every other frame at 60 (the 30 FPS values exactly).
 [[patches.hooks]] # func_0010D3A8: +0x15C4 -= 0.025 (sub.s f0,f0,f1)
 address = "0x0010D8AC"
 hook = "km_fps60_charge_sub_f0"

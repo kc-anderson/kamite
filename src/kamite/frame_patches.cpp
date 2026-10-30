@@ -471,17 +471,18 @@ namespace kamite
         // charge +0x15C4 (4.0 or 1.0) drains 0.1 / 0.025 a frame with his rate held at that same value (the slow wind-up),
         // and the power +0x15C0 grows 0.05 a frame (sound 0x11B at 1.1, +1.0 once the charge is out). Per-frame float
         // steps: at 60 the hold lasted half as long (1.33 -> 0.67 s for the charged punch, id 0x55) and the wind-up got
-        // two thirds as far. Replace the sub.s / add.s with half the step; the step register keeps its value (it is
-        // also the rate stored after the sub.s).
+        // two thirds as far. The sub.s / add.s take the full step every other frame (the countdown rule), so the
+        // floats run through the same values as at 30 (half steps rounded the charge to -0 one step early: power 4.00
+        // against 4.05); the step register keeps its value (it is also the rate stored after the sub.s).
         template <int Dst, int A, int B>
-        void floatSubHalf(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        void floatSubParity(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
-            ctx->f[Dst] = ctx->f[A] - 0.5f * ctx->f[B];
+            ctx->f[Dst] = skipFrame(rdram) ? ctx->f[A] : ctx->f[A] - ctx->f[B];
         }
         template <int Dst, int A, int B>
-        void floatAddHalf(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        void floatAddParity(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
-            ctx->f[Dst] = ctx->f[A] + 0.5f * ctx->f[B];
+            ctx->f[Dst] = skipFrame(rdram) ? ctx->f[A] : ctx->f[A] + ctx->f[B];
         }
         // addiu Dst,Src,-1 (the enemy countdowns, generated hooks in kamite.toml).
         template <int Dst, int Src>
@@ -550,6 +551,16 @@ namespace kamite
                 slot = next;
             }
             return false;
+        }
+        // cEmManage_SetSpeedRate (0x292F38, called every frame by Gene's slow-motion states: the dodge's slow-mo, his
+        // techniques' slow parts): manager +0x548 = f12 (0.1, 0.05, 0.029...), then every enemy's rate = +0x548 x
+        // GameWork +0x574 and +0x548 back to 1.0 (0.5 at 60, the 0x29059C patch). The slow value replaced the 0.5, so at
+        // 60 slowed enemies (and the manager's +0x544 timer) ran twice as fast as at 30 (case 2026-10-30_21-59-10: 0.029
+        // at both rates). Replaces the swc1: half at 60. The effect and object rates it also sets stay 1.0-based.
+        void enemySlowRate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const float value = ctx->f[12] * 0.5f;
+            std::memcpy(&ram8(rdram, GPR_U32(ctx, 4) + 0x548u), &value, sizeof(value));
         }
         template <int ObjReg, int FReg>
         void enemyRate30(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
@@ -652,11 +663,12 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_countdown_float", &countdownFloat);
         ps2xRegisterHostHook("km_fps60_flash_guard_rate", &flashGuardRate);
         ps2xRegisterHostHook("km_fps60_tension_drain", &tensionDrainRate);
+        ps2xRegisterHostHook("km_fps60_enemy_slow_rate", &enemySlowRate);
         ps2xRegisterHostHook("km_fps60_countdown_a0", &countdownReg<4>);
-        ps2xRegisterHostHook("km_fps60_charge_sub_f0", &floatSubHalf<0, 0, 1>); // sub.s f0,f0,f1
-        ps2xRegisterHostHook("km_fps60_charge_sub_f1", &floatSubHalf<1, 1, 0>); // sub.s f1,f1,f0
-        ps2xRegisterHostHook("km_fps60_charge_add_f2f1", &floatAddHalf<2, 2, 1>); // add.s f2,f2,f1
-        ps2xRegisterHostHook("km_fps60_charge_add_f2f0", &floatAddHalf<2, 2, 0>); // add.s f2,f2,f0
+        ps2xRegisterHostHook("km_fps60_charge_sub_f0", &floatSubParity<0, 0, 1>); // sub.s f0,f0,f1
+        ps2xRegisterHostHook("km_fps60_charge_sub_f1", &floatSubParity<1, 1, 0>); // sub.s f1,f1,f0
+        ps2xRegisterHostHook("km_fps60_charge_add_f2f1", &floatAddParity<2, 2, 1>); // add.s f2,f2,f1
+        ps2xRegisterHostHook("km_fps60_charge_add_f2f0", &floatAddParity<2, 2, 0>); // add.s f2,f2,f0
         // The objects' countdowns (kamite.toml, generated Oct 30).
         ps2xRegisterHostHook("km_fps60_om_cd_a0_9e0", &countdownLoadAny<4, 0x9E0u, 2, 4>);
         ps2xRegisterHostHook("km_fps60_om_cd_s0_600_2", &countdownLoadAny<16, 0x600u, 2, 2>);

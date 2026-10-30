@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## October 30, 2026
 
+- 60 FPS: enemies slowed by Gene's slow-motion moves (the dodge's slow-mo and the like) are as slow as at 30.
+- 60 FPS: a charged attack builds exactly the 30 FPS power.
 - 60 FPS: charged attacks hold their charge as long as at 30 (the charge punch's wind-up, sound and glow).
 - F2 > NPCs: a locked enemy stands in place and still fights; the motion repeater is gone.
 - 60 FPS: objects' own timers (breaking glass, breakables, pickups and the like) run at the 30 FPS pace.
