@@ -507,6 +507,33 @@ namespace kamite
         {
             ctx->f[0] *= 0.5f;
         }
+        // An enemy's speed rate +0x5A8 read as a state ("slowed": below 1.0) rather than a step. Enemies on cEmManage's
+        // rate are 0.5 at 60 (the 0x29059C patch), so every such test fired all the time: the devil (kind 0x220) only
+        // taunted within 3 m (func_002705D8 0x2707F8, case 2026-10-30_19-36-08), func_0020CAC8 / 0020CD00 (the guard /
+        // evade checks) always said no, func_00217980 0x218B9C took the slowed branch, func_00256898 never saw its rate
+        // back at 1.0, and cSndSeVoice_Play / _Update lowered the owner's voice. Hook after the load: the rate the 30 FPS
+        // game would see (x2 for an object in cEmManage's list; Gene and objects off the manager's rate are left alone).
+        bool inEnemyList(uint8_t *rdram, uint32_t obj)
+        {
+            uint32_t slot = 0;
+            std::memcpy(&slot, &ram8(rdram, 0x5864F0u + 0x500u), sizeof(slot));
+            for (int guard = 0; guard < 128 && slot >= 0x100000u && slot < 0x2000000u - 16u; ++guard)
+            {
+                uint32_t object = 0, next = 0;
+                std::memcpy(&object, &ram8(rdram, slot + 8u), sizeof(object));
+                std::memcpy(&next, &ram8(rdram, slot + 4u), sizeof(next));
+                if (object == obj)
+                    return obj != 0u;
+                slot = next;
+            }
+            return false;
+        }
+        template <int ObjReg, int FReg>
+        void enemyRate30(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            if (inEnemyList(rdram, GPR_U32(ctx, ObjReg)))
+                ctx->f[FReg] *= 2.0f;
+        }
         // addiu v0,v0,1 on a counter that counts game frames up (the mash states' +0x15B0: frames since the last
         // press): every other frame at 60, the mirror of km_fps60_countdown.
         void countupSelf(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
@@ -604,6 +631,10 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_countdown_pl15b8_s0", &countdownLoad<16, 0x15B8u>); // the same in func_0011FD10 (s0)
         ps2xRegisterHostHook("km_fps60_countup_self", &countupSelf);
         ps2xRegisterHostHook("km_fps60_gene_rate_half", &geneRateHalfF0);
+        ps2xRegisterHostHook("km_fps60_em_rate_f1_s0", &enemyRate30<16, 1>);
+        ps2xRegisterHostHook("km_fps60_em_rate_f1_s1", &enemyRate30<17, 1>);
+        ps2xRegisterHostHook("km_fps60_em_rate_f0_s2", &enemyRate30<18, 0>);
+        ps2xRegisterHostHook("km_fps60_em_rate_f1_v0", &enemyRate30<2, 1>);
         ps2xRegisterHostHook("km_fps60_emit_every_frame", &emitEveryFrame);
         ps2xRegisterHostHook("km_fps60_wiggle_begin", &wiggleBegin);
         ps2xRegisterHostHook("km_fps60_wiggle_end", &wiggleEnd);

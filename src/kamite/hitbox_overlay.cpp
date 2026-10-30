@@ -94,7 +94,9 @@ namespace kamite::hitbox_overlay
         constexpr uint32_t kPolyQuad = 1u, kPolyOff = 2u;
         constexpr size_t kMaxLines = 30000u;
         constexpr uint32_t kWall = 0xFF2090FFu, kFloor = 0xFF40D040u, kNamed = 0xFFFFD040u, kOff = 0x70A0A0A0u,
-                           kHighlight = 0xFFFF40FFu;
+                           kHighlight = 0xFFFF40FFu, kWindowColor = 0xFFFFFFFFu;
+        constexpr float kMarkReach = 3.0f;  // Mark window: the wall must be this close ahead of Gene
+        constexpr float kMarkHeight = 1.0f; // ... at this height above his feet
 
         struct GroupInfo
         {
@@ -109,6 +111,8 @@ namespace kamite::hitbox_overlay
         std::atomic<int> g_collHighlight{-1};
         std::atomic<bool> g_collDump{false};
         std::atomic<bool> g_saveFailed{false};
+        std::atomic<bool> g_markWindow{false}; // GS thread -> game thread: mark the wall ahead of Gene as a window
+        std::atomic<int> g_markResult{0};      // 0 nothing yet, 1 marked, 2 no wall ahead, 3 could not save
         std::atomic<int> g_collPolys{0}, g_collDrawn{0}, g_collRoom{-1};
         std::mutex g_collMutex;                     // guards the two below (game thread writes, GS thread reads)
         std::vector<GroupInfo> g_groupsShared;      // the room's named groups
@@ -479,6 +483,30 @@ namespace kamite::hitbox_overlay
                                                            << ".." << (groups[i].first + groups[i].count));
             }
 
+            // Mark window: the nearest wall polygon straight ahead of Gene, at hip height.
+            const bool mark = g_markWindow.exchange(false);
+            const float heading = rdf(rdram, player + game::GameObj::kRot + 4u);
+            const Vec3 rayFrom{gene.x, gene.y + kMarkHeight, gene.z}, rayDir{std::sin(heading), 0.0f, std::cos(heading)};
+            float markT = kMarkReach;
+            int markGroup = -2; // -2 nothing hit
+            Vec3 markNormal{0.0f, 0.0f, 0.0f};
+            auto rayTriangle = [&](Vec3 a, Vec3 b, Vec3 c) -> float { // Moller-Trumbore; < 0 = miss
+                const Vec3 e1{b.x - a.x, b.y - a.y, b.z - a.z}, e2{c.x - a.x, c.y - a.y, c.z - a.z};
+                const Vec3 pv{rayDir.y * e2.z - rayDir.z * e2.y, rayDir.z * e2.x - rayDir.x * e2.z, rayDir.x * e2.y - rayDir.y * e2.x};
+                const float det = e1.x * pv.x + e1.y * pv.y + e1.z * pv.z;
+                if (std::fabs(det) < 1e-6f)
+                    return -1.0f;
+                const Vec3 tv{rayFrom.x - a.x, rayFrom.y - a.y, rayFrom.z - a.z};
+                const float u = (tv.x * pv.x + tv.y * pv.y + tv.z * pv.z) / det;
+                if (u < 0.0f || u > 1.0f)
+                    return -1.0f;
+                const Vec3 qv{tv.y * e1.z - tv.z * e1.y, tv.z * e1.x - tv.x * e1.z, tv.x * e1.y - tv.y * e1.x};
+                const float v = (rayDir.x * qv.x + rayDir.y * qv.y + rayDir.z * qv.z) / det;
+                if (v < 0.0f || u + v > 1.0f)
+                    return -1.0f;
+                return (e2.x * qv.x + e2.y * qv.y + e2.z * qv.z) / det;
+            };
+
             std::vector<int> onCount(s.groupCount, 0), offCount(s.groupCount, 0);
             int drawn = 0;
             for (uint32_t p = 0; p < s.polyCount; ++p)
@@ -519,6 +547,22 @@ namespace kamite::hitbox_overlay
                 const Vec3 n{e1.y * e2.z - e1.z * e2.y, e1.z * e2.x - e1.x * e2.z, e1.x * e2.y - e1.y * e2.x};
                 const float len = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
                 const bool flat = len > 0.0f && std::fabs(n.y) > 0.7f * len;
+                if (mark && !flat && len > 0.0f)
+                {
+                    float t = rayTriangle(v[0], v[1], v[2]);
+                    if (corners == 4)
+                    {
+                        const float t2 = rayTriangle(v[0], v[2], v[3]);
+                        if (t2 >= 0.0f && (t < 0.0f || t2 < t))
+                            t = t2;
+                    }
+                    if (t >= 0.0f && t < markT)
+                    {
+                        markT = t;
+                        markGroup = group;
+                        markNormal = n;
+                    }
+                }
                 if (dump)
                 {
                     const uint32_t attr = s.attrs + rd16(rdram, rec + kPolyAttr) * kAttrStride;
@@ -541,6 +585,41 @@ namespace kamite::hitbox_overlay
                 for (int c = 0; c < corners; ++c)
                     line(v[c], v[(c + 1) % corners], color);
                 ++drawn;
+            }
+            if (mark)
+            {
+                const float h = std::sqrt(markNormal.x * markNormal.x + markNormal.z * markNormal.z);
+                if (markGroup == -2 || h <= 0.0f)
+                    g_markResult.store(2, std::memory_order_relaxed);
+                else
+                {
+                    sprint_traversal::Window w;
+                    w.x = rayFrom.x + rayDir.x * markT;
+                    w.y = gene.y;
+                    w.z = rayFrom.z + rayDir.z * markT;
+                    w.dx = -markNormal.z / h; // along the wall
+                    w.dz = markNormal.x / h;
+                    const std::string name = markGroup >= 0 ? groups[markGroup].name : "-";
+                    g_markResult.store(sprint_traversal::addWindow(static_cast<uint16_t>(room), name, w) ? 1 : 3,
+                                       std::memory_order_relaxed);
+                }
+            }
+            // The room's windows (white): the opening's rectangle and its diagonals.
+            for (const auto &ref : sprint_traversal::windows(static_cast<uint16_t>(room)))
+            {
+                const auto &w = ref.window;
+                const float cx = w.x + w.dx * w.offset, cz = w.z + w.dz * w.offset, half = 0.5f * w.width;
+                const float y0 = w.y + w.sill, y1 = w.y + w.sill + w.height;
+                const Vec3 a0{cx - w.dx * half, y0, cz - w.dz * half}, b0{cx + w.dx * half, y0, cz + w.dz * half};
+                const Vec3 a1{a0.x, y1, a0.z}, b1{b0.x, y1, b0.z};
+                if (g_colors.size() + 6u > kMaxLines)
+                    break;
+                line(a0, b0, kWindowColor);
+                line(b0, b1, kWindowColor);
+                line(b1, a1, kWindowColor);
+                line(a1, a0, kWindowColor);
+                line(a0, b1, kWindowColor);
+                line(b0, a1, kWindowColor);
             }
             for (uint32_t i = 0; i < s.groupCount; ++i)
                 groups[i].state = offCount[i] == 0 ? 0 : onCount[i] == 0 ? 1 : 2;
@@ -707,6 +786,72 @@ namespace kamite::hitbox_overlay
                 ui->text_disabled(groups.empty() ? "This room has no named groups." : "None within the radius.");
         }
         ui->end_child();
+
+        // Windows: openings in a wall Gene dives through with sprint + X / Y (sprint_traversal.txt).
+        const int room = g_collRoom.load();
+        if (room < 0)
+            return;
+        const uint16_t r = static_cast<uint16_t>(room);
+        ui->text_wrapped("Windows (white): sprint + X / Y dive through them with \"Sprint attack traversal\" on. Stand facing "
+                         "the window, within 3 m, and mark it; then size and place it with the sliders. Any number per "
+                         "wall.");
+        if (ui->button("Mark window (the wall Gene faces)##markwin"))
+        {
+            g_markResult.store(0);
+            g_markWindow.store(true);
+        }
+        const int result = g_markResult.load();
+        ui->same_line();
+        ui->text_disabled(result == 1   ? "Marked."
+                          : result == 2 ? "No wall within 3 m ahead of Gene."
+                          : result == 3 ? "Could not write sprint_traversal.txt."
+                                        : "");
+        const auto list = sprint_traversal::windows(r);
+        bool dragging = false;
+        if (ui->begin_child("##collwindows", 0.0f, list.empty() ? 30.0f : 230.0f))
+        {
+            if (list.empty())
+                ui->text_disabled("No windows in this room.");
+            for (size_t i = 0; i < list.size(); ++i)
+            {
+                const auto &ref = list[i];
+                sprint_traversal::Window w = ref.window;
+                ui->push_id(1000 + static_cast<int>(i));
+                char label[96];
+                std::snprintf(label, sizeof(label), "%s, window %d", ref.group.c_str(), ref.index + 1);
+                ui->text(label);
+                ui->same_line();
+                const bool remove = ui->small_button("Delete##delwin") != 0;
+                bool changed = false;
+                ui->set_next_width(220.0f);
+                changed |= ui->slider_float("Width##ww", &w.width, 0.3f, 6.0f, "%.2f m") != 0;
+                dragging |= ui->is_item_active() != 0;
+                ui->same_line();
+                ui->set_next_width(220.0f);
+                changed |= ui->slider_float("Height##wh", &w.height, 0.3f, 4.0f, "%.2f m") != 0;
+                dragging |= ui->is_item_active() != 0;
+                ui->set_next_width(220.0f);
+                changed |= ui->slider_float("Along the wall##wo", &w.offset, -4.0f, 4.0f, "%.2f m") != 0;
+                dragging |= ui->is_item_active() != 0;
+                ui->same_line();
+                ui->set_next_width(220.0f);
+                changed |= ui->slider_float("Sill##wsill", &w.sill, 0.0f, 3.0f, "%.2f m") != 0;
+                dragging |= ui->is_item_active() != 0;
+                ui->separator();
+                ui->pop_id();
+                if (remove)
+                {
+                    if (!sprint_traversal::removeWindow(r, ref.group, ref.index))
+                        g_saveFailed.store(true);
+                    break; // the indices moved
+                }
+                if (changed)
+                    sprint_traversal::setWindow(r, ref.group, ref.index, w);
+            }
+        }
+        ui->end_child();
+        if (!dragging && !sprint_traversal::flushWindows())
+            g_saveFailed.store(true);
 #else
         (void)ui;
 #endif

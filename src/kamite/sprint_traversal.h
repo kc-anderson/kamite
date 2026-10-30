@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace kamite::sprint_traversal
 {
@@ -24,4 +25,27 @@ namespace kamite::sprint_traversal
     // false if the file could not be written).
     int marks(uint16_t room, const std::string &group);
     bool setMarks(uint16_t room, const std::string &group, int marks);
+
+    // Windows: an opening in a wall (one plane of collision, the wall's group) that Gene dives through with sprint + X
+    // or sprint + Y. Any number per wall. Marked from where Gene stood facing the wall: (x, y, z) the point hit on the
+    // wall with y = Gene's floor, (dx, dz) the wall's direction (unit, horizontal); the opening is `width` wide centred
+    // `offset` metres along the wall from that point, from `sill` to `sill + height` above the floor (drawn only: K's
+    // choice, Oct 30, the height is not checked).
+    struct Window
+    {
+        float x = 0.0f, y = 0.0f, z = 0.0f, dx = 1.0f, dz = 0.0f;
+        float offset = 0.0f, sill = 0.4f, width = 1.2f, height = 1.4f;
+    };
+    struct WindowRef
+    {
+        std::string group;
+        int index = 0; // within the group's windows
+        Window window;
+    };
+    std::vector<WindowRef> windows(uint16_t room);
+    // Add (saved at once), change (kept in memory; flushWindows() saves), remove (saved at once). false = not saved.
+    bool addWindow(uint16_t room, const std::string &group, const Window &window);
+    void setWindow(uint16_t room, const std::string &group, int index, const Window &window);
+    bool removeWindow(uint16_t room, const std::string &group, int index);
+    bool flushWindows(); // saves pending changes (call when no slider is being dragged); false = could not write
 }

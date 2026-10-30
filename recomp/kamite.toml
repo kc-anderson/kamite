@@ -356,6 +356,40 @@ replace = true
 address = "0x0012354C"
 hook = "km_fps60_tension_drain"
 flag = "fps60"
+# Enemies' speed rate +0x5A8 read as a state ("slowed"), not a step: x2 for cEmManage's list at 60 (frame_patches.cpp
+# enemyRate30). Hooks right after the lwc1 (or on the compare when the load sits in a delay slot).
+[[patches.hooks]] # func_0020CAC8 (guard / evade check): rate < 1.0 -> no
+address = "0x0020CBA0"
+hook = "km_fps60_em_rate_f1_s0"
+flag = "fps60"
+[[patches.hooks]] # func_0020CD00 (the same check): rate < 1.0 -> no
+address = "0x0020CDA4"
+hook = "km_fps60_em_rate_f1_s1"
+flag = "fps60"
+[[patches.hooks]] # func_00217980: rate < 1.0 -> the slowed branch
+address = "0x00218B90"
+hook = "km_fps60_em_rate_f1_s1"
+flag = "fps60"
+[[patches.hooks]] # func_002705D8: within 3 m and rate < 1.0 -> taunt (the devil, kind 0x220)
+address = "0x002707EC"
+hook = "km_fps60_em_rate_f1_s0"
+flag = "fps60"
+[[patches.hooks]] # func_00256898: waits for 1.0 <= rate
+address = "0x00257238"
+hook = "km_fps60_em_rate_f0_s2"
+flag = "fps60"
+[[patches.hooks]] # func_00256898: the same, other path
+address = "0x00257260"
+hook = "km_fps60_em_rate_f0_s2"
+flag = "fps60"
+[[patches.hooks]] # cSndSeVoice_Play: owner rate < 1.0 -> lowered voice
+address = "0x002CE8BC"
+hook = "km_fps60_em_rate_f1_v0"
+flag = "fps60"
+[[patches.hooks]] # cSndSeVoice_Update: owner rate < 0.5 -> lowered voice
+address = "0x002CDB68"
+hook = "km_fps60_em_rate_f1_v0"
+flag = "fps60"
 [[patches.hooks]] # spin mash state func_001162C0 step 1: turn toward the target, Gene's rate x 22.5 deg a frame
 address = "0x001163D0"
 hook = "km_fps60_gene_rate_half"
@@ -1303,4 +1337,10 @@ flag = "sprint_traversal"
 [[patches.hooks]]
 address = "0x001094E0"
 hook = "km_trav_on"
+flag = "sprint_traversal"
+
+# Windows (sprint_traversal.cpp): the wall check's hit path, before Gene's x / z take the pushed-out sp+0x20 / sp+0x28.
+[[patches.hooks]]
+address = "0x001094C8"
+hook = "km_trav_window"
 flag = "sprint_traversal"
