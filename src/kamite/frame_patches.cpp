@@ -637,6 +637,35 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_flash_guard_rate", &flashGuardRate);
         ps2xRegisterHostHook("km_fps60_tension_drain", &tensionDrainRate);
         ps2xRegisterHostHook("km_fps60_countdown_a0", &countdownReg<4>);
+        // The objects' countdowns (kamite.toml, generated Oct 30).
+        ps2xRegisterHostHook("km_fps60_om_cd_a0_9e0", &countdownLoadAny<4, 0x9E0u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s0_600_2", &countdownLoadAny<16, 0x600u, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s0_604_2", &countdownLoadAny<16, 0x604u, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s0_60a_2", &countdownLoadAny<16, 0x60Au, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s0_900", &countdownLoadAny<16, 0x900u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s0_9d4", &countdownLoadAny<16, 0x9D4u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s0_a90_2", &countdownLoadAny<16, 0xA90u, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s0_af4", &countdownLoadAny<16, 0xAF4u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s0_f15_1", &countdownLoadAny<16, 0xF15u, 2, 1>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s1_600_2", &countdownLoadAny<17, 0x600u, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s1_604_2", &countdownLoadAny<17, 0x604u, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s1_608_2", &countdownLoadAny<17, 0x608u, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s1_61c_v1", &countdownLoadAny<17, 0x61Cu, 3, 4>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s1_628_2", &countdownLoadAny<17, 0x628u, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s1_650_2", &countdownLoadAny<17, 0x650u, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s1_654_2", &countdownLoadAny<17, 0x654u, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s1_850", &countdownLoadAny<17, 0x850u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s1_900", &countdownLoadAny<17, 0x900u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s1_960_2", &countdownLoadAny<17, 0x960u, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s2_60c", &countdownLoadAny<18, 0x60Cu, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s2_60e_2", &countdownLoadAny<18, 0x60Eu, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s2_62c_2", &countdownLoadAny<18, 0x62Cu, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s2_9d4_2", &countdownLoadAny<18, 0x9D4u, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s2_cd0_2", &countdownLoadAny<18, 0xCD0u, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s2_d34_2", &countdownLoadAny<18, 0xD34u, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s2_d94_2", &countdownLoadAny<18, 0xD94u, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s2_d98_2", &countdownLoadAny<18, 0xD98u, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s2_f84_2", &countdownLoadAny<18, 0xF84u, 2, 2>);
         // The common enemy code's countdowns (kamite.toml, generated Oct 30).
         ps2xRegisterHostHook("km_fps60_countdown_v0a0", &countdownPair<2, 4>);
         ps2xRegisterHostHook("km_fps60_countdown_v1", &countdownPair<3, 3>);

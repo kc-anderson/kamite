@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## October 30, 2026
 
+- 60 FPS: objects' own timers (breaking glass, breakables, pickups and the like) run at the 30 FPS pace.
 - 60 FPS: enemies' own timers (flinches, waits, attack cooldowns, recoveries) run at the 30 FPS pace.
 - Sprint attack traversal: a window marked on a thick wall covers its far side too; the first windows ship marked.
 - Test cases carry the F2 switches (God mode, enemy cheats, developer switches, AI off) into their replays.

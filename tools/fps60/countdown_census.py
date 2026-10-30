@@ -34,6 +34,8 @@ def is_branch(w):
     op = w >> 26
     if op == 0 and (w & 0x3F) in (0x08, 0x09):  # jr, jalr
         return True
+    if op == 0x11:  # COP1: only bc1f / bc1t (rs = 8) branch; mtc1, add.s & co do not
+        return ((w >> 21) & 31) == 8
     return op in BRANCH_OPS
 
 def main():

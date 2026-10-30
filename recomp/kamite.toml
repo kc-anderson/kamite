@@ -2239,3 +2239,998 @@ address = "0x0028A854"
 hook = "km_fps60_em_cd_s0_5f0"
 flag = "fps60"
 replace = true
+
+# 60 FPS: the objects' frame countdowns (cOm classes and their base, 0x160000..0x1D0000 minus Door-kun's cOm5a,
+# whose constants are patched above; census Oct 30, claude/fps60-notes.md family 1). Seen: the window glass (cOmGlass
+# func_001BFD28: +0x604 = 30 frames whole, then 15 frames of fade) broke in half the time at 60. Generated like the
+# enemies' block.
+[[patches.hooks]] # func_001601D8 lbu +0xF15 (decrement in a delay slot: load-raise)
+address = "0x001604EC"
+hook = "km_fps60_om_cd_s0_f15_1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00160FF0 lw +0x6E44
+address = "0x00161128"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00162298 lbu +0xEC
+address = "0x0016231C"
+hook = "km_fps60_countdown_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00162298 lbu +0xEE
+address = "0x001624E4"
+hook = "km_fps60_countdown_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00162298 lbu +0xEF
+address = "0x001624FC"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00162C98 lbu +0xF0
+address = "0x00162D94"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00164238 lhu +0x130
+address = "0x001642BC"
+hook = "km_fps60_countdown_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001643F8 lhu +0x130
+address = "0x00164460"
+hook = "km_fps60_countdown_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00165638 lbu +0x2A3
+address = "0x00165DC4"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00165EB8 lbu +0x5A
+address = "0x00165F1C"
+hook = "km_fps60_countdown_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00165EB8 lbu +0x2A0
+address = "0x00166064"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00169358 lhu +0x0
+address = "0x00169504"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0016A4D8 lw +0x4
+address = "0x0016A81C"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0016AE38 lbu +0x1B4
+address = "0x0016AF3C"
+hook = "km_fps60_countdown_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0016B1F8 lhu +0x1D2
+address = "0x0016B330"
+hook = "km_fps60_countdown_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0016B1F8 lhu +0x1D0
+address = "0x0016B348"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0016C730 lhu +0x0
+address = "0x0016D3D0"
+hook = "km_fps60_countdown_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0016DF38 lbu +0x25C
+address = "0x0016E018"
+hook = "km_fps60_countdown_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0016DF38 lhu +0x25E
+address = "0x0016E7CC"
+hook = "km_fps60_countdown_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0016DF38 lhu +0x260
+address = "0x0016E7E4"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00172850 lhu +0xD94
+address = "0x00172E08"
+hook = "km_fps60_countdown_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00172850 lhu +0xD94
+address = "0x00172F34"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00172850 lhu +0xD94
+address = "0x001730C8"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00172850 lhu +0xD94 (decrement in a delay slot: load-raise)
+address = "0x00173108"
+hook = "km_fps60_om_cd_s2_d94_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00173258 lhu +0xDA0
+address = "0x00173284"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00173E60 lhu +0x654
+address = "0x00173E98"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00173EC0 lhu +0x654
+address = "0x00173FE0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00173EC0 lhu +0x654 (decrement in a delay slot: load-raise)
+address = "0x00174004"
+hook = "km_fps60_om_cd_s1_654_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00174C28 lhu +0x654
+address = "0x00174C60"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00174C88 lhu +0x654
+address = "0x00174DA8"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00174C88 lhu +0x654 (decrement in a delay slot: load-raise)
+address = "0x00174DCC"
+hook = "km_fps60_om_cd_s1_654_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00175ED8 lhu +0xD34
+address = "0x00175F10"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00175F38 lhu +0xD34
+address = "0x001764A4"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00175F38 lhu +0xD34
+address = "0x00176660"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00175F38 lhu +0xD34 (decrement in a delay slot: load-raise)
+address = "0x001766A0"
+hook = "km_fps60_om_cd_s2_d34_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00177560 lhu +0xD34
+address = "0x00177598"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001775C0 lhu +0xD34
+address = "0x00177B2C"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001775C0 lhu +0xD34
+address = "0x00177CE8"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001775C0 lhu +0xD34 (decrement in a delay slot: load-raise)
+address = "0x00177D28"
+hook = "km_fps60_om_cd_s2_d34_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001793D0 lhu +0x654
+address = "0x00179440"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00179470 lhu +0x654
+address = "0x00179590"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00179470 lhu +0x654 (decrement in a delay slot: load-raise)
+address = "0x001795B4"
+hook = "km_fps60_om_cd_s1_654_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0017A180 lhu +0x654
+address = "0x0017A1B8"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0017A1E0 lhu +0x654
+address = "0x0017A300"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0017A1E0 lhu +0x654 (decrement in a delay slot: load-raise)
+address = "0x0017A324"
+hook = "km_fps60_om_cd_s1_654_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0017AEB0 lhu +0x606
+address = "0x0017AEDC"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0017B0D8 lhu +0x604
+address = "0x0017B2AC"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0017B2E0 lhu +0x604
+address = "0x0017B518"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0017CA90 lhu +0x654
+address = "0x0017CAC8"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0017CAF0 lhu +0x654
+address = "0x0017CC10"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0017CAF0 lhu +0x654 (decrement in a delay slot: load-raise)
+address = "0x0017CC34"
+hook = "km_fps60_om_cd_s1_654_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0017E2F8 lhu +0x602
+address = "0x0017E4A4"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0017E4C8 lhu +0x602
+address = "0x0017E638"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # cOmBase_shakeHeight lhu +0x600
+address = "0x001810BC"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00181118 lbu +0x60A
+address = "0x001811B0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001812B8 lhu +0x608
+address = "0x0018154C"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00181C98 lhu +0x654
+address = "0x00181CD0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00181CF8 lhu +0x654
+address = "0x00181E18"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00181CF8 lhu +0x654 (decrement in a delay slot: load-raise)
+address = "0x00181E3C"
+hook = "km_fps60_om_cd_s1_654_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00186E08 lhu +0x654
+address = "0x00186E40"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00186E68 lhu +0x654
+address = "0x00186F88"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00186E68 lhu +0x654 (decrement in a delay slot: load-raise)
+address = "0x00186FAC"
+hook = "km_fps60_om_cd_s1_654_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # cOmBase_tickModeTable lhu +0x602
+address = "0x00188014"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00188190 lhu +0x600
+address = "0x001881C8"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001881F0 lhu +0x600
+address = "0x00188324"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001881F0 lhu +0x600 (decrement in a delay slot: load-raise)
+address = "0x00188348"
+hook = "km_fps60_om_cd_s1_600_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001897B8 lhu +0xCD0
+address = "0x001897F0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00189818 lhu +0xCD0
+address = "0x00189E58"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00189818 lhu +0xCD0
+address = "0x00189EE4"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00189818 lhu +0xCD0 (decrement in a delay slot: load-raise)
+address = "0x00189F28"
+hook = "km_fps60_om_cd_s2_cd0_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018AA00 lhu +0x604
+address = "0x0018AA38"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018AA60 lhu +0x604
+address = "0x0018AB80"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018AA60 lhu +0x604 (decrement in a delay slot: load-raise)
+address = "0x0018ABA4"
+hook = "km_fps60_om_cd_s1_604_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018B718 lhu +0x654
+address = "0x0018B750"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018B778 lhu +0x654
+address = "0x0018B898"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018B778 lhu +0x654 (decrement in a delay slot: load-raise)
+address = "0x0018B8BC"
+hook = "km_fps60_om_cd_s1_654_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018C520 lhu +0x654
+address = "0x0018C558"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018C580 lhu +0x654
+address = "0x0018C6A0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018C580 lhu +0x654 (decrement in a delay slot: load-raise)
+address = "0x0018C6C4"
+hook = "km_fps60_om_cd_s1_654_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018D310 lhu +0x654
+address = "0x0018D348"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018D370 lhu +0x654
+address = "0x0018D490"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018D370 lhu +0x654 (decrement in a delay slot: load-raise)
+address = "0x0018D4B4"
+hook = "km_fps60_om_cd_s1_654_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018E0C8 lhu +0x654
+address = "0x0018E100"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018E128 lhu +0x654
+address = "0x0018E248"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018E128 lhu +0x654 (decrement in a delay slot: load-raise)
+address = "0x0018E26C"
+hook = "km_fps60_om_cd_s1_654_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018F618 lhu +0x650
+address = "0x0018F7D8"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018F858 lhu +0x650
+address = "0x0018F984"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018F858 lhu +0x650 (decrement in a delay slot: load-raise)
+address = "0x0018F9A8"
+hook = "km_fps60_om_cd_s1_650_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0018F858 lhu +0x650
+address = "0x0018FA38"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00190CC8 lhu +0xF84
+address = "0x00190D00"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00190D28 lhu +0xF84
+address = "0x001912E4"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00190D28 lhu +0xF84
+address = "0x001914E0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00190D28 lhu +0xF84 (decrement in a delay slot: load-raise)
+address = "0x00191520"
+hook = "km_fps60_om_cd_s2_f84_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # cOmBase_tickModeTableC lhu +0x602
+address = "0x00192484"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001926A0 lhu +0x600
+address = "0x001926D8"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00192700 lhu +0x600
+address = "0x001927FC"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00192700 lhu +0x600 (decrement in a delay slot: load-raise)
+address = "0x00192820"
+hook = "km_fps60_om_cd_s0_600_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00194558 lw +0xAF4 (decrement in a delay slot: load-raise)
+address = "0x00194654"
+hook = "km_fps60_om_cd_s0_af4"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001947C8 lhu +0xAF0
+address = "0x001949BC"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001947C8 lhu +0xAF0
+address = "0x00194BD8"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00194CB0 lhu +0xAF0
+address = "0x00194CE0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00194D10 lhu +0xAF0
+address = "0x00194E34"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00194D10 lhu +0xAF0
+address = "0x00194F78"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00195068 lhu +0xAF0
+address = "0x001951E0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00195068 lhu +0xAF0
+address = "0x00195208"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00196978 lhu +0x9D4
+address = "0x001969B0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001969D8 lhu +0x9D4
+address = "0x00196F18"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001969D8 lhu +0x9D4
+address = "0x001970B0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001969D8 lhu +0x9D4 (decrement in a delay slot: load-raise)
+address = "0x001970F0"
+hook = "km_fps60_om_cd_s2_9d4_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00197FA0 lhu +0x9D4
+address = "0x00197FD8"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00198000 lhu +0x9D4
+address = "0x00198540"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00198000 lhu +0x9D4
+address = "0x001986D8"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00198000 lhu +0x9D4 (decrement in a delay slot: load-raise)
+address = "0x00198718"
+hook = "km_fps60_om_cd_s2_9d4_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00199440 lhu +0x654
+address = "0x00199478"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001994A0 lhu +0x654
+address = "0x001995C0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001994A0 lhu +0x654 (decrement in a delay slot: load-raise)
+address = "0x001995E4"
+hook = "km_fps60_om_cd_s1_654_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # cOmTimed_tick lhu +0xA90
+address = "0x0019B550"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0019B580 lhu +0xA90
+address = "0x0019B6D0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0019B580 lhu +0xA90 (decrement in a delay slot: load-raise)
+address = "0x0019B6F8"
+hook = "km_fps60_om_cd_s0_a90_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0019C9F8 lhu +0x654
+address = "0x0019CA30"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0019CA58 lhu +0x654
+address = "0x0019CB78"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0019CA58 lhu +0x654 (decrement in a delay slot: load-raise)
+address = "0x0019CB9C"
+hook = "km_fps60_om_cd_s1_654_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0019F528 lhu +0x654
+address = "0x0019F560"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0019F588 lhu +0x654
+address = "0x0019F6A8"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0019F588 lhu +0x654 (decrement in a delay slot: load-raise)
+address = "0x0019F6CC"
+hook = "km_fps60_om_cd_s1_654_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A1768 lhu +0xD94
+address = "0x001A17A0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A17C8 lhu +0xD94
+address = "0x001A1E14"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A17C8 lhu +0xD94
+address = "0x001A1FD0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A17C8 lhu +0xD94 (decrement in a delay slot: load-raise)
+address = "0x001A2010"
+hook = "km_fps60_om_cd_s2_d94_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A2E28 lhu +0xD98
+address = "0x001A2E60"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A2E88 lhu +0xD98
+address = "0x001A3238"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A2E88 lhu +0xD98
+address = "0x001A33F0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A2E88 lhu +0xD98 (decrement in a delay slot: load-raise)
+address = "0x001A3418"
+hook = "km_fps60_om_cd_s2_d98_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A47F8 lhu +0x79C
+address = "0x001A4984"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A49A8 lhu +0x79C
+address = "0x001A4B48"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A5540 lhu +0x628
+address = "0x001A5668"
+hook = "km_fps60_countdown_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A5540 lhu +0x628
+address = "0x001A56AC"
+hook = "km_fps60_countdown_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A57A8 lhu +0x628
+address = "0x001A5900"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A57A8 lhu +0x628 (decrement in a delay slot: load-raise)
+address = "0x001A5924"
+hook = "km_fps60_om_cd_s1_628_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A6310 lhu +0x600
+address = "0x001A64D0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A7A28 lhu +0x616
+address = "0x001A7BC4"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A7A28 lhu +0x618
+address = "0x001A7DBC"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A7F58 lbu +0x615
+address = "0x001A807C"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001A7F58 lbu +0x612
+address = "0x001A8080"
+hook = "km_fps60_countdown_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # cOmBase_blinkTick lw +0x9E0 (decrement in a delay slot: load-raise)
+address = "0x001AA480"
+hook = "km_fps60_om_cd_a0_9e0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001AA6C0 lhu +0x600
+address = "0x001AA848"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001AA6C0 lhu +0x600
+address = "0x001AA874"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001AAFC8 lw +0x9D4 (decrement in a delay slot: load-raise)
+address = "0x001AAFDC"
+hook = "km_fps60_om_cd_s0_9d4"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001AB168 lw +0x9DC
+address = "0x001AB400"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001AB168 lw +0x9D8
+address = "0x001AB630"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001ABA20 lw +0x9D4 (decrement in a delay slot: load-raise)
+address = "0x001ABA34"
+hook = "km_fps60_om_cd_s0_9d4"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001AEF40 lhu +0x986
+address = "0x001AEF6C"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001AF230 lhu +0x984
+address = "0x001AF568"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001AF230 lhu +0x608
+address = "0x001AF580"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # cEm00_stepMotionCounter lhu +0x984
+address = "0x001AF668"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001AF870 lhu +0x608
+address = "0x001AF9AC"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001AF870 lhu +0x608 (decrement in a delay slot: load-raise)
+address = "0x001AF9D0"
+hook = "km_fps60_om_cd_s1_608_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001B0540 lhu +0x622
+address = "0x001B07EC"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001B4460 lw +0x63C
+address = "0x001B44F8"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001B4A18 lhu +0x960
+address = "0x001B4B04"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001B4A18 lhu +0x960 (decrement in a delay slot: load-raise)
+address = "0x001B4B28"
+hook = "km_fps60_om_cd_s1_960_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001B51B0 lhu +0x60A (decrement in a delay slot: load-raise)
+address = "0x001B53E0"
+hook = "km_fps60_om_cd_s0_60a_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001B54E8 lhu +0x644
+address = "0x001B5588"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001B5EA0 lw +0x850
+address = "0x001B6018"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001B5EA0 lw +0x850 (decrement in a delay slot: load-raise)
+address = "0x001B6038"
+hook = "km_fps60_om_cd_s1_850"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001B6A30 lhu +0x628
+address = "0x001B6C48"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001B6A30 lhu +0x628
+address = "0x001B6DBC"
+hook = "km_fps60_countdown_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001B8A50 lhu +0x628
+address = "0x001B8F58"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001B93E8 lw +0x61C (decrement in a delay slot: load-raise)
+address = "0x001B9ED8"
+hook = "km_fps60_om_cd_s1_61c_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001B93E8 lw +0x61C
+address = "0x001BA0E4"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001BBC08 lhu +0x56A
+address = "0x001BBDD8"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001BBC08 lhu +0x568
+address = "0x001BBE1C"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001BC6E8 lhu +0x62C
+address = "0x001BC720"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001BC748 lhu +0x62C
+address = "0x001BC914"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001BC748 lhu +0x62C (decrement in a delay slot: load-raise)
+address = "0x001BC938"
+hook = "km_fps60_om_cd_s2_62c_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # cEm00_stepCountedPause lw +0x900 (decrement in a delay slot: load-raise)
+address = "0x001BE13C"
+hook = "km_fps60_om_cd_s0_900"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # cEm00_stepCountedPause lw +0x900
+address = "0x001BE15C"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001BE198 lw +0x900
+address = "0x001BE27C"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001BE198 lw +0x900 (decrement in a delay slot: load-raise)
+address = "0x001BE29C"
+hook = "km_fps60_om_cd_s1_900"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001BEBA0 lw +0x60C (decrement in a delay slot: load-raise)
+address = "0x001BF158"
+hook = "km_fps60_om_cd_s2_60c"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001BEBA0 lw +0x60C (decrement in a delay slot: load-raise)
+address = "0x001BF22C"
+hook = "km_fps60_om_cd_s2_60c"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001BEBA0 lw +0x60C (decrement in a delay slot: load-raise)
+address = "0x001BF284"
+hook = "km_fps60_om_cd_s2_60c"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001BF5E0 lhu +0x602
+address = "0x001BF7B8"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001BFD28 lhu +0x604
+address = "0x001BFEB8"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001BFD28 lhu +0x604 (decrement in a delay slot: load-raise)
+address = "0x001BFEE0"
+hook = "km_fps60_om_cd_s0_604_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001C0678 lhu +0x56A
+address = "0x001C0DD0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001C0678 lhu +0x568
+address = "0x001C1AB0"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001C0678 lhu +0x568
+address = "0x001C1F88"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001C0678 lhu +0x568
+address = "0x001C2054"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # cOmBase_tickModeTableSkip381 lhu +0x610
+address = "0x001C29FC"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # cEm00_stepHitStun lhu +0x60E
+address = "0x001C2CB0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001C2DA0 lhu +0x60E
+address = "0x001C2E74"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001C2DA0 lhu +0x60E (decrement in a delay slot: load-raise)
+address = "0x001C2E98"
+hook = "km_fps60_om_cd_s2_60e_2"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001C9AF0 lhu +0x56A
+address = "0x001C9DF4"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001CA238 lhu +0x568
+address = "0x001CA584"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001CBA28 lhu +0x568
+address = "0x001CBC78"
+hook = "km_fps60_countdown"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001CD9C0 lhu +0x568
+address = "0x001CE018"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001CE068 lhu +0x568
+address = "0x001CE670"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
