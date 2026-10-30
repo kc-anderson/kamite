@@ -26,6 +26,15 @@
 // (pcsx2gs_set_overlay); the DLL subtracts the scene's XYOFFSET and maps the frame onto the window at each present.
 // "Dump this frame" writes the shape list to godhand.log once (world space), for diffing a 30 fps frame against a
 // 60 fps one.
+//
+// Stage collision (same overlay, same hook): the room's wall/floor polygons, cCollisionScroll D_005CAE50 (the decomp
+// matches SetLayerCollEnable 0x133330; the rest read from func_001331B8 and the preview's COLL_SCR_VIEW draw
+// func_001325A0, which retail keeps behind DBG word 2 0x08000000). +0 -> header (+0x20 u16 group count, +0x28 u16
+// polygon count), +4 -> named groups (0x14 each: +8 u16 first polygon, +0xA u16 count, +0xC name, up to 8 chars),
+// +8 -> attribute records (0x10 each; +2 u16 flags the debug draw colours by, +0xD the layer byte
+// SetLayerCollEnable matches), +0xC -> vertices (3 floats), +0x14 -> polygons (0x14 each: +0..+6 u16 vertex indices,
+// +0xC u16 attribute record, +0x10 flags: bit 0 a quad, bit 1 switched off). Objects switch the group named like
+// themselves (their name at +0x540) through cOmBase_setScrSollEnable 0x1B7680; the panel's ticks do the same write.
 #include "kamite/hitbox_overlay.h"
 #include "kamite/game_layout.h"
 #include "kamite/log.h"
@@ -37,11 +46,14 @@
 #define KAMITE_HAS_GS_MENU 1
 #endif
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace kamite::hitbox_overlay
@@ -72,6 +84,36 @@ namespace kamite::hitbox_overlay
         std::atomic<int> g_unknownKinds{0};
         std::atomic<bool> g_dllTooOld{false};
         std::atomic<bool> g_haveMatrix{false};
+        // Stage collision.
+        constexpr uint32_t kScroll = 0x5CAE50u; // cCollisionScroll D_005CAE50
+        constexpr uint32_t kScrHeader = 0x00u, kScrGroups = 0x04u, kScrAttrs = 0x08u, kScrVerts = 0x0Cu, kScrPolys = 0x14u;
+        constexpr uint32_t kHdrGroupCount = 0x20u, kHdrPolyCount = 0x28u;
+        constexpr uint32_t kGroupStride = 0x14u, kGroupFirst = 0x08u, kGroupCount = 0x0Au, kGroupName = 0x0Cu;
+        constexpr uint32_t kPolyStride = 0x14u, kPolyAttr = 0x0Cu, kPolyFlags = 0x10u, kVertStride = 0x0Cu, kAttrStride = 0x10u;
+        constexpr uint32_t kPolyQuad = 1u, kPolyOff = 2u;
+        constexpr size_t kMaxLines = 30000u;
+        constexpr uint32_t kWall = 0xFF2090FFu, kFloor = 0xFF40D040u, kNamed = 0xFFFFD040u, kOff = 0x70A0A0A0u,
+                           kHighlight = 0xFFFF40FFu;
+
+        struct GroupInfo
+        {
+            std::string name;
+            uint16_t first = 0, count = 0;
+            int state = 0; // 0 on, 1 off, 2 partly off
+            bool nearGene = false;
+        };
+        std::atomic<bool> g_collEnabled{false};
+        std::atomic<bool> g_collAllGroups{false};
+        std::atomic<float> g_collRadius{8.0f};
+        std::atomic<int> g_collHighlight{-1};
+        std::atomic<bool> g_collDump{false};
+        std::atomic<int> g_collPolys{0}, g_collDrawn{0}, g_collRoom{-1};
+        std::mutex g_collMutex;                     // guards the two below (game thread writes, GS thread reads)
+        std::vector<GroupInfo> g_groupsShared;      // the room's named groups
+        std::vector<std::pair<int, bool>> g_toggles; // GS thread -> game thread: switch group i on / off
+        std::vector<int16_t> g_polyGroup;           // game thread: polygon -> its named group (-1 none)
+        uint64_t g_collSignature = 0;               // game thread: the room the table above was built for
+
         bool g_sentClear = true; // game thread: the DLL holds no lines
         bool g_collected = false; // game thread: collect() ran since the last frame start
 
@@ -95,6 +137,12 @@ namespace kamite::hitbox_overlay
         {
             uint32_t v = 0;
             std::memcpy(&v, rdram + (address & 0x01FFFFFFu), 4);
+            return v;
+        }
+        uint16_t rd16(const uint8_t *rdram, uint32_t address)
+        {
+            uint16_t v = 0;
+            std::memcpy(&v, rdram + (address & 0x01FFFFFFu), 2);
             return v;
         }
         float rdf(const uint8_t *rdram, uint32_t address)
@@ -231,22 +279,12 @@ namespace kamite::hitbox_overlay
             return inRam(subScr, 0x60u) && static_cast<int32_t>(rd32(rdram, subScr + game::SubScr::kKind)) != -1;
         }
 
-        void collect(uint8_t *rdram, R5900Context *, PS2Runtime *)
+        void gatherHitboxes(const uint8_t *rdram)
         {
-            g_collected = true;
-            if (!g_enabled.load(std::memory_order_relaxed) || menuOpen(rdram))
-            {
-                clear();
-                return;
-            }
-            if (!g_haveMatrix.load(std::memory_order_relaxed))
-                return;
             const bool dump = g_dumpRequest.exchange(false);
             const bool showAttack = g_showAttack.load(std::memory_order_relaxed);
             const bool showHurt = g_showHurt.load(std::memory_order_relaxed);
             const bool showInactive = g_showInactive.load(std::memory_order_relaxed);
-            g_lines.clear();
-            g_colors.clear();
 
             const uint32_t records = rd32(rdram, kCollisionManager);
             const uint32_t count = rd32(rdram, kCollisionManager + 4u);
@@ -337,6 +375,201 @@ namespace kamite::hitbox_overlay
             g_unknownKinds.store(unknown, std::memory_order_relaxed);
             if (dump)
                 KM_INFO(Game, "hitbox dump: " << seen << " shapes, " << drawn << " drawn, " << g_lines.size() / 4 << " lines");
+        }
+
+        // The room's collision tables, or false when no room is loaded.
+        struct Scroll
+        {
+            uint32_t header, groups, attrs, verts, polys, groupCount, polyCount;
+        };
+        bool readScroll(const uint8_t *rdram, Scroll &s)
+        {
+            s.header = rd32(rdram, kScroll + kScrHeader);
+            if (!inRam(s.header, 0x30u))
+                return false;
+            s.groups = rd32(rdram, kScroll + kScrGroups);
+            s.attrs = rd32(rdram, kScroll + kScrAttrs);
+            s.verts = rd32(rdram, kScroll + kScrVerts);
+            s.polys = rd32(rdram, kScroll + kScrPolys);
+            s.groupCount = rd16(rdram, s.header + kHdrGroupCount);
+            s.polyCount = rd16(rdram, s.header + kHdrPolyCount);
+            if (s.polyCount == 0u || !inRam(s.polys, s.polyCount * kPolyStride) || !inRam(s.verts, kVertStride))
+                return false;
+            if (!inRam(s.groups, s.groupCount * kGroupStride))
+                s.groupCount = 0u;
+            return true;
+        }
+
+        // The panel's ticks: the write func_001331B8 makes (the polygons' bit 1), on the game thread.
+        void applyToggles(uint8_t *rdram)
+        {
+            std::vector<std::pair<int, bool>> toggles;
+            {
+                std::lock_guard<std::mutex> lock(g_collMutex);
+                toggles.swap(g_toggles);
+            }
+            Scroll s{};
+            if (toggles.empty() || !readScroll(rdram, s))
+                return;
+            for (const auto &[index, on] : toggles)
+            {
+                if (index < 0 || static_cast<uint32_t>(index) >= s.groupCount)
+                    continue;
+                const uint32_t g = s.groups + static_cast<uint32_t>(index) * kGroupStride;
+                const uint32_t first = rd16(rdram, g + kGroupFirst), count = rd16(rdram, g + kGroupCount);
+                for (uint32_t p = first; p < first + count && p < s.polyCount; ++p)
+                {
+                    const uint32_t f = s.polys + p * kPolyStride + kPolyFlags;
+                    const uint32_t flags = rd32(rdram, f);
+                    const uint32_t next = on ? (flags & ~kPolyOff) : (flags | kPolyOff);
+                    std::memcpy(rdram + (f & 0x01FFFFFFu), &next, 4);
+                }
+                KM_INFO(Game, "stage collision: group " << index << " switched " << (on ? "on" : "off") << " from the Debug tab");
+            }
+        }
+
+        void gatherCollision(const uint8_t *rdram)
+        {
+            const bool dump = g_collDump.exchange(false);
+            Scroll s{};
+            const uint32_t player = rd32(rdram, game::GameWork::address(game::GameWork::kPlayerObj));
+            const uint32_t playerPos = inRam(player, 0x110u) ? rd32(rdram, player + game::GameObj::kPos) : 0u;
+            if (!readScroll(rdram, s) || !inRam(playerPos, 12u))
+            {
+                g_collPolys.store(0, std::memory_order_relaxed);
+                return;
+            }
+            const Vec3 gene = rdv(rdram, playerPos);
+            const float radius = g_collRadius.load(std::memory_order_relaxed);
+            const int highlight = g_collHighlight.load(std::memory_order_relaxed);
+            const int room = static_cast<int>(rd16(rdram, game::GameWork::address(game::GameWork::kRoom)));
+
+            // Polygon -> group, rebuilt when the room's tables change.
+            const uint64_t signature = (static_cast<uint64_t>(s.polys) << 32) ^ (static_cast<uint64_t>(s.groups) << 8) ^
+                                       (s.polyCount << 16) ^ s.groupCount;
+            std::vector<GroupInfo> groups(s.groupCount);
+            if (signature != g_collSignature)
+            {
+                g_collSignature = signature;
+                g_polyGroup.assign(s.polyCount, -1);
+                g_collHighlight.store(-1, std::memory_order_relaxed);
+            }
+            for (uint32_t i = 0; i < s.groupCount; ++i)
+            {
+                const uint32_t g = s.groups + i * kGroupStride;
+                char name[9] = {};
+                std::memcpy(name, rdram + ((g + kGroupName) & 0x01FFFFFFu), 8);
+                groups[i].name = name[0] ? name : "(no name)";
+                groups[i].first = rd16(rdram, g + kGroupFirst);
+                groups[i].count = rd16(rdram, g + kGroupCount);
+                for (uint32_t p = groups[i].first; p < uint32_t(groups[i].first) + groups[i].count && p < s.polyCount; ++p)
+                    g_polyGroup[p] = static_cast<int16_t>(i);
+            }
+
+            if (dump)
+            {
+                KM_INFO(Game, "collision dump: room r" << std::hex << room << " header 0x" << s.header << " polys 0x" << s.polys
+                                                       << " verts 0x" << s.verts << " attrs 0x" << s.attrs << std::dec << ", "
+                                                       << s.polyCount << " polygons, " << s.groupCount << " groups; Gene "
+                                                       << gene.x << " " << gene.y << " " << gene.z);
+                for (uint32_t i = 0; i < s.groupCount; ++i)
+                    KM_INFO(Game, "collision dump: group " << i << " '" << groups[i].name << "' polygons " << groups[i].first
+                                                           << ".." << (groups[i].first + groups[i].count));
+            }
+
+            std::vector<int> onCount(s.groupCount, 0), offCount(s.groupCount, 0);
+            int drawn = 0;
+            for (uint32_t p = 0; p < s.polyCount; ++p)
+            {
+                const uint32_t rec = s.polys + p * kPolyStride;
+                const uint32_t flags = rd32(rdram, rec + kPolyFlags);
+                const bool off = (flags & kPolyOff) != 0u;
+                const int group = g_polyGroup[p];
+                if (group >= 0)
+                    (off ? offCount : onCount)[group]++;
+                const int corners = (flags & kPolyQuad) ? 4 : 3;
+                Vec3 v[4] = {};
+                bool ok = true;
+                Vec3 lo{1e30f, 1e30f, 1e30f}, hi{-1e30f, -1e30f, -1e30f};
+                for (int c = 0; c < corners && ok; ++c)
+                {
+                    const uint32_t a = s.verts + rd16(rdram, rec + 2u * c) * kVertStride;
+                    ok = inRam(a, 12u);
+                    if (!ok)
+                        break;
+                    v[c] = rdv(rdram, a);
+                    ok = finite(v[c]);
+                    lo = {std::min(lo.x, v[c].x), std::min(lo.y, v[c].y), std::min(lo.z, v[c].z)};
+                    hi = {std::max(hi.x, v[c].x), std::max(hi.y, v[c].y), std::max(hi.z, v[c].z)};
+                }
+                if (!ok)
+                    continue;
+                // The nearest point of the polygon's box to Gene, within the radius.
+                const float dx = std::max({lo.x - gene.x, 0.0f, gene.x - hi.x});
+                const float dy = std::max({lo.y - gene.y, 0.0f, gene.y - hi.y});
+                const float dz = std::max({lo.z - gene.z, 0.0f, gene.z - hi.z});
+                if (dx * dx + dy * dy + dz * dz > radius * radius)
+                    continue;
+                if (group >= 0)
+                    groups[group].nearGene = true;
+                const Vec3 e1{v[1].x - v[0].x, v[1].y - v[0].y, v[1].z - v[0].z};
+                const Vec3 e2{v[2].x - v[0].x, v[2].y - v[0].y, v[2].z - v[0].z};
+                const Vec3 n{e1.y * e2.z - e1.z * e2.y, e1.z * e2.x - e1.x * e2.z, e1.x * e2.y - e1.y * e2.x};
+                const float len = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
+                const bool flat = len > 0.0f && std::fabs(n.y) > 0.7f * len;
+                if (dump)
+                {
+                    const uint32_t attr = s.attrs + rd16(rdram, rec + kPolyAttr) * kAttrStride;
+                    char text[512];
+                    int at = std::snprintf(text, sizeof(text), "collision dump: poly %u %s '%s' flags %08X attr %u [", p,
+                                           flat ? "floor" : "wall", group >= 0 ? groups[group].name.c_str() : "-", flags,
+                                           rd16(rdram, rec + kPolyAttr));
+                    for (uint32_t b = 0; b < kAttrStride && inRam(attr, kAttrStride) && at < 400; ++b)
+                        at += std::snprintf(text + at, sizeof(text) - at, "%02X", rdram[(attr + b) & 0x01FFFFFFu]);
+                    at += std::snprintf(text + at, sizeof(text) - at, "]");
+                    for (int c = 0; c < corners && at < 480; ++c)
+                        at += std::snprintf(text + at, sizeof(text) - at, " (%.2f %.2f %.2f)", v[c].x, v[c].y, v[c].z);
+                    KM_INFO(Game, text);
+                }
+                if (g_colors.size() >= kMaxLines)
+                    continue;
+                uint32_t color = off ? kOff : group >= 0 ? kNamed : flat ? kFloor : kWall;
+                if (group >= 0 && group == highlight)
+                    color = kHighlight;
+                for (int c = 0; c < corners; ++c)
+                    line(v[c], v[(c + 1) % corners], color);
+                ++drawn;
+            }
+            for (uint32_t i = 0; i < s.groupCount; ++i)
+                groups[i].state = offCount[i] == 0 ? 0 : onCount[i] == 0 ? 1 : 2;
+            g_collPolys.store(static_cast<int>(s.polyCount), std::memory_order_relaxed);
+            g_collDrawn.store(drawn, std::memory_order_relaxed);
+            g_collRoom.store(room, std::memory_order_relaxed);
+            if (dump)
+                KM_INFO(Game, "collision dump: " << drawn << " polygons within " << radius << " m");
+            std::lock_guard<std::mutex> lock(g_collMutex);
+            g_groupsShared.swap(groups);
+        }
+
+        void collect(uint8_t *rdram, R5900Context *, PS2Runtime *)
+        {
+            g_collected = true;
+            applyToggles(rdram);
+            const bool hitboxes = g_enabled.load(std::memory_order_relaxed);
+            const bool collision = g_collEnabled.load(std::memory_order_relaxed);
+            if ((!hitboxes && !collision) || menuOpen(rdram))
+            {
+                clear();
+                return;
+            }
+            if (!g_haveMatrix.load(std::memory_order_relaxed))
+                return;
+            g_lines.clear();
+            g_colors.clear();
+            if (hitboxes)
+                gatherHitboxes(rdram);
+            if (collision)
+                gatherCollision(rdram);
             const bool sent = GSPcsx2Backend::SetOverlay(g_lines.empty() ? nullptr : g_lines.data(),
                                                          g_colors.empty() ? nullptr : g_colors.data(),
                                                          static_cast<uint32_t>(g_colors.size()));
@@ -397,6 +630,60 @@ namespace kamite::hitbox_overlay
             else if (!g_haveMatrix.load())
                 ui->text_disabled("Waiting for the game's camera.");
         }
+
+        ui->separator_text("Stage collision");
+        toggle("Show stage collision near Gene (orange walls, green floors, cyan named groups, grey switched off, magenta "
+               "the highlighted group)##stagecoll",
+               g_collEnabled);
+        if (!g_collEnabled.load())
+            return;
+        ui->indent();
+        float radius = g_collRadius.load();
+        if (ui->slider_float("Radius##collradius", &radius, 3.0f, 40.0f, "%.0f m"))
+            g_collRadius = radius;
+        toggle("List every named group, not only the ones near Gene##collall", g_collAllGroups);
+        ui->unindent();
+        char text[160];
+        std::snprintf(text, sizeof(text), "Room r%x: %d polygons, %d drawn.", g_collRoom.load() < 0 ? 0 : g_collRoom.load(),
+                      g_collPolys.load(), g_collDrawn.load());
+        ui->text_disabled(text);
+        if (ui->button("Dump the polygons near Gene to godhand.log##colldump"))
+            g_collDump.store(true);
+        std::vector<GroupInfo> groups;
+        {
+            std::lock_guard<std::mutex> lock(g_collMutex);
+            groups = g_groupsShared;
+        }
+        ui->text_wrapped("Named groups (tick = solid; untick lets Gene and the enemies through, until the room reloads):");
+        const bool all = g_collAllGroups.load();
+        const int highlight = g_collHighlight.load();
+        int listed = 0;
+        if (ui->begin_child("##collgroups", 0.0f, 220.0f))
+        {
+            for (size_t i = 0; i < groups.size(); ++i)
+            {
+                if (!all && !groups[i].nearGene)
+                    continue;
+                ++listed;
+                ui->push_id(static_cast<int>(i));
+                int on = groups[i].state == 1 ? 0 : 1;
+                char label[96];
+                std::snprintf(label, sizeof(label), "%s (%u polygons)%s##grp", groups[i].name.c_str(), groups[i].count,
+                              groups[i].state == 2 ? ", partly off" : "");
+                if (ui->checkbox(label, &on))
+                {
+                    std::lock_guard<std::mutex> lock(g_collMutex);
+                    g_toggles.emplace_back(static_cast<int>(i), on != 0);
+                }
+                ui->same_line();
+                if (ui->radio("Highlight##hl", highlight == static_cast<int>(i)))
+                    g_collHighlight.store(highlight == static_cast<int>(i) ? -1 : static_cast<int>(i));
+                ui->pop_id();
+            }
+            if (!listed)
+                ui->text_disabled(groups.empty() ? "This room has no named groups." : "None within the radius.");
+        }
+        ui->end_child();
 #else
         (void)ui;
 #endif

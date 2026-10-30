@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## October 30, 2026
 
+- F2 > Debug > Stage collision: the room's walls and floors near Gene drawn over the picture, its named collision
+  groups listed with switches, and a dump to the log.
 - Modern controls: enemies right behind Gene but in the free camera's view attack and take their places around him
   like enemies in front of him (they stood idle).
 - Modern controls: an enemy right in front of Gene (within point-blank range) fights back even when the camera is
