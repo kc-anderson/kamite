@@ -161,6 +161,7 @@ namespace kamite::dev_menu
             ui->separator_text("At start");
             launcherOnly(ui, "Style switching", envOn("KAMITE_STYLE_SWITCHING", false) ? "on" : "off");
             launcherOnly(ui, "Better shop & casino poses", envOn("KAMITE_NPC_POSES", false) ? "on" : "off");
+            launcherOnly(ui, "Sprint attack traversal", envOn("KAMITE_SPRINT_TRAVERSAL", false) ? "on" : "off");
 
             ui->separator_text("kamite.ini");
             if (ui->button("Save##gameplay"))

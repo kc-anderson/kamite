@@ -1435,6 +1435,11 @@ namespace kamite::launcher
                                                                    "game's standing idle.",
                                      "F2 > NPCs sets the poses.");
                         iniCheckbox(state, "On##npcposes", "Game", "NpcPoses", false);
+                        settingLabel("Sprint attack traversal", "Sprint attacks carry Gene over or through the "
+                                                                "railings marked for them: the diving attack and the "
+                                                                "flying kick jump over, the slide goes under.",
+                                     "F2 > Debug > Stage collision marks them.");
+                        iniCheckbox(state, "On##sprinttraversal", "Game", "SprintTraversal", false);
                         ImGui::EndTable();
                     }
                     ImGui::EndTabItem();

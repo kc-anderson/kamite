@@ -1291,3 +1291,16 @@ flag = "styles"
 address = "0x00151C70"
 hook = "km_texture_slot_size"
 flag = "texture_slots"
+
+# Sprint attack traversal ([Game] SprintTraversal; sprint_traversal.cpp): round Gene's wall check in func_00108AB0
+# (ChkCollScrWall, jal at 0x1094B8), the stage collision groups marked for the sprint attack he is doing are switched
+# off (before: the argument setup at 0x1094A8) and back on (after: 0x1094E0, where both paths and the skip meet).
+[[patches.hooks]]
+address = "0x001094A8"
+hook = "km_trav_off"
+flag = "sprint_traversal"
+
+[[patches.hooks]]
+address = "0x001094E0"
+hook = "km_trav_on"
+flag = "sprint_traversal"

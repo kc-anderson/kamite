@@ -38,6 +38,7 @@
 #include "kamite/hitbox_overlay.h"
 #include "kamite/game_layout.h"
 #include "kamite/log.h"
+#include "kamite/sprint_traversal.h"
 #include "runtime/ps2_memory.h"
 #include "runtime/gs/gs_pcsx2_backend.h"
 
@@ -107,6 +108,7 @@ namespace kamite::hitbox_overlay
         std::atomic<float> g_collRadius{8.0f};
         std::atomic<int> g_collHighlight{-1};
         std::atomic<bool> g_collDump{false};
+        std::atomic<bool> g_saveFailed{false};
         std::atomic<int> g_collPolys{0}, g_collDrawn{0}, g_collRoom{-1};
         std::mutex g_collMutex;                     // guards the two below (game thread writes, GS thread reads)
         std::vector<GroupInfo> g_groupsShared;      // the room's named groups
@@ -654,7 +656,13 @@ namespace kamite::hitbox_overlay
             std::lock_guard<std::mutex> lock(g_collMutex);
             groups = g_groupsShared;
         }
-        ui->text_wrapped("Named groups (tick = solid; untick lets Gene and the enemies through, until the room reloads):");
+        ui->text_wrapped("Named groups. First tick = solid (untick lets everyone through until the room reloads). Jump / "
+                         "Slide = the sprint attacks that pass the group with \"Sprint attack traversal\" on: jump for "
+                         "sprint + X / Y, slide for sprint + A (saved to sprint_traversal.txt at once).");
+        if (!sprint_traversal::enabled())
+            ui->text_disabled("Sprint attack traversal is off in the launcher: the marks save but do nothing in play.");
+        if (g_saveFailed.load())
+            ui->text_colored(0xFF4040FFu, "Could not write sprint_traversal.txt.");
         const bool all = g_collAllGroups.load();
         const int highlight = g_collHighlight.load();
         int listed = 0;
@@ -674,6 +682,21 @@ namespace kamite::hitbox_overlay
                 {
                     std::lock_guard<std::mutex> lock(g_collMutex);
                     g_toggles.emplace_back(static_cast<int>(i), on != 0);
+                }
+                // Sprint attack traversal marks (sprint_traversal.txt, saved at once).
+                const int room = g_collRoom.load();
+                if (room >= 0)
+                {
+                    const uint16_t r = static_cast<uint16_t>(room);
+                    const int marks = sprint_traversal::marks(r, groups[i].name);
+                    int jump = (marks & sprint_traversal::kJump) ? 1 : 0, slide = (marks & sprint_traversal::kSlide) ? 1 : 0;
+                    ui->same_line();
+                    const bool a = ui->checkbox("Jump##tj", &jump) != 0;
+                    ui->same_line();
+                    const bool b = ui->checkbox("Slide##ts", &slide) != 0;
+                    if ((a || b) && !sprint_traversal::setMarks(r, groups[i].name, (jump ? sprint_traversal::kJump : 0) |
+                                                                                       (slide ? sprint_traversal::kSlide : 0)))
+                        g_saveFailed.store(true);
                 }
                 ui->same_line();
                 if (ui->radio("Highlight##hl", highlight == static_cast<int>(i)))

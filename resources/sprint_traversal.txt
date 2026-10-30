@@ -1,0 +1,4 @@
+# Sprint attack traversal: stage collision groups Gene passes during the sprint attacks ([Game] SprintTraversal).
+# One line per room and group: jump = sprint + X / Y over it, slide = sprint + A through it, none = neither.
+# Marks set in F2 > Debug > Stage collision go to sprint_traversal.txt next to the exe, which wins over this file.
+r100 Fx_2h00 jump slide

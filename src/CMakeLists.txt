@@ -50,6 +50,7 @@ set(KAMITE_HOST_SOURCES
     kamite/widescreen.cpp
     kamite/camera.cpp
     kamite/npc_poses.cpp
+    kamite/sprint_traversal.cpp
     kamite/debug_tools.cpp
     kamite/npc_tools.cpp
     kamite/hitbox_overlay.cpp
