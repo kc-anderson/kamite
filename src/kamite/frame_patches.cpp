@@ -641,6 +641,11 @@ namespace kamite
         g_l3Dash.store(on, std::memory_order_relaxed);
     }
 
+    bool rouletteUp()
+    {
+        return g_rouletteSeen != 0u && g_gameFrame - g_rouletteSeen <= 2u;
+    }
+
     bool rouletteTimerDouble()
     {
         return g_rouletteSlow.load(std::memory_order_relaxed);

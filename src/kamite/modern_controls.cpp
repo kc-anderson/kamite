@@ -28,6 +28,7 @@
 #include "kamite/hotkeys.h"
 #include "kamite/button_prompts.h"
 #include "kamite/jukebox.h"
+#include "kamite/frame_patches.h"
 #include "kamite/prompt_hd.h"
 #include "kamite/camera.h"
 #include "kamite/ini_file.h"
@@ -500,8 +501,9 @@ namespace kamite::modern
         const bool fight = battle || (g_battle.load(std::memory_order_relaxed) && now - g_lastNearMs <= kFightLingerMs);
         g_battleCamera.store(battle, std::memory_order_relaxed);
         g_battle.store(fight, std::memory_order_relaxed);
-        // The shop's jukebox: the game's camera stands still on the radio, as on the PS2 (jukebox.h).
-        g_gameCamera.store(gameCamera || jukebox::open(rdram), std::memory_order_relaxed);
+        // The shop's jukebox: the game's camera stands still on the radio, as on the PS2 (jukebox.h). The roulette:
+        // the game swings its camera round to the roulette angle while the wheel is up; Modern hands it back too.
+        g_gameCamera.store(gameCamera || jukebox::open(rdram) || rouletteUp(), std::memory_order_relaxed);
         g_lastCameraMs.store(now, std::memory_order_relaxed);
     }
 

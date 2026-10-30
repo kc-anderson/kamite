@@ -31,7 +31,8 @@
 // amount scales the motion's own movement (rotations and the hips' travel) round its first frame.
 //
 // Which actors lean: npc_poses.txt next to the exe, one line per actor (room, the place it first started the idle in
-// centimetres, and the adjustments). The F2 menu's NPCs tab edits the nearest actor and saves the file.
+// centimetres, and the adjustments). The F2 menu's NPCs tab edits the nearest actor and saves the file. Without that
+// file, resources/npc_poses.txt (shipped: the casino's bystanders) is used.
 #include "kamite/npc_poses.h"
 #include "kamite/npc_motions.inc"
 #include "kamite/function_hooks.h"
@@ -139,6 +140,7 @@ namespace kamite::npc_poses
 
         std::mutex g_mutex;
         fs::path g_file;
+        fs::path g_shippedFile;
         std::vector<std::pair<Key, Pose>> g_poses;
         std::map<uint32_t, Npc> g_npcs; // by actor address
         std::vector<bool> g_slotUsed(kSlotCount, false);
@@ -913,7 +915,10 @@ namespace kamite::npc_poses
         void load()
         {
             g_poses.clear();
-            std::ifstream in(g_file);
+            // The player's own file; without one, the poses the port ships (resources/npc_poses.txt: the casino's
+            // bystanders, set by K on Oct 30). Save writes the player's file, which then takes over.
+            std::error_code error;
+            std::ifstream in(fs::exists(g_file, error) ? g_file : g_shippedFile);
             std::string line;
             while (std::getline(in, line))
             {
@@ -1138,6 +1143,7 @@ namespace kamite::npc_poses
     void install(PS2Runtime &, const fs::path &exeDir)
     {
         g_file = exeDir / "npc_poses.txt";
+        g_shippedFile = exeDir / "resources" / "npc_poses.txt";
         if (const char *on = std::getenv("KAMITE_NPC_POSES"))
             g_enabled = *on && *on != '0';
         g_motions.push_back(Motion{"rail", "Rail lean (Quaternius, built in)",

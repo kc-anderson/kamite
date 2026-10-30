@@ -2,3 +2,7 @@
 # One line per room and group: jump = sprint + X / Y over it, slide = sprint + A through it, none = neither.
 # Marks set in F2 > Debug > Stage collision go to sprint_traversal.txt next to the exe, which wins over this file.
 r100 Fx_2h00 jump slide
+r100 Fx_3h00 jump
+r100 H01_koya jump
+r100 H02_kk00 jump slide
+r100 H03_kk0 jump slide

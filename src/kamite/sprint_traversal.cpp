@@ -20,6 +20,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <mutex>
 #include <sstream>
@@ -49,8 +50,11 @@ namespace kamite::sprint_traversal
 
         bool g_enabled = false;
         fs::path g_file, g_shipped;
-        std::mutex g_mutex;                                  // guards g_marks and g_version
-        std::map<std::pair<uint16_t, std::string>, int> g_marks; // (room, group) -> mark bits
+        using Key = std::pair<uint16_t, std::string>; // (room, group)
+        std::mutex g_mutex;                          // guards the three below and g_version
+        std::map<Key, int> g_shippedMarks;           // resources/sprint_traversal.txt
+        std::map<Key, int> g_userMarks;              // sprint_traversal.txt: only where it differs from the shipped
+        std::map<Key, int> g_marks;                  // in effect: the shipped, then the user's over them
         uint32_t g_version = 1;
 
         // Game thread.
@@ -84,7 +88,7 @@ namespace kamite::sprint_traversal
             return s;
         }
 
-        void read(const fs::path &file)
+        void read(const fs::path &file, std::map<Key, int> &into)
         {
             std::ifstream in(file);
             std::string line;
@@ -98,7 +102,7 @@ namespace kamite::sprint_traversal
                 int bits = 0;
                 while (words >> word)
                     bits |= word == "jump" ? kJump : word == "slide" ? kSlide : 0;
-                g_marks[{static_cast<uint16_t>(id), oneWord(group)}] = bits;
+                into[{static_cast<uint16_t>(id), oneWord(group)}] = bits;
             }
         }
 
@@ -109,8 +113,9 @@ namespace kamite::sprint_traversal
                 return false;
             out << "# Sprint attack traversal: stage collision groups Gene passes during the sprint attacks.\n"
                    "# Set in F2 > Debug > Stage collision. One line per room and group: jump = sprint + X / Y,\n"
-                   "# slide = sprint + A, none = neither. These lines win over resources/sprint_traversal.txt.\n";
-            for (const auto &[key, bits] : g_marks)
+                   "# slide = sprint + A, none = clears a mark resources/sprint_traversal.txt ships. These lines win\n"
+                   "# over that file; a group marked as it ships (or unmarked and not shipped) has no line here.\n";
+            for (const auto &[key, bits] : g_userMarks)
             {
                 char room[8];
                 std::snprintf(room, sizeof(room), "r%x", key.first);
@@ -211,8 +216,18 @@ namespace kamite::sprint_traversal
             g_enabled = *on && *on != '0';
         {
             std::lock_guard<std::mutex> lock(g_mutex);
-            read(g_shipped);
-            read(g_file);
+            read(g_shipped, g_shippedMarks);
+            read(g_file, g_userMarks);
+            // Lines that only repeat the shipped marks are dropped at the next save.
+            for (auto it = g_userMarks.begin(); it != g_userMarks.end();)
+            {
+                const auto shipped = g_shippedMarks.find(it->first);
+                const int base = shipped == g_shippedMarks.end() ? 0 : shipped->second;
+                it = it->second == base ? g_userMarks.erase(it) : std::next(it);
+            }
+            g_marks = g_shippedMarks;
+            for (const auto &[key, bits] : g_userMarks)
+                g_marks[key] = bits;
         }
         ps2xRegisterHostHook("km_trav_off", &switchOff);
         ps2xRegisterHostHook("km_trav_on", &switchOn);
@@ -232,7 +247,17 @@ namespace kamite::sprint_traversal
     bool setMarks(uint16_t room, const std::string &group, int bits)
     {
         std::lock_guard<std::mutex> lock(g_mutex);
-        g_marks[{room, oneWord(group)}] = bits;
+        const Key key{room, oneWord(group)};
+        const auto shipped = g_shippedMarks.find(key);
+        const int base = shipped == g_shippedMarks.end() ? 0 : shipped->second;
+        if (bits == base)
+            g_userMarks.erase(key);
+        else
+            g_userMarks[key] = bits;
+        if (bits)
+            g_marks[key] = bits;
+        else
+            g_marks.erase(key);
         ++g_version;
         return save();
     }

@@ -90,6 +90,8 @@ namespace kamite::hud
         std::atomic<int> g_menuModeShown{0};    // for the F2 menu
         bool g_menuSeen = false;  // a menu background this frame
         int g_menuHold = 0;       // frames the menu state lasts without one (covers a few frames of transitions)
+        int g_subScreenFrames = 0; // frames a sub screen has been open
+        constexpr int kSubScreenAlone = 40; // ... after which it counts as a menu without a background
         bool g_menuAspect = false; // the picture is forced to 4:3 now
 
         void setMenuAspect(bool on)
@@ -642,7 +644,13 @@ namespace kamite::hud
         g_subScreenOpen = subScreen;
         if (tutorial && !subScreen)
             g_menuSeen = false;
-        g_menuHold = (g_menuSeen || subScreen) ? 8 : std::max(0, g_menuHold - 1);
+        // An open sub screen keeps the menu state but does not start it: cSubScr opens as the pause is pressed, while
+        // the game is still fading the view out, and the picture went 4:3 before the fade was black (K, Oct 30). The
+        // menu's own background starts it (drawn once the fade is black); a sub screen that never draws one still
+        // gets it after kSubScreenAlone frames.
+        g_subScreenFrames = subScreen ? g_subScreenFrames + 1 : 0;
+        const bool keep = subScreen && (g_menuHold > 0 || g_subScreenFrames >= kSubScreenAlone);
+        g_menuHold = (g_menuSeen || keep) ? 8 : std::max(0, g_menuHold - 1);
         g_menuSeen = false;
         if (g_wide)
             setMenuAspect(g_menuHold > 0 && g_menuMode == MenuMode::Pillarbox);

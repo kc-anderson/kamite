@@ -4,6 +4,10 @@ Newest first, one line per change; the code comments say how.
 
 ## October 30, 2026
 
+- 4:3 menus: the picture goes 4:3 once the fade to the pause menu is black, not while the game still shows.
+- Modern controls: the camera swings round to the roulette's own angle while the wheel is up.
+- Better shop & casino poses: the casino's bystanders come posed (the F2 NPCs tab's file still wins).
+- Sprint attack traversal: unmarking a group removes its line from sprint_traversal.txt; the first railings ship marked.
 - Sprint attack traversal (launcher > Gameplay, off by default): sprint + X / Y jump over and sprint + A slides
   through the railings marked for them (F2 > Debug > Stage collision, saved to sprint_traversal.txt).
 - F2 > Debug > Stage collision: the room's walls and floors near Gene drawn over the picture, its named collision
