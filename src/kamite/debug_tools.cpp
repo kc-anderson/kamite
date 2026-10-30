@@ -148,7 +148,7 @@ namespace kamite::debug_tools
         constexpr DbgSwitch kDbgSwitches[] = {
             {0, Dbg::kPlMuteki, "Invincible: hits, grabs and hazards pass through Gene (PL MUTEKI)##muteki"},
             {0, Dbg::kGhCostZero, "God Hand and roulette for free: tension and roulette orbs stay full (DBG_PL_GH_COST_ZERO)##ghfree"},
-            {2, Dbg::kAllGodReel, "Every roulette reel owned: the roulette offers all its moves (DBG_ALL_GOD_REEL)##godreel"},
+            {2, Dbg::kAllGodReel, "Every roulette reel owned: all of them can be set up for the roulette (DBG_ALL_GOD_REEL)##godreel"},
             {2, Dbg::kWazaFullOpen, "Every technique owned (DBG_WAZA_FULL_OPEN)##wazaopen"},
             {2, Dbg::kMaxGold, "Gold at 999,999: written into the save data (MAX_GOLD)##maxgold"},
             {3, Dbg::kHpTpMax, "Health and tension upgrades at max: written into the save data (DBG_HP_TP_MAX)##hptpmax"},

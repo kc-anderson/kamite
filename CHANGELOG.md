@@ -2,6 +2,17 @@
 
 Newest first, one line per change; the code comments say how.
 
+## October 30, 2026
+
+- Modern controls: enemies right behind Gene but in the free camera's view attack and take their places around him
+  like enemies in front of him (they stood idle).
+- Skip intro also skips the Clover Studio movie.
+- Roulette double timer: Gene's casting pose lasts until the timer runs out, and the highlighted move is used then.
+- Styles: with F2 "Every technique owned" on, a style loads all its moves; turning it off removes the equipped moves
+  the save does not own.
+- Dev: F2 "Every roulette reel owned" lets every reel be set up for the roulette instead of putting them all on it
+  (as in the preview build); "God Hand and roulette for free" no longer puts them all on it either.
+
 ## October 29, 2026
 
 - Launcher: Skip intro (Gameplay): the game starts at the main menu, without the logos and the "Press Start" screen.

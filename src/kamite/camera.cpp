@@ -495,10 +495,40 @@ namespace kamite
         // the camera's yaw in for his there (just after it is loaded into $f12) keeps all of them in agreement. e6f98f4
         // swapped it at the compares only: the rest still saw Gene's back turned, and enemies in view froze in guard
         // (K, Oct 29). Gene's own readers of +0x768 (func_001269E0, the grab prompt) see the camera's too.
+        // The same swap where the AI works the angle out again from Gene's +0x104 instead of reading +0x768 (Oct 30,
+        // K's case 2026-10-30_08-15-59: enemies right behind Gene, in the free camera's view, stood idle): the attack
+        // decision func_00262AA8 (0x263524: the per-kind rules that keep enemies at his back from attacking) and the
+        // common sub-steps 13, 17 and 18 (0x216984, 0x2175D4 / 0x217770 / 0x21784C, 0x217D98 / 0x2187A0); all hooked
+        // after their `lwc1 $f12,0x104(v0)`. Left on his real facing: the back-grab prompt (func_00271148/00271298,
+        // a stunned enemy at his back) and cEmManage's func_00292F70.
         void enemyFacing(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
             if (g_freeNow && g_enemyView.load(std::memory_order_relaxed))
                 ctx->f[12] = g_freeYaw;
+        }
+
+        // The queue's walk-to spots (+0x16A0, func_0020F3C0) are offsets in Gene's own frame put into the world by his
+        // matrix (Gene +0x80, sceVu0ApplyMatrix at 0x20F82C: the "bone"), so they lay in front of his real facing: with
+        // him turned to the camera, the enemies in view were sent round him, off the screen. Hooked when the call
+        // returns (0x20F834, s4 = the spot): the offset from the matrix's translation is turned by the camera's yaw
+        // less his (x' = x cos d + z sin d, z' = z cos d - x sin d: the game's yaw turns (0, 1) to (sin, cos)).
+        void enemySpot(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            if (!g_freeNow || !g_enemyView.load(std::memory_order_relaxed))
+                return;
+            uint32_t gene = 0;
+            std::memcpy(&gene, rdram + 0x747A94u, 4);
+            gene &= 0x1FFFFFFFu;
+            const uint32_t spot = GPR_U32(ctx, 20) & 0x1FFFFFFFu;
+            if (gene < 0x100000u || gene + 0x100u > PS2_RAM_SIZE || spot < 0x100000u || spot + 12u > PS2_RAM_SIZE)
+                return;
+            const float delta = g_freeYaw - loadFloat(rdram, gene + 0x104u);
+            const float tx = loadFloat(rdram, gene + 0xB0u), tz = loadFloat(rdram, gene + 0xB8u);
+            const float x = loadFloat(rdram, spot) - tx, z = loadFloat(rdram, spot + 8u) - tz;
+            const float c = std::cos(delta), s = std::sin(delta);
+            const float out[2] = {tx + x * c + z * s, tz + z * c - x * s};
+            std::memcpy(rdram + spot, &out[0], 4);
+            std::memcpy(rdram + spot + 8u, &out[1], 4);
         }
 
         // TEMPORARY (Oct 29, strip once K's free-camera fights are right): once a second while the free camera has the
@@ -981,6 +1011,7 @@ namespace kamite
         ps2xRegisterHostHook("km_em_wedge", &enemyWedge);
         ps2xRegisterHostHook("km_em_lunge", &enemyLunge);
         ps2xRegisterHostHook("km_em_facing", &enemyFacing);
+        ps2xRegisterHostHook("km_em_spot", &enemySpot);
         ps2xSetPatchFlag("fov", true);
         ps2xSetPatchFlag("keep_walls", g_seeThrough.load());
         ps2xSetPatchFlag("enemy_view", true);

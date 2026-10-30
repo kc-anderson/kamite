@@ -4,6 +4,9 @@
 // "finished" (track destroyed, slot freed, GetStatus 0). Left uncovered: a port-side stall where neither comes (IPU
 // waiting for input that never arrives, stream or audio stalled). Then, after 20 s of game time without one decoded
 // macroblock, report the movie finished once; both callers call cMovie_Stop (0x2B4D68) themselves right after.
+// Skip intro: the boot's Clover Studio movie (descriptor 0, clover.sfd) is not r020's: the memory card task
+// (cMc_taskBody 0x2AE920) starts the task func_0030DA08, which plays it with the same poll loop (jal at 0x30DA6C) and
+// then starts the title. Under "skip_intro" its first poll reports it finished, so the task stops it at once.
 #include "kamite/movie_watchdog.h"
 #include "kamite/function_hooks.h"
 #include "kamite/log.h"
@@ -19,6 +22,7 @@ namespace kamite
         constexpr uint32_t kGetStatus = 0x2B4EC8u;
         constexpr uint32_t kEndingReturn = 0x7993DCu;    // r023 ending loop (jal at 0x7993D4)
         constexpr uint32_t kMovieListReturn = 0x16116Cu; // r000 movie list (jal at 0x161164)
+        constexpr uint32_t kCloverReturn = 0x30DA74u;    // the boot's Clover Studio movie (jal at 0x30DA6C)
         constexpr uint64_t kStallFields = 1200u;         // 20 s at 60 fields/s of emulated time
         GuestFunction g_getStatus = nullptr;
         uint32_t g_handle = 0;
@@ -28,6 +32,11 @@ namespace kamite
         {
             const uint32_t ra = GPR_U32(ctx, 31), handle = GPR_U32(ctx, 5);
             g_getStatus(rdram, ctx, runtime);
+            if (ra == kCloverReturn && GPR_U32(ctx, 2) != 0u && ps2xPatchFlag("skip_intro"))
+            {
+                SET_GPR_U32(ctx, 2, 0u);
+                return;
+            }
             if ((ra != kEndingReturn && ra != kMovieListReturn) || GPR_U32(ctx, 2) == 0u)
             {
                 g_handle = 0;

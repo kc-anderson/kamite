@@ -124,6 +124,14 @@ hook = "km_fps60_roulette_timer"
 flag = "roulette_timer"
 replace = true
 
+# Gene's rate and motion step while the roulette timer counts (swc1 f20,0x5A8(s1), 0.03): halved with the double
+# timer, so his cast pose holds until the timer runs out (frame_patches.cpp rouletteCastRate).
+[[patches.hooks]]
+address = "0x0011481C"
+hook = "km_roulette_cast_rate"
+flag = "roulette_timer"
+replace = true
+
 # HUD and menu animations (cIDBase_move: lbu v0,0x1C(s1), 0 = no animation step): stepped every other frame.
 [[patches.hooks]]
 address = "0x002AAA88"
@@ -757,6 +765,41 @@ address = "0x0030EF34"
 hook = "km_hitbox_collect"
 flag = "frame_hook"
 
+# F2 > Debug "every roulette reel owned" (DBG_ALL_GOD_REEL) as the preview had it: the reels can be set up, the wheel
+# still shows only the set-up ones. Retail's wheel builder (func_00125048, three lists at 0x1250C8 / 0x1251F0 /
+# 0x1252D0) takes a reel when it is set up (cCoreSave_ckReelSlot) OR DBG word 0 & 0x80000 (DBG_PL_GH_COST_ZERO) OR
+# DBG word 2 & 2 (DBG_ALL_GOD_REEL): both debug tests read as clear. cCoreSave_ckGodReel (the set-up screens' "owned")
+# keeps its own test. The game never sets these bits, so this only changes the debug switches.
+[[patches.conditional]]
+address = "0x001250DC"
+value = "0x00001025"
+flag = "debug_cheats"
+
+[[patches.conditional]]
+address = "0x001250F0"
+value = "0x30420000"
+flag = "debug_cheats"
+
+[[patches.conditional]]
+address = "0x00125208"
+value = "0x00001025"
+flag = "debug_cheats"
+
+[[patches.conditional]]
+address = "0x0012521C"
+value = "0x30420000"
+flag = "debug_cheats"
+
+[[patches.conditional]]
+address = "0x001252F0"
+value = "0x00001025"
+flag = "debug_cheats"
+
+[[patches.conditional]]
+address = "0x00125304"
+value = "0x30420000"
+flag = "debug_cheats"
+
 # F2 > Debug cheats (debug_tools.cpp; the hooks test their switches). The hit loop func_001FCF20: s3 = 1 here, then
 # `beql v0,s3` skips the hit record when $v0 = 1 (Invincible sets it when the target is Gene: PL MUTEKI's lost check).
 [[patches.hooks]]
@@ -905,6 +948,50 @@ flag = "enemy_view"
 [[patches.hooks]]
 address = "0x002096D8"
 hook = "km_em_facing"
+flag = "enemy_view"
+
+# ... and where the AI works the angle from Gene's facing out again (lwc1 $f12,0x104(v0) just before): the attack
+# decision func_00262AA8 and the common sub-steps 13, 17, 18 (camera.cpp enemyFacing).
+[[patches.hooks]]
+address = "0x00263528"
+hook = "km_em_facing"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00216988"
+hook = "km_em_facing"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x002175D8"
+hook = "km_em_facing"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00217774"
+hook = "km_em_facing"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00217850"
+hook = "km_em_facing"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x00217D9C"
+hook = "km_em_facing"
+flag = "enemy_view"
+
+[[patches.hooks]]
+address = "0x002187A4"
+hook = "km_em_facing"
+flag = "enemy_view"
+
+# The queue's walk-to spot, just put into the world by Gene's matrix (sceVu0ApplyMatrix returns; s4 = the spot):
+# turned to the camera's facing (camera.cpp enemySpot).
+[[patches.hooks]]
+address = "0x0020F834"
+hook = "km_em_spot"
 flag = "enemy_view"
 
 # Enemies' facing cones follow the view (camera.cpp, docs/enemy-ai.md): run before the compare, they scale the cone's

@@ -409,6 +409,19 @@ namespace kamite
             std::memcpy(&ram8(rdram, address), &value, sizeof(value));
         }
 
+        // Replaces swc1 f20,0x5A8(s1) at 0x11481C in Gene's roulette state (func_00114608): while the timer counts,
+        // the world runs at 0.03 (cEmManage_SetSpeedRate) and Gene's rate and motion step get the same 0.03 (f20; the
+        // SetMotionStep call's delay slot passes it on). The cast pose's hold (seq +0x3AC & 0x100) lasts a fixed stretch
+        // of motion frames, about 102 game frames at that step: with the double timer it ran out with half the time
+        // left, the state ended by its motion (0x114954) and the wheel closed without the hovered move (K, Oct 30).
+        // Double timer: Gene's step halves too, so the hold lasts as long as the timer.
+        void rouletteCastRate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            if (g_rouletteSlow.load(std::memory_order_relaxed))
+                ctx->f[20] *= 0.5f;
+            setRamF32(rdram, GPR_U32(ctx, 17) + 0x5A8u, ctx->f[20]);
+        }
+
         // Replaces lbu v0,0x1C(s1) at 0x2AAA88 in cIDBase_move (0 = the layout's animations do not step): every
         // other frame the animations of all HUD and menu layouts (button prompts, the stick-wiggle prompt, pulses,
         // slides) are not stepped, so they play at the PS2's speed; positions are still worked out every frame.
@@ -568,6 +581,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_hitbox_compare", &hitboxCompare);
         ps2xRegisterHostHook("km_fps60_roulette_timer", &rouletteTimer);
         ps2xRegisterHostHook("km_fps60_roulette_dial", &rouletteDial);
+        ps2xRegisterHostHook("km_roulette_cast_rate", &rouletteCastRate);
         ps2xRegisterHostHook("km_roulette_seen", &rouletteSeen);
         ps2xRegisterHostHook("km_roulette_step", &rouletteStep);
         ps2xRegisterHostHook("km_roulette_slide_begin", &rouletteSlideBegin);

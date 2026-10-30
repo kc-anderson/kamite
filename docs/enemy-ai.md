@@ -93,3 +93,9 @@ screen's edge passes Gene's facing at `phi + asin(D sin(phi) / r)` (`phi` = half
 camera distance, 4:3), and every cone is multiplied by the ratio (never past 150°). At 4:3 and 100% the ratio is 1.
 Close in (where the whole circle is on screen either way) it falls back to 1 too. The F2 menu's Camera tab shows the
 current factor.
+
+With the Modern controls' free camera turned away from Gene, the enemies take the camera's yaw for his facing
+everywhere their AI reads it: the common update's `+0x764`/`+0x768` (`0x208CA8`, `0x2096D8`), the attack decision's
+own angle (`func_00262AA8`, `0x263524`: the per-kind rules that keep enemies at his back from attacking), sub-steps
+13, 17 and 18, and the queue's spots, which are turned from his matrix (`+0x80`) to the camera's facing. The back-grab
+prompt (a stunned enemy right behind him, `func_00271148`) keeps his real facing.
