@@ -29,8 +29,8 @@ game's own code rebuilt as a Windows program, with PCSX2's hardware renderer for
   start, music mute, the blur effects at full resolution.
 - **Controls:** keyboard, mouse and controllers, rebindable in game (F1). Button prompts show the keys and buttons you
   use at full resolution (Xbox 360, Steam Deck, Switch or keyboard art, picked from your controller or set in the
-  launcher; PlayStation pads keep the game's own). Modern menu buttons (south confirms, east cancels) as an option; the moves keep
-  their buttons.
+  launcher; PlayStation pads keep the game's own). Modern menu controls (south confirms, east cancels, the roulette too) by default, Classic in the
+  launcher; the moves keep their buttons.
 - **Playable characters:** a character system that swaps the player model at the disc level, with an example mod
   (Xavier from *Xavier: Renegade Angel*).
 - **Diagnostics for developers:** crash and hang logs with function names, PC sampler, call profiler, frame, RAM and

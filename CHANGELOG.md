@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## October 31, 2026
 
+- 60 FPS: Gene's coat flaps in the roulette wind at the 30 FPS pace (the cloth's own wind).
+- Menu controls (Controls) back in the launcher: Modern by default, held at Modern with style switching.
 - 60 FPS: the roulette's wind flaps Gene's coat at the 30 FPS pace.
 - 60 FPS: Dead Pan's wash basin falls, bounces, spins and fades at the 30 FPS pace (it stops on Gene's head again).
 - Modern menu buttons: the roulette's hint reads "Cycle / OK / Cancel" at full letter width.

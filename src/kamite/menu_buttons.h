@@ -13,14 +13,16 @@
 // "command" word (+0x1A0 pressed, +0x1B0 repeated) that func_0031AFE0 builds from the raw word through a 64-entry table
 // of raw masks (0x3C3D50, or 0x3C3E50 for the US release): command bit 28 is the menus' OK, bit 29 their Cancel
 // (entries 24-27 are the d-pad, 32-35 the four face buttons one by one). Modern sets OK = cross and Cancel = circle
-// in both tables. Menus that ask for one face button by name (the shop's orb tiers, the casino's bets) and the roulette
-// (part of play) keep the game's buttons. The hint strings that name the menu buttons are reworded to match.
+// in both tables. Menus that ask for one face button by name (the shop's orb tiers, the casino's bets) keep the game's
+// buttons; the roulette follows Modern too (kamite.toml "modern_roulette"). The hint strings that name the menu buttons are reworded to match.
 namespace kamite::menu_buttons
 {
     // [Game] MenuButtons=classic|modern (KAMITE_MENU_BUTTONS; modern when not set), read here; registers the per-vblank patch (tables and
     // text) on the EE thread. Call before the game starts with the EE's RDRAM.
     void install(uint8_t *rdram);
     bool modern();
+    // Style switching on ([Game] StyleSwitching): Modern is held and setModern(false) does nothing.
+    bool locked();
     // F2 > Controls (any thread): the tables and the core hint text follow at once; the save menu's text (written
     // over its file on the disc at start) at the next start.
     void setModern(bool modern);

@@ -624,7 +624,8 @@ namespace kamite
             ctx->f[Dst] = skipFrame(rdram) ? ctx->f[A] : ctx->f[A] + ctx->f[B];
         }
         // A per-frame phase step taken at half size (an oscillation, smooth at 60 where the parity form would hold
-        // each value for two frames): Gene's coat wind in the roulette (func_00100CE0, phase 0x3BC740 += 0.8 a frame).
+        // each value for two frames): Gene's coat wind in the roulette (func_00100CE0, phase 0x3BC740 += 0.8 a frame) and
+        // the cloth step's own wind phase (func_00104010, work +0x48 += frand x work +0x70).
         template <int Dst, int A, int B>
         void floatAddHalf(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
@@ -880,6 +881,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_countdown_pl15b0", &countdownLoad<17, 0x15B0u>);    // Dead Pan's wait (s1)
         ps2xRegisterHostHook("km_fps60_float_add_f0f1", &floatAddParity<0, 0, 1>);         // add.s f0,f0,f1
         ps2xRegisterHostHook("km_fps60_coat_wind", &floatAddHalf<0, 0, 3>);                // add.s f0,f0,f3
+        ps2xRegisterHostHook("km_fps60_cloth_wind", &floatAddHalf<2, 2, 0>);               // add.s f2,f2,f0 (cloth step)
         ps2xRegisterHostHook("km_fps60_countdown_pl15b8_s0", &countdownLoad<16, 0x15B8u>); // the same in func_0011FD10 (s0)
         ps2xRegisterHostHook("km_fps60_countup_self", &countupSelf);
         ps2xRegisterHostHook("km_fps60_gene_rate_half", &geneRateHalfF0);

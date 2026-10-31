@@ -424,15 +424,19 @@ namespace kamite::modern
                 std::snprintf(line, sizeof(line), "No enemy around");
             ui->text_disabled(line);
 
-            ui->separator_text("Menu buttons (testing)");
+            ui->separator_text("Menu controls");
             static const char *const kMenuButtons[] = {"Classic: circle and cross confirm, triangle cancels",
                                                        "Modern: the bottom button confirms, the right one cancels"};
             int menus = menu_buttons::modern() ? 1 : 0;
             ui->set_next_width(340.0f);
+            ui->begin_disabled(menu_buttons::locked() ? 1 : 0);
             if (ui->combo("##menubuttons", &menus, kMenuButtons, 2))
                 menu_buttons::setModern(menus == 1);
-            ui->text_disabled("Menus and dialogs only; the moves and the roulette keep their buttons. Modern also gives the "
-                              "Techniques screen its style presets. The save menu's own wording follows at the next start.");
+            ui->end_disabled();
+            ui->text_disabled(menu_buttons::locked()
+                                  ? "Held at Modern by style switching (triangle / Y + d-pad saves a style)."
+                                  : "Menus, dialogs and the roulette; the moves keep their buttons. The save menu's own "
+                                    "wording follows at the next start.");
 
             ui->separator_text("kamite.ini");
             if (ui->button("Save##controls"))

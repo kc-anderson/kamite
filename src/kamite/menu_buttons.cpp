@@ -25,6 +25,7 @@ namespace kamite::menu_buttons
     namespace
     {
         std::atomic<bool> g_modern{false};
+        bool g_locked = false; // Modern held by style switching
         uint8_t *g_ram = nullptr;
         // Set at start when every patch of the kind went onto the disc image (the file as the game reads it): the
         // run-time rewrites below are then not needed (no RAM scan thread, no core check every 30 vblanks).
@@ -282,13 +283,19 @@ namespace kamite::menu_buttons
 
     void install(uint8_t *rdram)
     {
-        // Modern unless [Game] MenuButtons says classic (a testing option in F2 > Controls; it becomes the only way once
-        // the whole game has been played with it).
+        // Modern unless [Game] MenuButtons says classic (the launcher's Controls > Menu controls, F2 > Controls).
         const char *value = std::getenv("KAMITE_MENU_BUTTONS");
         std::string text = value && *value ? value : "modern";
         for (char &c : text)
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         g_modern.store(!(text == "classic" || text == "0"), std::memory_order_relaxed);
+        // Style switching saves a style with triangle + d-pad on the Techniques screen, where Classic's triangle exits:
+        // with it on, the menus are Modern whatever MenuButtons says.
+        if (const char *styles = std::getenv("KAMITE_STYLE_SWITCHING"); styles && *styles && *styles != '0')
+        {
+            g_locked = true;
+            g_modern.store(true, std::memory_order_relaxed);
+        }
         ps2xSetPatchFlag("modern_roulette", g_modern.load(std::memory_order_relaxed)); // kamite.toml: the roulette's own buttons
         g_ram = rdram;
         KM_INFO(Game, "menu buttons: " << (g_modern.load() ? "modern (in menus the south button confirms and the east one cancels; play unchanged)"
@@ -307,8 +314,15 @@ namespace kamite::menu_buttons
         return g_modern.load(std::memory_order_relaxed);
     }
 
+    bool locked()
+    {
+        return g_locked;
+    }
+
     void setModern(bool modern)
     {
+        if (g_locked)
+            modern = true;
         ps2xSetPatchFlag("modern_roulette", modern);
         if (g_modern.exchange(modern) != modern)
             KM_INFO(Game, "menu buttons: " << (modern ? "modern" : "classic") << " (F2); the save menu's own wording follows at the next start");
