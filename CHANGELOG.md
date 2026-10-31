@@ -4,7 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## October 31, 2026
 
-- 60 FPS: enemies no longer jump ahead (or lag) for a frame after loading a save state made at the other frame rate or switching modes.
+- 60 FPS: enemies no longer jump ahead (or lag) for a frame after loading a save state made at the other frame rate (the first fix doubled their next frame instead).
 - Test cases: a recorded roll also matches when the other frame rate makes the same roll a frame or two apart.
 - Test cases keep the game's random rolls: the replay at the other frame rate makes the same enemy choices, so long cases stay comparable.
 - Case reports: how many rolls the other-rate replay took from the recording, and any rolls made more often at 60.

@@ -12,6 +12,8 @@ namespace ps2x::savestate
     using LoadFn = std::function<void(ps2x::state::Reader &)>;
 
     void registerExtension(std::string name, SaveFn save, LoadFn load);
+    // Called after every load (with or without the extensions), before the game runs again.
+    void onLoaded(std::function<void()> fn);
 
     void setQuickSlotPath(std::filesystem::path path);
     [[nodiscard]] std::filesystem::path quickSlotPath();

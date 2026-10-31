@@ -48,6 +48,7 @@ namespace ps2x::savestate
         {
             std::mutex mutex;
             std::vector<Extension> extensions;
+            std::vector<std::function<void()>> loaded;
             std::optional<Request> request;
             std::filesystem::path quickSlot;
             std::string message;
@@ -145,6 +146,13 @@ namespace ps2x::savestate
             }
         }
         r.extensions.push_back(Extension{std::move(name), std::move(save), std::move(load)});
+    }
+
+    void onLoaded(std::function<void()> fn)
+    {
+        Registry &r = registry();
+        std::lock_guard<std::mutex> lock(r.mutex);
+        r.loaded.push_back(std::move(fn));
     }
 
     void setQuickSlotPath(std::filesystem::path path)
@@ -796,6 +804,16 @@ bool EeScheduler::serviceStateRequests()
         m_runtime.requestStop();
         requestStop();
         return true;
+    }
+    {
+        std::vector<std::function<void()>> loaded;
+        {
+            Registry &r = registry();
+            std::lock_guard<std::mutex> lock(r.mutex);
+            loaded = r.loaded;
+        }
+        for (auto &fn : loaded)
+            fn();
     }
     ps2x::savestate::g_loadCount.fetch_add(1u, std::memory_order_acq_rel);
     publishSnapshotNow();

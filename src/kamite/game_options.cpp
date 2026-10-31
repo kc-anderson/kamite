@@ -34,7 +34,8 @@
 // 0x1251CC, 0x125264 and 0x125338 (the PCSX2 restore patch makes all four read 0). Here they read 0 once it is earned:
 // the game-clear room r022 sets 0x747A28 (GameWork +0x588) |= 0x20000000 when the Kick Me Sign is still on (cCoreSave
 // ckPaper; the same clear gives the KMS jukebox CD), or with F2's "Every roulette reel owned" (DBG_ALL_GOD_REEL).
-// As in Japanese it then joins the roulette without being bought, at level 3 and up (0x125338: getGameLevel >= 3).
+// As in Japanese it then joins the roulette without being bought (the first reel list, 0x1250BC), and at Level 3 and
+// DIE a second copy goes on the wheel (0x125338: getGameLevel >= 3 appends 0xB to the third list; Japanese code).
 //
 // Dead Pan's invincibility shown (always on with Dead Pan): from the pan's hit (Gene phase 41 step 2, func_00113CF8;
 // the post-hit guard +0x54C is held at 30 through the state) until that guard has run out after it, Gene

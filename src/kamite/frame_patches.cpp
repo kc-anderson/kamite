@@ -467,15 +467,16 @@ namespace kamite
             }
         }
 
-        // The rate changed under the game: a save state made at the other rate (a test case replayed at the other rate)
-        // or the mode switched. cEmManage's rate +0x548 is the old rate's (1.0 at 30, 0.5 at 60: the 0x29059C patch; a
-        // slow-motion value halved at 60), and every enemy's motion step and speed rate come from it before the end of
-        // the frame puts it back: the first frame stepped enemies' motions x4 at 60 / x1/4 at 30 (66sec case and the
-        // goon cases, Oct 31: mframe 3.6 -> 6.0 instead of 4.2; the 60 replay ran up to 4 vblanks ahead from there).
+        // The rate changed under the game: the mode switched (frameStart, before the game's frame) or a save state from
+        // the other rate loaded (right after the load: the game resumes before the next frameStart, so the first frame
+        // ran with the state's divider and its cEmManage rate, enemy motions x4 at 60 / x1/4 at 30; 66sec and goon
+        // cases, Oct 31). Writes the divider and converts cEmManage's rate +0x548 (1.0 at 30, 0.5 at 60: the 0x29059C
+        // patch; a slow-motion value halved at 60), the source of every enemy's motion step and speed rate.
         void rateChange(uint8_t *rdram, uint32_t was, uint32_t now)
         {
             if (was == now || (was != 1u && was != 2u))
                 return;
+            ram8(rdram, kFrameDivider) = static_cast<uint8_t>(now);
             const uint32_t at = 0x5864F0u + 0x548u; // cEmManage D_005864F0
             float rate = 0.0f;
             std::memcpy(&rate, &ram8(rdram, at), sizeof(rate));
@@ -1115,6 +1116,9 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_rand_object_end", &randObjectEnd);
         installRandState();
         installClothState();
+        ps2x::savestate::onLoaded([rdram = runtime.memory().getRDRAM()] {
+            rateChange(rdram, ram8(rdram, kFrameDivider), g_fps60 ? 1u : 2u);
+        });
         ps2xSetPatchFlag("frame_hook", true); // always: it also counts game frames for the F3 overlay
         ps2xSetPatchFlag("fps60", g_fps60);
         {
