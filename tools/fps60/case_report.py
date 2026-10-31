@@ -498,6 +498,15 @@ def main(argv):
         print()
 
     print(f"Flagged per animation: {total} difference(s)." if total else "No per-animation differences above the tolerance.")
+    # Gene's coat (pl_cloth: its nodes' movement summed per frame): per second at both rates (the same at 60 = right).
+    if rows30 and rows60 and "pl_cloth" in rows30[0] and "pl_cloth" in rows60[0]:
+        def per_second(rows, fps):
+            vals = [num(r.get("pl_cloth")) for r in rows]
+            vals = [v for v in vals if v is not None]
+            return sum(vals) / (len(vals) / fps) if vals else 0.0
+        c30, c60 = per_second(rows30, 30), per_second(rows60, 60)
+        ratio = c60 / c30 if c30 > 0 else 0.0
+        print(f"Coat motion: {c30:.2f} m/s at 30, {c60:.2f} m/s at 60 (x{ratio:.2f}){'  !!' if abs(ratio - 1.0) > 0.15 else ''}")
     return 0
 
 

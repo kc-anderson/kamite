@@ -382,7 +382,7 @@ namespace kamite::test_mode
             std::fputs("frame,div,reads,sample,buttons,lx,ly,rx,ry,held,room,stp,sta,hitstop,"
                        "pl_x,pl_y,pl_z,pl_heading,pl_mode,pl_phase,pl_step,pl_arg,pl_motion,pl_mframe,pl_mleft,pl_seq,pl_hp,pl_guard,pl_speed,"
                        "pl_w568,pl_w5F8,pl_w5FC,pl_b61D,pl_b621,pl_b622,pl_b623,pl_b624,pl_b625,pl_b626,pl_b627,pl_b628,pl_h648,"
-                       "pl_f15D0,pl_h15F4,pl_b1600,pl_b1601,pl_b1602,pl_b1603,pl_h1616,pl_h1618,pl_hurt,"
+                       "pl_f15D0,pl_h15F4,pl_b1600,pl_b1601,pl_b1602,pl_b1603,pl_h1616,pl_h1618,pl_hurt,pl_cloth,"
                        "shapes,active,attack_on,hurt_on,enemies",
                        log.csv);
             for (uint32_t i = 0; i < log.enemies; ++i)
@@ -459,9 +459,25 @@ namespace kamite::test_mode
                 std::fprintf(log.csv, ",%u,%.3f,%04X,%u,%u,%u,%u,%u,%u,%s", rd16(rdram, pl + 0x648u), rdf(rdram, pl + 0x15D0u),
                              rd16(rdram, pl + 0x15F4u), rd8(rdram, pl + 0x1600u), rd8(rdram, pl + 0x1601u), rd8(rdram, pl + 0x1602u),
                              rd8(rdram, pl + 0x1603u), rd16(rdram, pl + 0x1616u), rd16(rdram, pl + 0x1618u), plHurt.c_str());
+                // pl_cloth: how far Gene's coat moved this frame, summed over its chain nodes (the cloth step func_00104010:
+                // nodes at coat +0x4D0, 0xA0 each, count at its work block coat +0x2050; position +0x40, the position
+                // before the step +0x50). The same motion per second gives half the sum per frame at 60.
+                float cloth = 0.0f;
+                const uint32_t coat = rd32(rdram, pl + 0x68Cu);
+                const uint32_t nodes = inRam(coat, 0x2100u) ? rd32(rdram, coat + 0x2050u) : 0u;
+                if (nodes > 0u && nodes <= 64u && inRam(coat + 0x4D0u, nodes * 0xA0u))
+                    for (uint32_t n = 0; n < nodes; ++n)
+                    {
+                        const uint32_t node = coat + 0x4D0u + n * 0xA0u;
+                        const float dx = rdf(rdram, node + 0x40u) - rdf(rdram, node + 0x50u);
+                        const float dy = rdf(rdram, node + 0x44u) - rdf(rdram, node + 0x54u);
+                        const float dz = rdf(rdram, node + 0x48u) - rdf(rdram, node + 0x58u);
+                        cloth += std::sqrt(dx * dx + dy * dy + dz * dz);
+                    }
+                std::fprintf(log.csv, ",%.4f", cloth);
             }
             else
-                for (int i = 0; i < 37; ++i) // the player columns
+                for (int i = 0; i < 38; ++i) // the player columns
                     std::fputc(',', log.csv);
 
             // The collision pool: every record in use, to the shapes file; the counts here.

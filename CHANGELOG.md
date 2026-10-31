@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## October 31, 2026
 
+- Style switching: saving fills the style's name with gold from left to right, with the menu's cursor sound when done.
+- Style switching: the HUD's style letters sit centred above the level meter.
 - 60 FPS: enemy grabs end after their squeezes again, and mashing out takes as many presses as at 30.
 - 60 FPS: enemy states that count motion loops (grabs, holds, strings) count every loop again.
 - 60 FPS: cloth (Gene's coat, enemy clothes) swings with the 30 FPS weight and speed: gravity, wind, damping and springs.

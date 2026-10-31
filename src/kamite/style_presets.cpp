@@ -9,6 +9,7 @@
 #include "runtime/ps2_pnach.h"
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
+#include "runtime/ee_scheduler.h"
 
 #include <algorithm>
 #include <array>
@@ -238,6 +239,7 @@ namespace kamite::style_presets
         std::string g_status;
         // Pad filter / F2 -> EE thread: 1..4 save that style, 11..14 load it.
         std::atomic<int> g_request{0};
+        std::atomic<bool> g_saveSound{false}; // a style was saved: the Techniques screen plays its cursor sound
         // Shown (the list, a flash) after a load or a save: which style and when. Host milliseconds, not frame-hook
         // ticks: the hook runs once a game frame, so a tick count made the blinking last twice as long at 30 fps
         // (Thinso, Oct 27: "saving a style takes twice as long on 30fps").
@@ -451,6 +453,8 @@ namespace kamite::style_presets
                     writeStore(data, store);
                     g_lastStyle = slot;
                     g_lastActionMs = steadyMs();
+                    if (moment == Techniques)
+                        g_saveSound = true;
                     std::snprintf(text, sizeof(text), "Style %c saved.", g_letters[slot]);
                 }
                 else if (!(store.used & (1u << slot)))
@@ -513,6 +517,7 @@ namespace kamite::style_presets
         uint16_t g_dpadWas = 0u;
         int g_held = -1;         // Techniques: the direction pressed with X, waiting for its release or 1.5 s
         int64_t g_heldSince = 0;
+        std::atomic<int64_t> g_holdStartMs{0}; // g_heldSince for the list's fill (EE thread reads it)
         bool g_heldSaved = false;
         bool g_swallow = false;  // the d-pad is kept from the game until it is let go (it was pressed with X)
 
@@ -663,7 +668,7 @@ namespace kamite::style_presets
         }
 
         // ---- the in-play indicator ----
-        // The style letters in the HUD (K, Oct 26): "S E X Y" above the roulette charges, right of the level meter,
+        // The style letters in the HUD (K, Oct 26): "S E X Y" above the level meter (Oct 31; first right of it),
         // the loaded style gold, the others cream, empty ones dim grey; blinks like the list right after a swap. The
         // text is carried by the money display's two spare text entries (cCockMoney's layout: 6 entries, the last
         // two text entries (kind 2) with message 0, at 16,14, never drawn: the text and its shadow), pointed at two
@@ -674,7 +679,9 @@ namespace kamite::style_presets
         // 86.5..196.5), just clear of the meter's ring at that height, so the letters, the charges and the bars step
         // round the ring (K, Oct 26: 142 over the middle of the six slots was far from the ring; 108, over the
         // first slot, wanted a little further left). The text is about 44 units wide at 0.65.
-        constexpr float kHudX = 99.0f, kHudY = 346.5f, kHudScale = 0.65f; // K: a touch right and up from 97, 348 (Oct 26)
+        // Oct 31 (K: nothing uses the space above the level meter): centred over the meter's ring (its quads span x
+        // 4.5..79.5 / 8..88, top at y 351 in the F6 dump), the letters' bottom just above its top.
+        constexpr float kHudX = 44.0f, kHudY = 339.0f, kHudScale = 0.65f;
         // The cream of the Techniques page's lines, in the GS's colour scale (0x80 = full: the glyphs are white, so
         // the colour is what shows). It was 0xDC 0xC8 0xA0, the on-screen value, which the GS doubles past full:
         // white on screen (K, Oct 26).
@@ -708,7 +715,8 @@ namespace kamite::style_presets
         }
 
         // Four lines: [X] + arrow  Style S. The style's words take its colour: gold when loaded (blinking for a
-        // moment after a load or a save), blinking gold while X + its direction is held, dim when empty.
+        // moment after a load or a save), dim when empty. While X + its direction is held the words fill with gold
+        // from left to right over the 1.5 s hold: full = saved (K, Oct 31: the blink did not say when it was done).
         std::vector<uint16_t> listText(uint32_t data, const Store &store, bool colours)
         {
             const int holding = g_holding.load(std::memory_order_relaxed);
@@ -724,10 +732,24 @@ namespace kamite::style_presets
                 out.push_back(kPlusCode);
                 out.push_back(kArrowCode[slot]);
                 const bool used = (store.used & (1u << slot)) != 0u;
-                uint32_t colour = 0u; // 0: the line's own colour
                 if (slot == holding)
-                    colour = blinkOn ? kGold : 0u; // held with X: blinks until it saves
-                else if (used && store.active == slot && equipped(data, store.styles[slot]))
+                {
+                    std::vector<uint16_t> words;
+                    append(words, "Style ");
+                    words.push_back(glyph(g_letters[slot]));
+                    const double progress = std::clamp(static_cast<double>(now - g_holdStartMs.load(std::memory_order_relaxed)) /
+                                                           static_cast<double>(kSaveHoldMs), 0.0, 1.0);
+                    const size_t filled = std::min(words.size(), static_cast<size_t>(progress * static_cast<double>(words.size())));
+                    if (colours && filled > 0u)
+                        out.insert(out.end(), {kColour, static_cast<uint16_t>(kGold >> 16), static_cast<uint16_t>(kGold & 0xFFFFu)});
+                    out.insert(out.end(), words.begin(), words.begin() + static_cast<std::ptrdiff_t>(filled));
+                    if (colours && filled > 0u)
+                        out.push_back(kColourRestore);
+                    out.insert(out.end(), words.begin() + static_cast<std::ptrdiff_t>(filled), words.end());
+                    continue;
+                }
+                uint32_t colour = 0u; // 0: the line's own colour
+                if (used && store.active == slot && equipped(data, store.styles[slot]))
                     colour = (flash && !blinkOn) ? 0u : kGold; // the loaded style (a few blinks right after)
                 else if (!used)
                     colour = kDim;
@@ -876,8 +898,30 @@ namespace kamite::style_presets
         }
 
         // The Techniques screen's draw (0x16DC18, $a0 = the screen; after its layout was placed): the list's place.
-        void onWazaDraw(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        // The Techniques screen's cursor sound (its input, 0x16DFC4: func_002CB8A0(0x5FEE00, 0, 0x15F, -1, -1, 0, 0)),
+        // run to its end on a copy of the registers (game_options.cpp callGuest).
+        void playCursorSound(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
+            constexpr uint32_t kSeCall = 0x2CB8A0u;
+            if (!runtime || !runtime->hasFunction(kSeCall))
+                return;
+            PS2Runtime::RecompiledFunction fn = runtime->lookupFunction(kSeCall);
+            if (!fn)
+                return;
+            const R5900Context saved = *ctx;
+            const uint32_t args[] = {0x5FEE00u, 0u, 0x15Fu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0u, 0u};
+            for (int i = 0; i < 7; ++i)
+                SET_GPR_U32(ctx, 4 + i, args[i]);
+            runtime->eeScheduler().beginHostCall();
+            fn(rdram, ctx, runtime);
+            runtime->eeScheduler().endHostCall();
+            *ctx = saved;
+        }
+
+        void onWazaDraw(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (g_saveSound.exchange(false))
+                playCursorSound(rdram, ctx, runtime); // a style was just saved (K, Oct 31: it needs a cue)
             if (!g_ram || !g_listShown)
                 return;
             const uint32_t waza = GPR_U32(ctx, 4);
@@ -1123,6 +1167,7 @@ namespace kamite::style_presets
                 {
                     g_held = direction;
                     g_heldSince = now;
+                    g_holdStartMs.store(now, std::memory_order_relaxed);
                     g_heldSaved = false;
                 }
             }
