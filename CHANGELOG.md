@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## October 31, 2026
 
+- Style switching: styles keep techniques from F2 "Every technique owned" while it is on; turning it off removes them from every style.
+- Test cases: a case recorded at 30 FPS gives the 60 FPS replay its inputs on the same frames as the 30 FPS game.
 - 60 FPS: enemies turn toward Gene at the 30 FPS speed during their lunges and attacks (182 turns ran at a quarter speed).
 - 60 FPS: enemies no longer stop short by a few centimetres each time they change action (a grab put Gene 0.2 m off).
 - 60 FPS: enemies knocked into the air fly as high and as long as at 30 FPS (they came down twice as fast).

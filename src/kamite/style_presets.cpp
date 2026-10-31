@@ -2,6 +2,7 @@
 #include "kamite/style_presets.h"
 
 #include "kamite/button_prompt_sheets.h"
+#include "kamite/debug_tools.h"
 #include "kamite/function_hooks.h"
 #include "kamite/game_layout.h"
 #include "kamite/log.h"
@@ -326,48 +327,66 @@ namespace kamite::style_presets
         }
 
         // A move the save can equip: owned (skill[id] >= 0), or any move while F2 > Debug "Every technique owned"
-        // (DBG_WAZA_FULL_OPEN, GameWork DBG word 2) is on, as cCoreSave_getSkill (0x1FAF58) answers then. Ids past the
-        // game's move table (0..0x71) never.
-        bool everyTechnique()
-        {
-            return (rd32(work::address(game::Dbg::word(2))) & game::Dbg::kWazaFullOpen) != 0u;
-        }
+        // (DBG_WAZA_FULL_OPEN) is on. Read from the F2 switch itself, not from the GameWork DBG word: debug_tools sets
+        // the word at the frame start, and in play it reads clear at this vblank hook (K's log, Oct 31: every save of a
+        // style with debug moves was followed by "every technique off" on leaving the Techniques screen, and loads left
+        // the moves out). Ids past the game's move table (0..0x71) never.
+        bool everyTechnique() { return debug_tools::wazaFullOpen(); }
 
         bool equippable(const int8_t *skill, int32_t id, bool everyMove)
         {
             return id >= 0 && id < kMoveCount && (everyMove || skill[id] >= 0);
         }
 
-        // Load: the style's moves the save can equip, in order; a single slot without one stays empty, the chain
-        // closes up. The style itself keeps them (K, Oct 30): they come back once the save owns them, or the cheat is on.
-        int load(uint32_t data, const Combo (&style)[kSets])
+        // The moves of `from` the save can equip, in order; a single slot without one stays empty, the chain closes up.
+        // Returns how many were left out.
+        int keepEquippable(const Combo (&from)[kSets], Combo (&to)[kSets], const int8_t *skill, bool everyMove)
         {
-            const int8_t *skill = reinterpret_cast<const int8_t *>(g_ram + data + kSkills);
-            const bool everyMove = everyTechnique();
             int skipped = 0;
-            Combo combos[kSets] = {};
             for (int s = 0; s < kSets; ++s)
             {
-                const Combo &from = style[s];
-                Combo &to = combos[s];
-                const int n = from.max < 0 ? 0 : from.max > kSlots ? kSlots : from.max;
+                const Combo &f = from[s];
+                Combo t = {};
+                const int n = f.max < 0 ? 0 : f.max > kSlots ? kSlots : f.max;
                 int out = 0;
                 for (int i = 0; i < n; ++i)
                 {
-                    const int32_t id = from.id[i];
+                    const int32_t id = f.id[i];
                     if (!equippable(skill, id, everyMove))
                     {
                         ++skipped;
                         continue;
                     }
-                    to.id[out] = id;
-                    to.lv[out] = from.lv[i];
+                    t.id[out] = id;
+                    t.lv[out] = f.lv[i];
                     ++out;
                 }
-                to.max = out;
+                t.max = out;
+                to[s] = t;
             }
+            return skipped;
+        }
+
+        const int8_t *skillsOf(uint32_t data) { return reinterpret_cast<const int8_t *>(g_ram + data + kSkills); }
+
+        // Load: the style's moves the save can equip.
+        int load(uint32_t data, const Combo (&style)[kSets])
+        {
+            Combo combos[kSets] = {};
+            const int skipped = keepEquippable(style, combos, skillsOf(data), everyTechnique());
             std::memcpy(g_ram + data + kCombos, combos, kComboBytes);
             return skipped;
+        }
+
+        // "Every technique owned" off: the saved styles lose the moves the save does not own (K, Oct 31: debug moves
+        // count as owned only while the switch is on). Returns how many came out.
+        int stripStyles(uint32_t data, Store &store)
+        {
+            int removed = 0;
+            for (int slot = 0; slot < kStyles; ++slot)
+                if (store.used & (1u << slot))
+                    removed += keepEquippable(store.styles[slot], store.styles[slot], skillsOf(data), false);
+            return removed;
         }
 
         uint32_t wazaScreen(uint32_t subScr) { return subScr + kWazaOffset; }
@@ -422,7 +441,7 @@ namespace kamite::style_presets
             g_moment.store(moment, std::memory_order_relaxed);
 
             // "Every technique owned" switched off: the equipped moves the save does not own come off, as a load
-            // would leave them (K, Oct 30); the styles keep theirs.
+            // would leave them (K, Oct 30).
             static bool everyBefore = false;
             const bool everyNow = everyTechnique();
             if (data && everyBefore && !everyNow)
@@ -436,8 +455,14 @@ namespace kamite::style_presets
 
             const int request = g_request.exchange(0);
             Store store{};
-            if (data)
-                readStore(data, store);
+            // While the switch is off the saved styles hold only owned moves (also a record saved with the switch on
+            // and loaded later with it off).
+            if (data && readStore(data, store) && !everyNow)
+                if (const int removed = stripStyles(data, store))
+                {
+                    writeStore(data, store);
+                    KM_INFO(Game, "styles: every technique off: " << removed << " move(s) the save does not own removed from the styles");
+                }
             if (request != 0)
             {
                 const int slot = (request % 10) - 1;

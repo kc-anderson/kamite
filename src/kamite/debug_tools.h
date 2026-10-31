@@ -25,5 +25,7 @@ namespace kamite::debug_tools
     void applyCheatState(const std::string &text);
 
     bool pathfindingOff();
+    // F2 > Debug "Every technique owned" (DBG_WAZA_FULL_OPEN) switched on (the switch, not the guest word).
+    bool wazaFullOpen();
     void setPathfindingOff(bool on);
 }

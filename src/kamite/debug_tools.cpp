@@ -859,6 +859,7 @@ namespace kamite::debug_tools
         }
     }
 
+    bool wazaFullOpen() { return (g_dbg[2].wanted.load(std::memory_order_relaxed) & Dbg::kWazaFullOpen) != 0u; }
     bool pathfindingOff() { return (g_dbg[3].wanted.load() & Dbg::kPathfindingOff) != 0u; }
     void setPathfindingOff(bool on)
     {

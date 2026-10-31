@@ -859,7 +859,14 @@ namespace kamite::test_mode
                 return;
             }
             const uint32_t last = run.rec.polls() - 1u;
-            const uint32_t use = index < last ? index : last;
+            uint32_t use = index;
+            // A 30 FPS recording replayed at 60: game frame k at 30 read poll 2k + 1 (the later of its two vblanks), so
+            // both 60 FPS frames of that window get it. With poll 2k on the first half, a press that reached the 30 FPS
+            // frame acted only on the second half at 60 and Gene ran a vblank of the old state first (66sec case: 0.05 m
+            // off from 0.22 s, fps60-notes "30-recorded cases"). Replay-only; 60 FPS recordings are fed as before.
+            if (run.rec.divider == 2u && fps60())
+                use |= 1u;
+            use = use < last ? use : last;
             fromStatus(run.rec.samples.data() + static_cast<size_t>(use) * kSample, state);
             run.sampleUsed = use;
         }
