@@ -206,6 +206,10 @@ address = "0x001FAC58"
 hook = "km_roulette_no_orbs"
 replace = true
 flag = "roulette_no_orbs"
+[[patches.hooks]] # func_00125048: where every reel's cost check ends; grey a costing reel when the orbs are empty
+address = "0x00125B84"
+hook = "km_roulette_grey_no_orbs"
+flag = "roulette_no_orbs"
 # Dead Pan (game_options.cpp): the roulette list builder func_00125048 reads the language (0 = Japanese) to hide reel
 # 0xB; read as 0 once a Kick Me Sign clear earned it (0x747A28 & 0x20000000) or with DBG_ALL_GOD_REEL.
 [[patches.hooks]]
@@ -385,6 +389,178 @@ replace = true
 [[patches.hooks]] # God Hand (tension) drain: Gene's speed rate into func_2A9AD0's amount, halved at 60
 address = "0x0012354C"
 hook = "km_fps60_tension_drain"
+flag = "fps60"
+# Gene's +0x56E follow countdown (fps60-notes family 1, store form): grab finishers and mash roulette moves, phases
+# 57..107 (case 2026-10-31_11-18-03, phase 57); load and decrement in delay slots, so the plain sh is replaced.
+[[patches.hooks]]
+address = "0x00117778"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0011793C"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x00117E80"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x001180D8"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x00118554"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x00118608"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x00119014"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x00119114"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x001196C4"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x00119B64"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0011BC48"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0011C070"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0011C460"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0011C734"
+hook = "km_fps60_pl56e_store_s0"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0011CC88"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0011D014"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0011D2C4"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0011DBC0"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0011DDA4"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0011DF80"
+hook = "km_fps60_pl56e_store_s0"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0011F5C0"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0011F788"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0011FB60"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0011FEA4"
+hook = "km_fps60_pl56e_store_s0"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0012052C"
+hook = "km_fps60_pl56e_store_s0"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x00120AF4"
+hook = "km_fps60_pl56e_store_s0"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x00120F84"
+hook = "km_fps60_pl56e_store_s0"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0012142C"
+hook = "km_fps60_pl56e_store_s0"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x001216F0"
+hook = "km_fps60_pl56e_store_s0"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x00121BF8"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x00121FA8"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0012225C"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x00122524"
+hook = "km_fps60_pl56e_store_s1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x001229C8"
+hook = "km_fps60_pl56e_store_s0"
+replace = true
 flag = "fps60"
 # Random rolls made every frame (frame_patches.cpp randPaired; fps60-notes family 8): a roll at the same call site for
 # the same object on two game frames in a row repeats the first frame's number. Hooks after the twister returns in
@@ -2329,106 +2505,6 @@ replace = true
 # whose constants are patched above; census Oct 30, claude/fps60-notes.md family 1). Seen: the window glass (cOmGlass
 # func_001BFD28: +0x604 = 30 frames whole, then 15 frames of fade) broke in half the time at 60. Generated like the
 # enemies' block.
-[[patches.hooks]] # func_001601D8 lbu +0xF15 (decrement in a delay slot: load-raise)
-address = "0x001604EC"
-hook = "km_fps60_om_cd_s0_f15_1"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00160FF0 lw +0x6E44
-address = "0x00161128"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00162298 lbu +0xEC
-address = "0x0016231C"
-hook = "km_fps60_countdown_v1"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00162298 lbu +0xEE
-address = "0x001624E4"
-hook = "km_fps60_countdown_v1"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00162298 lbu +0xEF
-address = "0x001624FC"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00162C98 lbu +0xF0
-address = "0x00162D94"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00164238 lhu +0x130
-address = "0x001642BC"
-hook = "km_fps60_countdown_v1"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_001643F8 lhu +0x130
-address = "0x00164460"
-hook = "km_fps60_countdown_v1"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00165638 lbu +0x2A3
-address = "0x00165DC4"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00165EB8 lbu +0x5A
-address = "0x00165F1C"
-hook = "km_fps60_countdown_v1"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00165EB8 lbu +0x2A0
-address = "0x00166064"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00169358 lhu +0x0
-address = "0x00169504"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_0016A4D8 lw +0x4
-address = "0x0016A81C"
-hook = "km_fps60_countdown"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_0016AE38 lbu +0x1B4
-address = "0x0016AF3C"
-hook = "km_fps60_countdown_v1"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_0016B1F8 lhu +0x1D2
-address = "0x0016B330"
-hook = "km_fps60_countdown_v1"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_0016B1F8 lhu +0x1D0
-address = "0x0016B348"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_0016C730 lhu +0x0
-address = "0x0016D3D0"
-hook = "km_fps60_countdown_v1"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_0016DF38 lbu +0x25C
-address = "0x0016E018"
-hook = "km_fps60_countdown_v1"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_0016DF38 lhu +0x25E
-address = "0x0016E7CC"
-hook = "km_fps60_countdown_v1"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_0016DF38 lhu +0x260
-address = "0x0016E7E4"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
 [[patches.hooks]] # func_00172850 lhu +0xD94
 address = "0x00172E08"
 hook = "km_fps60_countdown_v1"

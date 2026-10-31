@@ -4,6 +4,9 @@ Newest first, one line per change; the code comments say how.
 
 ## October 31, 2026
 
+- 60 FPS: menus move up on every press again, and backing out of the Roulette screen no longer freezes the game.
+- 60 FPS: Gene's grab finishers follow the held enemy as long as at 30.
+- Roulette without orbs: moves that cost orbs are greyed out when none are left.
 - 60 FPS: enemies' random decisions (when to attack, block, dodge, taunt) come as often per second as at 30.
 - Roulette without orbs (Gameplay): R1 opens the roulette with no orbs left, for its camera.
 - Dead Pan, the Japanese release's free roulette move, is earned by clearing the game with the Kick Me Sign on.

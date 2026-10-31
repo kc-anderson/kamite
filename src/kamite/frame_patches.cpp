@@ -621,6 +621,15 @@ namespace kamite
         {
             ctx->f[Dst] = skipFrame(rdram) ? ctx->f[A] : ctx->f[A] + ctx->f[B];
         }
+        // A countdown whose load and decrement both sit in delay slots, stored by a plain sh (Gene's grab finishers and
+        // mash roulette moves, +0x56E: the 15 / 30 frames Gene follows the held enemy's per-frame move +0x550, phases
+        // 57..107; case 2026-10-31_11-18-03): replaces the sh, storing the old value on skipped frames.
+        template <int Base, int New, int Old, uint32_t Offset>
+        void countdownStore16(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint16_t value = static_cast<uint16_t>(skipFrame(rdram) ? GPR_U32(ctx, Old) : GPR_U32(ctx, New));
+            std::memcpy(&ram8(rdram, GPR_U32(ctx, Base) + Offset), &value, sizeof(value));
+        }
         // addiu Dst,Src,-1 (the enemy countdowns, generated hooks in kamite.toml).
         template <int Dst, int Src>
         void countdownPair(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
@@ -869,6 +878,8 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_emit_every_frame", &emitEveryFrame);
         ps2xRegisterHostHook("km_fps60_wiggle_begin", &wiggleBegin);
         ps2xRegisterHostHook("km_fps60_wiggle_end", &wiggleEnd);
+        ps2xRegisterHostHook("km_fps60_pl56e_store_s0", &countdownStore16<16, 2, 3, 0x56Eu>);
+        ps2xRegisterHostHook("km_fps60_pl56e_store_s1", &countdownStore16<17, 2, 3, 0x56Eu>);
         ps2xRegisterHostHook("km_fps60_rand_int", &randInt);
         ps2xRegisterHostHook("km_fps60_rand_float", &randFloat);
         ps2xRegisterHostHook("km_fps60_rand_object_begin", &randObjectBegin);

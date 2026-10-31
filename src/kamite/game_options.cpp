@@ -25,7 +25,9 @@
 // RouletteNoOrbs: R1 opens the roulette from Gene's action chooser (func_00123938 0x123B2C: cCoreSave_getGodItem, the
 // first orb slot at save +0xA8, non-zero -> state 0x2B). getGodItem has no other caller (main ELF and room DLLs). Under
 // "roulette_no_orbs" its first load (lw v1,0(a0) at 0x1FAC58) points v1 at a constant non-zero byte when the slots are
-// empty, so the roulette opens; its list builder (func_00125048) still greys out every move the orbs cannot pay for.
+// empty, so the roulette opens. The list builder (func_00125048) greys out moves by cost only for reels costing 2 or 3
+// (getGodItemNum at 0x125B44 / 0x125B58; a 1-orb reel was never checked: the entry needed an orb), so at 0x125B84,
+// where every reel's check ends, an empty first slot greys the entry (+8 = 1) too, except the free Dead Pan (0xB).
 //
 // Dead Pan (always on): the Japanese release's free roulette move (reel 0xB; TCRF "Dead Pan / Pan Drop"). The US build
 // keeps it but hides it outside Japanese: func_00125048 tests GameWork +0x56C (language, 0 = Japanese) at 0x1250A8,
@@ -72,6 +74,19 @@ namespace kamite
             if (save != 0u && rdram[(save + 0xA8u) & 0x1FFFFFFu] == 0u)
                 save = kNonZeroByte - 0xA8u;
             SET_GPR_U32(ctx, 3, save);
+        }
+
+        // Before lw a1,0x650(sp) at 0x125B84 (func_00125048, flag roulette_no_orbs): s2 = the entry, s5 = the reel ids.
+        constexpr uint32_t kCoreSave = 0x569B70u;
+        void rouletteGreyWithoutOrbs(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t save = ram32(rdram, kCoreSave);
+            if (save == 0u || rdram[(save + 0xA8u) & 0x1FFFFFFu] != 0u)
+                return;
+            const uint32_t index = GPR_U32(ctx, 18);
+            if (ram32(rdram, GPR_U32(ctx, 21) + index * 0xCu) == 0xBu) // Dead Pan costs nothing
+                return;
+            rdram[(GPR_U32(ctx, 29) + 0x30u + index * 0xCu + 8u) & 0x1FFFFFFu] = 1u;
         }
 
         // Replaces the language loads in func_00125048 (flag dead_pan, always on): 0 (Japanese) once Dead Pan is earned.
@@ -122,6 +137,7 @@ namespace kamite
         const bool rouletteAnyOrbs = envOn("KAMITE_ROULETTE_NO_ORBS");
         ps2xSetPatchFlag("skip_intro", skipIntro);
         ps2xRegisterHostHook("km_roulette_no_orbs", &rouletteNoOrbs);
+        ps2xRegisterHostHook("km_roulette_grey_no_orbs", &rouletteGreyWithoutOrbs);
         ps2xSetPatchFlag("roulette_no_orbs", rouletteAnyOrbs);
         ps2xRegisterHostHook("km_dead_pan_v0", &deadPanLanguage<2>);
         ps2xRegisterHostHook("km_dead_pan_v1", &deadPanLanguage<3>);
