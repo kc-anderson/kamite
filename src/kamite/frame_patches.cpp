@@ -467,6 +467,24 @@ namespace kamite
             }
         }
 
+        // The rate changed under the game: a save state made at the other rate (a test case replayed at the other rate)
+        // or the mode switched. cEmManage's rate +0x548 is the old rate's (1.0 at 30, 0.5 at 60: the 0x29059C patch; a
+        // slow-motion value halved at 60), and every enemy's motion step and speed rate come from it before the end of
+        // the frame puts it back: the first frame stepped enemies' motions x4 at 60 / x1/4 at 30 (66sec case and the
+        // goon cases, Oct 31: mframe 3.6 -> 6.0 instead of 4.2; the 60 replay ran up to 4 vblanks ahead from there).
+        void rateChange(uint8_t *rdram, uint32_t was, uint32_t now)
+        {
+            if (was == now || (was != 1u && was != 2u))
+                return;
+            const uint32_t at = 0x5864F0u + 0x548u; // cEmManage D_005864F0
+            float rate = 0.0f;
+            std::memcpy(&rate, &ram8(rdram, at), sizeof(rate));
+            if (!(rate > 0.0f && rate <= 2.0f))
+                return;
+            rate = now == 1u ? rate * 0.5f : rate * 2.0f;
+            std::memcpy(&ram8(rdram, at), &rate, sizeof(rate));
+        }
+
         void frameStart(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             pcsampler::noteMainContext(ctx);
@@ -493,6 +511,7 @@ namespace kamite
             // The game's frame divider: 2 (the PS2's, written once at boot by func_0030B298) or 1 for 60 frames a
             // second. Written in both modes: a save state made at 60 carries a 1, and loaded at 30 nothing put the 2
             // back, so the game ran at 60 with none of the mode's fixes ("the old broken 60 FPS", Thinso, Oct 27).
+            rateChange(rdram, ram8(rdram, kFrameDivider), g_fps60 ? 1u : 2u);
             ram8(rdram, kFrameDivider) = g_fps60 ? 1u : 2u;
             if (!g_fps60)
             {
