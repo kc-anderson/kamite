@@ -491,9 +491,10 @@ namespace kamite
         // An enemy's state change (mode / phase / step, +0x2F4 word) takes effect the next game frame: at 30 that is the
         // next 30 FPS frame, at 60 the next vblank, so every change made in the first half of a 30 FPS frame ran the new
         // step a vblank early and the enemy's sequences drifted ahead (66sec case, Oct 31: +1 vblank per change, up to 6
-        // ahead between hits). Before the mode-0 phase handler's jalr (func_0020F3C0 0x20FAF0, s1 = the enemy): in the
-        // second half of a 30 FPS frame, after a change seen since the first half, the handler is held for that vblank
-        // (a2 = NoOp_100318) as the 30 FPS game would.
+        // ahead between hits). On both ways into the mode-0 phase handler's jalr (func_0020F3C0 0x20FAE8 / 0x20FAEC;
+        // s1 = the enemy; a hook on the jalr itself recompiles to a jump to itself): in the second half of a 30 FPS
+        // frame, after a change seen since the first half, the handler is held for that vblank (a2 = NoOp_100318) as
+        // the 30 FPS game would.
         struct EnemyStep
         {
             uint32_t state = 0, counter = 0;

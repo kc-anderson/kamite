@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## October 31, 2026
 
+- Fixed the game stopping right after start (last build): a hook was placed on a jump; the build now refuses that.
 - 60 FPS: enemy animations no longer start at a quarter speed on their first frame.
 - 60 FPS: enemies no longer move on to their next action a frame early (their attack strings and approaches drifted ahead).
 - 60 FPS: enemies make their every-eighth-frame checks (react, approach, patrol) at the 30 FPS pace instead of twice as often.

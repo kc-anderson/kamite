@@ -29,6 +29,14 @@ namespace ps2recomp
 {
     namespace
     {
+        struct PatchPlacementError : std::runtime_error
+        {
+            using std::runtime_error::runtime_error;
+        };
+    }
+
+    namespace
+    {
         std::unordered_map<uint32_t, RuntimeRelocationKind> loadRuntimeRelocationSites(const std::string &path)
         {
             std::ifstream file(path);
@@ -2184,7 +2192,7 @@ namespace ps2recomp
                 {
                     Instruction alt = m_decoder->decodeInstruction(address, conditional->second.value, !m_config.lowMemoryMode);
                     if (!plain(inst) || !plain(alt))
-                        throw std::runtime_error(fmt::format("conditional patch at 0x{:X}: branches and jumps cannot be switched", address));
+                        throw PatchPlacementError(fmt::format("conditional patch at 0x{:X}: branches and jumps cannot be switched", address));
                     inst.patchFlag = conditional->second.flag;
                     inst.patchAlt = std::make_shared<const Instruction>(alt);
                     m_reporter.info("patch", fmt::format("Conditional patch at 0x{:X} (flag {})", address, inst.patchFlag));
@@ -2192,7 +2200,7 @@ namespace ps2recomp
                 if (auto hook = m_config.hookPatches.find(address); hook != m_config.hookPatches.end())
                 {
                     if (!plain(inst) || inst.patchAlt)
-                        throw std::runtime_error(fmt::format("hook at 0x{:X}: only on a plain instruction without a conditional patch", address));
+                        throw PatchPlacementError(fmt::format("hook at 0x{:X}: only on a plain instruction without a conditional patch", address));
                     inst.patchFlag = hook->second.flag;
                     inst.hookName = hook->second.hook;
                     inst.hookReplaces = hook->second.hookReplaces;
@@ -2207,6 +2215,10 @@ namespace ps2recomp
                 }
 
                 instructions.push_back(inst);
+            }
+            catch (const PatchPlacementError &)
+            {
+                throw; // a misplaced hook or conditional patch fails the build (it truncated the function before)
             }
             catch (const std::exception &e)
             {

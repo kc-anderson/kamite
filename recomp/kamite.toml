@@ -3719,9 +3719,14 @@ flag = "fps60"
 replace = true
 
 # 60 FPS: an enemy's state change made in the first half of a 30 FPS frame runs its new step on the next 30 FPS frame
-# (the mode-0 phase handler held a vblank; frame_patches.cpp enemyStepHold).
+# (the mode-0 phase handler held a vblank; frame_patches.cpp enemyStepHold). On the two ways into the jalr a2 at 0x20FAF0
+# (a hook on the jalr itself recompiles to a jump to itself): 0x20FAE8 (the b's delay slot) and 0x20FAEC.
 [[patches.hooks]]
-address = "0x0020FAF0"
+address = "0x0020FAE8"
+hook = "km_fps60_enemy_step_hold"
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0020FAEC"
 hook = "km_fps60_enemy_step_hold"
 flag = "fps60"
 
