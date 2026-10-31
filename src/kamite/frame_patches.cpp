@@ -44,6 +44,7 @@
 #include "kamite/call_profile.h"
 #include "kamite/counter_finder.h"
 #include "kamite/test_mode.h"
+#include "kamite/game_options.h"
 #include "kamite/pc_sampler.h"
 #include "kamite/log.h"
 #include "kamite/game_layout.h"
@@ -460,6 +461,7 @@ namespace kamite
             ++g_gameFrame;
             forgetStickAfterLoad();
             forgetRandAfterLoad(rdram);
+            deadPanFrame(rdram, ctx, runtime);
             if (const int request = g_fps60Request.exchange(-1); request >= 0)
                 setFps60(request != 0);
             if (g_rouletteRequest.exchange(0) != 0)
@@ -868,6 +870,8 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_countdown_hitstop", &countdownLoad<3, 0x2CD0u>);
         ps2xRegisterHostHook("km_fps60_countdown_pl1658", &countdownLoad<16, 0x1658u>); // Gene's 15-frame cooldown, 0x126840
         ps2xRegisterHostHook("km_fps60_countdown_pl15b8", &countdownLoad<17, 0x15B8u>);    // the mash states' decay (s1)
+        ps2xRegisterHostHook("km_fps60_countdown_pl15b0", &countdownLoad<17, 0x15B0u>);    // Dead Pan's wait (s1)
+        ps2xRegisterHostHook("km_fps60_float_add_f0f1", &floatAddParity<0, 0, 1>);         // add.s f0,f0,f1
         ps2xRegisterHostHook("km_fps60_countdown_pl15b8_s0", &countdownLoad<16, 0x15B8u>); // the same in func_0011FD10 (s0)
         ps2xRegisterHostHook("km_fps60_countup_self", &countupSelf);
         ps2xRegisterHostHook("km_fps60_gene_rate_half", &geneRateHalfF0);

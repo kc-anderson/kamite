@@ -35,12 +35,25 @@
 // the game-clear room r022 sets 0x747A28 (GameWork +0x588) |= 0x20000000 when the Kick Me Sign is still on (cCoreSave
 // ckPaper; the same clear gives the KMS jukebox CD), or with F2's "Every roulette reel owned" (DBG_ALL_GOD_REEL).
 // As in Japanese it then joins the roulette without being bought, at level 3 and up (0x125338: getGameLevel >= 3).
+//
+// Dead Pan's invincibility shown (always on with Dead Pan; F2 > Gameplay can drop the red face): from the move's
+// state (Gene phase 41, func_00113CF8: post-hit guard +0x54C held at 30) until that guard has run out after it, Gene
+// gets the taunted enemies' berserk look (func_00268788, the anger state +0x16EC): the steam, SetEffect(0x58, 7, obj,
+// params, 5, -1) + SetEffect(0x58, 0xF, obj, params, -1, -1) once, KillEffect(obj, 5, 2) when it ends; the red face,
+// the face meshes' colour (+0x3A0/+0x3A4/+0x3A8) eased 0.1 a frame toward (0.9, 0.5, 0.5) and back to white. Gene's
+// head is the mesh HD_00 (pl00.dat's scr; looked up like cModel_getMeshPtr 0x14B730: obj +0x25C list, +0x404 next,
+// +0x414 -> +8 = the name packed in a u64). Driven from the frame hook (deadPanFrame), host calls as debug_tools does.
 #include "kamite/game_options.h"
+#include "kamite/frame_patches.h"
 #include "kamite/log.h"
 #include "ps2_runtime_macros.h"
+#include "runtime/ee_scheduler.h"
 
+#include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
+#include "runtime/ps2_save_state.h"
 
 namespace kamite
 {
@@ -89,6 +102,13 @@ namespace kamite
             rdram[(GPR_U32(ctx, 29) + 0x30u + index * 0xCu + 8u) & 0x1FFFFFFu] = 1u;
         }
 
+        // Before sb zero,0x621(s1) at 0x114904 (the roulette's cancel, flag modern_roulette): the circle that cancelled
+        // must not also start the circle attack (+0x625, its 3-frame window).
+        void rouletteCancelCircle(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            rdram[(GPR_U32(ctx, 17) + 0x625u) & 0x1FFFFFFu] = 0u;
+        }
+
         // Replaces the language loads in func_00125048 (flag dead_pan, always on): 0 (Japanese) once Dead Pan is earned.
         constexpr uint32_t kLanguage = 0x747A0Cu;     // GameWork +0x56C
         constexpr uint32_t kSaveFlags = 0x747A28u;    // GameWork +0x588
@@ -129,6 +149,140 @@ namespace kamite
         }
     }
 
+    namespace
+    {
+        constexpr uint32_t kGameWork = 0x7474A0u;
+        constexpr uint32_t kSetEffect = 0x306528u, kKillEffect = 0x306200u;
+        constexpr uint8_t kDeadPanPhase = 41u;
+        std::atomic<bool> g_deadPanRedFace{true};
+        struct DeadPanLook
+        {
+            uint32_t gene = 0;
+            bool active = false, steam = false;
+            float fade = 1.0f; // 1 = Gene's own colours, 0 = full red (the enemies' +0x16F0)
+        } g_look;
+
+        float ramF(const uint8_t *rdram, uint32_t address)
+        {
+            float v = 0.0f;
+            std::memcpy(&v, rdram + (address & 0x1FFFFFFu), sizeof(v));
+            return v;
+        }
+        void putF(uint8_t *rdram, uint32_t address, float v) { std::memcpy(rdram + (address & 0x1FFFFFFu), &v, sizeof(v)); }
+        void put32(uint8_t *rdram, uint32_t address, uint32_t v) { std::memcpy(rdram + (address & 0x1FFFFFFu), &v, sizeof(v)); }
+
+        uint32_t meshByName(const uint8_t *rdram, uint32_t obj, const char *name)
+        {
+            uint64_t key = 0;
+            for (int i = 0; i < 8 && name[i]; ++i)
+                key |= static_cast<uint64_t>(static_cast<uint8_t>(name[i])) << (8 * i);
+            uint32_t mesh = ram32(rdram, obj + 0x25Cu);
+            for (int guard = 0; guard < 256 && mesh >= 0x100000u && mesh < 0x2000000u; ++guard)
+            {
+                const uint32_t info = ram32(rdram, mesh + 0x414u);
+                uint64_t have = 0;
+                if (info >= 0x100000u && info < 0x2000000u)
+                    std::memcpy(&have, rdram + info + 8u, sizeof(have));
+                if (have == key)
+                    return mesh;
+                mesh = ram32(rdram, mesh + 0x404u);
+            }
+            return 0u;
+        }
+
+        // A guest function run to its end on a copy of the registers (debug_tools' room jump does the same).
+        bool callGuest(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t address,
+                       std::initializer_list<uint32_t> args, uint32_t stack = 0u)
+        {
+            if (!runtime || !runtime->hasFunction(address))
+                return false;
+            PS2Runtime::RecompiledFunction fn = runtime->lookupFunction(address);
+            if (!fn)
+                return false;
+            const R5900Context saved = *ctx;
+            int reg = 4;
+            for (uint32_t a : args)
+            {
+                if (reg > 11)
+                    break;
+                SET_GPR_U32(ctx, reg, a);
+                ++reg;
+            }
+            if (stack)
+                SET_GPR_U32(ctx, 29, stack);
+            runtime->eeScheduler().beginHostCall();
+            fn(rdram, ctx, runtime);
+            runtime->eeScheduler().endHostCall();
+            *ctx = saved;
+            return true;
+        }
+
+        void startSteam(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t gene)
+        {
+            // The parameter block func_00268788 builds on its stack (0x80 bytes), here below the caller's stack.
+            const uint32_t block = (GPR_U32(ctx, 29) - 0x400u) & ~0xFu;
+            std::memset(rdram + (block & 0x1FFFFFFu), 0, 0x80);
+            for (uint32_t o : {0x00u, 0x04u, 0x08u, 0x0Cu, 0x30u, 0x34u, 0x38u, 0x3Cu})
+                putF(rdram, block + o, 1.0f);
+            for (uint32_t o : {0x1Cu, 0x2Cu, 0x6Cu}) // vf0 = (0, 0, 0, 1) at +0x10, +0x20, +0x60
+                putF(rdram, block + o, 1.0f);
+            putF(rdram, block + 0x40u, ramF(rdram, gene + 0x114u));
+            rdram[(block + 0x4Cu) & 0x1FFFFFFu] = 0xFFu;
+            rdram[(block + 0x4Fu) & 0x1FFFFFFu] = 0xFFu;
+            callGuest(rdram, ctx, runtime, kSetEffect, {0x58u, 7u, gene, block, 5u, 0xFFFFFFFFu}, block);
+            callGuest(rdram, ctx, runtime, kSetEffect, {0x58u, 0xFu, gene, block, 0xFFFFFFFFu, 0xFFFFFFFFu}, block);
+        }
+
+        void paintFace(uint8_t *rdram, uint32_t gene, float fade)
+        {
+            const uint32_t head = meshByName(rdram, gene, "HD_00");
+            if (!head)
+                return;
+            const float base[3] = {0.9f, 0.5f, 0.5f}; // the enemies' red (0x3BF8AC)
+            for (int i = 0; i < 3; ++i)
+                putF(rdram, head + 0x3A0u + 4u * i, base[i] + fade * (1.0f - base[i]));
+        }
+    }
+
+    void deadPanFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        static uint32_t loads = 0;
+        DeadPanLook &look = g_look;
+        const uint32_t gene = ram32(rdram, kGameWork + 0x5F4u);
+        const uint32_t now = ps2x::savestate::loadCount();
+        if (now != loads || gene != look.gene || gene < 0x100000u || gene >= 0x2000000u)
+        {
+            loads = now;
+            look = DeadPanLook{};
+            look.gene = (gene >= 0x100000u && gene < 0x2000000u) ? gene : 0u;
+            return; // a new Gene (room change, load): his meshes and effects are new too
+        }
+        const bool inMove = rdram[(gene + 0x2F5u) & 0x1FFFFFFu] == kDeadPanPhase;
+        if (inMove)
+            look.active = true;
+        else if (look.active && ramF(rdram, gene + 0x54Cu) <= 0.0f)
+            look.active = false;
+        if (look.active && !look.steam)
+        {
+            startSteam(rdram, ctx, runtime, gene);
+            look.steam = true;
+        }
+        else if (!look.active && look.steam)
+        {
+            callGuest(rdram, ctx, runtime, kKillEffect, {gene, 5u, 2u});
+            look.steam = false;
+        }
+        const float step = fps60() ? 0.05f : 0.1f; // the enemies' 0.1 a frame, at the 30 FPS pace
+        const bool red = look.active && g_deadPanRedFace.load(std::memory_order_relaxed);
+        const float before = look.fade;
+        look.fade = red ? std::max(0.0f, look.fade - step) : std::min(1.0f, look.fade + step);
+        if (look.fade < 1.0f || before < 1.0f)
+            paintFace(rdram, gene, look.fade);
+    }
+
+    bool deadPanRedFace() { return g_deadPanRedFace.load(); }
+    void setDeadPanRedFace(bool on) { g_deadPanRedFace.store(on); }
+
     void installGameOptions(PS2Runtime &)
     {
         const bool unlockHard = envOn("KAMITE_UNLOCK_HARD");
@@ -138,6 +292,7 @@ namespace kamite
         ps2xSetPatchFlag("skip_intro", skipIntro);
         ps2xRegisterHostHook("km_roulette_no_orbs", &rouletteNoOrbs);
         ps2xRegisterHostHook("km_roulette_grey_no_orbs", &rouletteGreyWithoutOrbs);
+        ps2xRegisterHostHook("km_roulette_cancel_circle", &rouletteCancelCircle);
         ps2xSetPatchFlag("roulette_no_orbs", rouletteAnyOrbs);
         ps2xRegisterHostHook("km_dead_pan_v0", &deadPanLanguage<2>);
         ps2xRegisterHostHook("km_dead_pan_v1", &deadPanLanguage<3>);

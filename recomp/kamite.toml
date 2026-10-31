@@ -562,6 +562,40 @@ address = "0x001229C8"
 hook = "km_fps60_pl56e_store_s0"
 replace = true
 flag = "fps60"
+# Dead Pan (Gene phase 41, func_00113CF8): step 1 waits +0x15B0 = 13 frames before the hit (step 2); the pan's effect
+# and sound run in real time, so at 60 Gene was hit before the pan's sound. Load-raise (the addiu is in beqz's slot).
+[[patches.hooks]]
+address = "0x00113E10"
+hook = "km_fps60_countdown_pl15b0"
+replace = true
+flag = "fps60"
+# The taunted enemies' red face (func_00268788): +0x16F0 eases 0.1 a frame (sub.s while angry, add.s after): every
+# other frame at 60 (floatSubParity / floatAddParity).
+[[patches.hooks]]
+address = "0x00268888"
+hook = "km_fps60_charge_sub_f0"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x002688E4"
+hook = "km_fps60_float_add_f0f1"
+replace = true
+flag = "fps60"
+# Modern menu buttons in the roulette (menu_buttons.cpp sets "modern_roulette" with the Modern setting): its OK tests
+# the cross only (bits 33|35 = cross|circle -> 33), its cancel window (Gene +0x626) is filled by the circle instead of
+# the triangle, and the cancel clears the circle's attack window too (the game clears square / triangle / cross).
+[[patches.conditional]]
+address = "0x00145CE8"
+value = "0x34032000"
+flag = "modern_roulette"
+[[patches.conditional]]
+address = "0x00108FA0"
+value = "0x30420020"
+flag = "modern_roulette"
+[[patches.hooks]]
+address = "0x00114904"
+hook = "km_roulette_cancel_circle"
+flag = "modern_roulette"
 # Random rolls made every frame (frame_patches.cpp randPaired; fps60-notes family 8): a roll at the same call site for
 # the same object on two game frames in a row repeats the first frame's number. Hooks after the twister returns in
 # irand / frand / frand - 0.5 (the caller's ra at 0(sp)), and around MoveObj's update call (the object being updated).

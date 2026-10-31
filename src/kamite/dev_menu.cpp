@@ -151,6 +151,10 @@ namespace kamite::dev_menu
             if (ui->combo("Roulette timer##roulette", &timer, kTimer, 2))
                 setRouletteTimerDouble(timer == 1);
 
+            int redFace = deadPanRedFace() ? 1 : 0;
+            if (ui->checkbox("Dead Pan: red face while invincible (the steam always shows)##deadpanred", &redFace))
+                setDeadPanRedFace(redFace != 0);
+
             ui->separator_text("Sound");
             int mute = muteMusic() ? 1 : 0;
             if (ui->checkbox("Mute music##mutemusic", &mute))

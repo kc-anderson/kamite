@@ -4,6 +4,9 @@ Newest first, one line per change; the code comments say how.
 
 ## October 31, 2026
 
+- Dead Pan: Gene steams from the ears and goes red in the face while its invincibility lasts (F2 can turn the red off).
+- 60 FPS: Dead Pan's pan lands with its sound again; taunted enemies' faces redden and cool down at the 30 FPS pace.
+- Modern menu buttons cover the roulette: A picks, B cancels, Y does nothing; the bar shows the shorter hint.
 - 60 FPS: menus move up on every press again, and backing out of the Roulette screen no longer freezes the game.
 - 60 FPS: Gene's grab finishers follow the held enemy as long as at 30.
 - Roulette without orbs: moves that cost orbs are greyed out when none are left.

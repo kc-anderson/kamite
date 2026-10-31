@@ -6,6 +6,7 @@
 #include "kamite/disc_files.h"
 #include "kamite/log.h"
 #include "kamite/game_layout.h"
+#include "ps2_runtime.h" // ps2xSetPatchFlag
 #include "runtime/ps2_cd_image.h"
 #include "runtime/ps2_pnach.h"
 
@@ -288,6 +289,7 @@ namespace kamite::menu_buttons
         for (char &c : text)
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         g_modern.store(!(text == "classic" || text == "0"), std::memory_order_relaxed);
+        ps2xSetPatchFlag("modern_roulette", g_modern.load(std::memory_order_relaxed)); // kamite.toml: the roulette's own buttons
         g_ram = rdram;
         KM_INFO(Game, "menu buttons: " << (g_modern.load() ? "modern (in menus the south button confirms and the east one cancels; play unchanged)"
                                                             : "classic (circle and cross confirm, triangle cancels, as on the PS2)"));
@@ -307,6 +309,7 @@ namespace kamite::menu_buttons
 
     void setModern(bool modern)
     {
+        ps2xSetPatchFlag("modern_roulette", modern);
         if (g_modern.exchange(modern) != modern)
             KM_INFO(Game, "menu buttons: " << (modern ? "modern" : "classic") << " (F2); the save menu's own wording follows at the next start");
     }
@@ -317,9 +320,11 @@ namespace kamite::menu_buttons
         // name the buttons that work the menu: the game's "triangle" (cancel) is now the circle, its two confirms the
         // cross alone.
         static const std::vector<TextPatch> patches = {
-            // The roulette's bar ("[R1]Select [cross][circle]OK [triangle]Cancel", 0x591CC) is left as it is: the roulette
-            // is part of play (its OK reads the cross and circle bits 33/35 directly, func_00145810 at 0x145CE8, and its
-            // cancel comes from the player side), so it keeps the game's buttons in both modes.
+            // The roulette's bar ("[R1]Select [cross][circle]OK [triangle]Cancel", 0x591CC): the roulette follows the
+            // menus too (kamite.toml "modern_roulette": its OK, func_00145810 0x145CE8, reads the cross only; its cancel,
+            // Gene's +0x626 window filled at 0x108FA0, comes from the circle), so the bar names cross OK, circle Cancel.
+            {0x591DCu, text({kCross, kCircle}, "OK"), text({kCross, 0xB301u}, "OK")},
+            {0x591E6u, {kTriangle}, {kCircle}},
             // The Techniques screen's "[triangle] Exit" (0x59224: colour code 0xB602 with its colour, the icon, 0xB301
             // back to white): exiting is the menus' Cancel, now the circle, in the circle's own colour (1, as the
             // "[circle] Default" hint has it).
