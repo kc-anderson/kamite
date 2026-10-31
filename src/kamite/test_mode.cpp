@@ -46,6 +46,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace kamite::test_mode
@@ -258,6 +259,7 @@ namespace kamite::test_mode
             std::string meta, state, pad, live;
             std::string host; // the Modern controls' camera and turns, a line a frame (HostTrack)
             std::string reads; // what the game's pad reads returned, a line a read (ReadTrack)
+            std::string rolls; // the game's random rolls, a line a roll (RollTrack)
         };
 
         std::string packCase(const CaseFile &c)
@@ -279,6 +281,8 @@ namespace kamite::test_mode
                 section("host", c.host);
             if (!c.reads.empty())
                 section("reads", c.reads);
+            if (!c.rolls.empty())
+                section("rolls", c.rolls);
             section("state", c.state); // last: the big one
             out += "end\n";
             return out;
@@ -319,7 +323,7 @@ namespace kamite::test_mode
                     error = "section " + name + " runs past the end of the file";
                     return false;
                 }
-                std::string *target = name == "meta" ? &c.meta : name == "state" ? &c.state : name == "pad" ? &c.pad : name == "live" ? &c.live : name == "host" ? &c.host : name == "reads" ? &c.reads : nullptr;
+                std::string *target = name == "meta" ? &c.meta : name == "state" ? &c.state : name == "pad" ? &c.pad : name == "live" ? &c.live : name == "host" ? &c.host : name == "reads" ? &c.reads : name == "rolls" ? &c.rolls : nullptr;
                 if (target)
                     target->assign(data, at, size);
                 at += size + 1u; // the newline after the bytes
@@ -687,6 +691,96 @@ namespace kamite::test_mode
             return track.divider == 1u || track.divider == 2u;
         }
 
+        // ---- the roll track: "kamite-rolls 1", "divider N", then "<frame> <site> <object> <k> <value>" (hex) a roll ---
+        // Every random number the game was given while the case recorded (irand / frand, after the 60 FPS pairing):
+        // the frame, the call site (the caller's ra), the object MoveObj was updating (0 outside), the roll's number
+        // within that frame for that site and object, the value. A replay at the other frame rate hands the game the
+        // recorded value of the same roll (same site, object and number, in the same 30 FPS frame of time), so the
+        // enemies make the tester's choices and the two runs stay comparable past the first coin flip; a roll with no
+        // match draws as usual. The replay at the case's own rate leaves the rolls alone, so its faithfulness check
+        // stays a real one. Rolls of the cloth step (0x104010..0x106218, its picture-only half step) are not kept.
+        struct RollKey
+        {
+            uint32_t vblank = 0, site = 0, object = 0, k = 0;
+            bool operator==(const RollKey &o) const { return vblank == o.vblank && site == o.site && object == o.object && k == o.k; }
+        };
+        struct RollKeyHash
+        {
+            size_t operator()(const RollKey &key) const
+            {
+                uint64_t h = (static_cast<uint64_t>(key.vblank) << 32) ^ key.site;
+                h = h * 0x9E3779B97F4A7C15ull ^ ((static_cast<uint64_t>(key.object) << 8) | key.k);
+                return static_cast<size_t>(h ^ (h >> 29));
+            }
+        };
+        struct RollEntry
+        {
+            uint32_t frame = 0, site = 0, object = 0, k = 0, value = 0;
+        };
+        struct RollTrack
+        {
+            uint32_t divider = 2u;
+            std::vector<RollEntry> entries;                          // recording
+            std::unordered_map<RollKey, uint32_t, RollKeyHash> byKey; // replay (vblank = frame x divider)
+        };
+        // The roll's number within a frame per (site, object).
+        struct RollCounter
+        {
+            uint32_t frame = ~0u;
+            std::unordered_map<uint64_t, uint32_t> counts;
+            uint32_t next(uint32_t now, uint32_t site, uint32_t object)
+            {
+                if (now != frame)
+                {
+                    frame = now;
+                    counts.clear();
+                }
+                return counts[(static_cast<uint64_t>(site) << 32) | object]++;
+            }
+        };
+        // A replay's rolls per call site, for the report: calls, fresh values (a value other than the last one the same
+        // site gave the same object: the 60 FPS pairing repeats a value, and a roll made every frame that the pairing
+        // does not cover shows twice the fresh values at 60), values taken from the recording.
+        struct RollStat
+        {
+            uint32_t calls = 0, fresh = 0, forced = 0;
+        };
+
+        bool keptRoll(uint32_t site) { return site < 0x104010u || site >= 0x106218u; }
+
+        std::string formatRolls(const RollTrack &track)
+        {
+            std::string out = "kamite-rolls 1\ndivider " + std::to_string(track.divider) + "\n";
+            char line[64];
+            for (const RollEntry &e : track.entries)
+            {
+                std::snprintf(line, sizeof(line), "%X %X %X %X %X\n", e.frame, e.site, e.object, e.k, e.value);
+                out += line;
+            }
+            return out;
+        }
+
+        bool parseRolls(const std::string &text, RollTrack &track)
+        {
+            std::istringstream in(text);
+            std::string line;
+            if (!std::getline(in, line) || trim(line) != "kamite-rolls 1")
+                return false;
+            while (std::getline(in, line))
+            {
+                if (line.rfind("divider ", 0) == 0)
+                {
+                    track.divider = static_cast<uint32_t>(std::strtoul(line.c_str() + 8, nullptr, 10));
+                    continue;
+                }
+                unsigned frame = 0, site = 0, object = 0, k = 0, value = 0;
+                if (std::sscanf(line.c_str(), "%x %x %x %x %x", &frame, &site, &object, &k, &value) != 5)
+                    continue;
+                track.byKey[RollKey{frame * track.divider, site, object, k}] = value;
+            }
+            return track.divider == 1u || track.divider == 2u;
+        }
+
         // ============================================================================================================
         // A run: a script (KAMITE_TEST) or a case replay (KAMITE_REPLAY_CASE). One at a time; the recorder is off
         // while one is running.
@@ -721,6 +815,11 @@ namespace kamite::test_mode
             std::vector<uint32_t> snapPrev;
             ReadTrack reads;          // play: the case's read track (empty: the polls alone feed the game)
             size_t readNext = 0;      // the first entry not yet reached
+            RollTrack rolls;          // play: the case's rolls (byKey)
+            bool useRolls = false;    // a replay at the other rate than the recording's: hand back its rolls
+            RollCounter rollCount;
+            std::unordered_map<uint32_t, RollStat> rollStats; // play: per call site
+            std::unordered_map<uint64_t, uint32_t> rollLast;  // play: the last value per (site, object)
             uint32_t readFrame = ~0u, readN = 0; // the frame of the last read and the reads in it
 
             uint64_t hookFrames = 0;
@@ -822,6 +921,19 @@ namespace kamite::test_mode
                 }
             }
             closeLogger(run.log);
+            if (!run.record && !run.rollStats.empty())
+            {
+                // <case>.<rate>.rolls.csv: the report's roll check (case_report.py)
+                const std::string stem = run.csv.string().substr(0, run.csv.string().size() - 4);
+                std::string text = "site,calls,fresh,forced\n";
+                char line[64];
+                for (const auto &[site, stat] : run.rollStats)
+                {
+                    std::snprintf(line, sizeof(line), "%06X,%u,%u,%u\n", site, stat.calls, stat.fresh, stat.forced);
+                    text += line;
+                }
+                writeFile(stem + ".rolls.csv", text);
+            }
             if (run.ram)
             {
                 std::fclose(run.ram);
@@ -1092,6 +1204,20 @@ namespace kamite::test_mode
                 run.fps60 = *fps == '1' ? 1 : 0;
             const bool at60 = run.fps60 >= 0 ? run.fps60 != 0 : fps60();
             run.csv = path.string() + (at60 ? ".60.csv" : ".30.csv");
+            run.rolls = RollTrack{};
+            run.useRolls = false;
+            if (!c.rolls.empty())
+            {
+                if (!parseRolls(c.rolls, run.rolls))
+                {
+                    error = "bad rolls section";
+                    return false;
+                }
+                run.useRolls = run.rolls.divider != (at60 ? 1u : 2u);
+            }
+            run.rollCount = RollCounter{};
+            run.rollStats.clear();
+            run.rollLast.clear();
             return true;
         }
 
@@ -1119,6 +1245,8 @@ namespace kamite::test_mode
             Logger log;
             HostTrack host;           // the Modern controls' camera and turns, from frame 0
             ReadTrack reads;          // the game's pad reads, from frame 0
+            RollTrack rolls;          // the game's random rolls, from frame 0
+            RollCounter rollCount;
             uint32_t readFrame = ~0u, readN = 0;
             bool polling = false;     // the state has saved: every poll is kept
             uint32_t readsThisFrame = 0, readsLastFrame = 0;
@@ -1172,6 +1300,9 @@ namespace kamite::test_mode
             rec.host.divider = rec.divider;
             rec.reads = ReadTrack{};
             rec.reads.divider = rec.divider;
+            rec.rolls = RollTrack{};
+            rec.rolls.divider = rec.divider;
+            rec.rollCount = RollCounter{};
             rec.readFrame = ~0u;
             rec.polling = false;
             rec.readsThisFrame = 0;
@@ -1210,6 +1341,7 @@ namespace kamite::test_mode
             c.pad = formatRecording(rec.rec);
             c.host = formatHost(rec.host);
             c.reads = formatReads(rec.reads);
+            c.rolls = formatRolls(rec.rolls);
             c.meta = "created=" + rec.stamp + "\ndivider=" + std::to_string(rec.divider) + "\nframes=" + std::to_string(rec.frame) +
                      "\npolls=" + std::to_string(rec.rec.polls()) + "\nseconds=" + std::to_string(static_cast<double>(rec.rec.polls()) / 60.0) +
                      "\nroom=0x";
@@ -1546,5 +1678,85 @@ namespace kamite::test_mode
         e.frame = rec.frame;
         e.camera = in;
         rec.host.entries.push_back(e);
+    }
+
+    namespace
+    {
+        // The roll between rollBefore and rollAfter (one at a time: the game thread).
+        enum class RollUse
+        {
+            None,
+            Run,
+            Record
+        };
+        RollUse g_rollUse = RollUse::None;
+        uint32_t g_rollSite = 0, g_rollObject = 0, g_rollK = 0;
+    }
+
+    uint32_t rollBefore(uint32_t site, uint32_t object, uint32_t drawn)
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        g_rollUse = RollUse::None;
+        if (!keptRoll(site))
+            return drawn;
+        Run &run = g_run;
+        if (run.phase == Run::Phase::Running && !run.record)
+        {
+            g_rollUse = RollUse::Run;
+            g_rollSite = site;
+            g_rollObject = object;
+            g_rollK = run.rollCount.next(run.frame, site, object);
+            RollStat &stat = run.rollStats[site];
+            ++stat.calls;
+            if (!run.useRolls)
+                return drawn;
+            // Frame k's update sees k + 1 at either rate: a 30 FPS update seeing vblank t covers the 60 FPS updates
+            // seeing t - 1 and t; a 60 FPS update seeing t lies in the 30 FPS update seeing t rounded up to even.
+            const uint32_t now = run.frame * run.divider;
+            const auto find = [&](uint32_t vblank, uint32_t &value) {
+                const auto it = run.rolls.byKey.find(RollKey{vblank, site, object, g_rollK});
+                if (it == run.rolls.byKey.end())
+                    return false;
+                value = it->second;
+                return true;
+            };
+            uint32_t value = 0;
+            const bool found = run.divider == 2u ? ((now > 0u && find(now - 1u, value)) || find(now, value)) : find((now + 1u) & ~1u, value);
+            if (!found)
+                return drawn;
+            ++stat.forced;
+            return value;
+        }
+        Recorder &rec = g_rec;
+        if (run.phase == Run::Phase::Off && rec.phase == Recorder::Phase::Recording)
+        {
+            g_rollUse = RollUse::Record;
+            g_rollSite = site;
+            g_rollObject = object;
+            g_rollK = rec.rollCount.next(rec.frame, site, object);
+        }
+        return drawn;
+    }
+
+    void rollAfter(uint32_t value)
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        const RollUse use = g_rollUse;
+        g_rollUse = RollUse::None;
+        if (use == RollUse::Record)
+        {
+            Recorder &rec = g_rec;
+            if (rec.phase == Recorder::Phase::Recording)
+                rec.rolls.entries.push_back(RollEntry{rec.frame, g_rollSite, g_rollObject, g_rollK, value});
+            return;
+        }
+        if (use != RollUse::Run)
+            return;
+        Run &run = g_run;
+        const uint64_t key = (static_cast<uint64_t>(g_rollSite) << 32) | g_rollObject;
+        const auto last = run.rollLast.find(key);
+        if (last == run.rollLast.end() || last->second != value)
+            ++run.rollStats[g_rollSite].fresh;
+        run.rollLast[key] = value;
     }
 }

@@ -43,4 +43,12 @@ namespace kamite::test_mode
     [[nodiscard]] bool replayHost(HostCamera &out);
     // While a case records: keep this frame's values.
     void recordHost(const HostCamera &in);
+
+    // The game's random rolls (frame_patches.cpp randInt / randFloat, game thread; site = the caller's ra, object =
+    // the one MoveObj is updating or 0). rollBefore gets the twister's number before the 60 FPS pairing: a replay at
+    // the other frame rate than the case's hands back the recorded value of the same roll (the AI makes the tester's
+    // choices); otherwise the number is returned as it is. rollAfter gets the value the game is given: a recording
+    // keeps it, a replay counts it per site (the report's roll check).
+    [[nodiscard]] uint32_t rollBefore(uint32_t site, uint32_t object, uint32_t drawn);
+    void rollAfter(uint32_t value);
 }

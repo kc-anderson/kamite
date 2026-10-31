@@ -368,20 +368,25 @@ namespace kamite
             std::memcpy(&ra, &ram8(rdram, GPR_U32(ctx, 29)), sizeof(ra));
             return ra;
         }
+        // Every roll (the hooks are always on): a case's roll track first (test_mode: a replay at the other frame rate
+        // takes the recorded value, a recording keeps the value the game gets), the 60 FPS pairing between.
+        uint32_t rollValue(uint8_t *rdram, uint32_t ra, uint32_t drawn)
+        {
+            uint32_t value = test_mode::rollBefore(ra, g_randObject, drawn);
+            if (ram8(rdram, game::GameWork::address(game::GameWork::kVblankDivider)) == 1u && randSite(ra))
+                value = randPaired(rdram, ra, value);
+            test_mode::rollAfter(value);
+            return value;
+        }
         void randInt(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // before ld ra at 0x31CFF0 (v0 = the number)
         {
-            const uint32_t ra = callerRa(rdram, ctx);
-            if (randSite(ra))
-                SET_GPR_S32(ctx, 2, static_cast<int32_t>(randPaired(rdram, ra, GPR_U32(ctx, 2))));
+            SET_GPR_U32(ctx, 2, rollValue(rdram, callerRa(rdram, ctx), GPR_U32(ctx, 2)));
         }
         void randFloat(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // 0x31D010 / 0x31D030 (f0 = frand)
         {
-            const uint32_t ra = callerRa(rdram, ctx);
-            if (!randSite(ra))
-                return;
             uint32_t bits = 0;
             std::memcpy(&bits, &ctx->f[0], sizeof(bits));
-            bits = randPaired(rdram, ra, bits);
+            bits = rollValue(rdram, callerRa(rdram, ctx), bits);
             std::memcpy(&ctx->f[0], &bits, sizeof(bits));
         }
         void randObjectBegin(uint8_t *, R5900Context *ctx, PS2Runtime *) { g_randObject = GPR_U32(ctx, 5); } // MoveObj 0x30F160

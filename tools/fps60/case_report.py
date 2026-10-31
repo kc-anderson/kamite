@@ -507,7 +507,43 @@ def main(argv):
         c30, c60 = per_second(rows30, 30), per_second(rows60, 60)
         ratio = c60 / c30 if c30 > 0 else 0.0
         print(f"Coat motion: {c30:.2f} m/s at 30, {c60:.2f} m/s at 60 (x{ratio:.2f}){'  !!' if abs(ratio - 1.0) > 0.15 else ''}")
+    roll_report(path, sections, rec_div, len(rows30) / 30.0, len(rows60) / 60.0)
     return 0
+
+
+def read_rolls(path):
+    """<case>.<rate>.rolls.csv (a replay's random rolls per call site): {site: (calls, fresh, forced)}."""
+    if not os.path.exists(path):
+        return None
+    with open(path, newline="") as f:
+        return {r["site"]: (int(r["calls"]), int(r["fresh"]), int(r["forced"])) for r in csv.DictReader(f)}
+
+
+def roll_report(path, sections, rec_div, secs30, secs60):
+    """The roll track (cases recorded with it): how many of the other-rate replay's rolls came from the recording,
+    and the call sites that draw fresh numbers twice as often per second at 60 (a per-frame roll the 60 FPS pairing
+    does not cover: a 60 FPS bug of its own)."""
+    r30, r60 = read_rolls(path + ".30.rolls.csv"), read_rolls(path + ".60.rolls.csv")
+    if r30 is None or r60 is None:
+        return
+    other = r30 if rec_div == 1 else r60
+    if "rolls" in sections:
+        calls = sum(v[0] for v in other.values())
+        forced = sum(v[2] for v in other.values())
+        print(f"Rolls: the {60 // (3 - rec_div)} FPS replay took {forced} of its {calls} rolls from the recording "
+              f"({100.0 * forced / calls if calls else 0:.0f}%).")
+    flagged = []
+    for site in sorted(set(r30) | set(r60)):
+        f30 = r30.get(site, (0, 0, 0))[1] / secs30 if secs30 else 0.0
+        f60 = r60.get(site, (0, 0, 0))[1] / secs60 if secs60 else 0.0
+        if f60 * secs60 >= 10 and f60 >= 1.6 * max(f30, 0.5):
+            flagged.append(f"site {site}: {f30:.1f} / {f60:.1f} a second")
+    if flagged:
+        print("Rolls drawn more often at 60 (fresh numbers a second at 30 / 60)  !!")
+        for line in flagged[:12]:
+            print("   " + line)
+        if len(flagged) > 12:
+            print(f"   ... (+{len(flagged) - 12})")
 
 
 if __name__ == "__main__":

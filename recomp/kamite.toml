@@ -712,26 +712,27 @@ flag = "fps60"
 # Random rolls made every frame (frame_patches.cpp randPaired; fps60-notes family 8): a roll at the same call site for
 # the same object on two game frames in a row repeats the first frame's number. Hooks after the twister returns in
 # irand / frand / frand - 0.5 (the caller's ra at 0(sp)), and around MoveObj's update call (the object being updated).
+# Always on (flag test_cases): the cases keep every roll (test_mode.cpp roll track); the pairing checks the divider.
 [[patches.hooks]] # irand: before ld ra (v0 = the number)
 address = "0x0031CFF0"
 hook = "km_fps60_rand_int"
-flag = "fps60"
+flag = "test_cases"
 [[patches.hooks]] # frand: before ld ra (f0)
 address = "0x0031D010"
 hook = "km_fps60_rand_float"
-flag = "fps60"
+flag = "test_cases"
 [[patches.hooks]] # frand - 0.5: before lui at (f0 = frand)
 address = "0x0031D030"
 hook = "km_fps60_rand_float"
-flag = "fps60"
+flag = "test_cases"
 [[patches.hooks]] # MoveObj: a1 = the object whose update is called next
 address = "0x0030F160"
 hook = "km_fps60_rand_object_begin"
-flag = "fps60"
+flag = "test_cases"
 [[patches.hooks]] # MoveObj: back from the update
 address = "0x0030F16C"
 hook = "km_fps60_rand_object_end"
-flag = "fps60"
+flag = "test_cases"
 [[patches.hooks]] # cEmManage_SetSpeedRate: the enemies' slow-motion rate (manager +0x548), half at 60 (enemySlowRate)
 address = "0x00292F38"
 hook = "km_fps60_enemy_slow_rate"
