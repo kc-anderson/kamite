@@ -351,7 +351,7 @@ namespace kamite::modern
             ini.setBool("Game", "CameraInvertY", g_invertY.load());
             ini.setBool("Game", "MouseCamera", g_mouseCamera.load());
             ini.set("Game", "MouseSensitivity", number2(g_mouseSensitivity.load()));
-            ini.set("Game", "MenuButtons", menu_buttons::modern() ? "modern" : "classic");
+            ini.set("Game", "MenuButtons", menu_buttons::styleName(menu_buttons::style()));
             ini.set("Game", "ButtonPrompts", prompt_hd::choiceName(prompt_hd::choice()));
             setStatus(ini.save() ? "Saved to kamite.ini." : "Could not write kamite.ini.");
         }
@@ -425,18 +425,19 @@ namespace kamite::modern
             ui->text_disabled(line);
 
             ui->separator_text("Menu controls");
-            static const char *const kMenuButtons[] = {"Classic: circle and cross confirm, triangle cancels",
-                                                       "Modern: the bottom button confirms, the right one cancels"};
-            int menus = menu_buttons::modern() ? 1 : 0;
+            // In the order of the launcher's list; the index is menu_buttons::Style's order 1, 2, 0.
+            static const char *const kMenuButtons[] = {"Western: the bottom button confirms, the right one cancels",
+                                                       "Japanese: the right button confirms, the bottom one cancels",
+                                                       "Classic: circle and cross confirm, triangle cancels"};
+            static constexpr menu_buttons::Style kMenuStyles[] = {menu_buttons::Style::Western, menu_buttons::Style::Japanese,
+                                                                  menu_buttons::Style::Classic};
+            const menu_buttons::Style menuStyle = menu_buttons::style();
+            int menus = menuStyle == menu_buttons::Style::Japanese ? 1 : menuStyle == menu_buttons::Style::Classic ? 2 : 0;
             ui->set_next_width(340.0f);
-            ui->begin_disabled(menu_buttons::locked() ? 1 : 0);
-            if (ui->combo("##menubuttons", &menus, kMenuButtons, 2))
-                menu_buttons::setModern(menus == 1);
-            ui->end_disabled();
-            ui->text_disabled(menu_buttons::locked()
-                                  ? "Held at Modern by style switching (triangle / Y + d-pad saves a style)."
-                                  : "Menus, dialogs and the roulette; the moves keep their buttons. The save menu's own "
-                                    "wording follows at the next start.");
+            if (ui->combo("##menubuttons", &menus, kMenuButtons, 3) && menus >= 0 && menus < 3)
+                menu_buttons::setStyle(kMenuStyles[menus]);
+            ui->text_disabled("Menus, dialogs and the roulette; the moves keep their buttons. The save menu's own wording "
+                              "follows at the next start.");
 
             ui->separator_text("kamite.ini");
             if (ui->button("Save##controls"))

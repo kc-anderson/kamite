@@ -102,13 +102,6 @@ namespace kamite
             rdram[(GPR_U32(ctx, 29) + 0x30u + index * 0xCu + 8u) & 0x1FFFFFFu] = 1u;
         }
 
-        // Before sb zero,0x621(s1) at 0x114904 (the roulette's cancel, flag modern_roulette): the circle that cancelled
-        // must not also start the circle attack (+0x625, its 3-frame window).
-        void rouletteCancelCircle(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
-        {
-            rdram[(GPR_U32(ctx, 17) + 0x625u) & 0x1FFFFFFu] = 0u;
-        }
-
         // Replaces the language loads in func_00125048 (flag dead_pan, always on): 0 (Japanese) once Dead Pan is earned.
         constexpr uint32_t kLanguage = 0x747A0Cu;     // GameWork +0x56C
         constexpr uint32_t kSaveFlags = 0x747A28u;    // GameWork +0x588
@@ -289,7 +282,6 @@ namespace kamite
         ps2xSetPatchFlag("skip_intro", skipIntro);
         ps2xRegisterHostHook("km_roulette_no_orbs", &rouletteNoOrbs);
         ps2xRegisterHostHook("km_roulette_grey_no_orbs", &rouletteGreyWithoutOrbs);
-        ps2xRegisterHostHook("km_roulette_cancel_circle", &rouletteCancelCircle);
         ps2xSetPatchFlag("roulette_no_orbs", rouletteAnyOrbs);
         ps2xRegisterHostHook("km_dead_pan_v0", &deadPanLanguage<2>);
         ps2xRegisterHostHook("km_dead_pan_v1", &deadPanLanguage<3>);

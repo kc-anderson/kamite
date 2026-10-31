@@ -581,21 +581,24 @@ address = "0x002688E4"
 hook = "km_fps60_float_add_f0f1"
 replace = true
 flag = "fps60"
-# Modern menu buttons in the roulette (menu_buttons.cpp sets "modern_roulette" with the Modern setting): its OK tests
-# the cross only (bits 33|35 = cross|circle -> 33), its cancel window (Gene +0x626) is filled by the circle instead of
-# the triangle, and the cancel clears the circle's attack window too (the game clears square / triangle / cross).
-[[patches.conditional]]
+# The menu styles in the roulette (menu_buttons.cpp; flag menu_roulette, on for Western and Japanese): its OK tests
+# one button (bits 33|35 = cross|circle -> the cross for Western, the circle for Japanese), its cancel window (Gene
+# +0x626) is filled by the circle / the cross instead of the triangle, and the cancel clears that button's attack
+# window too (the game clears square / triangle / cross).
+[[patches.hooks]] # ori v1,zero,0xA000
 address = "0x00145CE8"
-value = "0x34032000"
-flag = "modern_roulette"
-[[patches.conditional]]
+hook = "km_roulette_ok"
+replace = true
+flag = "menu_roulette"
+[[patches.hooks]] # andi v0,v0,0x10
 address = "0x00108FA0"
-value = "0x30420020"
-flag = "modern_roulette"
+hook = "km_roulette_cancel_source"
+replace = true
+flag = "menu_roulette"
 [[patches.hooks]]
 address = "0x00114904"
-hook = "km_roulette_cancel_circle"
-flag = "modern_roulette"
+hook = "km_roulette_cancel_window"
+flag = "menu_roulette"
 # Gene's coat wind in the roulette (the coat's step func_00100CE0, while the player's +0x3AC bit 0x800 is set): the
 # push on the coat is (sin(phase) + 1) / 2 x 0.1 with the phase 0x3BC740 += 0.8 a frame, so at 60 the coat flapped
 # twice as fast. At 60 the step is 0.4 (the add.s at 0x100E50).
@@ -611,6 +614,49 @@ flag = "fps60"
 [[patches.hooks]]
 address = "0x00104224"
 hook = "km_fps60_cloth_sway"
+replace = true
+flag = "fps60"
+# The cloth step's solver at the 30 FPS pace (frame_patches.cpp clothSubQuarter...: half-step equivalents): gravity
+# (work +0x3C, or the node table at work +0x20) x 1/4, the wind push's swing factor (sin + 1) x 1/4, the damping
+# (work +0x40 or the node table, before vel *= it) -> sqrt, the springs' k (work +0x4C, four sites) -> 1 - sqrt(1 - k).
+[[patches.hooks]] # sub.s f1,f1,f0 (vel.y -= the node table's gravity)
+address = "0x001044E4"
+hook = "km_fps60_cloth_gravity_table"
+replace = true
+flag = "fps60"
+[[patches.hooks]] # sub.s f0,f0,f1 (vel.y -= work +0x3C)
+address = "0x001044F8"
+hook = "km_fps60_cloth_gravity"
+replace = true
+flag = "fps60"
+[[patches.hooks]] # add.s f22,f0,f21 (the push's swing factor: sin + 1)
+address = "0x0010465C"
+hook = "km_fps60_cloth_push"
+replace = true
+flag = "fps60"
+[[patches.hooks]] # mfc1 t0,f20 (vel *= damp)
+address = "0x00105F24"
+hook = "km_fps60_cloth_damp"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x00105374"
+hook = "km_fps60_cloth_spring_f2"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x00105590"
+hook = "km_fps60_cloth_spring_f2"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x001057A8"
+hook = "km_fps60_cloth_spring_f1"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x001059B8"
+hook = "km_fps60_cloth_spring_f1"
 replace = true
 flag = "fps60"
 [[patches.hooks]]
@@ -1691,6 +1737,11 @@ flag = "sprint_traversal"
 # Oct 30, claude/fps60-notes.md family 1): the enemy's step timers +0x5F0 / +0x5F4 / +0x5F8 / +0x5FC, +0x568 / +0x56A /
 # +0x56E and the AI waits in func_00208BE0. Seen in case af12321_fight: the light flinch (+0x5F4 = 10) lasted 0.183 s at 60.
 # Generated: the addiu (replace) or, when it sits in a delay slot, the load (load-raise, replace).
+# Not timers, removed Oct 31 (27 sites; case "Bandana dude 60fps grab attack": the squeeze never ended): decrements
+# behind moveMotion's "looped" result (beqz v0 after jal 0x157C18: once per motion loop, e.g. the grab's squeeze count
+# +0x56A, +0x5F0 loop counts) or behind a face-button press (GameWork +8 & 0xF0: the grab mash meters +0x568). They
+# happen as often per second at 60 as at 30; the every-other-frame countdown made the squeeze count never drop (the loop
+# end always fell on a skipped frame) and halved the mash. Kept: plain per-frame decrements.
 [[patches.hooks]] # func_00208BE0 lw +0x16DC (decrement in a delay slot: load-raise)
 address = "0x002090C0"
 hook = "km_fps60_em_cd_s2_16dc"
@@ -1806,11 +1857,6 @@ address = "0x002217C8"
 hook = "km_fps60_em_cd_s1_5f0"
 flag = "fps60"
 replace = true
-[[patches.hooks]] # func_0021FD50 lhu +0x568
-address = "0x002225F8"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
 [[patches.hooks]] # func_0021FD50 lw +0x5F0 (decrement in a delay slot: load-raise)
 address = "0x00222BA4"
 hook = "km_fps60_em_cd_s1_5f0"
@@ -1839,21 +1885,6 @@ replace = true
 [[patches.hooks]] # func_002236E8 lw +0x5F0 (decrement in a delay slot: load-raise)
 address = "0x00223A6C"
 hook = "km_fps60_em_cd_s1_5f0"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_002236E8 lw +0x5F0
-address = "0x00223B90"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00224090 lw +0x5F0
-address = "0x00224750"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00224A28 lw +0x5F0
-address = "0x00224E90"
-hook = "km_fps60_countdown_self"
 flag = "fps60"
 replace = true
 [[patches.hooks]] # func_00225110 lw +0x5F0 (decrement in a delay slot: load-raise)
@@ -1956,26 +1987,6 @@ address = "0x002293BC"
 hook = "km_fps60_em_cd_s1_5f0"
 flag = "fps60"
 replace = true
-[[patches.hooks]] # func_002294E0 lw +0x5F0
-address = "0x0022976C"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00229D08 lhu +0x56A
-address = "0x00229F48"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_0022A3F8 lhu +0x568
-address = "0x0022A6B8"
-hook = "km_fps60_countdown"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_0022A8D0 lhu +0x568
-address = "0x0022AB80"
-hook = "km_fps60_countdown"
-flag = "fps60"
-replace = true
 [[patches.hooks]] # func_0022ACE0 lw +0x5F0
 address = "0x0022AE50"
 hook = "km_fps60_countdown_v0a0"
@@ -1989,11 +2000,6 @@ replace = true
 [[patches.hooks]] # func_0022B9E0 lw +0x5F0 (decrement in a delay slot: load-raise)
 address = "0x0022BB38"
 hook = "km_fps60_em_cd_s0_5f0"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_0022B9E0 lhu +0x568
-address = "0x0022BB80"
-hook = "km_fps60_countdown_self"
 flag = "fps60"
 replace = true
 [[patches.hooks]] # func_0022BD10 lhu +0x568
@@ -2077,11 +2083,6 @@ hook = "km_fps60_countdown"
 flag = "fps60"
 replace = true
 [[patches.hooks]] # func_00235DB8 lhu +0x568
-address = "0x00235F8C"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00235DB8 lhu +0x568
 address = "0x0023610C"
 hook = "km_fps60_countdown"
 flag = "fps60"
@@ -2091,44 +2092,14 @@ address = "0x002362A0"
 hook = "km_fps60_countdown"
 flag = "fps60"
 replace = true
-[[patches.hooks]] # func_00236190 lhu +0x568
-address = "0x002362DC"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
 [[patches.hooks]] # func_002363E8 lhu +0x56E
 address = "0x002364F8"
 hook = "km_fps60_countdown"
 flag = "fps60"
 replace = true
-[[patches.hooks]] # func_002363E8 lhu +0x568
-address = "0x00236534"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_002363E8 lhu +0x568
-address = "0x002365E8"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_002363E8 lhu +0x56A
-address = "0x00236648"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_002367C0 lhu +0x568
-address = "0x0023693C"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
 [[patches.hooks]] # func_002367C0 lhu +0x56E
 address = "0x002369B0"
 hook = "km_fps60_countdown"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_002367C0 lhu +0x568
-address = "0x002369F4"
-hook = "km_fps60_countdown_self"
 flag = "fps60"
 replace = true
 [[patches.hooks]] # func_00236C60 lhu +0x56E
@@ -2151,11 +2122,6 @@ address = "0x00237220"
 hook = "km_fps60_countdown"
 flag = "fps60"
 replace = true
-[[patches.hooks]] # func_00237078 lhu +0x568
-address = "0x00237250"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
 [[patches.hooks]] # func_00237078 lhu +0x56E
 address = "0x002372FC"
 hook = "km_fps60_countdown"
@@ -2169,11 +2135,6 @@ replace = true
 [[patches.hooks]] # func_002373B0 lhu +0x56A
 address = "0x00237564"
 hook = "km_fps60_countdown"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_002373B0 lhu +0x568
-address = "0x00237594"
-hook = "km_fps60_countdown_self"
 flag = "fps60"
 replace = true
 [[patches.hooks]] # func_002376D0 lhu +0x56A
@@ -2194,11 +2155,6 @@ replace = true
 [[patches.hooks]] # func_002380D0 lhu +0x56A
 address = "0x00238274"
 hook = "km_fps60_countdown"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_002380D0 lhu +0x568
-address = "0x002382A4"
-hook = "km_fps60_countdown_self"
 flag = "fps60"
 replace = true
 [[patches.hooks]] # func_002380D0 lhu +0x56E
@@ -2227,11 +2183,6 @@ hook = "km_fps60_countdown"
 flag = "fps60"
 replace = true
 [[patches.hooks]] # func_00238898 lhu +0x568
-address = "0x00238AAC"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00238898 lhu +0x568
 address = "0x00238BD0"
 hook = "km_fps60_countdown"
 flag = "fps60"
@@ -2251,11 +2202,6 @@ address = "0x0023906C"
 hook = "km_fps60_countdown"
 flag = "fps60"
 replace = true
-[[patches.hooks]] # func_00238F10 lhu +0x568
-address = "0x0023909C"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
 [[patches.hooks]] # func_00239240 lhu +0x56E
 address = "0x00239360"
 hook = "km_fps60_countdown"
@@ -2264,11 +2210,6 @@ replace = true
 [[patches.hooks]] # func_00239240 lhu +0x56A
 address = "0x002393D8"
 hook = "km_fps60_countdown"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00239240 lhu +0x568
-address = "0x00239400"
-hook = "km_fps60_countdown_self"
 flag = "fps60"
 replace = true
 [[patches.hooks]] # func_00239240 lhu +0x568
@@ -2289,16 +2230,6 @@ replace = true
 [[patches.hooks]] # func_002397C0 lhu +0x56E
 address = "0x002398C8"
 hook = "km_fps60_countdown"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_002397C0 lhu +0x568
-address = "0x00239974"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_002397C0 lhu +0x56A
-address = "0x002399D4"
-hook = "km_fps60_countdown_self"
 flag = "fps60"
 replace = true
 [[patches.hooks]] # func_0023A010 lhu +0x56E
@@ -2326,19 +2257,9 @@ address = "0x00241494"
 hook = "km_fps60_countdown_self"
 flag = "fps60"
 replace = true
-[[patches.hooks]] # func_00243408 lhu +0x568
-address = "0x00243620"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
 [[patches.hooks]] # func_00245A18 lw +0x5F0 (decrement in a delay slot: load-raise)
 address = "0x00245F70"
 hook = "km_fps60_em_cd_s1_5f0"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00246088 lhu +0x568
-address = "0x00246198"
-hook = "km_fps60_countdown_self"
 flag = "fps60"
 replace = true
 [[patches.hooks]] # func_00247218 lhu +0x568
@@ -2464,11 +2385,6 @@ replace = true
 [[patches.hooks]] # func_002591F8 lw +0x5F0 (decrement in a delay slot: load-raise)
 address = "0x002594B8"
 hook = "km_fps60_em_cd_s3_5f0"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_00259A88 lhu +0x568
-address = "0x00259FE8"
-hook = "km_fps60_countdown_self"
 flag = "fps60"
 replace = true
 [[patches.hooks]] # func_0025BCC0 lhu +0x56E

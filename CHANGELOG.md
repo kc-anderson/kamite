@@ -4,6 +4,11 @@ Newest first, one line per change; the code comments say how.
 
 ## October 31, 2026
 
+- 60 FPS: enemy grabs end after their squeezes again, and mashing out takes as many presses as at 30.
+- 60 FPS: enemy states that count motion loops (grabs, holds, strings) count every loop again.
+- 60 FPS: cloth (Gene's coat, enemy clothes) swings with the 30 FPS weight and speed: gravity, wind, damping and springs.
+- Menu controls: Western, Japanese (right confirms, bottom cancels) or Classic; the roulette follows the choice.
+- Style switching: Square / X + d-pad on the Techniques screen; works with any menu controls.
 - 60 FPS: coats and other cloth sway at the 30 FPS pace all the time, not only in the roulette wind.
 - Modern menu controls: the roulette's black bar ends just before the TIME dial, the same margin on both sides.
 - Roulette: a quick left stick flick up no longer sometimes moves the wheel down.

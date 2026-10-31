@@ -5,7 +5,6 @@
 #include "kamite/function_hooks.h"
 #include "kamite/game_layout.h"
 #include "kamite/log.h"
-#include "kamite/menu_buttons.h"
 #include "runtime/ps2_game_menu.h"
 #include "runtime/ps2_pnach.h"
 #include "ps2_runtime.h"
@@ -219,7 +218,7 @@ namespace kamite::style_presets
         {
             Elsewhere,  // title, menus, cutscenes, minigames...
             Play,       // Gene in a stage under the player's control: a d-pad tap loads a style
-            Techniques, // the Techniques screen, browsing the slots (Modern menu buttons): Y + d-pad
+            Techniques, // the Techniques screen, browsing the slots: Square (X) + d-pad
         };
         std::atomic<int> g_moment{Elsewhere};
 
@@ -411,8 +410,9 @@ namespace kamite::style_presets
             int moment = Elsewhere;
             if (data)
             {
-                // Y is free on the Techniques screen only with the Modern menu buttons (Classic: it is Cancel there).
-                if (menu_buttons::modern() && techniquesBrowsing(subScr, subScreenOpen))
+                // Square (X on an Xbox pad) is used by no menu, so it works with every menu style (K / Thinso, Oct 31;
+                // it was Y, which Classic uses to cancel).
+                if (techniquesBrowsing(subScr, subScreenOpen))
                     moment = Techniques;
                 else if (inPlay(subScr, subScreenOpen))
                     moment = Play;
@@ -511,10 +511,10 @@ namespace kamite::style_presets
         constexpr int64_t kSaveHoldMs = 1500;
 
         uint16_t g_dpadWas = 0u;
-        int g_held = -1;         // Techniques: the direction pressed with Y, waiting for its release or 1.5 s
+        int g_held = -1;         // Techniques: the direction pressed with X, waiting for its release or 1.5 s
         int64_t g_heldSince = 0;
         bool g_heldSaved = false;
-        bool g_swallow = false;  // the d-pad is kept from the game until it is let go (it was pressed with Y)
+        bool g_swallow = false;  // the d-pad is kept from the game until it is let go (it was pressed with X)
 
         int firstPressed(uint16_t pressed)
         {
@@ -535,13 +535,13 @@ namespace kamite::style_presets
         // The info panel's "Already Set" text (shown by the game only while the move picker is open, to say the
         // highlighted move is in another slot) carries the list while the slots are browsed, moved to the empty space
         // right of the big TECHNIQUES title (x ~225..365, y ~10..110 of the 512 x 448 menu screen; K's pick, Oct 25):
-        // four lines, "[Y] + arrow  Style S" down to "Style Y" (reads SEXY; LIFE as Xavier). parts[0x23] is the text
+        // four lines, "[X] + arrow  Style S" down to "Style Y" (reads SEXY; LIFE as Xavier). parts[0x23] is the text
         // (align 3: the block centred on its draw position, scale 0.65), parts[0x24] its shadow (+1,+1, colour set 1:
         // black, icons skipped); the rest of its group (parts[0x25] the move name, [0x26] the "down+" art, [0x27] the
         // slot's button, the name box: record #57, no id) is hidden. The text is message 0x30C4 (an unused "<7d>"
         // placeholder) whose offset word points at a string of ours; the shadow is 0x30FE (no colour codes, which
         // would colour the shadow too). The bottom bar's spare line (ids 57/58: "Release" on the chain's last rows,
-        // otherwise blank 0x30D0) says "[Y] Hold D-Pad: Save Style" (0x30FF). Entry fields: +0x2C flags (0x08000000 =
+        // otherwise blank 0x30D0) says "[X] Hold D-Pad: Save Style" (0x30FF). Entry fields: +0x2C flags (0x08000000 =
         // not drawn), +0x50/+0x54 draw position, +0x90 message id.
         //
         // The arrows and the plus are the icon sheet's style pieces (button_prompt_sheets.h: a down arrow, a plus and a
@@ -564,11 +564,11 @@ namespace kamite::style_presets
         constexpr int kPlusPiece = kStyles;                        // g_pendingArrow: the plus
         constexpr uint32_t kFontState = game::MessDrawFont::kInstance; // the font's draw state (D_005E7510)
         constexpr float kArrowTextGap = 5.0f;                      // texels between the arrow and the style's name
-        constexpr uint16_t kTriangleIcon = 1u, kPlus = 0x0Eu, kSpace = 0x10u, kNewLine = 0xA001u, kEnd = 0x8001u;
+        constexpr uint16_t kSquareIcon = 2u, kPlus = 0x0Eu, kSpace = 0x10u, kNewLine = 0xA001u, kEnd = 0x8001u;
         constexpr uint16_t kColour = 0xB203u, kColourRestore = 0xB301u; // 0xB203 hi lo: A B G R (0x80 = full)
         constexpr uint32_t kGold = 0x80106880u, kDim = 0x80343434u; // dim: darker than the cream (K, Oct 26)
 
-        std::atomic<int> g_holding{-1}; // the pad filter: the direction held with Y, before it saves
+        std::atomic<int> g_holding{-1}; // the pad filter: the direction held with X, before it saves
         uint32_t g_listEntry = 0u;      // the entry the arrows are drawn for (EE thread)
         uint32_t g_shadowEntry = 0u;    // its shadow entry (same text, icons not drawn): gets the same line pitch
         uint32_t g_hintEntry = 0u, g_hintShadow = 0u; // the save hint's entries: its plus is the list's piece too
@@ -707,8 +707,8 @@ namespace kamite::style_presets
             return out;
         }
 
-        // Four lines: [Y] + arrow  Style S. The style's words take its colour: gold when loaded (blinking for a
-        // moment after a load or a save), blinking gold while Y + its direction is held, dim when empty.
+        // Four lines: [X] + arrow  Style S. The style's words take its colour: gold when loaded (blinking for a
+        // moment after a load or a save), blinking gold while X + its direction is held, dim when empty.
         std::vector<uint16_t> listText(uint32_t data, const Store &store, bool colours)
         {
             const int holding = g_holding.load(std::memory_order_relaxed);
@@ -720,13 +720,13 @@ namespace kamite::style_presets
             {
                 if (slot > 0)
                     out.push_back(kNewLine);
-                out.push_back(kTriangleIcon);
+                out.push_back(kSquareIcon);
                 out.push_back(kPlusCode);
                 out.push_back(kArrowCode[slot]);
                 const bool used = (store.used & (1u << slot)) != 0u;
                 uint32_t colour = 0u; // 0: the line's own colour
                 if (slot == holding)
-                    colour = blinkOn ? kGold : 0u; // held with Y: blinks until it saves
+                    colour = blinkOn ? kGold : 0u; // held with X: blinks until it saves
                 else if (used && store.active == slot && equipped(data, store.styles[slot]))
                     colour = (flash && !blinkOn) ? 0u : kGold; // the loaded style (a few blinks right after)
                 else if (!used)
@@ -744,8 +744,8 @@ namespace kamite::style_presets
 
         std::vector<uint16_t> hintText()
         {
-            // "[Y] Hold + D-Pad: Save Style", the plus the list's own (K, Oct 26).
-            std::vector<uint16_t> out{kTriangleIcon};
+            // "[X] Hold + D-Pad: Save Style", the plus the list's own (K, Oct 26).
+            std::vector<uint16_t> out{kSquareIcon};
             append(out, "Hold ");
             out.push_back(kPlusCode);
             append(out, " D-Pad: Save Style");
@@ -825,7 +825,7 @@ namespace kamite::style_presets
                 return;
             const uint32_t waza = wazaScreen(subScr);
             const uint32_t data = dataPointer();
-            const bool show = data && menu_buttons::modern() && static_cast<int32_t>(rd32(subScr + game::SubScr::kKind)) == kTechniquesKind &&
+            const bool show = data && static_cast<int32_t>(rd32(subScr + game::SubScr::kKind)) == kTechniquesKind &&
                               g_ram[waza + kWazaState] == 0u;
             const uint32_t text = part(waza, 0x23), shadow = part(waza, 0x24), hintEntry = part(waza, 57),
                            hintShadow = part(waza, 58);
@@ -1041,7 +1041,7 @@ namespace kamite::style_presets
                 return; // a fold-out section of the Gameplay tab (K, Oct 27)
             std::lock_guard<std::mutex> lock(g_mutex);
             ui->text_wrapped("Styles are kept in the save (they go to the memory card with it). In play, a d-pad tap loads "
-                             "one (up, right, down, left). On the Techniques screen (Modern menu buttons): Y + d-pad loads, "
+                             "one (up, right, down, left). On the Techniques screen: X (square) + d-pad loads, "
                              "held 1.5 s saves.");
             ui->separator_text("Equipped now");
             if (!g_snapshot.valid)
@@ -1096,10 +1096,10 @@ namespace kamite::style_presets
         const uint16_t pressed = static_cast<uint16_t>(dpad & ~g_dpadWas);
         g_dpadWas = dpad;
         const int moment = g_moment.load(std::memory_order_relaxed);
-        const bool triangle = (state.buttons & ps2x::iop::PadButton::Triangle) != 0u;
+        const bool square = (state.buttons & ps2x::iop::PadButton::Square) != 0u;
         if (moment == Techniques)
         {
-            // Y + a d-pad direction: let go before 1.5 s loads that style, held 1.5 s saves to it (at once, so the
+            // Square (X) + a d-pad direction: let go before 1.5 s loads that style, held 1.5 s saves to it (at once, so the
             // list's flash says when to let go).
             const int64_t now = nowMs();
             if (g_held >= 0)
@@ -1116,7 +1116,7 @@ namespace kamite::style_presets
                     g_heldSaved = true;
                 }
             }
-            if (triangle && g_held < 0)
+            if (square && g_held < 0)
             {
                 const int direction = firstPressed(pressed);
                 if (direction >= 0)
@@ -1127,9 +1127,9 @@ namespace kamite::style_presets
                 }
             }
             g_holding.store(g_held >= 0 && !g_heldSaved ? g_held : -1, std::memory_order_relaxed);
-            if (triangle && dpad != 0u)
+            if (square && dpad != 0u)
                 g_swallow = true;
-            if (triangle)
+            if (square)
                 hideDpad(state);
         }
         else
@@ -1145,7 +1145,7 @@ namespace kamite::style_presets
                     g_request = 11 + direction;
             }
         }
-        // A direction pressed with Y stays hidden from the game until it is let go (Y let go first: no cursor jump).
+        // A direction pressed with X stays hidden from the game until it is let go (X let go first: no cursor jump).
         if (g_swallow)
         {
             if (dpad == 0u)

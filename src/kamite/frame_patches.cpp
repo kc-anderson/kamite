@@ -636,6 +636,35 @@ namespace kamite
         {
             ctx->f[Dst] = ctx->f[A] + ctx->f[B] * 0.5f;
         }
+        // The cloth step func_00104010 (Gene's coat, the enemies' cloth) is a Verlet solver with no time factor: per node
+        // vel.y -= gravity, pos += vel + the wind push, spring corrections x k, vel = (pos - old) x damp, every frame. At 60
+        // it ran on a doubled clock (the coat swung out twice as fast and harder). The half step that keeps the same pose
+        // and the same motion per second: accelerations (gravity, push) x 1/4, damp -> sqrt(damp), k -> 1 - sqrt(1 - k).
+        template <int Dst, int A, int B>
+        void clothSubQuarter(uint8_t *, R5900Context *ctx, PS2Runtime *) // sub.s Dst,A,B: the gravity step
+        {
+            ctx->f[Dst] = ctx->f[A] - ctx->f[B] * 0.25f;
+        }
+        template <int Dst, int A, int B>
+        void clothAddQuarter(uint8_t *, R5900Context *ctx, PS2Runtime *) // add.s Dst,A,B: the wind push's swing factor
+        {
+            ctx->f[Dst] = (ctx->f[A] + ctx->f[B]) * 0.25f;
+        }
+        void clothDamp(uint8_t *, R5900Context *ctx, PS2Runtime *) // mfc1 t0,f20 at 0x105F24: the velocity's damping
+        {
+            const float damp = std::sqrt(std::max(ctx->f[20], 0.0f));
+            uint32_t bits = 0;
+            std::memcpy(&bits, &damp, sizeof(bits));
+            SET_GPR_U32(ctx, 8, bits);
+        }
+        template <int Dst>
+        void clothSpring(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // lwc1 Dst,0x4C(s4): the springs' k
+        {
+            float k = 0.0f;
+            std::memcpy(&k, &ram8(rdram, GPR_U32(ctx, 20) + 0x4Cu), sizeof(k));
+            ctx->f[Dst] = k >= 1.0f ? k : 1.0f - std::sqrt(std::max(1.0f - k, 0.0f));
+        }
+
         // A countdown whose load and decrement both sit in delay slots, stored by a plain sh (Gene's grab finishers and
         // mash roulette moves, +0x56E: the 15 / 30 frames Gene follows the held enemy's per-frame move +0x550, phases
         // 57..107; case 2026-10-31_11-18-03): replaces the sh, storing the old value on skipped frames.
@@ -888,6 +917,12 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_coat_wind", &floatAddHalf<0, 0, 3>);                // add.s f0,f0,f3
         ps2xRegisterHostHook("km_fps60_cloth_wind", &floatAddHalf<2, 2, 0>);               // add.s f2,f2,f0 (cloth step)
         ps2xRegisterHostHook("km_fps60_cloth_sway", &floatAddHalf<1, 1, 0>);               // add.s f1,f1,f0 (cloth step)
+        ps2xRegisterHostHook("km_fps60_cloth_gravity_table", &clothSubQuarter<1, 1, 0>);
+        ps2xRegisterHostHook("km_fps60_cloth_gravity", &clothSubQuarter<0, 0, 1>);
+        ps2xRegisterHostHook("km_fps60_cloth_push", &clothAddQuarter<22, 0, 21>);
+        ps2xRegisterHostHook("km_fps60_cloth_damp", &clothDamp);
+        ps2xRegisterHostHook("km_fps60_cloth_spring_f2", &clothSpring<2>);
+        ps2xRegisterHostHook("km_fps60_cloth_spring_f1", &clothSpring<1>);
         ps2xRegisterHostHook("km_fps60_countdown_pl15b8_s0", &countdownLoad<16, 0x15B8u>); // the same in func_0011FD10 (s0)
         ps2xRegisterHostHook("km_fps60_countup_self", &countupSelf);
         ps2xRegisterHostHook("km_fps60_gene_rate_half", &geneRateHalfF0);

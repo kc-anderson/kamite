@@ -1,4 +1,5 @@
-// Menu buttons: Classic (PS2) or Modern (south confirms, east cancels), menus only. See menu_buttons.h.
+// Menu buttons: Classic (PS2), Western (south confirms, east cancels) or Japanese (east confirms, south cancels);
+// menus and the roulette only. See menu_buttons.h.
 //
 // The first version (aa44ccf) traded circle and triangle at the pad, which also traded two attack slots in play;
 // the game's own split between the raw word (play) and the command word (menus) is what keeps this one to the menus.
@@ -7,6 +8,7 @@
 #include "kamite/log.h"
 #include "kamite/game_layout.h"
 #include "ps2_runtime.h" // ps2xSetPatchFlag
+#include "ps2_runtime_macros.h" // GPR_U32
 #include "runtime/ps2_cd_image.h"
 #include "runtime/ps2_pnach.h"
 
@@ -24,8 +26,8 @@ namespace kamite::menu_buttons
 {
     namespace
     {
-        std::atomic<bool> g_modern{false};
-        bool g_locked = false; // Modern held by style switching
+        std::atomic<int> g_style{static_cast<int>(Style::Western)};
+        Style current() { return static_cast<Style>(g_style.load(std::memory_order_relaxed)); }
         uint8_t *g_ram = nullptr;
         // Set at start when every patch of the kind went onto the disc image (the file as the game reads it): the
         // run-time rewrites below are then not needed (no RAM scan thread, no core check every 30 vblanks).
@@ -48,6 +50,33 @@ namespace kamite::menu_buttons
         // Glyph codes of the game's text (core_usa.bin, 16-bit).
         constexpr uint16_t kSpace = 0x10u, kSpace2 = 0x35u, kColon = 0x31u;
         constexpr uint16_t kCircle = 0u, kTriangle = 1u, kCross = 3u;
+        constexpr uint16_t kColourCode = 0xB602u; // + a colour index: the icons' own colours (circle 1, triangle 2, cross 3, square 4)
+
+        // Japanese: the Western text with cross and circle traded (a colour code before an icon follows it).
+        std::vector<uint16_t> japaneseOf(const std::vector<uint16_t> &western)
+        {
+            std::vector<uint16_t> out = western;
+            for (size_t i = 0; i < out.size(); ++i)
+            {
+                if (out[i] == kColourCode && i + 2 < out.size() && (out[i + 2] == kCross || out[i + 2] == kCircle))
+                {
+                    out[i + 1] = out[i + 2] == kCross ? 1u : 3u; // the traded icon's colour
+                    out[i + 2] = out[i + 2] == kCross ? kCircle : kCross;
+                    i += 2;
+                }
+                else if (out[i] == kCross)
+                    out[i] = kCircle;
+                else if (out[i] == kCircle)
+                    out[i] = kCross;
+                else if (out[i] == kColourCode)
+                    ++i; // a colour index is not a glyph
+            }
+            return out;
+        }
+        std::vector<uint16_t> styleText(const std::vector<uint16_t> &original, const std::vector<uint16_t> &western, Style style)
+        {
+            return style == Style::Classic ? original : style == Style::Japanese ? japaneseOf(western) : western;
+        }
         uint16_t glyph(char c)
         {
             if (c >= 'A' && c <= 'Z')
@@ -88,15 +117,17 @@ namespace kamite::menu_buttons
         // the buttons keeps its table).
         void applyTables()
         {
-            const bool modern = g_modern.load(std::memory_order_relaxed);
+            const Style style = current();
             for (size_t i = 0; i < 2u; ++i)
             {
                 const uint32_t table = kTables[i];
-                const uint32_t wantOk = modern ? kRawCross : kDiscOk[i], wantCancel = modern ? kRawCircle : kDiscCancel[i];
+                const uint32_t wantOk = style == Style::Western ? kRawCross : style == Style::Japanese ? kRawCircle : kDiscOk[i];
+                const uint32_t wantCancel = style == Style::Western ? kRawCircle : style == Style::Japanese ? kRawCross : kDiscCancel[i];
                 const uint32_t ok = rd32(table + kOkEntry * 4u), cancel = rd32(table + kCancelEntry * 4u);
                 if (ok == wantOk && cancel == wantCancel)
                     continue;
-                const bool disc = ok == kDiscOk[i] && cancel == kDiscCancel[i], ours = ok == kRawCross && cancel == kRawCircle;
+                const bool disc = ok == kDiscOk[i] && cancel == kDiscCancel[i];
+                const bool ours = (ok == kRawCross && cancel == kRawCircle) || (ok == kRawCircle && cancel == kRawCross);
                 if (!disc && !ours)
                     continue;
                 wr32(table + kOkEntry * 4u, wantOk);
@@ -112,7 +143,7 @@ namespace kamite::menu_buttons
             const uint32_t core = rd32(kCorePointer);
             if (core < 0x100000u || core >= kRamBytes - 0x100000u || (core & 0xFu) != 0u)
                 return;
-            const bool modern = g_modern.load(std::memory_order_relaxed);
+            const Style style = current();
             static bool warned = false;
             for (const TextPatch &patch : textPatches())
             {
@@ -120,11 +151,13 @@ namespace kamite::menu_buttons
                 const size_t bytes = patch.original.size() * 2u;
                 if (core + patch.offset + bytes > kRamBytes)
                     continue;
-                const std::vector<uint16_t> &want = modern ? patch.modern : patch.original;
-                const std::vector<uint16_t> &other = modern ? patch.original : patch.modern;
+                const std::vector<uint16_t> want = styleText(patch.original, patch.modern, style);
                 if (std::memcmp(guest, want.data(), bytes) == 0)
                     continue;
-                if (std::memcmp(guest, other.data(), bytes) != 0)
+                bool known = false;
+                for (const Style s : {Style::Classic, Style::Western, Style::Japanese})
+                    known = known || std::memcmp(guest, styleText(patch.original, patch.modern, s).data(), bytes) == 0;
+                if (!known)
                 {
                     if (!warned)
                     {
@@ -190,7 +223,8 @@ namespace kamite::menu_buttons
                 uint8_t *guest = g_ram + address;
                 if (std::memcmp(guest, rw.original.data(), bytes) != 0)
                     continue; // gone since the scan
-                std::memcpy(guest, rw.modern.data(), bytes);
+                const std::vector<uint16_t> want = styleText(rw.original, rw.modern, current());
+                std::memcpy(guest, want.data(), bytes);
                 KM_INFO(Game, "menu buttons: " << rw.where << " reworded at 0x" << std::hex << address << std::dec);
             }
         }
@@ -228,7 +262,7 @@ namespace kamite::menu_buttons
                     if (patch.offset + original.size() > file.size() ||
                         std::memcmp(file.data() + patch.offset, original.data(), original.size()) != 0)
                         continue;
-                    patches.emplace_back(core->imageOffset + patch.offset, bytesOf(patch.modern));
+                    patches.emplace_back(core->imageOffset + patch.offset, bytesOf(styleText(patch.original, patch.modern, current())));
                     ++matched;
                 }
                 g_coreOnDisc = matched == textPatches().size();
@@ -255,7 +289,7 @@ namespace kamite::menu_buttons
                     {
                         if (std::memcmp(file.data() + at, original.data(), original.size()) != 0)
                             continue;
-                        patches.emplace_back(menu->imageOffset + at, bytesOf(rewrites[i].modern));
+                        patches.emplace_back(menu->imageOffset + at, bytesOf(styleText(rewrites[i].original, rewrites[i].modern, current())));
                         KM_INFO(Game, "menu buttons: " << rewrites[i].where << " reworded in " << path << " at 0x" << std::hex << at << std::dec);
                         found[i] = true;
                     }
@@ -274,58 +308,82 @@ namespace kamite::menu_buttons
             applyTables();
             if (vblanks % 30u == 0u)
                 applyCoreText();
-            if (!g_modern.load(std::memory_order_relaxed))
+            if (current() == Style::Classic)
                 return;
             if (!g_menuFilesOnDisc)
                 applyFoundText();
         }
+
+        // The roulette (part of play, so the command tables do not reach it; flag menu_roulette, on unless Classic).
+        // Its OK (func_00145810: ori v1,zero,0xA000 at 0x145CE8, the command bits 33 | 35 = cross | circle, shifted
+        // by 20 next): Western the cross (0x2000) alone, Japanese the circle (0x8000) alone. The menus' OK (bit 28)
+        // is tested after it and follows the tables.
+        void rouletteOk(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            SET_GPR_U32(ctx, 3, current() == Style::Japanese ? 0x8000u : 0x2000u);
+        }
+        // Its cancel: Gene's +0x626 window, filled from the pressed word (andi v0,v0,0x10 at 0x108FA0: the triangle).
+        // Western the circle (0x20), Japanese the cross (0x40).
+        void rouletteCancelSource(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            SET_GPR_U32(ctx, 2, GPR_U32(ctx, 2) & (current() == Style::Japanese ? 0x40u : 0x20u));
+        }
+        // Before sb zero,0x621(s1) at 0x114904 (the roulette taking the cancel): the button that cancelled must not also
+        // start its attack (its 3-frame window: +0x625 circle, +0x623 cross).
+        void rouletteCancelWindow(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t window = current() == Style::Japanese ? 0x623u : 0x625u;
+            rdram[(GPR_U32(ctx, 17) + window) & 0x1FFFFFFu] = 0u;
+        }
+    }
+
+    const char *styleName(Style style)
+    {
+        return style == Style::Classic ? "classic" : style == Style::Japanese ? "japanese" : "western";
     }
 
     void install(uint8_t *rdram)
     {
-        // Modern unless [Game] MenuButtons says classic (the launcher's Controls > Menu controls, F2 > Controls).
+        // Western unless [Game] MenuButtons says otherwise (the launcher's Controls > Menu controls, F2 > Controls).
         const char *value = std::getenv("KAMITE_MENU_BUTTONS");
-        std::string text = value && *value ? value : "modern";
+        std::string text = value && *value ? value : "western";
         for (char &c : text)
             c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        g_modern.store(!(text == "classic" || text == "0"), std::memory_order_relaxed);
-        // Style switching saves a style with triangle + d-pad on the Techniques screen, where Classic's triangle exits:
-        // with it on, the menus are Modern whatever MenuButtons says.
-        if (const char *styles = std::getenv("KAMITE_STYLE_SWITCHING"); styles && *styles && *styles != '0')
-        {
-            g_locked = true;
-            g_modern.store(true, std::memory_order_relaxed);
-        }
-        ps2xSetPatchFlag("modern_roulette", g_modern.load(std::memory_order_relaxed)); // kamite.toml: the roulette's own buttons
+        const Style style = text == "classic" || text == "0" ? Style::Classic : text == "japanese" ? Style::Japanese : Style::Western;
+        g_style.store(static_cast<int>(style), std::memory_order_relaxed);
+        ps2xRegisterHostHook("km_roulette_ok", &rouletteOk);
+        ps2xRegisterHostHook("km_roulette_cancel_source", &rouletteCancelSource);
+        ps2xRegisterHostHook("km_roulette_cancel_window", &rouletteCancelWindow);
+        ps2xSetPatchFlag("menu_roulette", style != Style::Classic); // kamite.toml: the roulette's own buttons
         g_ram = rdram;
-        KM_INFO(Game, "menu buttons: " << (g_modern.load() ? "modern (in menus the south button confirms and the east one cancels; play unchanged)"
-                                                            : "classic (circle and cross confirm, triangle cancels, as on the PS2)"));
+        KM_INFO(Game, "menu buttons: " << styleName(style)
+                                       << (style == Style::Western    ? " (the south button confirms and the east one cancels; play unchanged)"
+                                           : style == Style::Japanese ? " (the east button confirms and the south one cancels; play unchanged)"
+                                                                      : " (circle and cross confirm, triangle cancels, as on the PS2)"));
         if (!g_ram)
             return;
-        if (g_modern.load())
+        if (style != Style::Classic)
             installDiscText();
         ps2x::pnach::addFrameHook(&onVblank);
-        if (g_modern.load() && !g_menuFilesOnDisc)
+        if (style != Style::Classic && !g_menuFilesOnDisc)
             std::thread(scanLoop).detach();
+    }
+
+    Style style()
+    {
+        return current();
     }
 
     bool modern()
     {
-        return g_modern.load(std::memory_order_relaxed);
+        return current() != Style::Classic;
     }
 
-    bool locked()
+    void setStyle(Style style)
     {
-        return g_locked;
-    }
-
-    void setModern(bool modern)
-    {
-        if (g_locked)
-            modern = true;
-        ps2xSetPatchFlag("modern_roulette", modern);
-        if (g_modern.exchange(modern) != modern)
-            KM_INFO(Game, "menu buttons: " << (modern ? "modern" : "classic") << " (F2); the save menu's own wording follows at the next start");
+        ps2xSetPatchFlag("menu_roulette", style != Style::Classic);
+        if (static_cast<Style>(g_style.exchange(static_cast<int>(style))) != style)
+            KM_INFO(Game, "menu buttons: " << styleName(style) << " (F2); the save menu's own wording follows at the next start");
     }
 
     const std::vector<TextPatch> &textPatches()
@@ -335,7 +393,7 @@ namespace kamite::menu_buttons
         // cross alone.
         static const std::vector<TextPatch> patches = {
             // The roulette's bar ("[R1]Select [cross][circle]OK [triangle]Cancel", 0x591CC): the roulette follows the
-            // menus too (kamite.toml "modern_roulette": its OK, func_00145810 0x145CE8, reads the cross only; its cancel,
+            // menus too (kamite.toml "menu_roulette": its OK, func_00145810 0x145CE8, reads the cross only; its cancel,
             // Gene's +0x626 window filled at 0x108FA0, comes from the circle), so the bar reads "[R1]Cycle [cross]OK
             // [circle]Cancel" (roulette_bar.cpp lays it out at full letter width on a bar cut to fit).
             {0x591CEu, text({}, "Select"), [] { auto t = text({}, "Cycle"); t.push_back(0xB301u); return t; }()},

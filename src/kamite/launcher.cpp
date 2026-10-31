@@ -56,7 +56,7 @@ namespace kamite::launcher
                                                {"100%: wider view looks zoomed out", "100"}};
         constexpr Choice kControlStyles[] = {{"Classic", "classic"}, {"Modern", "modern"}};
         constexpr Choice kModernL1[] = {{"Hold", "hold"}, {"Toggle", "toggle"}};
-        constexpr Choice kMenuButtons[] = {{"Modern", "modern"}, {"Classic", "classic"}};
+        constexpr Choice kMenuButtons[] = {{"Western", "western"}, {"Japanese", "japanese"}, {"Classic", "classic"}};
         constexpr Choice kButtonPrompts[] = {{"Automatic (follows your controller)", "auto"}, {"Xbox", "xbox"},
                                              {"PlayStation (the game's own)", "playstation"}, {"Nintendo Switch", "nintendo"},
                                              {"Steam Deck / Steam Controller", "steam"}};
@@ -1136,21 +1136,16 @@ namespace kamite::launcher
         {
             if (beginSettings("controls"))
             {
-                const bool styles = state.ini.getBool("Game", "StyleSwitching", false);
-                settingLabel("Menu controls", "Modern: the bottom button confirms and the right one cancels (A / B, or "
-                                              "cross / circle), in menus, dialogs and the roulette. Classic: as on the "
-                                              "PS2, circle and cross confirm and triangle cancels.",
-                             styles ? "Style switching needs Modern." : "F2 > Controls changes it while playing.");
-                ImGui::BeginDisabled(styles);
-                if (styles)
-                {
-                    std::string held = "modern";
-                    choiceCombo("##menubuttons", kMenuButtons, held);
-                }
-                else
-                    iniCombo(state, "##menubuttons", "Game", "MenuButtons", "modern",
-                             [](const char *id, std::string &value) { return choiceCombo(id, kMenuButtons, value); });
-                ImGui::EndDisabled();
+                settingLabel("Menu controls", "Western: the bottom button confirms and the right one cancels (A / B, or "
+                                              "cross / circle). Japanese: the right button confirms and the bottom one "
+                                              "cancels (circle / cross). Classic: as on the PS2, circle and cross confirm "
+                                              "and triangle cancels. Menus, dialogs and the roulette.",
+                             "F2 > Controls changes it while playing.");
+                iniCombo(state, "##menubuttons", "Game", "MenuButtons", "western", [](const char *id, std::string &value) {
+                    if (value == "modern")
+                        value = "western"; // the name before Oct 31
+                    return choiceCombo(id, kMenuButtons, value);
+                });
                 settingLabel("Button prompts", "The buttons the game shows for a controller. Automatic picks them from the "
                                                "controller you use; keys and mouse always show keys. Prompt art: Xelu's "
                                                "free prompts (CC0).");
@@ -1411,7 +1406,7 @@ namespace kamite::launcher
                         iniCheckbox(state, "On##l3", "Game", "L3Dash", false);
                         settingLabel("Style switching", "Save up to four sets of techniques as styles and swap "
                                                         "between them in play with the d-pad (on the Techniques "
-                                                        "screen, hold Triangle / Y + d-pad to save one).");
+                                                        "screen, hold Square / X + d-pad to save one).");
                         iniCheckbox(state, "On##styles", "Game", "StyleSwitching", false);
                         settingLabel("Control style", "Classic: as on the PS2. Modern: the right stick turns the camera "
                                                       "and Gene moves where you point; hold or toggle L1 for the "
