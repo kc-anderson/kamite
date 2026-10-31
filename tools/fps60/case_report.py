@@ -498,15 +498,6 @@ def main(argv):
         print()
 
     print(f"Flagged per animation: {total} difference(s)." if total else "No per-animation differences above the tolerance.")
-    # Gene's coat (pl_cloth: its nodes' movement summed per frame): per second at both rates (the same at 60 = right).
-    if rows30 and rows60 and "pl_cloth" in rows30[0] and "pl_cloth" in rows60[0]:
-        def per_second(rows, fps):
-            vals = [num(r.get("pl_cloth")) for r in rows]
-            vals = [v for v in vals if v is not None]
-            return sum(vals) / (len(vals) / fps) if vals else 0.0
-        c30, c60 = per_second(rows30, 30), per_second(rows60, 60)
-        ratio = c60 / c30 if c30 > 0 else 0.0
-        print(f"Coat motion: {c30:.2f} m/s at 30, {c60:.2f} m/s at 60 (x{ratio:.2f}){'  !!' if abs(ratio - 1.0) > 0.15 else ''}")
     roll_report(path, sections, rec_div, len(rows30) / 30.0, len(rows60) / 60.0)
     return 0
 
@@ -528,12 +519,15 @@ def roll_report(path, sections, rec_div, secs30, secs60):
         return
     other = r30 if rec_div == 1 else r60
     if "rolls" in sections:
-        calls = sum(v[0] for v in other.values())
-        forced = sum(v[2] for v in other.values())
+        kept = {k: v for k, v in other.items() if not 0x30AC40 <= int(k, 16) < 0x30B090}  # not the main loop's stir
+        calls = sum(v[0] for v in kept.values())
+        forced = sum(v[2] for v in kept.values())
         print(f"Rolls: the {60 // (3 - rec_div)} FPS replay took {forced} of its {calls} rolls from the recording "
               f"({100.0 * forced / calls if calls else 0:.0f}%).")
     flagged = []
     for site in sorted(set(r30) | set(r60)):
+        if 0x30AC40 <= int(site, 16) < 0x30B090:  # the main loop stirs the twister once a game frame: not a decision
+            continue
         f30 = r30.get(site, (0, 0, 0))[1] / secs30 if secs30 else 0.0
         f60 = r60.get(site, (0, 0, 0))[1] / secs60 if secs60 else 0.0
         if f60 * secs60 >= 10 and f60 >= 1.6 * max(f30, 0.5):

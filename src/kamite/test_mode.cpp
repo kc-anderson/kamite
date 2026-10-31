@@ -721,7 +721,12 @@ namespace kamite::test_mode
         {
             uint32_t divider = 2u;
             std::vector<RollEntry> entries;                          // recording
-            std::unordered_map<RollKey, uint32_t, RollKeyHash> byKey; // replay (vblank = frame x divider)
+            struct Slot
+            {
+                uint32_t value = 0;
+                bool used = false;
+            };
+            std::unordered_map<RollKey, Slot, RollKeyHash> byKey; // replay (vblank = frame x divider)
         };
         // The roll's number within a frame per (site, object).
         struct RollCounter
@@ -746,7 +751,12 @@ namespace kamite::test_mode
             uint32_t calls = 0, fresh = 0, forced = 0;
         };
 
-        bool keptRoll(uint32_t site) { return site < 0x104010u || site >= 0x106218u; }
+        // Not kept: the cloth step (0x104010..0x106218, its picture-only half step) and the main loop's stir of the
+        // twister (func_0030AC40 rolls irand and frand once a game frame and drops them: 0x30B010 / 0x30B018).
+        bool keptRoll(uint32_t site)
+        {
+            return !(site >= 0x104010u && site < 0x106218u) && !(site >= 0x30AC40u && site < 0x30B090u);
+        }
 
         std::string formatRolls(const RollTrack &track)
         {
@@ -776,7 +786,7 @@ namespace kamite::test_mode
                 unsigned frame = 0, site = 0, object = 0, k = 0, value = 0;
                 if (std::sscanf(line.c_str(), "%x %x %x %x %x", &frame, &site, &object, &k, &value) != 5)
                     continue;
-                track.byKey[RollKey{frame * track.divider, site, object, k}] = value;
+                track.byKey[RollKey{frame * track.divider, site, object, k}] = RollTrack::Slot{value, false};
             }
             return track.divider == 1u || track.divider == 2u;
         }
@@ -1711,17 +1721,38 @@ namespace kamite::test_mode
             if (!run.useRolls)
                 return drawn;
             // Frame k's update sees k + 1 at either rate: a 30 FPS update seeing vblank t covers the 60 FPS updates
-            // seeing t - 1 and t; a 60 FPS update seeing t lies in the 30 FPS update seeing t rounded up to even.
+            // seeing t - 1 and t; a 60 FPS update seeing t lies in the 30 FPS update seeing t rounded up to even. That
+            // frame first (a roll made every frame: always there); then, for a roll the other run made up to two 30 FPS
+            // frames earlier or later and not handed out yet, the nearest such (a decision taken when a motion ends
+            // lands a frame apart at the two rates, and the first frame after a load at the other rate steps the
+            // enemies' motions with the saved rate: case "66sec test case", Oct 31, em0 a frame early at 60).
             const uint32_t now = run.frame * run.divider;
-            const auto find = [&](uint32_t vblank, uint32_t &value) {
-                const auto it = run.rolls.byKey.find(RollKey{vblank, site, object, g_rollK});
-                if (it == run.rolls.byKey.end())
+            const auto take = [&](int64_t vblank, bool exact, uint32_t &value) {
+                if (vblank < 0)
                     return false;
-                value = it->second;
+                const auto it = run.rolls.byKey.find(RollKey{static_cast<uint32_t>(vblank), site, object, g_rollK});
+                if (it == run.rolls.byKey.end() || (!exact && it->second.used))
+                    return false;
+                it->second.used = true;
+                value = it->second.value;
                 return true;
             };
             uint32_t value = 0;
-            const bool found = run.divider == 2u ? ((now > 0u && find(now - 1u, value)) || find(now, value)) : find((now + 1u) & ~1u, value);
+            bool found = false;
+            if (run.divider == 2u) // the 60 FPS recording's rolls at t - 1 / t, then t - 2, t + 1, t - 3, t + 2 ...
+            {
+                const int64_t t = now;
+                found = take(t - 1, true, value) || take(t, true, value);
+                for (int step = 1; !found && step <= 4; ++step)
+                    found = take(t - 1 - step, false, value) || take(t + step, false, value);
+            }
+            else // the 30 FPS recording's roll in this 30 FPS frame, then the frames around it
+            {
+                const int64_t w = (now + 1u) & ~1u;
+                found = take(w, true, value);
+                for (int step = 2; !found && step <= 4; step += 2)
+                    found = take(w - step, false, value) || take(w + step, false, value);
+            }
             if (!found)
                 return drawn;
             ++stat.forced;

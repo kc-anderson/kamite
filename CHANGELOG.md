@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## October 31, 2026
 
+- Test cases: a recorded roll also matches when the other frame rate makes the same roll a frame or two apart.
 - Test cases keep the game's random rolls: the replay at the other frame rate makes the same enemy choices, so long cases stay comparable.
 - Case reports: how many rolls the other-rate replay took from the recording, and any rolls made more often at 60.
 - 60 FPS: enemies keep turning to Gene through their attack strings again, so their last hits land (43 timers fixed).
