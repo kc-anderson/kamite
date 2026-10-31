@@ -3737,3 +3737,16 @@ flag = "fps60"
 address = "0x002A85CC"
 hook = "km_fps60_em_rate_f12_a0"
 flag = "fps60"
+
+# 60 FPS: the launched enemy's flight (mode 1 phase 9, func_002557F8) integrates y and its fall speed without the speed
+# rate: half steps at 60 (frame_patches.cpp launchRise / launchFall).
+[[patches.hooks]]
+address = "0x00255AEC"
+hook = "km_fps60_launch_rise"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00255AF8"
+hook = "km_fps60_launch_fall"
+flag = "fps60"
+replace = true

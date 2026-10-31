@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## October 31, 2026
 
+- 60 FPS: enemies knocked into the air fly as high and as long as at 30 FPS (they came down twice as fast).
+- 60 FPS: the enemies' 30 FPS frame grid lines up with the 30 FPS game's (it ran a frame behind).
 - Fixed the game stopping right after start (last build): a hook was placed on a jump; the build now refuses that.
 - 60 FPS: enemy animations no longer start at a quarter speed on their first frame.
 - 60 FPS: enemies no longer move on to their next action a frame early (their attack strings and approaches drifted ahead).

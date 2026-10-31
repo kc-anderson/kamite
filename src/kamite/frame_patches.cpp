@@ -516,6 +516,19 @@ namespace kamite
                     it = counter - it->second.counter > 2u ? g_enemyStep.erase(it) : std::next(it);
         }
 
+        // The launched enemy's flight (mode 1 phase 9 step 1, func_002557F8 0x255AEC / 0x255AF8): y += vy, vy -= 0.026
+        // a frame, without the speed rate the other airborne states multiply in, so at 60 the arc ran in half the time
+        // (66sec case, Oct 31: 18 vblanks in the air instead of 36, the horizontal speed right). At 60 half steps that
+        // meet the 30 FPS arc on every 30 FPS frame: y += vy / 2 + g / 8, vy -= g / 2 (f2 = g).
+        void launchRise(uint8_t *, R5900Context *ctx, PS2Runtime *) // add.s f1,f1,f0
+        {
+            ctx->f[1] = ctx->f[1] + ctx->f[0] * 0.5f + ctx->f[2] * 0.125f;
+        }
+        void launchFall(uint8_t *, R5900Context *ctx, PS2Runtime *) // sub.s f0,f0,f2
+        {
+            ctx->f[0] = ctx->f[0] - ctx->f[2] * 0.5f;
+        }
+
         void installFrame30State()
         {
             ps2x::savestate::registerExtension(
@@ -536,8 +549,8 @@ namespace kamite
         {
             const uint32_t counter = gameFrames(rdram);
             const uint32_t frame = g_frame30Loaded ? g_frame30Saved : counter;
-            if (g_fps60)
-                g_frame30Base = frame, g_counterBase = counter;
+            if (g_fps60) // the game counts the frame up before its update: the first update after the load sees counter + 1
+                g_frame30Base = frame + 1u, g_counterBase = counter + 1u;
             else if (g_frame30Loaded && ram8(rdram, kFrameDivider) == 1u)
                 std::memcpy(&ram8(rdram, game::GameWork::address(game::GameWork::kFrameCount)), &frame, sizeof(frame));
             g_frame30Loaded = false;
@@ -549,7 +562,7 @@ namespace kamite
                 return;
             ram8(rdram, kFrameDivider) = static_cast<uint8_t>(now);
             if (now == 1u)
-                g_frame30Base = gameFrames(rdram), g_counterBase = gameFrames(rdram);
+                g_frame30Base = gameFrames(rdram) + 1u, g_counterBase = gameFrames(rdram) + 1u;
             const uint32_t at = 0x5864F0u + 0x548u; // cEmManage D_005864F0
             float rate = 0.0f;
             std::memcpy(&rate, &ram8(rdram, at), sizeof(rate));
@@ -1186,6 +1199,8 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_rand_int", &randInt);
         ps2xRegisterHostHook("km_fps60_rand_float", &randFloat);
         ps2xRegisterHostHook("km_fps60_enemy_step_hold", &enemyStepHold);
+        ps2xRegisterHostHook("km_fps60_launch_rise", &launchRise);
+        ps2xRegisterHostHook("km_fps60_launch_fall", &launchFall);
         ps2xRegisterHostHook("km_fps60_em_rate_f12_a0", &enemyRate30<4, 12>);
         ps2xRegisterHostHook("km_fps60_think_a0_v0", &thinkFrame<4, 2>);
         ps2xRegisterHostHook("km_fps60_think_v1_a0", &thinkFrame<3, 4>);
