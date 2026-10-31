@@ -472,11 +472,56 @@ namespace kamite
         // ran with the state's divider and its cEmManage rate, enemy motions x4 at 60 / x1/4 at 30; 66sec and goon
         // cases, Oct 31). Writes the divider and converts cEmManage's rate +0x548 (1.0 at 30, 0.5 at 60: the 0x29059C
         // patch; a slow-motion value halved at 60), the source of every enemy's motion step and speed rate.
+        // The enemies' staggered thinking (16 sites in the common enemy code: func_0020FBB8, cEm00's patrol, ...): a test
+        // runs only when GameWork +0x210 & 7 is the enemy's slot (+0x17D0, cEm00 +0x2FC), once every 8 frames. At 60
+        // that counter counts 60 FPS frames, so every enemy thought twice as often, at other moments than at 30 (66sec
+        // case, Oct 31: both goons reacted to Gene 2-4 vblanks early and the fight parted from there). Replaces the
+        // counter load: every other frame a value no slot test of this enemy matches, otherwise the 30 FPS frame count,
+        // kept across rate changes and in save states ("kamite.frame30") so a state thinks on the same frames at both.
+        uint32_t g_frame30Base = 0, g_counterBase = 0, g_frame30Saved = 0;
+        bool g_frame30Loaded = false;
+        uint8_t *g_rdram = nullptr;
+        bool thinkSkipped(uint8_t *rdram) { return ((gameFrames(rdram) - g_counterBase) & 1u) != 0u; }
+        uint32_t frame30(uint8_t *rdram) { return g_frame30Base + ((gameFrames(rdram) - g_counterBase) >> 1); }
+        template <int Dst, int Slot>
+        void thinkFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            SET_GPR_U32(ctx, Dst, thinkSkipped(rdram) ? GPR_U32(ctx, Slot) + 1u : frame30(rdram));
+        }
+        void installFrame30State()
+        {
+            ps2x::savestate::registerExtension(
+                "kamite.frame30",
+                [](ps2x::state::Writer &out) {
+                    uint32_t version = 1u, frame = g_rdram ? (g_fps60 ? frame30(g_rdram) : gameFrames(g_rdram)) : 0u;
+                    ps2x::state::fields(out, version, frame);
+                },
+                [](ps2x::state::Reader &in) {
+                    uint32_t version = 0u;
+                    ps2x::state::fields(in, version, g_frame30Saved);
+                    g_frame30Loaded = true;
+                });
+        }
+        // After a load (before the game runs): the 30 FPS frame count from the state (a state without it: its counter).
+        // At 60 it is the base; at 30 a state saved at 60 gets it as the game's counter.
+        void frame30AfterLoad(uint8_t *rdram)
+        {
+            const uint32_t counter = gameFrames(rdram);
+            const uint32_t frame = g_frame30Loaded ? g_frame30Saved : counter;
+            if (g_fps60)
+                g_frame30Base = frame, g_counterBase = counter;
+            else if (g_frame30Loaded && ram8(rdram, kFrameDivider) == 1u)
+                std::memcpy(&ram8(rdram, game::GameWork::address(game::GameWork::kFrameCount)), &frame, sizeof(frame));
+            g_frame30Loaded = false;
+        }
+
         void rateChange(uint8_t *rdram, uint32_t was, uint32_t now)
         {
             if (was == now || (was != 1u && was != 2u))
                 return;
             ram8(rdram, kFrameDivider) = static_cast<uint8_t>(now);
+            if (now == 1u)
+                g_frame30Base = gameFrames(rdram), g_counterBase = gameFrames(rdram);
             const uint32_t at = 0x5864F0u + 0x548u; // cEmManage D_005864F0
             float rate = 0.0f;
             std::memcpy(&rate, &ram8(rdram, at), sizeof(rate));
@@ -1112,11 +1157,18 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_pl56e_store_s1", &countdownStore16<17, 2, 3, 0x56Eu>);
         ps2xRegisterHostHook("km_fps60_rand_int", &randInt);
         ps2xRegisterHostHook("km_fps60_rand_float", &randFloat);
+        ps2xRegisterHostHook("km_fps60_think_a0_v0", &thinkFrame<4, 2>);
+        ps2xRegisterHostHook("km_fps60_think_v1_a0", &thinkFrame<3, 4>);
+        ps2xRegisterHostHook("km_fps60_think_v0_v1", &thinkFrame<2, 3>);
+        ps2xRegisterHostHook("km_fps60_think_v0_a0", &thinkFrame<2, 4>);
         ps2xRegisterHostHook("km_fps60_rand_object_begin", &randObjectBegin);
         ps2xRegisterHostHook("km_fps60_rand_object_end", &randObjectEnd);
         installRandState();
         installClothState();
+        g_rdram = runtime.memory().getRDRAM();
+        installFrame30State();
         ps2x::savestate::onLoaded([rdram = runtime.memory().getRDRAM()] {
+            frame30AfterLoad(rdram);
             rateChange(rdram, ram8(rdram, kFrameDivider), g_fps60 ? 1u : 2u);
         });
         ps2xSetPatchFlag("frame_hook", true); // always: it also counts game frames for the F3 overlay

@@ -3634,3 +3634,86 @@ address = "0x0028A7A0"
 hook = "km_fps60_em_cd_s0_5f0"
 flag = "fps60"
 replace = true
+
+# 60 FPS: the enemies' staggered thinking (GameWork +0x210 & 7 == the enemy's slot): the 30 FPS frame count on
+# every other frame (frame_patches.cpp thinkFrame).
+[[patches.hooks]]
+address = "0x0020F5D0"
+hook = "km_fps60_think_a0_v0"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00210730"
+hook = "km_fps60_think_v1_a0"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00210820"
+hook = "km_fps60_think_v0_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x002108DC"
+hook = "km_fps60_think_v0_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00211A0C"
+hook = "km_fps60_think_v0_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00211AC8"
+hook = "km_fps60_think_v0_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00212AB8"
+hook = "km_fps60_think_v0_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0023AC24"
+hook = "km_fps60_think_v0_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0023F264"
+hook = "km_fps60_think_v0_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0023F358"
+hook = "km_fps60_think_v0_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00244E18"
+hook = "km_fps60_think_v0_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0024BBA8"
+hook = "km_fps60_think_v0_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0024BDDC"
+hook = "km_fps60_think_v0_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00263078"
+hook = "km_fps60_think_v0_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00286154"
+hook = "km_fps60_think_v0_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00286D58"
+hook = "km_fps60_think_v0_a0"
+flag = "fps60"
+replace = true
