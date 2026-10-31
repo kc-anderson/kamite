@@ -28,7 +28,9 @@
 // .blend / .fbx / .glb; the file's name is the motion's id). On top of the motion: the head (pitch, turn), the upper
 // arms (raised round the shoulders' side axis) and the forearms (bent round the upper arms' up axis) are turned in
 // front of the motion's own rotation, every frame (preRotate resamples those curves); bottom out tips the pelvis;
-// amount scales the motion's own movement (rotations and the hips' travel) round its first frame.
+// amount scales the motion's own movement (rotations and the hips' travel) round its first frame. Last, "Hands:
+// pinned" solves the arms again every frame so each hand holds still where the rest leaves it on average (pinHands;
+// default on for the counter motions, 0% = the motion as before).
 //
 // Which actors lean: npc_poses.txt next to the exe, one line per actor (room, the place it first started the idle in
 // centimetres, and the adjustments). The F2 menu's NPCs tab edits the nearest actor and saves the file. Without that
@@ -102,7 +104,16 @@ namespace kamite::npc_poses
                                      // facing); past 90 they cross
             float stance = 100.0f;   // percent of the feet's distance apart
             float wiggle = 0.0f;     // percent: the rail idle's pelvis undulation added (100 = as the rail idle's)
+            float pin = -1.0f;       // percent: how still the hands hold (100 = pinned, 0 = the motion's own); < 0 =
+                                     // not set (pinDefault: the counter motions pinned)
         };
+        // "Pin hands" when a pose has not set it: the counter motions (their hands rest on the counter) pinned.
+        float pinOf(const Pose &p)
+        {
+            if (p.pin >= 0.0f)
+                return p.pin;
+            return p.motion == "counter_idle" || p.motion == "counter_tease" ? 100.0f : 0.0f;
+        }
 
         // The motions a pose can play: the rail lean built in, and any MOT files in mods/npc_motions (made with
         // tools/models/npc_rail.py's retargeting; the file's name is the id).
@@ -136,6 +147,7 @@ namespace kamite::npc_poses
             float fargs[3] = {};
             uint32_t motionData = 0;
             uint8_t mode = 0;
+            int skeleton = 0;              // 0 not looked at yet, 1 its own read, 2 the women's (its own unreadable)
         };
 
         std::mutex g_mutex;
@@ -451,8 +463,9 @@ namespace kamite::npc_poses
             return static_cast<uint8_t>(std::clamp(std::lround((v - pos) / d), 0L, 255L));
         }
 
-        // A looping curve through `v` (one value a frame), keys every 3 frames (more apart past 120) and on the last.
-        Rec encode(uint8_t bone, uint8_t component, const std::vector<float> &v)
+        // A looping curve through `v` (one value a frame), keys every 3 frames (more apart past 120) and on the last;
+        // `every` > 0 sets the spacing (the pinned arms: denser, so the hands hold still between keys).
+        Rec encode(uint8_t bone, uint8_t component, const std::vector<float> &v, int every = 0)
         {
             Rec rec;
             rec.bone = bone;
@@ -461,7 +474,8 @@ namespace kamite::npc_poses
             rec.channel = static_cast<uint8_t>(0x10 | component);
             const int n = static_cast<int>(v.size());
             std::vector<int> frames;
-            const int every = std::max(3, n / 24); // a long motion keeps its slot size in hand
+            if (every <= 0)
+                every = std::max(3, n / 24); // a long motion keeps its slot size in hand
             for (int f = 0; f < n - 1; f += every)
                 frames.push_back(f);
             frames.push_back(n - 1);
@@ -660,6 +674,330 @@ namespace kamite::npc_poses
             return v;
         }
 
+        // ---- pinned hands (Nov 1, K: the counter motions' hands slid on the counter) ----
+        // The arms are solved again every frame so each hand holds still in the actor's space (its place and its
+        // turn: the loop's average), whatever the torso does; the shoulders and elbows follow the body. It runs last,
+        // after every slider: they move the average with them (raising the arms or bending the elbows still moves the
+        // hands, to a new resting place), the motion's own movement no longer does. "Hands: pinned" 0% leaves the
+        // motion exactly as before.
+        using Vec = std::array<float, 3>;
+        Vec vadd(const Vec &a, const Vec &b) { return {a[0] + b[0], a[1] + b[1], a[2] + b[2]}; }
+        Vec vsub(const Vec &a, const Vec &b) { return {a[0] - b[0], a[1] - b[1], a[2] - b[2]}; }
+        Vec vmul(const Vec &a, float s) { return {a[0] * s, a[1] * s, a[2] * s}; }
+        float dot(const Vec &a, const Vec &b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+        Vec cross(const Vec &a, const Vec &b) { return {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]}; }
+        float len(const Vec &a) { return std::sqrt(dot(a, a)); }
+        Vec rotate(const Mat &m, const Vec &v)
+        {
+            return {m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]};
+        }
+        Mat transpose(const Mat &m) { return {m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]}; }
+        // The rotation taking direction a onto direction b by the shortest way.
+        Mat arc(const Vec &a, const Vec &b)
+        {
+            const float la = len(a), lb = len(b);
+            if (la < 1e-6f || lb < 1e-6f)
+                return {1, 0, 0, 0, 1, 0, 0, 0, 1};
+            const Vec u = vmul(a, 1.0f / la), w = vmul(b, 1.0f / lb);
+            Vec k = cross(u, w);
+            const float s = len(k), c = std::clamp(dot(u, w), -1.0f, 1.0f);
+            if (s < 1e-7f)
+                return {1, 0, 0, 0, 1, 0, 0, 0, 1}; // (never a half turn here: the targets move a few centimetres)
+            k = vmul(k, 1.0f / s);
+            const float t = 1 - c;
+            return {t * k[0] * k[0] + c, t * k[0] * k[1] - s * k[2], t * k[0] * k[2] + s * k[1],
+                    t * k[0] * k[1] + s * k[2], t * k[1] * k[1] + c, t * k[1] * k[2] - s * k[0],
+                    t * k[0] * k[2] - s * k[1], t * k[1] * k[2] + s * k[0], t * k[2] * k[2] + c};
+        }
+        // The nearest rotation to a sum or blend of rotations (polar decomposition by averaging with the inverse
+        // transpose: converges in a few rounds for anything near a rotation).
+        Mat orthonormal(Mat m)
+        {
+            for (int it = 0; it < 12; ++it)
+            {
+                const float det = m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6]) + m[2] * (m[3] * m[7] - m[4] * m[6]);
+                if (std::fabs(det) < 1e-12f)
+                    break;
+                // inverse transpose = cofactor matrix / det
+                const Mat cof = {m[4] * m[8] - m[5] * m[7], m[5] * m[6] - m[3] * m[8], m[3] * m[7] - m[4] * m[6],
+                                 m[2] * m[7] - m[1] * m[8], m[0] * m[8] - m[2] * m[6], m[1] * m[6] - m[0] * m[7],
+                                 m[1] * m[5] - m[2] * m[4], m[2] * m[3] - m[0] * m[5], m[0] * m[4] - m[1] * m[3]};
+                for (int i = 0; i < 9; ++i)
+                    m[i] = 0.5f * (m[i] + cof[i] / det);
+            }
+            return m;
+        }
+        // Euler angles (the game's order) nearest the previous frame's: of the two solutions, the closer one, so a
+        // bent elbow near the order's gimbal point does not flip between keys.
+        void toEulerNear(const Mat &r, float prev[3], bool first)
+        {
+            float x, y, z;
+            toEuler(r, x, y, z);
+            if (first)
+            {
+                prev[0] = x, prev[1] = y, prev[2] = z;
+                return;
+            }
+            constexpr float pi = 3.14159265358979f;
+            const float a[3] = {near(x, prev[0]), near(y, prev[1]), near(z, prev[2])};
+            const float b[3] = {near(x + pi, prev[0]), near(pi - y, prev[1]), near(z + pi, prev[2])};
+            float da = 0, db = 0;
+            for (int i = 0; i < 3; ++i)
+            {
+                da += std::fabs(a[i] - prev[i]);
+                db += std::fabs(b[i] - prev[i]);
+            }
+            for (int i = 0; i < 3; ++i)
+                prev[i] = db < da ? b[i] : a[i];
+        }
+
+        // The actor's skeleton: each bone's parent and its offset from it (the bind rotations are identity).
+        struct Skeleton
+        {
+            int count = 0;
+            int parent[32] = {};
+            Vec t[32] = {};
+        };
+        // The game's women (ema5.dat), what the pose motions are made for: used when an actor's own parts cannot be
+        // read. Bone 7 carries the arm (8 hangs from it), 6 is its twin at the same place (the upper arm's skin).
+        Skeleton womanSkeleton()
+        {
+            static const int parents[30] = {-1, 0, 1, 2, 3, 2, 5, 5, 7, 8, 9, 2, 11, 11, 13, 14, 15, 0, 17, 18, 19, 20, 17, 22, 23, 24, 4, -1, -1, 2};
+            static const float offsets[30][3] = {
+                {0, 1.125f, 0}, {0, 0.001f, 0}, {0, 0.122f, -0.004f}, {0, 0.255f, -0.0295f}, {0, 0.067f, 0.0145f},
+                {-0.025f, 0.185f, -0.04f}, {-0.125f, 0.013f, 0.004f}, {-0.125f, 0.013f, 0.004f}, {-0.245f, 0, 0}, {-0.14f, 0, 0},
+                {-0.112f, 0, 0}, {0.025f, 0.185f, -0.04f}, {0.125f, 0.013f, 0.004f}, {0.125f, 0.013f, 0.004f}, {0.245f, 0, 0},
+                {0.14f, 0, 0}, {0.112f, 0, 0}, {0, 0, 0}, {-0.085f, -0.125f, -0.015f}, {0, -0.435f, 0},
+                {0, -0.44f, 0}, {0, -0.092f, 0.083f}, {0.085f, -0.125f, -0.015f}, {0, -0.435f, 0}, {0, -0.44f, 0},
+                {0, -0.092f, 0.083f}, {0, 0.01f, 0.04f}, {0, 0, 0}, {0, 0, 0}, {0, 0.115f, 0.05f}};
+            Skeleton s;
+            s.count = 30;
+            for (int i = 0; i < 30; ++i)
+            {
+                s.parent[i] = parents[i];
+                s.t[i] = {offsets[i][0], offsets[i][1], offsets[i][2]};
+            }
+            return s;
+        }
+        // The arm chains the pin needs: shoulder (7, twin 6), elbow 8, twist 9, hand 10 (right); 13, 12, 14, 15, 16.
+        bool armsReadable(const Skeleton &s)
+        {
+            if (s.count < 17)
+                return false;
+            static const int chains[2][6] = {{5, 6, 7, 8, 9, 10}, {11, 12, 13, 14, 15, 16}};
+            for (const int *c : chains)
+            {
+                if (s.parent[c[1]] != c[0] || s.parent[c[2]] != c[0] || s.parent[c[3]] != c[2] || s.parent[c[4]] != c[3] ||
+                    s.parent[c[5]] != c[4])
+                    return false;
+                const float upper = len(s.t[c[3]]), lower = len(s.t[c[4]]) + len(s.t[c[5]]);
+                if (upper < 0.1f || upper > 0.5f || lower < 0.1f || lower > 0.5f)
+                    return false;
+            }
+            return true;
+        }
+        // The actor's own parts (its cModel: list at +0x144, count at +0x2B4; offset +0xE0, parent +0x148).
+        bool readSkeleton(const uint8_t *rdram, uint32_t actor, Skeleton &s)
+        {
+            if (!inRam(actor, 0x2B8))
+                return false;
+            const int n = rdram[(actor + 0x2B4u) & 0x01FFFFFFu];
+            if (n < 17 || n > 32)
+                return false;
+            uint32_t parts[32];
+            uint32_t p = read32(rdram, actor + 0x144u);
+            for (int i = 0; i < n; ++i)
+            {
+                if (!inRam(p, 0x150))
+                    return false;
+                parts[i] = p;
+                p = read32(rdram, p + 0x144u);
+            }
+            Skeleton out;
+            out.count = n;
+            for (int i = 0; i < n; ++i)
+            {
+                float t[3];
+                std::memcpy(t, rdram + ((parts[i] + 0xE0u) & 0x01FFFFFFu), 12);
+                if (!std::isfinite(t[0]) || !std::isfinite(t[1]) || !std::isfinite(t[2]))
+                    return false;
+                out.t[i] = {t[0], t[1], t[2]};
+                const uint32_t parent = read32(rdram, parts[i] + 0x148u);
+                out.parent[i] = -1;
+                for (int j = 0; j < n; ++j)
+                    if (parts[j] == parent && j != i)
+                        out.parent[i] = j;
+            }
+            if (!armsReadable(out))
+                return false;
+            s = out;
+            return true;
+        }
+
+        // Solves both arms of `m` so the hands hold still (strength 0..1 of the way from the motion's own hands to
+        // the loop's average). Writes bones 6, 7, 8, 10 / 12, 13, 14, 16 as dense curves; false (m untouched) if the
+        // motion cannot be solved.
+        bool pinHands(std::vector<uint8_t> &m, const Skeleton &sk, float strength)
+        {
+            std::vector<Rec> recs;
+            if (!parse(m, recs) || !armsReadable(sk))
+                return false;
+            uint16_t frames;
+            std::memcpy(&frames, m.data() + 4, 2);
+            const uint8_t loop = m[7];
+            if (frames < 2)
+                return false;
+            const int n = std::min(sk.count, 32);
+            const Rec *chan[32][6] = {};
+            for (const Rec &r : recs)
+                if (r.bone < n && (r.channel & 0x0F) < 6)
+                    chan[r.bone][r.channel & 0x0F] = &r;
+            const auto at = [&](int bone, int c, int f, float fallback) {
+                return chan[bone][c] ? sample(*chan[bone][c], static_cast<float>(f)) : fallback;
+            };
+
+            struct Side
+            {
+                int clav, twin, upper, elbow, twist, hand;
+            };
+            const Side sides[2] = {{5, 6, 7, 8, 9, 10}, {11, 12, 13, 14, 15, 16}};
+            // Every frame's local rotations and the world (actor space) rotations and places of the bones.
+            std::vector<std::array<Mat, 32>> L(frames), W(frames);
+            std::vector<std::array<Vec, 32>> P(frames);
+            for (int f = 0; f < frames; ++f)
+                for (int i = 0; i < n; ++i)
+                {
+                    L[f][i] = euler(at(i, 3, f, 0.0f), at(i, 4, f, 0.0f), at(i, 5, f, 0.0f));
+                    const int pa = sk.parent[i];
+                    const Vec t = i == 0 ? Vec{at(0, 0, f, sk.t[0][0]), at(0, 1, f, sk.t[0][1]), at(0, 2, f, sk.t[0][2])} : sk.t[i];
+                    if (pa < 0 || pa >= i)
+                    {
+                        W[f][i] = L[f][i];
+                        P[f][i] = t;
+                    }
+                    else
+                    {
+                        W[f][i] = mul(W[f][pa], L[f][i]);
+                        P[f][i] = vadd(P[f][pa], rotate(W[f][pa], t));
+                    }
+                }
+
+            // Solved local rotations per side: twin, upper, elbow, hand.
+            std::vector<std::array<Mat, 4>> out[2] = {std::vector<std::array<Mat, 4>>(frames), std::vector<std::array<Mat, 4>>(frames)};
+            for (int s = 0; s < 2; ++s)
+            {
+                const Side &sd = sides[s];
+                Vec meanPos{};
+                Mat sumRot{};
+                for (int f = 0; f < frames; ++f)
+                {
+                    meanPos = vadd(meanPos, P[f][sd.hand]);
+                    for (int i = 0; i < 9; ++i)
+                        sumRot[i] += W[f][sd.hand][i];
+                }
+                meanPos = vmul(meanPos, 1.0f / frames);
+                const Mat meanRot = orthonormal(sumRot);
+                Vec pole{0, 0, 0};
+                for (int f = 0; f < frames; ++f)
+                {
+                    const Vec S = P[f][sd.upper], E = P[f][sd.elbow], H = P[f][sd.hand];
+                    const Vec T = vadd(H, vmul(vsub(meanPos, H), strength));
+                    Mat blend{};
+                    for (int i = 0; i < 9; ++i)
+                        blend[i] = W[f][sd.hand][i] + strength * (meanRot[i] - W[f][sd.hand][i]);
+                    const Mat handRot = orthonormal(blend);
+                    // Two bones: shoulder-elbow a, elbow-wrist b (as this frame has them), the elbow kept in the plane
+                    // through the shoulder, the target and where the motion has it.
+                    const float a = len(vsub(E, S)), b = len(vsub(H, E));
+                    Vec st = vsub(T, S);
+                    float d = len(st);
+                    const float dmin = std::fabs(a - b) + 1e-4f, dmax = a + b - 1e-4f;
+                    if (d < 1e-6f)
+                        st = vsub(H, S), d = len(st);
+                    const Vec u = vmul(st, 1.0f / std::max(d, 1e-6f));
+                    d = std::clamp(d, dmin, dmax);
+                    Vec v = vsub(vsub(E, S), vmul(u, dot(vsub(E, S), u)));
+                    if (len(v) > 1e-5f)
+                        pole = vmul(v, 1.0f / len(v));
+                    else if (len(pole) < 0.5f)
+                        pole = vmul(cross(u, Vec{0, 1, 0}), 1.0f / std::max(len(cross(u, Vec{0, 1, 0})), 1e-6f));
+                    const float along = (a * a + d * d - b * b) / (2 * d);
+                    const float out_ = std::sqrt(std::max(0.0f, a * a - along * along));
+                    const Vec E2 = vadd(S, vadd(vmul(u, along), vmul(pole, out_)));
+                    const Vec T2 = vadd(S, vmul(u, d)); // the target, or as near as the arm reaches
+                    const Mat q1 = arc(vsub(E, S), vsub(E2, S));
+                    const Vec H1 = vadd(S, rotate(q1, vsub(H, S)));
+                    const Mat q2 = arc(vsub(H1, E2), vsub(T2, E2));
+                    const Mat Wc = W[f][sd.clav];
+                    const Mat Wu = mul(q1, W[f][sd.upper]), Wt = mul(q1, W[f][sd.twin]), We = mul(q2, mul(q1, W[f][sd.elbow]));
+                    const Mat Wtw = mul(We, L[f][sd.twist]);
+                    out[s][f][0] = mul(transpose(Wc), Wt);
+                    out[s][f][1] = mul(transpose(Wc), Wu);
+                    out[s][f][2] = mul(transpose(Wu), We);
+                    out[s][f][3] = mul(transpose(Wtw), handRot);
+                }
+            }
+
+            // The solved curves: denser keys first, wider apart until the motion fits its slot.
+            std::vector<std::vector<float>> curves; // 24: side, bone (twin, upper, elbow, hand), component
+            std::vector<uint8_t> bonesOut;
+            for (int s = 0; s < 2; ++s)
+                for (int k = 0; k < 4; ++k)
+                {
+                    std::vector<float> xs(frames), ys(frames), zs(frames);
+                    float prev[3] = {};
+                    for (int f = 0; f < frames; ++f)
+                    {
+                        toEulerNear(out[s][f][k], prev, f == 0);
+                        xs[f] = prev[0], ys[f] = prev[1], zs[f] = prev[2];
+                    }
+                    curves.push_back(std::move(xs));
+                    curves.push_back(std::move(ys));
+                    curves.push_back(std::move(zs));
+                    const int bone = k == 0 ? sides[s].twin : k == 1 ? sides[s].upper : k == 2 ? sides[s].elbow : sides[s].hand;
+                    bonesOut.push_back(static_cast<uint8_t>(bone));
+                }
+            const auto solved = [&](uint8_t bone) {
+                return std::find(bonesOut.begin(), bonesOut.end(), bone) != bonesOut.end();
+            };
+            for (int every : {4, 5, 6, 8, 10, 13, 16, 22, 30})
+            {
+                std::vector<Rec> res;
+                bool placed[8] = {};
+                for (const Rec &r : recs)
+                {
+                    const int c = r.channel & 0x0F;
+                    if (solved(r.bone) && c >= 3 && c <= 5)
+                    {
+                        const int idx = static_cast<int>(std::find(bonesOut.begin(), bonesOut.end(), r.bone) - bonesOut.begin());
+                        if (!placed[idx])
+                        {
+                            for (int cc = 0; cc < 3; ++cc)
+                                res.push_back(encode(r.bone, static_cast<uint8_t>(3 + cc), curves[idx * 3 + cc], every));
+                            placed[idx] = true;
+                        }
+                        continue;
+                    }
+                    res.push_back(r);
+                }
+                for (int idx = 0; idx < 8; ++idx)
+                    if (!placed[idx])
+                        for (int cc = 0; cc < 3; ++cc)
+                            res.push_back(encode(bonesOut[idx], static_cast<uint8_t>(3 + cc), curves[idx * 3 + cc], every));
+                if (res.size() >= 254)
+                    return false;
+                std::vector<uint8_t> candidate = serialize(frames, loop, res);
+                if (candidate.size() <= kSlotSize || every == 30)
+                {
+                    m = std::move(candidate);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        std::map<uint32_t, Skeleton> g_skeletons; // by actor address, for the posed NPCs (cleared with the room)
+
         // Motions renamed since (Oct 27): a pose saved with an old id plays the new motion, and an old file left in
         // the play folder (the build copies resources/ without deleting) is not listed twice.
         constexpr std::pair<const char *, const char *> kRenamed[] = {
@@ -684,7 +1022,7 @@ namespace kamite::npc_poses
             return g_motions.empty() ? nullptr : &g_motions.front();
         }
 
-        std::vector<uint8_t> leanMotion(const Pose &p)
+        std::vector<uint8_t> leanMotion(const Pose &p, const Skeleton *skeleton = nullptr)
         {
             const Motion *mo = motionFor(p.motion);
             if (!mo)
@@ -738,6 +1076,10 @@ namespace kamite::npc_poses
                 preRotate(m, bone, rotX(-p.arms * kDeg));
             preRotate(m, 8, rotY(p.elbows * kDeg));
             preRotate(m, 14, rotY(-p.elbows * kDeg));
+            // Pinned hands, last: the arms solved again so each hand holds still where the above leaves it on average.
+            const float pin = std::clamp(pinOf(p), 0.0f, 100.0f) / 100.0f;
+            if (pin > 0.0f && skeleton)
+                pinHands(m, *skeleton, pin);
             return m;
         }
 
@@ -777,14 +1119,34 @@ namespace kamite::npc_poses
             return t;
         }
 
-        void writeSlot(uint8_t *rdram, Npc &npc, bool starting)
+        void writeSlot(uint8_t *rdram, uint32_t actor, Npc &npc, bool starting)
         {
             const Pose *pose = poseFor(g_room, npc.spawn);
             std::vector<uint8_t> bytes;
             std::string playing;
             if (g_enabled && pose && pose->lean)
             {
-                bytes = leanMotion(*pose);
+                // Its skeleton for pinned hands: its own parts once, else the women's the motions are made for.
+                if (npc.skeleton == 0 && pinOf(*pose) > 0.0f)
+                {
+                    Skeleton own;
+                    if (readSkeleton(rdram, actor, own))
+                    {
+                        g_skeletons[actor] = own;
+                        npc.skeleton = 1;
+                        KM_INFO(Game, "NPC poses: pinned hands on actor " << std::hex << actor << std::dec << "'s own skeleton ("
+                                                                           << own.count << " bones)");
+                    }
+                    else
+                    {
+                        g_skeletons[actor] = womanSkeleton();
+                        npc.skeleton = 2;
+                        KM_INFO(Game, "NPC poses: actor " << std::hex << actor << std::dec
+                                                          << "'s skeleton unreadable: pinned hands use the women's");
+                    }
+                }
+                const auto sk = g_skeletons.find(actor);
+                bytes = leanMotion(*pose, sk != g_skeletons.end() ? &sk->second : nullptr);
                 playing = motionFor(pose->motion) ? motionFor(pose->motion)->id : std::string();
                 if (bytes.size() > kSlotSize)
                 {
@@ -844,6 +1206,7 @@ namespace kamite::npc_poses
         void forgetRoom()
         {
             g_npcs.clear();
+            g_skeletons.clear();
             std::fill(g_slotUsed.begin(), g_slotUsed.end(), false);
             g_nearest = 0;
         }
@@ -890,7 +1253,7 @@ namespace kamite::npc_poses
             Npc &npc = it->second;
             npc.original = motion; // its idle (19 and 29 alternate)
             if (npc.dirty)
-                writeSlot(rdram, npc, true);
+                writeSlot(rdram, actor, npc, true);
             npc.args[0] = GPR_U32(ctx, 6);
             npc.args[1] = GPR_U32(ctx, 7);
             npc.args[2] = GPR_U32(ctx, 8);
@@ -940,7 +1303,9 @@ namespace kamite::npc_poses
                     pose.motion = renamed(motion) ? renamed(motion) : motion;
                     fields >> pose.headPitch >> pose.headYaw >> pose.arms >> pose.elbows >> pose.butt >> pose.amount;
                     fields >> pose.headRoll >> pose.legTurn >> pose.stance; // added later still
-                    if (!(fields >> pose.wiggle))
+                    if (fields >> pose.wiggle)
+                        fields >> pose.pin; // added Nov 1 (missing: pinOf's default for the motion)
+                    else
                     {
                         // Before Oct 27 "hip sway" scaled the motion's own pelvis movement (100 = unchanged): what it
                         // added past that is near the wiggle; the side-to-side sway is new.
@@ -966,14 +1331,15 @@ namespace kamite::npc_poses
                    "# room (hex), where the NPC stands (x z, cm), lean (0/1), bend at the waist (degrees), hip sway (%),\r\n"
                    "# height (m), forward (m), sideways (m, + = her left), turn (degrees, + = to her left), motion,\r\n"
                    "# head pitch and turn, arms raised, elbows bent, bottom out (degrees), amount of movement (%),\r\n"
-                   "# head tilt, legs turned (degrees), feet apart (%), butt wiggle (%)\r\n";
+                   "# head tilt, legs turned (degrees), feet apart (%), butt wiggle (%), hands pinned (%)\r\n";
             for (const auto &[key, pose] : g_poses)
             {
                 char line[320];
-                std::snprintf(line, sizeof(line), "%s %d %.1f %.0f %.3f %.3f %.3f %.1f %s %.1f %.1f %.1f %.1f %.1f %.0f %.1f %.1f %.0f %.0f\r\n",
+                std::snprintf(line, sizeof(line), "%s %d %.1f %.0f %.3f %.3f %.3f %.1f %s %.1f %.1f %.1f %.1f %.1f %.0f %.1f %.1f %.0f %.0f %.0f\r\n",
                               keyText(key).c_str(), pose.lean ? 1 : 0, pose.waist, pose.sway, pose.height, pose.forward,
                               pose.side, pose.turn, pose.motion.c_str(), pose.headPitch, pose.headYaw, pose.arms, pose.elbows,
-                              pose.butt, pose.amount, pose.headRoll, pose.legTurn, pose.stance, pose.wiggle);
+                              pose.butt, pose.amount, pose.headRoll, pose.legTurn, pose.stance, pose.wiggle,
+                              pinOf(pose));
                 out << line;
             }
             return static_cast<bool>(out);
@@ -1061,6 +1427,9 @@ namespace kamite::npc_poses
                 slider("Head: tilt (+ = to her right)##hroll", pose.headRoll, -45.0f, 45.0f, "%.1f deg");
                 slider("Arms: raise (+) / lower (-)##arms", pose.arms, -60.0f, 60.0f, "%.1f deg");
                 slider("Elbows: bend (+) / straighten (-)##elbows", pose.elbows, -60.0f, 60.0f, "%.1f deg");
+                float pin = pinOf(pose); // the hands held still on the counter (0% = the motion's own hands)
+                slider("Hands: pinned##pin", pin, 0.0f, 100.0f, "%.0f%%");
+                pose.pin = pin;
                 slider("Bottom out (+) / in (-)##butt", pose.butt, -40.0f, 40.0f, "%.1f deg");
                 slider("Legs: turn (+ = to her left; past 90 they cross)##legturn", pose.legTurn, -100.0f, 100.0f, "%.1f deg");
                 slider("Legs: feet apart##stance", pose.stance, 0.0f, 200.0f, "%.0f%%");
@@ -1201,7 +1570,7 @@ namespace kamite::npc_poses
         for (auto &[actor, npc] : g_npcs)
         {
             if (npc.dirty)
-                writeSlot(rdram, npc, false);
+                writeSlot(rdram, actor, npc, false);
             if (!npc.restart || !g_start || !ctx || !runtime)
                 continue;
             npc.restart = false;

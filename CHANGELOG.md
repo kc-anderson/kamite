@@ -2,6 +2,10 @@
 
 Newest first, one line per change; the code comments say how.
 
+## November 1, 2026
+
+- NPC poses: hands hold still on the counter (counter idle and counter tease; "Hands: pinned" in F2 > NPCs > Pose NPC, 0% = as before).
+
 ## October 31, 2026
 
 - Style switching: styles keep techniques from F2 "Every technique owned" while it is on; turning it off removes them from every style.
