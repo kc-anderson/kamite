@@ -49,6 +49,7 @@
 #include "kamite/log.h"
 #include "kamite/game_layout.h"
 #include "ps2_runtime_macros.h" // FPU_CVT_W_S (the recompiled CVT.W.S)
+#include "runtime/ee_scheduler.h"
 #include "runtime/ps2_async_vif.h"
 #include "runtime/ps2_display_options.h"
 #include "runtime/ps2_save_state.h"
@@ -497,20 +498,51 @@ namespace kamite
         // the 30 FPS game would.
         struct EnemyStep
         {
-            uint32_t state = 0, counter = 0;
+            uint32_t state = 0, counter = 0, motion = 0;
         };
         std::unordered_map<uint32_t, EnemyStep> g_enemyStep;
-        void enemyStepHold(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        // A guest function run to its end on a copy of the registers (game_options.cpp callGuest).
+        void callGuest(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t address, uint32_t a0, float f12)
+        {
+            if (!runtime || !runtime->hasFunction(address))
+                return;
+            PS2Runtime::RecompiledFunction fn = runtime->lookupFunction(address);
+            if (!fn)
+                return;
+            const R5900Context saved = *ctx;
+            SET_GPR_U32(ctx, 4, a0);
+            ctx->f[12] = f12;
+            runtime->eeScheduler().beginHostCall();
+            fn(rdram, ctx, runtime);
+            runtime->eeScheduler().endHostCall();
+            *ctx = saved;
+        }
+        // The held vblank is the second half of the 30 FPS frame in which the old step ran its last frame: the old
+        // motion goes on as that step moved it (moveMotion 0x157C18, cObjBase_addNullSpeed_Rotation 0x14F9F0 and
+        // cObjBase_addNullSpeed 0x14F928 at 1.0, as the walking and idle steps do every frame), unless the change set
+        // a new motion already. Without it each change lost half a 30 FPS frame of root motion (66sec case: the grab
+        // lunge ended 0.1 m short, the grab put Gene 0.19 m off, and the other goon chose otherwise from there).
+        void enemyStepHold(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const uint32_t obj = GPR_U32(ctx, 17);
-            uint32_t state = 0;
+            uint32_t state = 0, motion = 0;
             std::memcpy(&state, &ram8(rdram, obj + 0x2F4u), sizeof(state));
+            std::memcpy(&motion, &ram8(rdram, obj + 0x428u), sizeof(motion));
             const uint32_t counter = gameFrames(rdram);
             EnemyStep &last = g_enemyStep[obj];
             const bool changed = last.counter + 1u == counter && last.state != state;
-            last = EnemyStep{state, counter};
+            const bool sameMotion = last.motion == motion;
+            last = EnemyStep{state, counter, motion};
             if (changed && thinkSkipped(rdram))
+            {
+                if (sameMotion)
+                {
+                    callGuest(rdram, ctx, runtime, 0x157C18u, obj, 0.0f);
+                    callGuest(rdram, ctx, runtime, 0x14F9F0u, obj, 1.0f);
+                    callGuest(rdram, ctx, runtime, 0x14F928u, obj, 1.0f);
+                }
                 SET_GPR_U32(ctx, 6, 0x100318u);
+            }
             if ((counter & 0x3FFu) == 0u)
                 for (auto it = g_enemyStep.begin(); it != g_enemyStep.end();)
                     it = counter - it->second.counter > 2u ? g_enemyStep.erase(it) : std::next(it);
