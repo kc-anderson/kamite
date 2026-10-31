@@ -745,7 +745,15 @@ namespace kamite
                 snap.shift[axis] = isGene(rdram, owner) ? ramF32(rdram, owner + 0x650u + axis * 4u) : 0.0f;
             snap.words.resize(static_cast<size_t>(snap.count) * kClothKeptWords);
             for (uint32_t i = 0; i < snap.count; ++i)
-                std::memcpy(&snap.words[i * kClothKeptWords], &ram8(rdram, nodes + i * kClothNode + kClothKept), kClothKeptWords * 4u);
+            {
+                const uint32_t node = nodes + i * kClothNode;
+                std::memcpy(&snap.words[i * kClothKeptWords], &ram8(rdram, node + kClothKept), kClothKeptWords * 4u);
+                // The kept velocity is a whole 30 FPS step's; the half step moves by half of it (pos += vel / 2 +
+                // gravity / 4). With the whole velocity the odd frame showed a full step ahead and the even frame
+                // pulled the coat back: the jitter K filmed (b971051).
+                for (int axis = 0; axis < 3; ++axis)
+                    setRamF32(rdram, node + 0x30u + axis * 4u, ramF32(rdram, node + 0x30u + axis * 4u) * 0.5f);
+            }
         }
 
         void forgetClothAfterLoad(uint8_t *rdram)

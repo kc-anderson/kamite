@@ -3412,3 +3412,224 @@ address = "0x001CE670"
 hook = "km_fps60_countdown_self"
 flag = "fps60"
 replace = true
+
+# 60 FPS family 1, second pass (Oct 31, Thinso's cases "Goon attack 30fps / 60fps"): a hooked countdown load (or
+# decrement) has copies in branch delay slots that jump past it to the decrement (`bnel/beql/b ... lw v0,0x5F0(s1)` ->
+# the addiu after the hooked lw), so on those paths the countdown ran every frame at 60. The goon's tracking window in
+# his phase 22 string (func_0021FD50 +0x5F0 = 50 frames, kind 0x202 takes the bnel at 0x221794) ran out at half
+# time: he stopped turning to Gene and his last hit missed. Each copy gets the same hook (tools/fps60/dupload.py).
+[[patches.hooks]] # func_00194558: copy of 0x194654 in a bnel delay slot
+address = "0x001945D8"
+hook = "km_fps60_om_cd_s0_af4"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # cEm00_stepCountedPause: copy of 0x1be15c in a bgez delay slot
+address = "0x001BE144"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_001BEBA0: copy of 0x1bf22c in a beql delay slot
+address = "0x001BF20C"
+hook = "km_fps60_om_cd_s2_60c"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00208BE0: copy of 0x2090c0 in a b delay slot
+address = "0x002090A0"
+hook = "km_fps60_em_cd_s2_16dc"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00208BE0: copy of 0x2090c0 in a bnel delay slot
+address = "0x002090AC"
+hook = "km_fps60_em_cd_s2_16dc"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00208BE0: copy of 0x209204 in a bc1fl delay slot
+address = "0x002091F4"
+hook = "km_fps60_em_cd_s2_17b0_1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00208BE0: copy of 0x209840 in a beql delay slot
+address = "0x002097E8"
+hook = "km_fps60_em_cd_s2_16f8_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00208BE0: copy of 0x209840 in a b delay slot
+address = "0x00209824"
+hook = "km_fps60_em_cd_s2_16f8_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00213710: copy of 0x213c7c in a bc1fl delay slot
+address = "0x00213C70"
+hook = "km_fps60_em_cd_s1_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00216B58: copy of 0x216d18 in a beql delay slot
+address = "0x00216D04"
+hook = "km_fps60_em_cd_s1_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_002170B8: copy of 0x2171c8 in a beql delay slot
+address = "0x002170E0"
+hook = "km_fps60_em_cd_s1_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00217310: copy of 0x217420 in a beql delay slot
+address = "0x00217338"
+hook = "km_fps60_em_cd_s1_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0021FD50: copy of 0x2217c8 in a bnel delay slot
+address = "0x00221798"
+hook = "km_fps60_em_cd_s1_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0021FD50: copy of 0x2217c8 in a beql delay slot
+address = "0x002217A4"
+hook = "km_fps60_em_cd_s1_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0021FD50: copy of 0x2217c8 in a bnel delay slot
+address = "0x002217B4"
+hook = "km_fps60_em_cd_s1_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_002256C8: copy of 0x2257b0 in a beql delay slot
+address = "0x00225708"
+hook = "km_fps60_em_cd_s1_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00225E30: copy of 0x226020 in a beql delay slot
+address = "0x00225E7C"
+hook = "km_fps60_em_cd_s1_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_002261C8: copy of 0x226368 in a beql delay slot
+address = "0x00226214"
+hook = "km_fps60_em_cd_s1_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_002266F0: copy of 0x2268c4 in a beql delay slot
+address = "0x0022672C"
+hook = "km_fps60_em_cd_s0_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_002269F0: copy of 0x226fdc in a bnel delay slot
+address = "0x00226FC8"
+hook = "km_fps60_em_cd_s1_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_002282B8: copy of 0x228400 in a beql delay slot
+address = "0x002282F8"
+hook = "km_fps60_em_cd_s1_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_002289B8: copy of 0x228d3c in a beql delay slot
+address = "0x00228A2C"
+hook = "km_fps60_em_cd_s0_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00228E18: copy of 0x22918c in a beql delay slot
+address = "0x00228E88"
+hook = "km_fps60_em_cd_s0_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00229268: copy of 0x2293bc in a beql delay slot
+address = "0x002292A4"
+hook = "km_fps60_em_cd_s1_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0022B790: copy of 0x22b910 in a beql delay slot
+address = "0x0022B7DC"
+hook = "km_fps60_em_cd_s0_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # cEm00_stepTurnToLinkedObject: copy of 0x231018 in a beql delay slot
+address = "0x00230F68"
+hook = "km_fps60_em_cd_s0_5f8"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00231AC0: copy of 0x2323e0 in a beql delay slot
+address = "0x00231B3C"
+hook = "km_fps60_em_cd_s1_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00233738: copy of 0x233c8c in a beql delay slot
+address = "0x00233790"
+hook = "km_fps60_em_cd_s0_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00233DD8: copy of 0x234228 in a beql delay slot
+address = "0x00233E2C"
+hook = "km_fps60_em_cd_s1_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_002349F8: copy of 0x234b80 in a beql delay slot
+address = "0x00234A44"
+hook = "km_fps60_em_cd_s0_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_002383D0: copy of 0x238708 in a beql delay slot
+address = "0x00238440"
+hook = "km_fps60_em_cd_s0_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # cEm00_idleChooseNext: copy of 0x23dba0 in a beql delay slot
+address = "0x0023D824"
+hook = "km_fps60_em_cd_s0_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0023E6B0: copy of 0x23ed74 in a beql delay slot
+address = "0x0023E71C"
+hook = "km_fps60_em_cd_s0_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0024C3C8: copy of 0x24d9c4 in a bc1tl delay slot
+address = "0x0024D9A4"
+hook = "km_fps60_em_cd_s1_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0024DA80: copy of 0x24e32c in a bnel delay slot
+address = "0x0024E2C0"
+hook = "km_fps60_em_cd_s2_5f4"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0024DA80: copy of 0x24e32c in a beql delay slot
+address = "0x0024E2D0"
+hook = "km_fps60_em_cd_s2_5f4"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0024DA80: copy of 0x24e32c in a b delay slot
+address = "0x0024E310"
+hook = "km_fps60_em_cd_s2_5f4"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0024DA80: copy of 0x24e32c in a bnel delay slot
+address = "0x0024E320"
+hook = "km_fps60_em_cd_s2_5f4"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0024DA80: copy of 0x24ef98 in a bc1tl delay slot
+address = "0x0024EF78"
+hook = "km_fps60_em_cd_s2_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # cEm00_hitReaction: copy of 0x2555fc in a beql delay slot
+address = "0x002555D0"
+hook = "km_fps60_em_cd_s1_5f4"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # cEm00_hitReaction: copy of 0x2555fc in a b delay slot
+address = "0x002555F0"
+hook = "km_fps60_em_cd_s1_5f4"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00288660: copy of 0x288720 in a beql delay slot
+address = "0x00288688"
+hook = "km_fps60_em_cd_s0_5f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_0028A780: copy of 0x28a854 in a beql delay slot
+address = "0x0028A7A0"
+hook = "km_fps60_em_cd_s0_5f0"
+flag = "fps60"
+replace = true

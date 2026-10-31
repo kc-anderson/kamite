@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## October 31, 2026
 
+- 60 FPS: enemies keep turning to Gene through their attack strings again, so their last hits land (43 timers fixed).
+- 60 FPS: cloth no longer jitters at 60 FPS.
 - 60 FPS: cloth (Gene's coat, enemy clothes) runs the 30 FPS cloth step, with an in-between pose on the extra frames.
 - 60 FPS: Gene's coat in the roulette wind moves as much as at 30 (the coat's flutter was still at double strength).
 - Style switching: saving takes 1 s; the unfilled part of the name is dim while it fills; the HUD letters sit higher.
