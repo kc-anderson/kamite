@@ -115,15 +115,6 @@ namespace kamite::roulette_bar
                 wrF(rdram, entry + kEntryDrawSclX, sclX);
                 wrF(rdram, entry + kEntryDrawX, drawX);
             }
-            else if (!e.lastGlyphs && overlapsText(e.last) && sclX > 0.0f)
-            {
-                // A piece of the bar itself: scaled about the bar's right edge so the bar ends kPad left of the text.
-                const float k = std::clamp((width + 2.0f * kPad) / g_barWidth, 0.05f, 1.0f);
-                drawX = g_barRight - (g_barRight - drawX) * k;
-                sclX *= k;
-                wrF(rdram, entry + kEntryDrawSclX, sclX);
-                wrF(rdram, entry + kEntryDrawX, drawX);
-            }
         }
         e.pendSclX = sclX;
         e.pendDrawX = drawX;

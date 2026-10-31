@@ -4,8 +4,9 @@ Newest first, one line per change; the code comments say how.
 
 ## October 31, 2026
 
+- 60 FPS: the roulette's wind flaps Gene's coat at the 30 FPS pace.
 - 60 FPS: Dead Pan's wash basin falls, bounces, spins and fades at the 30 FPS pace (it stops on Gene's head again).
-- Modern menu buttons: the roulette's hint reads "Cycle / OK / Cancel" at full letter width on a bar cut to fit.
+- Modern menu buttons: the roulette's hint reads "Cycle / OK / Cancel" at full letter width.
 - Dead Pan: Gene steams from the ears and goes red in the face from the pan's hit until its invincibility ends.
 - 60 FPS: Dead Pan's pan lands with its sound again; taunted enemies' faces redden and cool down at the 30 FPS pace.
 - Modern menu buttons cover the roulette: A picks, B cancels, Y does nothing; the bar shows the shorter hint.

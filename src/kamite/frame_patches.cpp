@@ -623,6 +623,13 @@ namespace kamite
         {
             ctx->f[Dst] = skipFrame(rdram) ? ctx->f[A] : ctx->f[A] + ctx->f[B];
         }
+        // A per-frame phase step taken at half size (an oscillation, smooth at 60 where the parity form would hold
+        // each value for two frames): Gene's coat wind in the roulette (func_00100CE0, phase 0x3BC740 += 0.8 a frame).
+        template <int Dst, int A, int B>
+        void floatAddHalf(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            ctx->f[Dst] = ctx->f[A] + ctx->f[B] * 0.5f;
+        }
         // A countdown whose load and decrement both sit in delay slots, stored by a plain sh (Gene's grab finishers and
         // mash roulette moves, +0x56E: the 15 / 30 frames Gene follows the held enemy's per-frame move +0x550, phases
         // 57..107; case 2026-10-31_11-18-03): replaces the sh, storing the old value on skipped frames.
@@ -872,6 +879,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_countdown_pl15b8", &countdownLoad<17, 0x15B8u>);    // the mash states' decay (s1)
         ps2xRegisterHostHook("km_fps60_countdown_pl15b0", &countdownLoad<17, 0x15B0u>);    // Dead Pan's wait (s1)
         ps2xRegisterHostHook("km_fps60_float_add_f0f1", &floatAddParity<0, 0, 1>);         // add.s f0,f0,f1
+        ps2xRegisterHostHook("km_fps60_coat_wind", &floatAddHalf<0, 0, 3>);                // add.s f0,f0,f3
         ps2xRegisterHostHook("km_fps60_countdown_pl15b8_s0", &countdownLoad<16, 0x15B8u>); // the same in func_0011FD10 (s0)
         ps2xRegisterHostHook("km_fps60_countup_self", &countupSelf);
         ps2xRegisterHostHook("km_fps60_gene_rate_half", &geneRateHalfF0);

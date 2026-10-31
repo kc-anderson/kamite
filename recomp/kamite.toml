@@ -596,6 +596,14 @@ flag = "modern_roulette"
 address = "0x00114904"
 hook = "km_roulette_cancel_circle"
 flag = "modern_roulette"
+# Gene's coat wind in the roulette (the coat's step func_00100CE0, while the player's +0x3AC bit 0x800 is set): the
+# push on the coat is (sin(phase) + 1) / 2 x 0.1 with the phase 0x3BC740 += 0.8 a frame, so at 60 the coat flapped
+# twice as fast. At 60 the step is 0.4 (the add.s at 0x100E50).
+[[patches.hooks]]
+address = "0x00100E50"
+hook = "km_fps60_coat_wind"
+replace = true
+flag = "fps60"
 # Dead Pan's wash basin (cOmbf, object 0x3BF, state 0 func_001BBC08; family 3): step 1 falls 0.1 a frame while its
 # 14-frame countdown runs (hooked at 0x1BBE1C), so at 60 it fell twice as far (to Gene's feet, before the clang);
 # step 3 bounces off: spin -10 deg a frame, velocity +0x330 moved by cObjBase_MoveByNullSpeed x f13 (1.0), gravity
