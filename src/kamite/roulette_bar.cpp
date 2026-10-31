@@ -39,6 +39,7 @@ namespace kamite::roulette_bar
         };
 
         uint32_t g_layout = 0u, g_text = 0u; // the bar's layout and its text entry, once seen
+        float g_placedX0 = 1e9f, g_placedX1 = -1e9f; // the text entry's draws on screen this frame (after narrowing)
         std::unordered_map<uint32_t, Entry> g_entries;
         float g_barRight = 0.0f, g_barWidth = 0.0f; // the game's own bar (untouched right edge and full width)
         bool g_barKnown = false;
@@ -132,8 +133,33 @@ namespace kamite::roulette_bar
         it->second.glyphs = it->second.glyphs || glyph;
     }
 
+    void onPlaced(uint32_t layout, uint32_t entry, float x0, float x1)
+    {
+        if (g_layout == 0u || layout != g_layout || entry != g_text)
+            return;
+        g_placedX0 = std::min(g_placedX0, x0);
+        g_placedX1 = std::max(g_placedX1, x1);
+    }
+
+    bool cutBar(uint32_t layout, uint32_t entry, float x0, float x1, float y0, float y1, float &newX0)
+    {
+        if (!menu_buttons::modern() || g_layout == 0u || layout != g_layout || entry == g_text || g_placedX0 > g_placedX1)
+            return false;
+        // The bar: level with the text's middle and reaching past its right end (the text entry draws first).
+        const auto it = g_entries.find(g_text);
+        if (it == g_entries.end() || !it->second.last.valid())
+            return false;
+        const float middle = 0.5f * (it->second.last.y0 + it->second.last.y1);
+        if (y0 > middle || y1 < middle || x1 <= g_placedX1 || x0 >= g_placedX0)
+            return false;
+        newX0 = g_placedX0 - (x1 - g_placedX1); // the same margin as on the right
+        return newX0 > x0 && newX0 < x1;
+    }
+
     void onFrame()
     {
+        g_placedX0 = 1e9f;
+        g_placedX1 = -1e9f;
         // The game's bar: the non-glyph pieces level with the text, as the game would draw them (the pieces this frame
         // were drawn scaled by k about the right edge, so their own extents are mapped back with their scale).
         Extent bar;

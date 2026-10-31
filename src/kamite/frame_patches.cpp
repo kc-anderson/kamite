@@ -159,12 +159,17 @@ namespace kamite
         // Replaces addiu v1,v1,1 at 0x1458CC (cCockRoulette, the wheel's move: any of its command bits advances the
         // cursor +0x422 by one, wrapping at the count in $a0). Pushing up (stick or d-pad) goes back one instead, so
         // an overshot move is one step away, not a whole lap.
+        // The direction comes from the command bit that made the step (GameWork +0x1A0, pressed: 49 = left stick up,
+        // the pad code's Y < -0x50; 48 = down; 40 = R1), not from the stick as it is now: a flick up read a stick already
+        // on its way back (the live byte past 0x40) and stepped down. The d-pad pushes the stick (rouletteDpad).
         void rouletteStep(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             const int32_t cursor = GPR_S32(ctx, 3), count = GPR_S32(ctx, 4);
             uint16_t buttons = 0;
             std::memcpy(&buttons, &ram8(rdram, kPadButtons), sizeof(buttons));
-            const bool up = (buttons & 0x10u) != 0u || ram8(rdram, kStickBytes[1]) < 0x40u;
+            uint64_t pressed = 0;
+            std::memcpy(&pressed, &ram8(rdram, 0x7474A0u + 0x1A0u), sizeof(pressed));
+            const bool up = (pressed & (1ull << 49)) != 0u || ((pressed & (1ull << 48)) == 0u && (buttons & 0x10u) != 0u);
             g_rouletteBack = up && count > 1;
             SET_GPR_S32(ctx, 3, up && count > 0 ? (cursor + count - 1) % count : cursor + 1);
         }
@@ -625,7 +630,7 @@ namespace kamite
         }
         // A per-frame phase step taken at half size (an oscillation, smooth at 60 where the parity form would hold
         // each value for two frames): Gene's coat wind in the roulette (func_00100CE0, phase 0x3BC740 += 0.8 a frame) and
-        // the cloth step's own wind phase (func_00104010, work +0x48 += frand x work +0x70).
+        // the cloth step's swing phase (func_00104010, work +0x48 += frand x 1.2, and x work +0x70 in the wind).
         template <int Dst, int A, int B>
         void floatAddHalf(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
@@ -882,6 +887,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_float_add_f0f1", &floatAddParity<0, 0, 1>);         // add.s f0,f0,f1
         ps2xRegisterHostHook("km_fps60_coat_wind", &floatAddHalf<0, 0, 3>);                // add.s f0,f0,f3
         ps2xRegisterHostHook("km_fps60_cloth_wind", &floatAddHalf<2, 2, 0>);               // add.s f2,f2,f0 (cloth step)
+        ps2xRegisterHostHook("km_fps60_cloth_sway", &floatAddHalf<1, 1, 0>);               // add.s f1,f1,f0 (cloth step)
         ps2xRegisterHostHook("km_fps60_countdown_pl15b8_s0", &countdownLoad<16, 0x15B8u>); // the same in func_0011FD10 (s0)
         ps2xRegisterHostHook("km_fps60_countup_self", &countupSelf);
         ps2xRegisterHostHook("km_fps60_gene_rate_half", &geneRateHalfF0);

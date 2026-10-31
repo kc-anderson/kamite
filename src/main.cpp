@@ -734,6 +734,8 @@ int main(int argc, char *argv[])
     std::vector<std::pair<std::string, std::string>> padLayout;
     const std::string migrationNote = migrateOldSettings(exeDir);
     std::vector<std::string> settingNotes = loadSettings(exeDir / "kamite.ini", exeDir, padLayout);
+    for (std::string &note : kamite::test_mode::applyCaseSettings(exeDir)) // a replay runs with the recorder's settings
+        settingNotes.push_back(std::move(note));
     if (!migrationNote.empty())
         settingNotes.insert(settingNotes.begin(), migrationNote);
     kamite::setCameraIniPath(exeDir / "kamite.ini"); // the F2 menu's Camera tab saves there

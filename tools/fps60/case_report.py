@@ -428,12 +428,18 @@ def main(argv):
           f"{meta.get('seconds', '?')} s, room {meta.get('room', '?')}; live log {len(live)} rows; commit {meta.get('commit', '?')}")
     if meta.get("cheats"):
         print(f"  F2 switches: {meta['cheats']}")
+    settings = [f"{k[4:]}={v}" for k, v in meta.items() if k.startswith("env.")]
+    if settings:
+        print(f"  recorder's settings (the replays use them): {' '.join(settings)}")
     print(f"  replays: 30 FPS {'%d rows' % len(rows30) if rows30 else 'MISSING'}, 60 FPS {'%d rows' % len(rows60) if rows60 else 'MISSING'}")
     print()
 
     same_rate = rows60 if rec_div == 1 else rows30
     print(f"1. Faithful? (the {60 // rec_div} FPS replay against what the tester saw)")
-    verdict = faithful(live, same_rate, rec_div, enemies) if same_rate else "no replay at the case's rate yet"
+    # Cases from before the nearest-enemy columns (meta enemyorder=near) logged cEmManage's first enemies live: their em
+    # columns cannot be held against a replay's, so only Gene's are.
+    faith_enemies = enemies if meta.get("enemyorder") == "near" else 0
+    verdict = faithful(live, same_rate, rec_div, faith_enemies) if same_rate else "no replay at the case's rate yet"
     # Same build? (kamite.exe next to cases\, where Replay-Cases.cmd runs this.)
     recorded = meta.get("build", "")
     exe = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(path))), "kamite.exe")

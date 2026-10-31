@@ -604,10 +604,15 @@ address = "0x00100E50"
 hook = "km_fps60_coat_wind"
 replace = true
 flag = "fps60"
-# The cloth step func_00104010 (Gene's coat, the enemies' cloth: EmClothMove) has a second wind phase: while its work
-# block's +0x5C bit 0x400 is set (the coat's +0x20AC, set by the roulette wind above), work +0x48 += frand x work
-# +0x70 every frame, and every chain node swings by sin(+0x48 + its offset). At 60 the coat still flapped twice as
-# fast. Half the step at 60 (the add.s at 0x10425C).
+# The cloth step func_00104010 (Gene's coat, the enemies' cloth: EmClothMove) swings every chain node by sin(work
+# +0x48 + its offset), and steps +0x48 every frame twice: += frand x 1.2 (0x3BC7C8) unless work +0x5C bit 0x40 (the
+# idle sway, always), and += frand x work +0x70 while bit 0x400 (the coat's +0x20AC, set by the roulette wind above).
+# At 60 both ran twice as fast. Half steps at 60 (the add.s at 0x104224 and 0x10425C).
+[[patches.hooks]]
+address = "0x00104224"
+hook = "km_fps60_cloth_sway"
+replace = true
+flag = "fps60"
 [[patches.hooks]]
 address = "0x0010425C"
 hook = "km_fps60_cloth_wind"

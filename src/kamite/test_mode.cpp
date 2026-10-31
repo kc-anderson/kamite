@@ -98,6 +98,13 @@ namespace kamite::test_mode
         constexpr double kSaveTimeoutSeconds = 10.0;
         constexpr uint32_t kMaxCaseVblanks = 60u * 120u;      // a case stops itself after 2 minutes
         constexpr uint32_t kDefaultEnemies = 4u;
+        // kamite.ini settings (as their variables) that change the game's logic, kept in a case's meta.
+        constexpr const char *kCaseSettings[] = {"KAMITE_ASPECT", "PS2X_WINDOW_SIZE", "KAMITE_FOV", "KAMITE_FIGHT_FOV",
+                                                 "KAMITE_CAMERA_DISTANCE", "KAMITE_CAMERA_ZOOM_OUT", "KAMITE_CAMERA_TILT",
+                                                 "KAMITE_STEADY_IDLE_CAMERA", "KAMITE_ENEMY_VIEW", "KAMITE_CONTROL_STYLE",
+                                                 "KAMITE_MODERN_AUTO", "KAMITE_MODERN_L1", "KAMITE_MENU_BUTTONS", "KAMITE_L3_DASH",
+                                                 "KAMITE_ROULETTE_TIMER", "KAMITE_ROULETTE_NO_ORBS", "KAMITE_STYLE_SWITCHING",
+                                                 "KAMITE_SPRINT_TRAVERSAL", "KAMITE_CHARACTER"};
 
         fs::path g_exeDir;
 
@@ -338,7 +345,37 @@ namespace kamite::test_mode
             std::FILE *csv = nullptr;
             std::FILE *shapes = nullptr; // optional
             uint32_t enemies = kDefaultEnemies;
+            std::vector<uint32_t> tracked; // the enemies in the em<i> columns (nearestEnemies), 0 = a free column
         };
+
+        // The enemies for the em<i> columns: the nearest to Gene, each keeping its column while it lives (cEmManage's list
+        // order put far bystanders and waiting goons first and left the one fighting Gene out). A column is handed to a
+        // nearer enemy when its own is gone, or more than 10 m away while the other is within 5 m.
+        void objectPosition(const uint8_t *rdram, uint32_t obj, float &x, float &y, float &z, float &heading);
+        void nearestEnemies(Logger &log, const uint8_t *rdram, const std::vector<uint32_t> &enemies, float gx, float gz)
+        {
+            log.tracked.resize(log.enemies, 0u);
+            const auto distance = [&](uint32_t em) {
+                float x, y, z, heading;
+                objectPosition(rdram, em, x, y, z, heading);
+                return std::hypot(x - gx, z - gz);
+            };
+            for (uint32_t &t : log.tracked)
+                if (t != 0u && std::find(enemies.begin(), enemies.end(), t) == enemies.end())
+                    t = 0u;
+            std::vector<std::pair<float, uint32_t>> free;
+            for (const uint32_t em : enemies)
+                if (std::find(log.tracked.begin(), log.tracked.end(), em) == log.tracked.end())
+                    free.emplace_back(distance(em), em);
+            std::sort(free.begin(), free.end());
+            size_t next = 0;
+            for (uint32_t &t : log.tracked)
+                if (t == 0u && next < free.size())
+                    t = free[next++].second;
+            for (uint32_t &t : log.tracked)
+                if (t != 0u && next < free.size() && free[next].first < 5.0f && distance(t) > 10.0f)
+                    t = free[next++].second;
+        }
 
         void writeHeaders(Logger &log)
         {
@@ -401,11 +438,14 @@ namespace kamite::test_mode
 
             std::vector<uint32_t> plRecords;
             std::string plHurt;
+            float geneX = 0.0f, geneZ = 0.0f;
             const uint32_t pl = rd32(rdram, GameWork::address(GameWork::kPlayerObj));
             if (inRam(pl, 0x1700u))
             {
                 float x, y, z, heading;
                 objectPosition(rdram, pl, x, y, z, heading);
+                geneX = x;
+                geneZ = z;
                 takeNodes(rdram, pl, plRecords, plHurt);
                 std::fprintf(log.csv, ",%.3f,%.3f,%.3f,%.4f,%u,%u,%u,%u,%X,%.3f,%.3f,%04X,%d,%.3f,%.3f", x, y, z, heading,
                              rd8(rdram, pl + GameObj::kMode), rd8(rdram, pl + GameObj::kMode + 1u), rd8(rdram, pl + GameObj::kMode + 2u),
@@ -487,15 +527,16 @@ namespace kamite::test_mode
                 enemies.push_back(em);
             }
             std::fprintf(log.csv, ",%u,%u,%u,%u,%u", used, active, attackOn, hurtOn, static_cast<unsigned>(enemies.size()));
+            nearestEnemies(log, rdram, enemies, geneX, geneZ);
             for (uint32_t i = 0; i < log.enemies; ++i)
             {
-                if (i >= enemies.size())
+                if (log.tracked[i] == 0u)
                 {
                     for (int k = 0; k < 15; ++k) // the enemy's columns
                         std::fputc(',', log.csv);
                     continue;
                 }
-                const uint32_t em = enemies[i];
+                const uint32_t em = log.tracked[i];
                 float x, y, z, heading;
                 objectPosition(rdram, em, x, y, z, heading);
                 std::fprintf(log.csv, ",%X,%03X,%d,%u,%u,%u,%X,%.3f,%.3f,%.3f,%.3f,%.4f,%.3f,%.3f,%08X", em, rd16(rdram, em + kObjKind),
@@ -848,6 +889,7 @@ namespace kamite::test_mode
                 run.frame = 0;
                 run.readsLastFrame = 0;
                 run.log.enemies = run.enemies;
+                run.log.tracked.clear();
                 run.log.csv = openOut(run.csv);
                 run.log.shapes = run.withShapes ? openOut(run.csv.string().substr(0, run.csv.string().size() - 4) + ".shapes.csv") : nullptr;
                 if (!run.log.csv || (run.withShapes && !run.log.shapes))
@@ -1159,6 +1201,12 @@ namespace kamite::test_mode
             std::snprintf(hex, sizeof(hex), "%03X", rec.room);
             c.meta += hex;
             c.meta += "\nenemies=" + std::to_string(kDefaultEnemies) + "\n";
+            c.meta += "enemyorder=near\n"; // the em<i> columns hold the nearest enemies (nearestEnemies), not the list's first
+            // The settings that change what the game does (the camera's reach, the enemies' view, the controls): the replay
+            // runs with the recorder's (applyCaseSettings), not the replaying machine's kamite.ini.
+            for (const char *name : kCaseSettings)
+                if (const char *value = std::getenv(name))
+                    c.meta += std::string("env.") + name + "=" + value + "\n";
             c.meta += "cheats=" + rec.cheats + "\n"; // God mode etc.: the replay sets the same (readCaseForReplay)
             // The build that recorded it (kamite.exe's size and time): a replay with another build may differ from the
             // live log where a fix changed the game, and the report says so.
@@ -1211,6 +1259,7 @@ namespace kamite::test_mode
                 rec.frame = 0;
                 rec.readsLastFrame = 0;
                 rec.log.enemies = kDefaultEnemies;
+                rec.log.tracked.clear();
                 rec.log.csv = openOut(rec.liveFile);
                 rec.log.shapes = nullptr; // the replays write the shapes; the live log stays small
                 if (!rec.log.csv)
@@ -1337,6 +1386,48 @@ namespace kamite::test_mode
                 ++pick;
             std::memcpy(status, entries[pick].bytes, kReadBytes);
         }
+    }
+
+    std::vector<std::string> applyCaseSettings(const fs::path &exeDir)
+    {
+        std::vector<std::string> notes;
+        const char *value = std::getenv("KAMITE_REPLAY_CASE");
+        if (!value || !*value)
+            return notes;
+        const fs::path path = fs::path(value).is_absolute() ? fs::path(value) : exeDir / value;
+        std::ifstream file(path, std::ios::binary);
+        std::string head(4096, '\0');
+        file.read(head.data(), static_cast<std::streamsize>(head.size()));
+        head.resize(static_cast<size_t>(file.gcount()));
+        // "KAMITE-CASE 1\nsection meta <bytes>\n<meta>": the meta comes first.
+        const std::string marker = "section meta ";
+        const size_t at = head.find(marker);
+        if (at == std::string::npos)
+            return notes;
+        const size_t eol = head.find('\n', at);
+        if (eol == std::string::npos)
+            return notes;
+        const size_t size = std::strtoul(head.c_str() + at + marker.size(), nullptr, 10);
+        std::istringstream in(head.substr(eol + 1, size));
+        std::string line;
+        while (std::getline(in, line))
+        {
+            if (line.rfind("env.", 0) != 0)
+                continue;
+            const size_t equals = line.find('=');
+            if (equals == std::string::npos)
+                continue;
+            const std::string name = line.substr(4, equals - 4), setting = trim(line.substr(equals + 1));
+            if (std::find(std::begin(kCaseSettings), std::end(kCaseSettings), name) == std::end(kCaseSettings))
+                continue; // only the settings a case may carry
+#if defined(_WIN32)
+            _putenv_s(name.c_str(), setting.c_str());
+#else
+            setenv(name.c_str(), setting.c_str(), 1);
+#endif
+            notes.push_back("case: " + name + "=" + setting + " (the recorder's)");
+        }
+        return notes;
     }
 
     void install(PS2Runtime &, const fs::path &exeDir)

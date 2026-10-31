@@ -4,6 +4,10 @@ Newest first, one line per change; the code comments say how.
 
 ## October 31, 2026
 
+- 60 FPS: coats and other cloth sway at the 30 FPS pace all the time, not only in the roulette wind.
+- Modern menu controls: the roulette's black bar ends just before the TIME dial, the same margin on both sides.
+- Roulette: a quick left stick flick up no longer sometimes moves the wheel down.
+- Test cases log the enemies nearest Gene and keep the recorder's gameplay settings for the replays.
 - 60 FPS: Gene's coat flaps in the roulette wind at the 30 FPS pace (the cloth's own wind).
 - Menu controls (Controls) back in the launcher: Modern by default, held at Modern with style switching.
 - 60 FPS: the roulette's wind flaps Gene's coat at the 30 FPS pace.

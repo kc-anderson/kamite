@@ -303,8 +303,21 @@ namespace kamite::hud
                 dumpPrim(tag, caller, x0, x1, y0, y1, "fullwidth", none);
                 return; // full-screen quad: backgrounds, fades
             }
+            // The Modern roulette bar (roulette_bar.h): drawn as it is (4:3, or past the right edge), cut on the left.
+            if (float cut = 0.0f; g_inIdTrans && n >= 2 && roulette_bar::cutBar(g_curLayout, g_entry, x0, x1, y0, y1, cut))
+            {
+                dumpPrim(tag, caller, x0, x1, y0, y1, "rbar", none);
+                for (int i = 0; i < n; ++i)
+                {
+                    const float x = cut + (xs[i] - x0) * (x1 - cut) / (x1 - x0);
+                    write32(rdram, address + 16u * i, static_cast<uint32_t>(static_cast<int32_t>(std::lround(x * 16.0f)) + offset));
+                }
+                return;
+            }
             if (!g_wide || menuNow())
             {
+                if (g_inIdTrans)
+                    roulette_bar::onPlaced(g_curLayout, g_entry, x0, x1);
                 dumpPrim(tag, caller, x0, x1, y0, y1, "menu", none);
                 return;
             }
@@ -329,6 +342,8 @@ namespace kamite::hud
             }
             dumpPrim(tag, caller, x0, x1, y0, y1, g_ctx.active ? "hud" : "centred", anchor);
             (void)none;
+            if (g_inIdTrans)
+                roulette_bar::onPlaced(g_curLayout, g_entry, anchor + (x0 - anchor) * g_k, anchor + (x1 - anchor) * g_k);
             for (int i = 0; i < n; ++i)
             {
                 const float x = anchor + (xs[i] - anchor) * g_k;
