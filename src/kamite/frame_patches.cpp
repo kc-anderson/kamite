@@ -56,6 +56,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace kamite
 {
@@ -298,6 +300,140 @@ namespace kamite
             KM_INFO(Game, "frame rate switched: " << (on ? "60 FPS mode" : "30 FPS, as on the PS2"));
         }
 
+        // Random rolls made every frame (claude/fps60-notes.md family 8). The game draws from one Mersenne twister
+        // (func_30F348) through irand 0x31CFE0 (u32), frand 0x31D000 (0..1) and 0x31D020 (frand - 0.5). Hundreds of AI
+        // tests roll a chance once a game frame while they wait (`irand() & 15` == 0 -> attack now, `frand() < p`), so at
+        // 60 they fired twice as often per second. The rule, exact for both kinds of roll and blind to how the caller
+        // reads the number: a roll at the same call site for the same object on two game frames in a row takes the first
+        // frame's number again (its outcome repeats), then the next frame draws a fresh one. A roll made every frame thus
+        // gets 30 fresh numbers a second as at 30; a one-off roll (a random wait, a choice on entering a state) never has
+        // a roll on the frame before and stays fresh. Scope: rolls from Gene's states, the objects and the common enemy
+        // code (randSite); the object is the one MoveObj is updating (0 elsewhere: the k-th roll of the site that frame).
+        // The table goes into save states ("kamite.rand60"), so test cases replay it exactly; 60 FPS only (flag fps60).
+        struct RandSlot
+        {
+            uint32_t frame = 0, count = 0, fresh = 0, prevFrame = 0, prevCount = 0, prevFresh = 0;
+            uint32_t value[4] = {}, prevValue[4] = {};
+        };
+        constexpr size_t kRandSlotWords = 14;
+        std::unordered_map<uint64_t, RandSlot> g_rand;
+        uint32_t g_randObject = 0;
+        bool g_randRestored = false;
+
+        bool randSite(uint32_t ra)
+        {
+            return (ra >= 0x108000u && ra < 0x128000u) || (ra >= 0x160000u && ra < 0x1D0000u) || (ra >= 0x208000u && ra < 0x290000u);
+        }
+
+        uint32_t randPaired(uint8_t *rdram, uint32_t site, uint32_t drawn)
+        {
+            const uint32_t frame = gameFrames(rdram);
+            RandSlot &slot = g_rand[(static_cast<uint64_t>(site) << 32) | g_randObject];
+            if (slot.frame != frame || slot.count == 0u)
+            {
+                if (slot.frame != frame)
+                {
+                    slot.prevFrame = slot.frame;
+                    slot.prevCount = slot.count;
+                    slot.prevFresh = slot.fresh;
+                    std::memcpy(slot.prevValue, slot.value, sizeof(slot.value));
+                }
+                slot.frame = frame;
+                slot.count = 0;
+                slot.fresh = 0;
+            }
+            const uint32_t index = slot.count++;
+            if (index >= 4u)
+                return drawn;
+            uint32_t value = drawn;
+            if (slot.prevFrame + 1u == frame && index < slot.prevCount && ((slot.prevFresh >> index) & 1u) != 0u)
+                value = slot.prevValue[index];
+            else
+                slot.fresh |= 1u << index;
+            slot.value[index] = value;
+            return value;
+        }
+
+        uint32_t callerRa(uint8_t *rdram, R5900Context *ctx) // the wrappers keep the caller's ra at 0(sp)
+        {
+            uint32_t ra = 0;
+            std::memcpy(&ra, &ram8(rdram, GPR_U32(ctx, 29)), sizeof(ra));
+            return ra;
+        }
+        void randInt(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // before ld ra at 0x31CFF0 (v0 = the number)
+        {
+            const uint32_t ra = callerRa(rdram, ctx);
+            if (randSite(ra))
+                SET_GPR_S32(ctx, 2, static_cast<int32_t>(randPaired(rdram, ra, GPR_U32(ctx, 2))));
+        }
+        void randFloat(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // 0x31D010 / 0x31D030 (f0 = frand)
+        {
+            const uint32_t ra = callerRa(rdram, ctx);
+            if (!randSite(ra))
+                return;
+            uint32_t bits = 0;
+            std::memcpy(&bits, &ctx->f[0], sizeof(bits));
+            bits = randPaired(rdram, ra, bits);
+            std::memcpy(&ctx->f[0], &bits, sizeof(bits));
+        }
+        void randObjectBegin(uint8_t *, R5900Context *ctx, PS2Runtime *) { g_randObject = GPR_U32(ctx, 5); } // MoveObj 0x30F160
+        void randObjectEnd(uint8_t *, R5900Context *, PS2Runtime *) { g_randObject = 0; }                     // MoveObj 0x30F16C
+
+        void forgetRandAfterLoad(uint8_t *rdram)
+        {
+            static uint32_t loads = 0;
+            const uint32_t now = ps2x::savestate::loadCount();
+            if (now != loads)
+            {
+                loads = now;
+                if (!g_randRestored)
+                    g_rand.clear(); // a state from before this table (or without it)
+                g_randRestored = false;
+                g_randObject = 0;
+            }
+            const uint32_t frame = gameFrames(rdram);
+            if ((frame & 0x3FFu) == 0u)
+                for (auto it = g_rand.begin(); it != g_rand.end();)
+                    it = (frame - it->second.frame > 2u) ? g_rand.erase(it) : std::next(it);
+        }
+
+        void installRandState()
+        {
+            ps2x::savestate::registerExtension(
+                "kamite.rand60",
+                [](ps2x::state::Writer &out) {
+                    uint32_t version = 1u;
+                    std::vector<uint32_t> words;
+                    words.reserve(g_rand.size() * (kRandSlotWords + 2u));
+                    for (const auto &[key, slot] : g_rand)
+                    {
+                        words.push_back(static_cast<uint32_t>(key >> 32));
+                        words.push_back(static_cast<uint32_t>(key));
+                        const uint32_t head[6] = {slot.frame, slot.count, slot.fresh, slot.prevFrame, slot.prevCount, slot.prevFresh};
+                        words.insert(words.end(), head, head + 6);
+                        words.insert(words.end(), slot.value, slot.value + 4);
+                        words.insert(words.end(), slot.prevValue, slot.prevValue + 4);
+                    }
+                    ps2x::state::fields(out, version, words);
+                },
+                [](ps2x::state::Reader &in) {
+                    uint32_t version = 0u;
+                    std::vector<uint32_t> words;
+                    ps2x::state::fields(in, version, words);
+                    g_rand.clear();
+                    for (size_t i = 0; i + kRandSlotWords + 2u <= words.size(); i += kRandSlotWords + 2u)
+                    {
+                        RandSlot slot;
+                        const uint32_t *w = &words[i + 2u];
+                        slot.frame = w[0], slot.count = w[1], slot.fresh = w[2], slot.prevFrame = w[3], slot.prevCount = w[4], slot.prevFresh = w[5];
+                        std::memcpy(slot.value, w + 6, sizeof(slot.value));
+                        std::memcpy(slot.prevValue, w + 10, sizeof(slot.prevValue));
+                        g_rand[(static_cast<uint64_t>(words[i]) << 32) | words[i + 1u]] = slot;
+                    }
+                    g_randRestored = true;
+                });
+        }
+
         // A save state was loaded: the stick hold's memory belongs to the frames before it. Without this the hold
         // compared the loaded stick bytes with what it saw before the load (at boot, before the pad was up, the
         // libpad buffer reads 0 = full deflection) and wrote a full push over the first frame after the load: at 60
@@ -323,6 +459,7 @@ namespace kamite
             pcsampler::noteMainContext(ctx);
             ++g_gameFrame;
             forgetStickAfterLoad();
+            forgetRandAfterLoad(rdram);
             if (const int request = g_fps60Request.exchange(-1); request >= 0)
                 setFps60(request != 0);
             if (g_rouletteRequest.exchange(0) != 0)
@@ -732,6 +869,11 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_emit_every_frame", &emitEveryFrame);
         ps2xRegisterHostHook("km_fps60_wiggle_begin", &wiggleBegin);
         ps2xRegisterHostHook("km_fps60_wiggle_end", &wiggleEnd);
+        ps2xRegisterHostHook("km_fps60_rand_int", &randInt);
+        ps2xRegisterHostHook("km_fps60_rand_float", &randFloat);
+        ps2xRegisterHostHook("km_fps60_rand_object_begin", &randObjectBegin);
+        ps2xRegisterHostHook("km_fps60_rand_object_end", &randObjectEnd);
+        installRandState();
         ps2xSetPatchFlag("frame_hook", true); // always: it also counts game frames for the F3 overlay
         ps2xSetPatchFlag("fps60", g_fps60);
         {

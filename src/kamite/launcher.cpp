@@ -1421,6 +1421,10 @@ namespace kamite::launcher
                                                        "twice as long (the dial runs half as fast), at 30 and 60 FPS.");
                         iniCombo(state, "##roulette", "Game", "RouletteTimer", "normal",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kRouletteTimers, value); });
+                        settingLabel("Roulette without orbs", "R1 opens the roulette even with no orbs left. Nothing "
+                                                              "can be picked without orbs, but the roulette camera "
+                                                              "still turns Gene (Classic camera).");
+                        iniCheckbox(state, "On##roulettenoorbs", "Game", "RouletteNoOrbs", false);
                         settingLabel("Mute music", "Stage, boss, menu and minigame music plays silent. Cutscenes keep "
                                                    "their sound (their music and voices are one track).");
                         iniCheckbox(state, "On##music", "Sound", "MuteMusic", false);

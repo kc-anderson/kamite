@@ -2,6 +2,12 @@
 
 Newest first, one line per change; the code comments say how.
 
+## October 31, 2026
+
+- 60 FPS: enemies' random decisions (when to attack, block, dodge, taunt) come as often per second as at 30.
+- Roulette without orbs (Gameplay): R1 opens the roulette with no orbs left, for its camera.
+- Dead Pan, the Japanese release's free roulette move, is earned by clearing the game with the Kick Me Sign on.
+
 ## October 30, 2026
 
 - 60 FPS: enemies slowed by Gene's slow-motion moves (the dodge's slow-mo and the like) are as slow as at 30.

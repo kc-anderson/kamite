@@ -1,4 +1,4 @@
-// Optional changes to the game ([Game] UnlockHard / SkipIntro / MuteMusic). See game_options.h.
+// Optional changes to the game ([Game] UnlockHard / SkipIntro / MuteMusic / RouletteNoOrbs) and Dead Pan. See game_options.h.
 //
 // UnlockHard: the difficulty select is in the title room DLL r020 (cR020::titleLevelSel, 0x79B0E0). It reads the save's
 // "Hard unlocked" bit (0x747A28 & 0x200000, set by clearing the game) three times: for the menu's item animation
@@ -21,6 +21,18 @@
 // (table[0] = -96.0 dB, silent), except bank 1, the cutscene streams (their voices are in the same stream).
 // Voices and sound effects are other node types; movies use Sofdec's own ADXT handles.
 // KAMITE_TRACE=GAME logs the first calls (node, vtable, category, volume) to check the match.
+//
+// RouletteNoOrbs: R1 opens the roulette from Gene's action chooser (func_00123938 0x123B2C: cCoreSave_getGodItem, the
+// first orb slot at save +0xA8, non-zero -> state 0x2B). getGodItem has no other caller (main ELF and room DLLs). Under
+// "roulette_no_orbs" its first load (lw v1,0(a0) at 0x1FAC58) points v1 at a constant non-zero byte when the slots are
+// empty, so the roulette opens; its list builder (func_00125048) still greys out every move the orbs cannot pay for.
+//
+// Dead Pan (always on): the Japanese release's free roulette move (reel 0xB; TCRF "Dead Pan / Pan Drop"). The US build
+// keeps it but hides it outside Japanese: func_00125048 tests GameWork +0x56C (language, 0 = Japanese) at 0x1250A8,
+// 0x1251CC, 0x125264 and 0x125338 (the PCSX2 restore patch makes all four read 0). Here they read 0 once it is earned:
+// the game-clear room r022 sets 0x747A28 (GameWork +0x588) |= 0x20000000 when the Kick Me Sign is still on (cCoreSave
+// ckPaper; the same clear gives the KMS jukebox CD), or with F2's "Every roulette reel owned" (DBG_ALL_GOD_REEL).
+// As in Japanese it then joins the roulette without being bought, at level 3 and up (0x125338: getGameLevel >= 3).
 #include "kamite/game_options.h"
 #include "kamite/log.h"
 #include "ps2_runtime_macros.h"
@@ -43,6 +55,35 @@ namespace kamite
         {
             const char *value = std::getenv(name);
             return value && *value && *value != '0';
+        }
+
+        uint32_t ram32(const uint8_t *rdram, uint32_t address)
+        {
+            uint32_t value = 0;
+            std::memcpy(&value, rdram + (address & 0x1FFFFFFu), sizeof(value));
+            return value;
+        }
+
+        // Replaces lw v1,0x0(a0) at 0x1FAC58 (cCoreSave_getGodItem; flag roulette_no_orbs).
+        constexpr uint32_t kNonZeroByte = 0x429890u; // '8' of the class name "8cOmGlass" (.rodata)
+        void rouletteNoOrbs(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            uint32_t save = ram32(rdram, GPR_U32(ctx, 4));
+            if (save != 0u && rdram[(save + 0xA8u) & 0x1FFFFFFu] == 0u)
+                save = kNonZeroByte - 0xA8u;
+            SET_GPR_U32(ctx, 3, save);
+        }
+
+        // Replaces the language loads in func_00125048 (flag dead_pan, always on): 0 (Japanese) once Dead Pan is earned.
+        constexpr uint32_t kLanguage = 0x747A0Cu;     // GameWork +0x56C
+        constexpr uint32_t kSaveFlags = 0x747A28u;    // GameWork +0x588
+        constexpr uint32_t kKickMeSignClear = 0x20000000u;
+        constexpr uint32_t kDbgWord2 = 0x747A34u;     // DBG_ALL_GOD_REEL = 0x2
+        template <int Reg>
+        void deadPanLanguage(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const bool earned = (ram32(rdram, kSaveFlags) & kKickMeSignClear) != 0u || (ram32(rdram, kDbgWord2) & 0x2u) != 0u;
+            SET_GPR_U32(ctx, Reg, earned ? 0u : ram32(rdram, kLanguage));
         }
 
         // Before the first instruction of func_00373FF0 (the stream volume setter).
@@ -78,12 +119,20 @@ namespace kamite
         const bool unlockHard = envOn("KAMITE_UNLOCK_HARD");
         const bool muteMusic = envOn("KAMITE_MUTE_MUSIC");
         const bool skipIntro = envOn("KAMITE_SKIP_INTRO");
+        const bool rouletteAnyOrbs = envOn("KAMITE_ROULETTE_NO_ORBS");
         ps2xSetPatchFlag("skip_intro", skipIntro);
+        ps2xRegisterHostHook("km_roulette_no_orbs", &rouletteNoOrbs);
+        ps2xSetPatchFlag("roulette_no_orbs", rouletteAnyOrbs);
+        ps2xRegisterHostHook("km_dead_pan_v0", &deadPanLanguage<2>);
+        ps2xRegisterHostHook("km_dead_pan_v1", &deadPanLanguage<3>);
+        ps2xRegisterHostHook("km_dead_pan_a0", &deadPanLanguage<4>);
+        ps2xSetPatchFlag("dead_pan", true);
         ps2xRegisterHostHook("km_mute_music_volume", &muteMusicVolume);
         ps2xSetPatchFlag("unlock_hard", unlockHard);
         ps2xSetPatchFlag("mute_music", muteMusic);
         KM_INFO(Game, "options: Hard " << (unlockHard ? "unlocked from the start" : "as saved") << "; music "
-                                       << (muteMusic ? "muted" : "on") << (skipIntro ? "; boot straight to the main menu" : ""));
+                                       << (muteMusic ? "muted" : "on") << (skipIntro ? "; boot straight to the main menu" : "")
+                                       << (rouletteAnyOrbs ? "; roulette without orbs" : ""));
     }
 
     bool muteMusic()

@@ -199,6 +199,36 @@ flag = "frame_hook"
 # setters (src/kamite/game_options.cpp): func_00373FF0 (node a0, category a1, volume f12) for a one-channel node,
 # func_003745C0 (node a0, category a1, channel a2, volume f12) for a node with 2+ channels (node+0x58 > 1: the
 # stereo ADX music; UpdateSequenceNodeWeighted_373560 picks between them).
+# [Game] RouletteNoOrbs (game_options.cpp): cCoreSave_getGodItem's save pointer, aimed at a non-zero byte when the orb
+# slots are empty (its only caller is Gene's R1 check at 0x123B2C).
+[[patches.hooks]]
+address = "0x001FAC58"
+hook = "km_roulette_no_orbs"
+replace = true
+flag = "roulette_no_orbs"
+# Dead Pan (game_options.cpp): the roulette list builder func_00125048 reads the language (0 = Japanese) to hide reel
+# 0xB; read as 0 once a Kick Me Sign clear earned it (0x747A28 & 0x20000000) or with DBG_ALL_GOD_REEL.
+[[patches.hooks]]
+address = "0x001250A8"
+hook = "km_dead_pan_v0"
+replace = true
+flag = "dead_pan"
+[[patches.hooks]]
+address = "0x001251CC"
+hook = "km_dead_pan_v0"
+replace = true
+flag = "dead_pan"
+[[patches.hooks]]
+address = "0x00125264"
+hook = "km_dead_pan_a0"
+replace = true
+flag = "dead_pan"
+[[patches.hooks]]
+address = "0x00125338"
+hook = "km_dead_pan_v1"
+replace = true
+flag = "dead_pan"
+
 [[patches.hooks]]
 address = "0x00373FF0"
 hook = "km_mute_music_volume"
@@ -355,6 +385,29 @@ replace = true
 [[patches.hooks]] # God Hand (tension) drain: Gene's speed rate into func_2A9AD0's amount, halved at 60
 address = "0x0012354C"
 hook = "km_fps60_tension_drain"
+flag = "fps60"
+# Random rolls made every frame (frame_patches.cpp randPaired; fps60-notes family 8): a roll at the same call site for
+# the same object on two game frames in a row repeats the first frame's number. Hooks after the twister returns in
+# irand / frand / frand - 0.5 (the caller's ra at 0(sp)), and around MoveObj's update call (the object being updated).
+[[patches.hooks]] # irand: before ld ra (v0 = the number)
+address = "0x0031CFF0"
+hook = "km_fps60_rand_int"
+flag = "fps60"
+[[patches.hooks]] # frand: before ld ra (f0)
+address = "0x0031D010"
+hook = "km_fps60_rand_float"
+flag = "fps60"
+[[patches.hooks]] # frand - 0.5: before lui at (f0 = frand)
+address = "0x0031D030"
+hook = "km_fps60_rand_float"
+flag = "fps60"
+[[patches.hooks]] # MoveObj: a1 = the object whose update is called next
+address = "0x0030F160"
+hook = "km_fps60_rand_object_begin"
+flag = "fps60"
+[[patches.hooks]] # MoveObj: back from the update
+address = "0x0030F16C"
+hook = "km_fps60_rand_object_end"
 flag = "fps60"
 [[patches.hooks]] # cEmManage_SetSpeedRate: the enemies' slow-motion rate (manager +0x548), half at 60 (enemySlowRate)
 address = "0x00292F38"
