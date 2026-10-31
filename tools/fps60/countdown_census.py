@@ -2,6 +2,9 @@
 """List every countdown site (claude/fps60-notes.md family 1) in a PS2 ELF: an `addiu rt, rs, -1` with a load of rs
 and a store of rt to the same base+offset within eight instructions. At 60 FPS each such counter, if it runs once a
 game frame, runs twice as fast; the sites of one function/class are fixed together with the km_fps60_countdown hooks.
+Sites marked EVENT are not timers: the decrement is behind moveMotion's "looped" result (a beqz/beql v0 after
+jal 0x157C18: once per motion loop) or a face-button press (GameWork +8 & 0xF0, the grab mash). They happen as often
+per second at 60 as at 30 and must NOT be hooked (Oct 31: hooked, a grab's squeeze count never dropped).
 
 Usage: countdown_census.py <SLUS_215.03> [recomp/kamite_functions.csv] [--function NAME] [--range LO HI]
 Prints the per-function counts, or with --function/--range every site (address, field, load kind, whether the
@@ -37,6 +40,25 @@ def is_branch(w):
     if op == 0x11:  # COP1: only bc1f / bc1t (rs = 8) branch; mtc1, add.s & co do not
         return ((w >> 21) & 31) == 8
     return op in BRANCH_OPS
+
+def event_kind(rd, a):
+    """'loop' / 'press' when the decrement at a is guarded by a motion-loop result or a pad press, else ''."""
+    for b in range(a - 4, a - 0x48, -4):
+        x = rd(b)
+        if x == 0x0C055F06:  # jal 0x157C18 (moveMotion)
+            for c in range(b + 8, a, 4):  # past the delay slot: a branch on v0 (still the result) over the decrement
+                y = rd(c)
+                op = y >> 26
+                if op == 0x03 or (op == 0 and ((y >> 11) & 31) == 2) or ((8 <= op <= 15 or op in LOADS) and ((y >> 16) & 31) == 2):
+                    return ''  # v0 is something else from here on (a call, or written)
+                imm = y & 0xFFFF
+                target = c + 4 + ((imm - 0x10000 if imm & 0x8000 else imm) << 2)
+                if y >> 26 in (0x04, 0x05, 0x14, 0x15) and ((y >> 21) & 31) == 2 and target > a:
+                    return 'loop'  # the branch on the result jumps past the decrement
+            return ''
+        if x >> 26 == 0x0C and (x & 0xFFFF) == 0x00F0:  # andi rX, rY, 0xF0 (the face buttons of GameWork +8)
+            return 'press'
+    return ''
 
 def main():
     args = sys.argv[1:]
@@ -84,7 +106,9 @@ def main():
         for a, f, kind, field, base, rs, rt, delay in sites:
             if (want and f != want) or not (lo <= a < hi):
                 continue
-            print(f'0x{a:08X} {f:40s} {kind:3s} +0x{field:X}(r{base}) addiu r{rt},r{rs},-1{"  DELAY SLOT" if delay else ""}')
+            ev = event_kind(rd, a)
+            print(f'0x{a:08X} {f:40s} {kind:3s} +0x{field:X}(r{base}) addiu r{rt},r{rs},-1{"  DELAY SLOT" if delay else ""}'
+                  f'{"  EVENT (" + ev + "): do not hook" if ev else ""}')
         return
     print(len(sites), 'countdown sites')
     for f, n in Counter(s[1] for s in sites).most_common(60):
