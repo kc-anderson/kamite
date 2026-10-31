@@ -634,6 +634,13 @@ address = "0x0010465C"
 hook = "km_fps60_cloth_push"
 replace = true
 flag = "fps60"
+[[patches.hooks]] # add.s f22,f0,f1 (the flare's swing factor: sin + 0.8; the flare = owner +0x674 x a direction,
+# pushed into the nodes while +0x674 > 0: Gene's is 0.05 in the roulette, a strength, not a speed. pl_cloth showed the
+# coat moving 2.2-2.5x as much per second at 60 there with only the wind scaled.)
+address = "0x0010482C"
+hook = "km_fps60_cloth_flare"
+replace = true
+flag = "fps60"
 [[patches.hooks]] # mfc1 t0,f20 (vel *= damp)
 address = "0x00105F24"
 hook = "km_fps60_cloth_damp"

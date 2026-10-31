@@ -920,6 +920,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_cloth_gravity_table", &clothSubQuarter<1, 1, 0>);
         ps2xRegisterHostHook("km_fps60_cloth_gravity", &clothSubQuarter<0, 0, 1>);
         ps2xRegisterHostHook("km_fps60_cloth_push", &clothAddQuarter<22, 0, 21>);
+        ps2xRegisterHostHook("km_fps60_cloth_flare", &clothAddQuarter<22, 0, 1>);
         ps2xRegisterHostHook("km_fps60_cloth_damp", &clothDamp);
         ps2xRegisterHostHook("km_fps60_cloth_spring_f2", &clothSpring<2>);
         ps2xRegisterHostHook("km_fps60_cloth_spring_f1", &clothSpring<1>);

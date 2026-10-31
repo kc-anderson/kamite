@@ -512,10 +512,10 @@ namespace kamite::style_presets
                                                                    ps2x::iop::PadPressure::Down, ps2x::iop::PadPressure::Left};
         constexpr uint16_t kAllDpad = ps2x::iop::PadButton::Up | ps2x::iop::PadButton::Right | ps2x::iop::PadButton::Down |
                                       ps2x::iop::PadButton::Left;
-        constexpr int64_t kSaveHoldMs = 1500;
+        constexpr int64_t kSaveHoldMs = 1000; // K, Oct 31: 1.5 s felt too long (a third less)
 
         uint16_t g_dpadWas = 0u;
-        int g_held = -1;         // Techniques: the direction pressed with X, waiting for its release or 1.5 s
+        int g_held = -1;         // Techniques: the direction pressed with X, waiting for its release or 1 s
         int64_t g_heldSince = 0;
         std::atomic<int64_t> g_holdStartMs{0}; // g_heldSince for the list's fill (EE thread reads it)
         bool g_heldSaved = false;
@@ -681,7 +681,7 @@ namespace kamite::style_presets
         // first slot, wanted a little further left). The text is about 44 units wide at 0.65.
         // Oct 31 (K: nothing uses the space above the level meter): centred over the meter's ring (its quads span x
         // 4.5..79.5 / 8..88, top at y 351 in the F6 dump), the letters' bottom just above its top.
-        constexpr float kHudX = 44.0f, kHudY = 339.0f, kHudScale = 0.65f;
+        constexpr float kHudX = 44.0f, kHudY = 332.0f, kHudScale = 0.65f; // 339 overlapped the ring (K's F6: glyphs 331..356)
         // The cream of the Techniques page's lines, in the GS's colour scale (0x80 = full: the glyphs are white, so
         // the colour is what shows). It was 0xDC 0xC8 0xA0, the on-screen value, which the GS doubles past full:
         // white on screen (K, Oct 26).
@@ -716,7 +716,7 @@ namespace kamite::style_presets
 
         // Four lines: [X] + arrow  Style S. The style's words take its colour: gold when loaded (blinking for a
         // moment after a load or a save), dim when empty. While X + its direction is held the words fill with gold
-        // from left to right over the 1.5 s hold: full = saved (K, Oct 31: the blink did not say when it was done).
+        // from left to right over the 1 s hold (the rest dim): full = saved (K, Oct 31: the blink did not say when it was done).
         std::vector<uint16_t> listText(uint32_t data, const Store &store, bool colours)
         {
             const int holding = g_holding.load(std::memory_order_relaxed);
@@ -745,7 +745,12 @@ namespace kamite::style_presets
                     out.insert(out.end(), words.begin(), words.begin() + static_cast<std::ptrdiff_t>(filled));
                     if (colours && filled > 0u)
                         out.push_back(kColourRestore);
+                    // The rest dim, not cream (K: gold on cream was hard to follow, the two are about as light).
+                    if (colours && filled < words.size())
+                        out.insert(out.end(), {kColour, static_cast<uint16_t>(kDim >> 16), static_cast<uint16_t>(kDim & 0xFFFFu)});
                     out.insert(out.end(), words.begin() + static_cast<std::ptrdiff_t>(filled), words.end());
+                    if (colours && filled < words.size())
+                        out.push_back(kColourRestore);
                     continue;
                 }
                 uint32_t colour = 0u; // 0: the line's own colour
@@ -1086,7 +1091,7 @@ namespace kamite::style_presets
             std::lock_guard<std::mutex> lock(g_mutex);
             ui->text_wrapped("Styles are kept in the save (they go to the memory card with it). In play, a d-pad tap loads "
                              "one (up, right, down, left). On the Techniques screen: X (square) + d-pad loads, "
-                             "held 1.5 s saves.");
+                             "held 1 s saves.");
             ui->separator_text("Equipped now");
             if (!g_snapshot.valid)
                 ui->text_disabled("No save data in memory yet (start or load a game).");
@@ -1143,7 +1148,7 @@ namespace kamite::style_presets
         const bool square = (state.buttons & ps2x::iop::PadButton::Square) != 0u;
         if (moment == Techniques)
         {
-            // Square (X) + a d-pad direction: let go before 1.5 s loads that style, held 1.5 s saves to it (at once, so the
+            // Square (X) + a d-pad direction: let go before 1 s loads that style, held 1 s saves to it (at once, so the
             // list's flash says when to let go).
             const int64_t now = nowMs();
             if (g_held >= 0)
