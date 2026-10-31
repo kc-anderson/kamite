@@ -3717,3 +3717,18 @@ address = "0x00286D58"
 hook = "km_fps60_think_v0_a0"
 flag = "fps60"
 replace = true
+
+# 60 FPS: an enemy's state change made in the first half of a 30 FPS frame runs its new step on the next 30 FPS frame
+# (the mode-0 phase handler held a vblank; frame_patches.cpp enemyStepHold).
+[[patches.hooks]]
+address = "0x0020FAF0"
+hook = "km_fps60_enemy_step_hold"
+flag = "fps60"
+
+# 60 FPS: the enemies' SetMotion (func_002A8578, 856 callers) passes the speed rate +0x5A8 as the new motion's step: 0.5
+# at 60, then halved by moveMotion, so every enemy motion's first frame advanced a quarter frame (x2, as 0x290584 does
+# for the per-frame step; enemyRate30). Hook after the lwc1 f12,0x5A8(a0).
+[[patches.hooks]]
+address = "0x002A85CC"
+hook = "km_fps60_em_rate_f12_a0"
+flag = "fps60"
