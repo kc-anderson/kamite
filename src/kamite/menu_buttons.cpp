@@ -322,7 +322,9 @@ namespace kamite::menu_buttons
         static const std::vector<TextPatch> patches = {
             // The roulette's bar ("[R1]Select [cross][circle]OK [triangle]Cancel", 0x591CC): the roulette follows the
             // menus too (kamite.toml "modern_roulette": its OK, func_00145810 0x145CE8, reads the cross only; its cancel,
-            // Gene's +0x626 window filled at 0x108FA0, comes from the circle), so the bar names cross OK, circle Cancel.
+            // Gene's +0x626 window filled at 0x108FA0, comes from the circle), so the bar reads "[R1]Cycle [cross]OK
+            // [circle]Cancel" (roulette_bar.cpp lays it out at full letter width on a bar cut to fit).
+            {0x591CEu, text({}, "Select"), [] { auto t = text({}, "Cycle"); t.push_back(0xB301u); return t; }()},
             {0x591DCu, text({kCross, kCircle}, "OK"), text({kCross, 0xB301u}, "OK")},
             {0x591E6u, {kTriangle}, {kCircle}},
             // The Techniques screen's "[triangle] Exit" (0x59224: colour code 0xB602 with its colour, the icon, 0xB301

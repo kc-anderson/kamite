@@ -17,10 +17,8 @@ namespace kamite
     void installGameOptions(PS2Runtime &runtime);
 
     // Game thread, once a game frame (frame_patches' frame hook): Dead Pan's invincibility look on Gene (steam, red
-    // face). F2 > Gameplay can turn the red face off.
+    // face), from the pan's hit until the invincibility runs out.
     void deadPanFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
-    bool deadPanRedFace();
-    void setDeadPanRedFace(bool on);
 
     // The F2 menu (any thread): the mute takes effect at the music's next volume change (a room or track change).
     bool muteMusic();

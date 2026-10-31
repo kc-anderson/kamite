@@ -596,6 +596,31 @@ flag = "modern_roulette"
 address = "0x00114904"
 hook = "km_roulette_cancel_circle"
 flag = "modern_roulette"
+# Dead Pan's wash basin (cOmbf, object 0x3BF, state 0 func_001BBC08; family 3): step 1 falls 0.1 a frame while its
+# 14-frame countdown runs (hooked at 0x1BBE1C), so at 60 it fell twice as far (to Gene's feet, before the clang);
+# step 3 bounces off: spin -10 deg a frame, velocity +0x330 moved by cObjBase_MoveByNullSpeed x f13 (1.0), gravity
+# 0.02 a frame on it, fade 0.1 a frame. At 60: fall, spin and fade halved, f13 0.5 with half the gravity (the 30
+# FPS arc frame for frame). K: at 30 the basin stops on Gene's head with the sound.
+[[patches.conditional]] # fall 0.1 -> 0.05
+address = "0x001BBC6C"
+value = "0x3C013D4C"
+flag = "fps60"
+[[patches.conditional]] # MoveByNullSpeed scale 1.0 -> 0.5
+address = "0x001BBD24"
+value = "0x3C013F00"
+flag = "fps60"
+[[patches.conditional]] # spin -0.1745 -> -0.0873 rad
+address = "0x001BBD38"
+value = "0x3C01BDB2"
+flag = "fps60"
+[[patches.conditional]] # gravity 0.02 -> 0.01
+address = "0x001BBD44"
+value = "0x3C013C23"
+flag = "fps60"
+[[patches.conditional]] # fade 0.1 -> 0.05
+address = "0x001BBD80"
+value = "0x3C013D4C"
+flag = "fps60"
 # Random rolls made every frame (frame_patches.cpp randPaired; fps60-notes family 8): a roll at the same call site for
 # the same object on two game frames in a row repeats the first frame's number. Hooks after the twister returns in
 # irand / frand / frand - 0.5 (the caller's ra at 0(sp)), and around MoveObj's update call (the object being updated).

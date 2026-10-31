@@ -284,7 +284,7 @@ namespace kamite::hud
                 y1 = std::max(y1, y);
             }
             if (g_inIdTrans)
-                roulette_bar::onDraw(g_curLayout, g_entry, x0, x1, !withOffset);
+                roulette_bar::onDraw(g_curLayout, g_entry, x0, x1, y0, y1, !withOffset);
             // The minimap's right edge, for the gold counter (at every aspect and layout: both use the same mapping).
             if (g_ctx.active && g_ctx.key == kRadar && x1 - x0 < 0.9f * width && !menuNow())
                 g_radarRightSeen = std::max(g_radarRightSeen, x1);

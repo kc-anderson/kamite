@@ -36,8 +36,8 @@
 // ckPaper; the same clear gives the KMS jukebox CD), or with F2's "Every roulette reel owned" (DBG_ALL_GOD_REEL).
 // As in Japanese it then joins the roulette without being bought, at level 3 and up (0x125338: getGameLevel >= 3).
 //
-// Dead Pan's invincibility shown (always on with Dead Pan; F2 > Gameplay can drop the red face): from the move's
-// state (Gene phase 41, func_00113CF8: post-hit guard +0x54C held at 30) until that guard has run out after it, Gene
+// Dead Pan's invincibility shown (always on with Dead Pan): from the pan's hit (Gene phase 41 step 2, func_00113CF8;
+// the post-hit guard +0x54C is held at 30 through the state) until that guard has run out after it, Gene
 // gets the taunted enemies' berserk look (func_00268788, the anger state +0x16EC): the steam, SetEffect(0x58, 7, obj,
 // params, 5, -1) + SetEffect(0x58, 0xF, obj, params, -1, -1) once, KillEffect(obj, 5, 2) when it ends; the red face,
 // the face meshes' colour (+0x3A0/+0x3A4/+0x3A8) eased 0.1 a frame toward (0.9, 0.5, 0.5) and back to white. Gene's
@@ -154,7 +154,6 @@ namespace kamite
         constexpr uint32_t kGameWork = 0x7474A0u;
         constexpr uint32_t kSetEffect = 0x306528u, kKillEffect = 0x306200u;
         constexpr uint8_t kDeadPanPhase = 41u;
-        std::atomic<bool> g_deadPanRedFace{true};
         struct DeadPanLook
         {
             uint32_t gene = 0;
@@ -258,7 +257,7 @@ namespace kamite
             return; // a new Gene (room change, load): his meshes and effects are new too
         }
         const bool inMove = rdram[(gene + 0x2F5u) & 0x1FFFFFFu] == kDeadPanPhase;
-        if (inMove)
+        if (inMove && rdram[(gene + 0x2F6u) & 0x1FFFFFFu] >= 2u) // from the pan's hit on (step 2), not the wind-up
             look.active = true;
         else if (look.active && ramF(rdram, gene + 0x54Cu) <= 0.0f)
             look.active = false;
@@ -273,15 +272,13 @@ namespace kamite
             look.steam = false;
         }
         const float step = fps60() ? 0.05f : 0.1f; // the enemies' 0.1 a frame, at the 30 FPS pace
-        const bool red = look.active && g_deadPanRedFace.load(std::memory_order_relaxed);
+        const bool red = look.active;
         const float before = look.fade;
         look.fade = red ? std::max(0.0f, look.fade - step) : std::min(1.0f, look.fade + step);
         if (look.fade < 1.0f || before < 1.0f)
             paintFace(rdram, gene, look.fade);
     }
 
-    bool deadPanRedFace() { return g_deadPanRedFace.load(); }
-    void setDeadPanRedFace(bool on) { g_deadPanRedFace.store(on); }
 
     void installGameOptions(PS2Runtime &)
     {
