@@ -3750,3 +3750,11 @@ address = "0x00255AF8"
 hook = "km_fps60_launch_fall"
 flag = "fps60"
 replace = true
+
+# 60 FPS: cGameObj_SetTgtTurn already halves its step at 60 (GameWork +0x55C); the 182 callers that pass the enemy's
+# 0.5 rate in it turned at a quarter speed (frame_patches.cpp tgtTurnRate, sites in src/kamite/fps60_turn_sites.inc).
+[[patches.hooks]]
+address = "0x002A74B0"
+hook = "km_fps60_tgt_turn_rate"
+flag = "fps60"
+replace = true

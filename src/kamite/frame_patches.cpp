@@ -54,6 +54,7 @@
 #include "runtime/ps2_display_options.h"
 #include "runtime/ps2_save_state.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
@@ -192,6 +193,7 @@ namespace kamite
         void setRamF32(uint8_t *rdram, uint32_t address, float value) { std::memcpy(&ram8(rdram, address), &value, sizeof(value)); }
         bool isGene(uint8_t *rdram, uint32_t object);
         void forgetClothAfterLoad(uint8_t *rdram);
+        bool inEnemyList(uint8_t *rdram, uint32_t obj);
 
         // Before lwc1 f0,0x2A4(s1) at 0x1458E8 (after the step), s1 = the wheel.
         void rouletteSlideBegin(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
@@ -559,6 +561,22 @@ namespace kamite
         void launchFall(uint8_t *, R5900Context *ctx, PS2Runtime *) // sub.s f0,f0,f2
         {
             ctx->f[0] = ctx->f[0] - ctx->f[2] * 0.5f;
+        }
+
+        // cGameObj_SetTgtTurn (0x2A7498) is 60-aware: the turn per call is f12 x GameWork +0x55C (1.0, or 0.5 when the
+        // divider is 1: func_0030AC40 0x30AF14). 182 callers pass f12 = the enemy's speed rate x a turn step, and the
+        // rate is 0.5 at 60 too (0x29059C), so those turns ran at a quarter speed (66sec case, Oct 31: the grab lunge,
+        // phase 75 step 1, turned 0.065 a vblank against 0.26 a 30 FPS frame and went 0.1 m wide). Replaces the
+        // mul.s f13,f12,f0 at 0x2A74B0: x2 for those callers (ra - 8) on an object in cEmManage's list.
+#include "kamite/fps60_turn_sites.inc"
+        void tgtTurnRate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            float step = ctx->f[12] * ctx->f[0];
+            const uint32_t site = GPR_U32(ctx, 31) - 8u;
+            if (std::binary_search(std::begin(kTgtTurnRateSites), std::end(kTgtTurnRateSites), site) &&
+                inEnemyList(rdram, GPR_U32(ctx, 16)))
+                step *= 2.0f;
+            ctx->f[13] = step;
         }
 
         void installFrame30State()
@@ -1231,6 +1249,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_rand_int", &randInt);
         ps2xRegisterHostHook("km_fps60_rand_float", &randFloat);
         ps2xRegisterHostHook("km_fps60_enemy_step_hold", &enemyStepHold);
+        ps2xRegisterHostHook("km_fps60_tgt_turn_rate", &tgtTurnRate);
         ps2xRegisterHostHook("km_fps60_launch_rise", &launchRise);
         ps2xRegisterHostHook("km_fps60_launch_fall", &launchFall);
         ps2xRegisterHostHook("km_fps60_em_rate_f12_a0", &enemyRate30<4, 12>);
