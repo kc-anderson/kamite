@@ -607,6 +607,19 @@ address = "0x00100E50"
 hook = "km_fps60_coat_wind"
 replace = true
 flag = "fps60"
+# The cloth step func_00104010 at the 30 FPS pace (Oct 31; claude/roulette-notes.md "The cloth step"): even game
+# frames run the game's own step from the state the last even step left, odd frames a half step for the picture only
+# (the hooks below scale on odd frames and pass the original values on even ones); km_fps60_cloth_begin keeps and puts
+# back the state (frame_patches.cpp clothBegin).
+[[patches.hooks]] # before sqc2 vf0,0x70(sp): a0 the cloth, s4 its work block, a2 its nodes
+address = "0x00104064"
+hook = "km_fps60_cloth_begin"
+flag = "fps60"
+[[patches.hooks]] # add.s f22,f0,f21 (the global wind 0x4615F0's swing factor: sin + 1)
+address = "0x00104560"
+hook = "km_fps60_cloth_global_wind"
+replace = true
+flag = "fps60"
 # The cloth step func_00104010 (Gene's coat, the enemies' cloth: EmClothMove) swings every chain node by sin(work
 # +0x48 + its offset), and steps +0x48 every frame twice: += frand x 1.2 (0x3BC7C8) unless work +0x5C bit 0x40 (the
 # idle sway, always), and += frand x work +0x70 while bit 0x400 (the coat's +0x20AC, set by the roulette wind above).

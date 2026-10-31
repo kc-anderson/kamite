@@ -189,6 +189,8 @@ namespace kamite
         }
 
         void setRamF32(uint8_t *rdram, uint32_t address, float value) { std::memcpy(&ram8(rdram, address), &value, sizeof(value)); }
+        bool isGene(uint8_t *rdram, uint32_t object);
+        void forgetClothAfterLoad(uint8_t *rdram);
 
         // Before lwc1 f0,0x2A4(s1) at 0x1458E8 (after the step), s1 = the wheel.
         void rouletteSlideBegin(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
@@ -466,6 +468,7 @@ namespace kamite
             ++g_gameFrame;
             forgetStickAfterLoad();
             forgetRandAfterLoad(rdram);
+            forgetClothAfterLoad(rdram);
             deadPanFrame(rdram, ctx, runtime);
             if (const int request = g_fps60Request.exchange(-1); request >= 0)
                 setFps60(request != 0);
@@ -640,19 +643,31 @@ namespace kamite
         // vel.y -= gravity, pos += vel + the wind push, spring corrections x k, vel = (pos - old) x damp, every frame. At 60
         // it ran on a doubled clock (the coat swung out twice as fast and harder). The half step that keeps the same pose
         // and the same motion per second: accelerations (gravity, push) x 1/4, damp -> sqrt(damp), k -> 1 - sqrt(1 - k).
+        //
+        // Those constants alone were not enough (the coat still moved 1.4-1.6x as much per second, Oct 31): the springs
+        // are position corrections that become velocity, which no constant change makes equal over two steps. So the
+        // cloth runs at the 30 FPS pace (K, Oct 31: look correct, interpolated if it has to be): on even game frames
+        // the game's own step (these hooks pass the original values) from the state the last even step left, on odd
+        // frames a half step for the picture only (these hooks scale), which the next even step undoes (clothBegin).
+        bool g_clothDisplay = false; // this call of the cloth step is an odd frame's half step
         template <int Dst, int A, int B>
         void clothSubQuarter(uint8_t *, R5900Context *ctx, PS2Runtime *) // sub.s Dst,A,B: the gravity step
         {
-            ctx->f[Dst] = ctx->f[A] - ctx->f[B] * 0.25f;
+            ctx->f[Dst] = ctx->f[A] - ctx->f[B] * (g_clothDisplay ? 0.25f : 1.0f);
         }
         template <int Dst, int A, int B>
-        void clothAddQuarter(uint8_t *, R5900Context *ctx, PS2Runtime *) // add.s Dst,A,B: the wind push's swing factor
+        void clothAddQuarter(uint8_t *, R5900Context *ctx, PS2Runtime *) // add.s Dst,A,B: a push's swing factor
         {
-            ctx->f[Dst] = (ctx->f[A] + ctx->f[B]) * 0.25f;
+            ctx->f[Dst] = (ctx->f[A] + ctx->f[B]) * (g_clothDisplay ? 0.25f : 1.0f);
+        }
+        template <int Dst, int A, int B>
+        void clothAddHalf(uint8_t *, R5900Context *ctx, PS2Runtime *) // add.s Dst,A,B: the swing phase steps
+        {
+            ctx->f[Dst] = ctx->f[A] + ctx->f[B] * (g_clothDisplay ? 0.5f : 1.0f);
         }
         void clothDamp(uint8_t *, R5900Context *ctx, PS2Runtime *) // mfc1 t0,f20 at 0x105F24: the velocity's damping
         {
-            const float damp = std::sqrt(std::max(ctx->f[20], 0.0f));
+            const float damp = g_clothDisplay ? std::sqrt(std::max(ctx->f[20], 0.0f)) : ctx->f[20];
             uint32_t bits = 0;
             std::memcpy(&bits, &damp, sizeof(bits));
             SET_GPR_U32(ctx, 8, bits);
@@ -662,7 +677,131 @@ namespace kamite
         {
             float k = 0.0f;
             std::memcpy(&k, &ram8(rdram, GPR_U32(ctx, 20) + 0x4Cu), sizeof(k));
-            ctx->f[Dst] = k >= 1.0f ? k : 1.0f - std::sqrt(std::max(1.0f - k, 0.0f));
+            ctx->f[Dst] = (!g_clothDisplay || k >= 1.0f) ? k : 1.0f - std::sqrt(std::max(1.0f - k, 0.0f));
+        }
+
+        // The state an even step left, kept over the odd frame's half step (per cloth, by its work block): each node's
+        // velocity, position and previous position (+0x30..+0x5F of 0xA0; its anchor +0x80 is written by the owner every
+        // frame and stays), the swing phase (work +0x48), and the owner's move that frame (Gene's +0x650, which the step
+        // adds to every node: the even step must carry both frames' moves, as the 30 FPS step does).
+        struct ClothSnap
+        {
+            uint32_t frame = 0, nodes = 0, count = 0, phase = 0;
+            float shift[3] = {};
+            std::vector<uint32_t> words; // count x 12
+        };
+        constexpr uint32_t kClothNode = 0xA0u, kClothKept = 0x30u, kClothKeptWords = 12u;
+        std::unordered_map<uint32_t, ClothSnap> g_cloth;
+        bool g_clothRestored = false;
+
+        uint32_t clothNodes(uint8_t *rdram, uint32_t work)
+        {
+            uint32_t count = 0, list = 0, top = 0;
+            std::memcpy(&count, &ram8(rdram, work), sizeof(count));
+            std::memcpy(&list, &ram8(rdram, work + 4u), sizeof(list));
+            for (uint32_t i = 0; i < std::min(count, 256u); ++i)
+                top = std::max<uint32_t>(top, ram8(rdram, list + i) + 1u);
+            return top;
+        }
+
+        // Before sqc2 vf0,0x70(sp) at 0x104064, the cloth step's entry (func_00104010: a0 the cloth object, s4 its work
+        // block, a2 its nodes). Odd frame: keep the state. Even frame: put back the state the last even step left (if the
+        // odd frame kept it), moved by the owner's odd-frame move.
+        void clothBegin(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t cloth = GPR_U32(ctx, 4), work = GPR_U32(ctx, 20), nodes = GPR_U32(ctx, 6);
+            const uint32_t frame = gameFrames(rdram);
+            g_clothDisplay = skipFrame(rdram);
+            if (!g_clothDisplay)
+            {
+                const auto it = g_cloth.find(work);
+                if (it == g_cloth.end())
+                    return;
+                const ClothSnap &snap = it->second;
+                if (snap.frame + 1u == frame && snap.nodes == nodes && clothNodes(rdram, work) == snap.count)
+                {
+                    for (uint32_t i = 0; i < snap.count; ++i)
+                    {
+                        const uint32_t node = nodes + i * kClothNode;
+                        std::memcpy(&ram8(rdram, node + kClothKept), &snap.words[i * kClothKeptWords], kClothKeptWords * 4u);
+                        for (int axis = 0; axis < 3; ++axis)
+                            setRamF32(rdram, node + 0x40u + axis * 4u, ramF32(rdram, node + 0x40u + axis * 4u) + snap.shift[axis]);
+                    }
+                    std::memcpy(&ram8(rdram, work + 0x48u), &snap.phase, sizeof(snap.phase));
+                }
+                g_cloth.erase(it);
+                return;
+            }
+            ClothSnap &snap = g_cloth[work];
+            snap.frame = frame;
+            snap.nodes = nodes;
+            snap.count = clothNodes(rdram, work);
+            std::memcpy(&snap.phase, &ram8(rdram, work + 0x48u), sizeof(snap.phase));
+            uint32_t owner = 0;
+            std::memcpy(&owner, &ram8(rdram, work + 0x58u), sizeof(owner));
+            if (owner == 0u)
+                owner = cloth;
+            for (int axis = 0; axis < 3; ++axis) // the step adds +0x650 for the player (pl00) only
+                snap.shift[axis] = isGene(rdram, owner) ? ramF32(rdram, owner + 0x650u + axis * 4u) : 0.0f;
+            snap.words.resize(static_cast<size_t>(snap.count) * kClothKeptWords);
+            for (uint32_t i = 0; i < snap.count; ++i)
+                std::memcpy(&snap.words[i * kClothKeptWords], &ram8(rdram, nodes + i * kClothNode + kClothKept), kClothKeptWords * 4u);
+        }
+
+        void forgetClothAfterLoad(uint8_t *rdram)
+        {
+            static uint32_t loads = 0;
+            const uint32_t now = ps2x::savestate::loadCount();
+            if (now != loads)
+            {
+                loads = now;
+                if (!g_clothRestored)
+                    g_cloth.clear();
+                g_clothRestored = false;
+            }
+            const uint32_t frame = gameFrames(rdram);
+            for (auto it = g_cloth.begin(); it != g_cloth.end();)
+                it = (frame - it->second.frame > 2u) ? g_cloth.erase(it) : std::next(it);
+        }
+
+        void installClothState() // "kamite.cloth60": the kept states go into save states, so test cases replay them
+        {
+            ps2x::savestate::registerExtension(
+                "kamite.cloth60",
+                [](ps2x::state::Writer &out) {
+                    uint32_t version = 1u;
+                    std::vector<uint32_t> words;
+                    for (const auto &[work, snap] : g_cloth)
+                    {
+                        uint32_t shift[3] = {};
+                        std::memcpy(shift, snap.shift, sizeof(shift));
+                        const uint32_t head[8] = {work, snap.frame, snap.nodes, snap.count, snap.phase, shift[0], shift[1], shift[2]};
+                        words.insert(words.end(), head, head + 8);
+                        words.insert(words.end(), snap.words.begin(), snap.words.end());
+                    }
+                    ps2x::state::fields(out, version, words);
+                },
+                [](ps2x::state::Reader &in) {
+                    uint32_t version = 0u;
+                    std::vector<uint32_t> words;
+                    ps2x::state::fields(in, version, words);
+                    g_cloth.clear();
+                    for (size_t i = 0; i + 8u <= words.size();)
+                    {
+                        ClothSnap snap;
+                        const uint32_t work = words[i];
+                        snap.frame = words[i + 1u], snap.nodes = words[i + 2u], snap.count = words[i + 3u], snap.phase = words[i + 4u];
+                        std::memcpy(snap.shift, &words[i + 5u], sizeof(snap.shift));
+                        i += 8u;
+                        const size_t n = static_cast<size_t>(snap.count) * kClothKeptWords;
+                        if (snap.count > 256u || i + n > words.size())
+                            break;
+                        snap.words.assign(words.begin() + static_cast<std::ptrdiff_t>(i), words.begin() + static_cast<std::ptrdiff_t>(i + n));
+                        i += n;
+                        g_cloth[work] = std::move(snap);
+                    }
+                    g_clothRestored = true;
+                });
         }
 
         // A countdown whose load and decrement both sit in delay slots, stored by a plain sh (Gene's grab finishers and
@@ -915,8 +1054,10 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_countdown_pl15b0", &countdownLoad<17, 0x15B0u>);    // Dead Pan's wait (s1)
         ps2xRegisterHostHook("km_fps60_float_add_f0f1", &floatAddParity<0, 0, 1>);         // add.s f0,f0,f1
         ps2xRegisterHostHook("km_fps60_coat_wind", &floatAddHalf<0, 0, 3>);                // add.s f0,f0,f3
-        ps2xRegisterHostHook("km_fps60_cloth_wind", &floatAddHalf<2, 2, 0>);               // add.s f2,f2,f0 (cloth step)
-        ps2xRegisterHostHook("km_fps60_cloth_sway", &floatAddHalf<1, 1, 0>);               // add.s f1,f1,f0 (cloth step)
+        ps2xRegisterHostHook("km_fps60_cloth_begin", &clothBegin);
+        ps2xRegisterHostHook("km_fps60_cloth_wind", &clothAddHalf<2, 2, 0>);               // add.s f2,f2,f0 (cloth step)
+        ps2xRegisterHostHook("km_fps60_cloth_sway", &clothAddHalf<1, 1, 0>);               // add.s f1,f1,f0 (cloth step)
+        ps2xRegisterHostHook("km_fps60_cloth_global_wind", &clothAddQuarter<22, 0, 21>);
         ps2xRegisterHostHook("km_fps60_cloth_gravity_table", &clothSubQuarter<1, 1, 0>);
         ps2xRegisterHostHook("km_fps60_cloth_gravity", &clothSubQuarter<0, 0, 1>);
         ps2xRegisterHostHook("km_fps60_cloth_push", &clothAddQuarter<22, 0, 21>);
@@ -941,6 +1082,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_rand_object_begin", &randObjectBegin);
         ps2xRegisterHostHook("km_fps60_rand_object_end", &randObjectEnd);
         installRandState();
+        installClothState();
         ps2xSetPatchFlag("frame_hook", true); // always: it also counts game frames for the F3 overlay
         ps2xSetPatchFlag("fps60", g_fps60);
         {
