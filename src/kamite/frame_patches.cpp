@@ -69,7 +69,8 @@ namespace kamite
         constexpr uint32_t kFrameDivider = game::GameWork::address(game::GameWork::kVblankDivider); // GameWork.unk569: 1 = 60 frames/s
         constexpr uint32_t kStickBytes[4] = {0x5E8146u, 0x5E8147u, 0x5E81C6u, 0x5E81C7u}; // left stick X/Y, two pads
         constexpr uint32_t kPadButtons = 0x5E8242u;                                        // 16-bit; 2 = L3
-        bool g_fps60 = false;
+        bool g_fps60 = false;     // the mode in effect this frame (the patch flag, the divider)
+        bool g_fps60User = false; // the player's choice (Fps60, F2); off for the frames of a cutscene (frameStart)
         std::atomic<int> g_fps60Request{-1};   // F2 menu: 0 / 1, applied at the next frame start (game thread)
         std::atomic<bool> g_fps60Shown{false}; // for the F2 menu
         std::atomic<bool> g_l3Dash{false};
@@ -294,12 +295,11 @@ namespace kamite
         // The 60 FPS mode on or off, between two game frames: the patch bits (every code change of the mode is a
         // runtime flag the recompiled code tests at each patched instruction), the VU1 timing, the roulette period
         // and the stick-hold state. The frame divider byte follows at every frame start (below), in both modes.
-        void setFps60(bool on)
+        void setFps60(bool on, const char *why = nullptr)
         {
             if (on == g_fps60)
                 return;
             g_fps60 = on;
-            g_fps60Shown.store(on);
             ps2xSetPatchFlag("fps60", on);
             ps2x::asyncvif::setVu1TimingScale(on ? 0.5 : 1.0);
             applyRoulettePeriod();
@@ -308,7 +308,7 @@ namespace kamite
                 g_stickHeld[axis] = 0u;
                 g_stickLast[axis] = 0u;
             }
-            KM_INFO(Game, "frame rate switched: " << (on ? "60 FPS mode" : "30 FPS, as on the PS2"));
+            KM_INFO(Game, "frame rate switched: " << (on ? "60 FPS mode" : "30 FPS, as on the PS2") << (why ? why : ""));
         }
 
         // Random rolls made every frame (claude/fps60-notes.md family 8). The game draws from one Mersenne twister
@@ -631,7 +631,24 @@ namespace kamite
             forgetClothAfterLoad(rdram);
             deadPanFrame(rdram, ctx, runtime);
             if (const int request = g_fps60Request.exchange(-1); request >= 0)
-                setFps60(request != 0);
+            {
+                g_fps60User = request != 0;
+                g_fps60Shown.store(g_fps60User);
+            }
+            // Cutscenes run at the PS2's 30 FPS whatever the divider: while GameWork flags5E4 has EVENT (a cutscene is
+            // running) the main loop waits GameWork +0x570 vblanks a frame (0x30AD70 / 0x30AE14), and the setter
+            // 0x30D168 never stores less than 2. The 60 FPS mode's fixes assume one vblank a frame, so in a cutscene
+            // they halved 33 ms frames: the cloth took its real step every other frame with a half step between (Gene's
+            // coat and Olivia's hair jittered in the hotel cutscene, K Nov 1, overlay "Game 30 FPS"). The mode stands
+            // down for the cutscene's frames (as when the player switches it), exactly the PS2's cutscene.
+            {
+                uint32_t sta = 0;
+                std::memcpy(&sta, &ram8(rdram, game::GameWork::address(game::GameWork::kFlags5E4)), sizeof(sta));
+                const bool cutscene = (sta & game::Sta::kEvent) != 0u;
+                const bool want = g_fps60User && !cutscene;
+                if (want != g_fps60)
+                    setFps60(want, cutscene ? " (cutscene: the game's own 30 FPS wait)" : (g_fps60User ? " (cutscene over)" : ""));
+            }
             if (g_rouletteRequest.exchange(0) != 0)
                 applyRoulettePeriod();
             ps2_host_display::noteGameFrame();
@@ -1137,6 +1154,7 @@ namespace kamite
     {
         counterfinder::install(runtime);
         g_fps60 = envOn("KAMITE_FPS60");
+        g_fps60User = g_fps60;
         g_fps60Shown.store(g_fps60);
         // 60 FPS: the emulated VU1 gets half the time per program (ps2_async_vif.h setVu1TimingScale), so a view the
         // PS2 itself draws in two fields still fits one.

@@ -6,6 +6,10 @@ Newest first, one line per change; the code comments say how.
 
 - NPC poses: hands hold still on the counter (counter idle and counter tease; "Hands: pinned" in F2 > NPCs > Pose NPC, 0% = as before).
 
+## November 1, 2026
+
+- 60 FPS: cutscenes run as on the PS2 (the coat and hair jittered, the 60 FPS fixes acted on the cutscenes' 30 FPS frames).
+
 ## October 31, 2026
 
 - Style switching: styles keep techniques from F2 "Every technique owned" while it is on; turning it off removes them from every style.
