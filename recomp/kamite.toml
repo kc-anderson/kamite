@@ -44,38 +44,123 @@ runtime_relocations = "kamite_runtime_relocations.csv"
 # SLUS-21503_6FB69282.pnach "60 Fps" (Puggsy + Claude Ai + Gemini). "frame_hook": always on.
 [patches]
 
-# The effect system counts PS2 frames (lui at,0x3F80 -> 0x3F00: a step of 0.5 a game frame). The pnach halved the
-# first emitter's frame (func_003029C0, +0x180: "special attack speed") and left its emission countdown and the
-# children's frames at 1 a frame, so an emitter lived twice as many game frames and emitted twice as many children in
-# that time: the casino and God Hand glows (esp05, a child that lives until its emitter ends) stood two deep at 60 FPS
-# (Oct 25). The four steps now agree: both emitters' frames, the emission countdown (func_003035D0 +0x17C) and the
-# children's frames (StepObj_advanceFrame +0x234; the code already tolerates fractional frames, its slow-motion path
-# makes them). The emitters that emit every frame (mode 0, interval 0) are held to every other frame by a hook.
-[[patches.conditional]]
-address = "0x00302D04"
-value = "0x3C013F00"
-flag = "fps60"
-
-[[patches.conditional]]
-address = "0x00304500"
-value = "0x3C013F00"
-flag = "fps60"
-
-[[patches.conditional]]
-address = "0x00303910"
-value = "0x3C013F00"
-flag = "fps60"
-
-[[patches.conditional]]
-address = "0x002FCA8C"
-value = "0x3C013F00"
-flag = "fps60"
-
-# func_003035D0's every-frame emission (the beql at 0x303880 lands here with $v1 = 0; the slow-motion path arrives with
-# $v1 != 0 and its own accumulator): on odd game frames the count ($v0) becomes 0.
+# Effects at 60 FPS (Nov 1, K: the punch spit and the glass shards ran at double speed): the effect system has its own
+# slow-motion path. Twenty tests of GameWork flags5E4 STA_WORLD_SLOW (`lw v1,0x7A84(v0); and v1,v1,a0` with a0 =
+# 0x20000, all in 0x2F5000..0x305000) pick, per step, either the full PS2-frame step (frames += 1.0, positions +=
+# velocity, spins, scales) or the same step x the effect rate (func_2FA350: frames += rate x GameWork +0x574 in
+# hundredths; motion x 0x741DC0 x +0x574). The pnach port halved four of the frame steps by hand (lui 0x3F00 at
+# 0x302D04 / 0x304500 / 0x303910 / 0x2FCA8C) and held every-frame emitters to even frames; the other sixteen steps
+# (particle motion, most frame counters) ran 2x. Now every effect takes the slow path at 60 (km_fps60_effect_world_slow
+# on each `and`) with the effect rate at half: MoveEffect's reset 1.0 -> 0.5 (0x30F274) and cEmManage_SetSpeedRate's
+# store x0.5 (0x292F44, the roulette's slow motion).
 [[patches.hooks]]
-address = "0x003038BC"
-hook = "km_fps60_emit_every_frame"
+address = "0x002F5C9C"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x002F5D84"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x002FBFEC"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x002FC114"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x002FC738"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x002FC9F0"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x002FCA70"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x002FCB10"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x002FCFD4"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x002FD1E4"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x002FD35C"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x002FD5AC"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x002FD6AC"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x002FD720"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x00302CE8"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x00302D48"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0030387C"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x003038F4"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x003042B0"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x003044E4"
+hook = "km_fps60_effect_world_slow"
+replace = true
+flag = "fps60"
+[[patches.conditional]] # MoveEffect: the effect rate's per-frame reset, 1.0 -> 0.5 at 60
+address = "0x0030F274"
+value = "0x3C013F00"
+flag = "fps60"
+[[patches.hooks]] # cEmManage_SetSpeedRate: the effects' slow-motion rate (0x741DC0), half at 60
+address = "0x00292F44"
+hook = "km_fps60_effect_slow_rate"
+replace = true
 flag = "fps60"
 
 # The HUD's tension bar (func_00142060) eases its shown value toward the gauge by 0.1 of the gap a frame (0x1426BC

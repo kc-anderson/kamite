@@ -5,13 +5,11 @@
 //
 //   pnach                                         here
 //   00747A09 byte 01 (every vblank)               frameStart: the game's frame divider byte = 1 (60 frames/s)
-//   302D04/10D694 lui at,0x3F00                   conditional patches (an effect emitter's frame, the Unleash gauge
-//                                                  drain: 0.5 instead of 1.0); the pnach's third one, 10B7B8 (the
-//                                                  sub-screen demo's motion step), is left out: moveMotion halves it
-//                                                  already, the demo ran at half speed
-//   304500/303910/2FCA8C lui at,0x3F00 (ours)     the other emitter's frame, the emission countdown, the effect
-//                                                  children's frames: the whole effect system counts PS2 frames
-//                                                  (emitEveryFrame holds the every-frame emitters to even frames)
+//   302D04/10D694 lui at,0x3F00                   the effect emitter's frame: replaced (Nov 1) by the effects' own
+//                                                  slow-motion path at rate 0.5 (km_fps60_effect_world_slow, 20
+//                                                  sites; kamite.toml "Effects at 60 FPS"); the Unleash drain is
+//                                                  km_fps60_tension_drain; the pnach's 10B7B8 (the sub-screen demo's
+//                                                  motion step) is left out: moveMotion halves it already
 //   2C81BC hook -> F0000 (hitbox sync)            hitboxCompare replaces c.eq.s f0,f2 at 0x2C81C0: the hitbox logic
 //                                                  is skipped when the integer frame (cvt.w.s) of the last and the
 //                                                  current position are equal, not only the exact floats
@@ -760,10 +758,18 @@ namespace kamite
         // every-frame emitters (mode 0, interval 0; the beql at 0x303880 lands here with $v1 = 0) emit on even game
         // frames only, so they emit once a PS2 frame like the others now that the children's frames step by 0.5
         // (recomp/kamite.toml, the fps60 effect patches). The slow-motion path arrives with $v1 != 0 and keeps its count.
-        void emitEveryFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        // Replaces `and v1,v1,a0` after each effect test of STA_WORLD_SLOW (a0 = 0x20000): at 60 every effect takes its
+        // slow-motion path, which steps by the effect rate (0.5 at 60, below) instead of a whole PS2 frame
+        // (recomp/kamite.toml "Effects at 60 FPS").
+        void effectWorldSlow(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
-            if (GPR_U32(ctx, 3) == 0u && skipFrame(rdram))
-                SET_GPR_S32(ctx, 2, 0);
+            SET_GPR_U32(ctx, 3, (GPR_U32(ctx, 3) | 0x20000u) & GPR_U32(ctx, 4));
+        }
+        // Replaces swc1 f12,0x1DC0(v1) in cEmManage_SetSpeedRate: the effects' slow-motion rate, half at 60.
+        void effectSlowRate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const float value = ctx->f[12] * 0.5f;
+            std::memcpy(&ram8(rdram, GPR_U32(ctx, 3) + 0x1DC0u), &value, sizeof(value));
         }
 
         // Replaces addiu v0,v1,-1 at 0x1F6F8C in TimedButton_tick (an action button prompt's time, +0x32): counts
@@ -1259,7 +1265,8 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_em_rate_f1_s1", &enemyRate30<17, 1>);
         ps2xRegisterHostHook("km_fps60_em_rate_f0_s2", &enemyRate30<18, 0>);
         ps2xRegisterHostHook("km_fps60_em_rate_f1_v0", &enemyRate30<2, 1>);
-        ps2xRegisterHostHook("km_fps60_emit_every_frame", &emitEveryFrame);
+        ps2xRegisterHostHook("km_fps60_effect_world_slow", &effectWorldSlow);
+        ps2xRegisterHostHook("km_fps60_effect_slow_rate", &effectSlowRate);
         ps2xRegisterHostHook("km_fps60_wiggle_begin", &wiggleBegin);
         ps2xRegisterHostHook("km_fps60_wiggle_end", &wiggleEnd);
         ps2xRegisterHostHook("km_fps60_pl56e_store_s0", &countdownStore16<16, 2, 3, 0x56Eu>);
