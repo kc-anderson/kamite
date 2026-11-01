@@ -55,7 +55,11 @@ namespace GSTextureReplacements
 	// 0x7F, 0x40, 0x89, 0xAC... there: the game's alpha test (GREATER 0x7F, AFAIL FB_ONLY) fails on them, so they blend
 	// half-transparent, write no depth (the scene behind shows through, the depth of field blurs over them), and values
 	// above 0x80 blend brighter than the original. PS2X_PCSX2_MATCH_ALPHA=0 turns it off.
-	void MatchOriginalAlpha(const GSTextureCache::HashCacheKey& hash, const u32* clut, u32 entries);
+	// cover (optional, cover_w x cover_h): the game texture's own alpha per texel. Where it is fully opaque (0x80) a
+	// replacement texel of at least 0x40 becomes 0x80: a pack must not make the game's opaque texels fail its alpha test
+	// (the Kick Me sign's pack image is 0x6D all over: colour without depth, hidden by whatever is drawn after it).
+	void MatchOriginalAlpha(const GSTextureCache::HashCacheKey& hash, const u32* clut, u32 entries,
+		const u8* cover = nullptr, u32 cover_w = 0, u32 cover_h = 0);
 	void ProcessAsyncLoadedTextures();
 
 	void DumpTexture(const GSTextureCache::HashCacheKey& hash, const GIFRegTEX0& TEX0, const GIFRegTEXA& TEXA,

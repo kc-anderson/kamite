@@ -162,7 +162,13 @@ namespace GSTextureReplacements
 		bool Has(u32 a) const { return (bits[a >> 6] >> (a & 63)) & 1u; }
 	};
 	static std::unordered_map<TextureName, AlphaLevels> s_original_alpha;
-	static void SnapAlpha(ReplacementTexture& rtex, const AlphaLevels& levels);
+	struct AlphaCover
+	{
+		u32 w = 0, h = 0;
+		std::vector<u8> alpha; // the game texture's alpha, w x h
+	};
+	static std::unordered_map<TextureName, AlphaCover> s_original_cover;
+	static void SnapAlpha(ReplacementTexture& rtex, const AlphaLevels& levels, const AlphaCover* cover);
 	static void ApplyOriginalAlpha(const TextureName& name, ReplacementTexture& rtex);
 	static std::mutex s_replacement_texture_cache_mutex;
 
@@ -426,6 +432,7 @@ void GSTextureReplacements::ReloadReplacementMap()
 		std::unique_lock<std::mutex> lock(s_replacement_texture_cache_mutex);
 		s_replacement_texture_cache.clear();
 		s_original_alpha.clear();
+		s_original_cover.clear();
 		s_pending_async_load_textures.clear();
 		s_async_loaded_textures.clear();
 	}
@@ -876,7 +883,7 @@ void GSTextureReplacements::ClearReplacementTextures()
 	s_async_loaded_textures.clear();
 }
 
-void GSTextureReplacements::SnapAlpha(ReplacementTexture& rtex, const AlphaLevels& levels)
+void GSTextureReplacements::SnapAlpha(ReplacementTexture& rtex, const AlphaLevels& levels, const AlphaCover* cover)
 {
 	// nearest level for every alpha value (ties go up)
 	u8 lut[256];
@@ -892,15 +899,25 @@ void GSTextureReplacements::SnapAlpha(ReplacementTexture& rtex, const AlphaLevel
 		}
 		lut[a] = static_cast<u8>(best < 0 ? a : best);
 	}
-	const auto snap = [&lut, &rtex](std::vector<u8>& data, u32 width, u32 height, u32 pitch) {
+	u32 raised = 0;
+	const auto snap = [&lut, &rtex, cover, &raised](std::vector<u8>& data, u32 width, u32 height, u32 pitch) {
 		switch (rtex.format)
 		{
 			case GSTexture::Format::Color:
 				for (u32 y = 0; y < height; y++)
 				{
 					u8* row = data.data() + static_cast<size_t>(y) * pitch;
+					const u8* game = (cover && height) ? cover->alpha.data() + static_cast<size_t>(y * cover->h / height) * cover->w : nullptr;
 					for (u32 x = 0; x < width; x++)
-						row[x * 4 + 3] = lut[row[x * 4 + 3]];
+					{
+						u8& a = row[x * 4 + 3];
+						a = lut[a];
+						if (game && a >= 0x40 && a < 0x80 && game[x * cover->w / width] >= 0x80)
+						{
+							a = 0x80;
+							raised++;
+						}
+					}
 				}
 				break;
 			case GSTexture::Format::BC3:
@@ -931,7 +948,10 @@ void GSTextureReplacements::SnapAlpha(ReplacementTexture& rtex, const AlphaLevel
 	snap(rtex.data, rtex.width, rtex.height, rtex.pitch);
 	for (auto& mip : rtex.mips)
 		snap(mip.data, mip.width, mip.height, mip.pitch);
-	rtex.snapped_levels_hash = levels.Hash();
+	rtex.snapped_levels_hash = levels.Hash() ^ (cover ? 0x5BD1E995u : 0u);
+	static u32 s_raised_count = 0;
+	if (raised && ++s_raised_count <= 100)
+		std::fprintf(stderr, "[pcsx2-gs] HD texture: %u texels made opaque where the game's texture is (%u so far)\n", raised, s_raised_count);
 	SetReplacementTextureAlphaMinMax(rtex);
 }
 
@@ -939,10 +959,14 @@ void GSTextureReplacements::ApplyOriginalAlpha(const TextureName& name, Replacem
 {
 	// with s_replacement_texture_cache_mutex held
 	const auto it = s_original_alpha.find(name);
-	if (it == s_original_alpha.end() || rtex.snapped_levels_hash == it->second.Hash())
+	if (it == s_original_alpha.end())
+		return;
+	const auto cit = s_original_cover.find(name);
+	const AlphaCover* cover = cit != s_original_cover.end() ? &cit->second : nullptr;
+	if (rtex.snapped_levels_hash == (it->second.Hash() ^ (cover ? 0x5BD1E995u : 0u)))
 		return;
 	const std::pair<u8, u8> before = rtex.alpha_minmax;
-	SnapAlpha(rtex, it->second);
+	SnapAlpha(rtex, it->second, cover);
 	static u32 s_count = 0;
 	if (++s_count <= 100)
 		std::fprintf(stderr, "[pcsx2-gs] HD texture %016llx-%016llx: alpha %u..%u snapped to the game's levels (now %u..%u; %u so far)\n",
@@ -950,7 +974,8 @@ void GSTextureReplacements::ApplyOriginalAlpha(const TextureName& name, Replacem
 			before.second, rtex.alpha_minmax.first, rtex.alpha_minmax.second, s_count);
 }
 
-void GSTextureReplacements::MatchOriginalAlpha(const GSTextureCache::HashCacheKey& hash, const u32* clut, u32 entries)
+void GSTextureReplacements::MatchOriginalAlpha(const GSTextureCache::HashCacheKey& hash, const u32* clut, u32 entries,
+	const u8* cover, u32 cover_w, u32 cover_h)
 {
 	static const bool enabled = [] { const char* v = std::getenv("PS2X_PCSX2_MATCH_ALPHA"); return !(v && v[0] == '0'); }();
 	if (!enabled || !clut || entries == 0)
@@ -971,6 +996,13 @@ void GSTextureReplacements::MatchOriginalAlpha(const GSTextureCache::HashCacheKe
 	}
 	std::unique_lock<std::mutex> lock(s_replacement_texture_cache_mutex);
 	s_original_alpha[name] = levels;
+	if (cover && cover_w && cover_h && s_original_cover.find(name) == s_original_cover.end())
+	{
+		AlphaCover& c = s_original_cover[name];
+		c.w = cover_w;
+		c.h = cover_h;
+		c.alpha.assign(cover, cover + static_cast<size_t>(cover_w) * cover_h);
+	}
 	const auto it = s_replacement_texture_cache.find(name);
 	if (it != s_replacement_texture_cache.end())
 		ApplyOriginalAlpha(name, it->second);

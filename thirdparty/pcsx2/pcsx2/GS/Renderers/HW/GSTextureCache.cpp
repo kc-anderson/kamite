@@ -7142,7 +7142,31 @@ GSTextureCache::HashCacheEntry* GSTextureCache::LookupHashCache(const GIFRegTEX0
 		{
 			const GSLocalMemory::psm_t& psm = GSLocalMemory::m_psm[TEX0.PSM];
 			if (psm.pal > 0)
-				GSTextureReplacements::MatchOriginalAlpha(key, clut, psm.pal);
+			{
+				// The game texture's own alpha per texel (expanded through its palette), for MatchOriginalAlpha's cover;
+				// only when this texture has a replacement (one read per texture: the cover is kept by name).
+				std::vector<u8> cover;
+				const int cw = region.HasX() ? region.GetWidth() : (1 << TEX0.TW);
+				const int ch = region.HasY() ? region.GetHeight() : (1 << TEX0.TH);
+				if (GSTextureReplacements::HasReplacementTexture(key) && cw > 0 && ch > 0 && cw <= 1024 && ch <= 1024)
+				{
+					const GSVector4i rect(region.GetRect(cw, ch));
+					const GSVector4i block_rect(rect.ralign<Align_Outside>(psm.bs));
+					const GSOffset off(g_gs_renderer->m_mem.GetOffset(TEX0.TBP0, TEX0.TBW, TEX0.PSM));
+					const u32 pitch = VectorAlign(static_cast<u32>(block_rect.width()) * sizeof(u32));
+					std::vector<u8> rgba(static_cast<size_t>(pitch) * static_cast<size_t>(block_rect.height()) + 64);
+					u8* buff = reinterpret_cast<u8*>((reinterpret_cast<uptr>(rgba.data()) + 63) & ~static_cast<uptr>(63));
+					psm.rtx(g_gs_renderer->m_mem, off, block_rect, buff, pitch, TEXA);
+					const u8* ptr = buff + pitch * static_cast<u32>(rect.top - block_rect.top) +
+					                (static_cast<u32>(rect.left - block_rect.left) << 2);
+					cover.resize(static_cast<size_t>(cw) * ch);
+					for (int y = 0; y < ch; y++)
+						for (int x = 0; x < cw; x++)
+							cover[static_cast<size_t>(y) * cw + x] = ptr[static_cast<size_t>(y) * pitch + static_cast<size_t>(x) * 4 + 3];
+				}
+				GSTextureReplacements::MatchOriginalAlpha(key, clut, psm.pal, cover.empty() ? nullptr : cover.data(),
+					static_cast<u32>(cw), static_cast<u32>(ch));
+			}
 		}
 
 		bool replacement_texture_pending = false;
