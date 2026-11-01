@@ -67,7 +67,7 @@ namespace pcsx2gs
 }
 
 // One record per draw: 'K','D', then the fields below, the vertices (GSVertex, 32 bytes each) and the u16 indices.
-void GSRendererHW::KamiteDumpDraw(GSTextureCache::Target* rt, GSTextureCache::Target* ds, GSTextureCache::Source* tex)
+void GSRendererHW::KamiteDumpDraw(GSTextureCache::Target* rt, GSTextureCache::Target* ds)
 {
 	std::FILE* f = pcsx2gs::g_drawDumpFile;
 	if (!f || pcsx2gs::g_drawDumpState.load(std::memory_order_relaxed) != 2)
@@ -135,61 +135,6 @@ void GSRendererHW::KamiteDumpDraw(GSTextureCache::Target* rt, GSTextureCache::Ta
 	{
 		pcsx2gs::s_ddRt = rt_tex;
 		pcsx2gs::s_ddDs = ds->m_texture;
-	}
-	// The game's full-screen passes (every draw after the scene): the target after each, at the PS2's resolution with
-	// its alpha, as _p<draw>_<fbp>_<psm>.png (at most 160), to compare pass by pass with PCSX2's own draw dumps (the
-	// flashback sepia's splotches, Nov 1).
-	static u32 s_post_saved = 0;
-	if (!pcsx2gs::s_ddSceneDone)
-		s_post_saved = 0;
-	else if (rt && rt_tex && s_post_saved < 160u && rt_tex->GetFormat() == GSTexture::Format::Color)
-	{
-		const GSVector2i us(std::max(1, rt->GetUnscaledWidth()), std::max(1, rt->GetUnscaledHeight()));
-		if (GSTexture* small = g_gs_device->CreateRenderTarget(us.x, us.y, GSTexture::Format::Color, false))
-		{
-			const float sx = std::min(1.0f, static_cast<float>(us.x) * rt->GetScale() / static_cast<float>(rt_tex->GetWidth()));
-			const float sy = std::min(1.0f, static_cast<float>(us.y) * rt->GetScale() / static_cast<float>(rt_tex->GetHeight()));
-			g_gs_device->StretchRect(rt_tex, GSVector4(0.0f, 0.0f, sx, sy), small,
-				GSVector4(0.0f, 0.0f, static_cast<float>(us.x), static_cast<float>(us.y)), ShaderConvert::COPY, Nearest);
-			char name[96];
-			std::snprintf(name, sizeof(name), "_p%05u_%04x_%02x.png", static_cast<u32>(s_n),
-				static_cast<u32>(m_cached_ctx.FRAME.Block()), static_cast<u32>(m_cached_ctx.FRAME.PSM));
-			const bool save_alpha = GSConfig.SaveAlpha;
-			GSConfig.SaveAlpha = true; // GSPng writes the alpha as its own picture too
-			small->Save(pcsx2gs::g_drawDumpBase + name);
-			GSConfig.SaveAlpha = save_alpha;
-			g_gs_device->Recycle(small);
-			s_post_saved++;
-		}
-		// What the renderer chose for the pass: the shader's shuffle / alpha-scale bits and where the texture came from.
-		if (std::FILE* txt = std::fopen((pcsx2gs::g_drawDumpBase + "_post.txt").c_str(), "a"))
-		{
-			const auto& ps = m_conf.ps;
-			std::fprintf(txt,
-				"n %u fbp %04x psm %02x fbmsk %08x | ps %016llx %016llx shuffle %u same %u real16 %u ba %u rg %u across %u write_rg %u fbmask %u "
-				"rta %u rta_src %u tfx %u tcc %u aem %u aem_fmt %u pal_fmt %u dst_fmt %u depth_fmt %u channel %u tex_is_fb %u colclip_hw %u "
-				"blend %u%u%u%u hw %u | TA %.4f %.4f FbMask %08x %08x %08x %08x wrgba %x | rt %04x psm %02x bw %u scale %u fmt %d",
-				static_cast<u32>(s_n), static_cast<u32>(m_cached_ctx.FRAME.Block()), static_cast<u32>(m_cached_ctx.FRAME.PSM),
-				static_cast<u32>(m_cached_ctx.FRAME.FBMSK), static_cast<unsigned long long>(ps.key_lo), static_cast<unsigned long long>(ps.key_hi),
-				ps.shuffle, ps.shuffle_same, ps.real16src, ps.process_ba, ps.process_rg, ps.shuffle_across, ps.write_rg, ps.fbmask,
-				ps.rta_correction, ps.rta_source_correction, ps.tfx, ps.tcc, ps.aem, ps.aem_fmt, ps.pal_fmt, ps.dst_fmt, ps.depth_fmt,
-				ps.channel, ps.tex_is_fb, ps.colclip_hw, ps.blend_a, ps.blend_b, ps.blend_c, ps.blend_d, ps.blend_hw,
-				m_conf.cb_ps.TA_MaxDepth_Af.x, m_conf.cb_ps.TA_MaxDepth_Af.y, m_conf.cb_ps.FbMask.x, m_conf.cb_ps.FbMask.y,
-				m_conf.cb_ps.FbMask.z, m_conf.cb_ps.FbMask.w, static_cast<u32>(m_conf.colormask.wrgba),
-				static_cast<u32>(rt->m_TEX0.TBP0), static_cast<u32>(rt->m_TEX0.PSM), static_cast<u32>(rt->m_TEX0.TBW),
-				rt->m_rt_alpha_scale ? 1u : 0u, static_cast<int>(rt_tex->GetFormat()));
-			if (tex)
-				std::fprintf(txt, " | tex %04x psm %02x bw %u target %u direct %u from %04x psm %02x bw %u scale %u palette %u fmt %d",
-					static_cast<u32>(tex->m_TEX0.TBP0), static_cast<u32>(tex->m_TEX0.PSM), static_cast<u32>(tex->m_TEX0.TBW),
-					tex->m_target ? 1u : 0u, tex->m_target_direct ? 1u : 0u,
-					tex->m_from_target ? static_cast<u32>(tex->m_from_target->m_TEX0.TBP0) : 0xFFFFu,
-					tex->m_from_target ? static_cast<u32>(tex->m_from_target->m_TEX0.PSM) : 0xFFu,
-					tex->m_from_target ? static_cast<u32>(tex->m_from_target->m_TEX0.TBW) : 0u,
-					(tex->m_from_target && tex->m_from_target->m_rt_alpha_scale) ? 1u : 0u, tex->m_palette ? 1u : 0u,
-					tex->m_texture ? static_cast<int>(tex->m_texture->GetFormat()) : -1);
-			std::fprintf(txt, "\n");
-			std::fclose(txt);
-		}
 	}
 }
 
@@ -3823,27 +3768,6 @@ void GSRendererHW::Draw()
 			// recompute it, and everything derived from it again if it changes.
 			// No channel shuffle as the alpha of a target used a source is meaningless to us,
 			// since it's not really an indexed texture.
-			// pcsx2gs (Kamite): every alpha-tested draw with a pack texture, once per texture (at most 400): its file
-			// name and alpha range against the test. A pack texture whose texels the game's test rejects draws colour
-			// without depth (AFAIL FB_ONLY) and vanishes under whatever is drawn after it (the Kick Me sign, Nov 1).
-			if (src->m_from_hash_cache && src->m_from_hash_cache->is_replacement && m_cached_ctx.TEST.ATE)
-			{
-				static std::unordered_set<const void*> s_km_seen;
-				if (s_km_seen.size() < 400 && s_km_seen.insert(src->m_from_hash_cache).second)
-				{
-					GSTextureCache::HashCacheKey key;
-					const bool named = g_texture_cache->KamiteKeyOf(src->m_from_hash_cache, key);
-					std::fprintf(stderr,
-						"[pcsx2-gs] alpha-tested HD texture %016llx-%016llx: psm %02x %ux%u tbp %04x, alpha %u..%u, test atst %u aref %02x afail %u, mmag %u mmin %u\n",
-						named ? static_cast<unsigned long long>(key.TEX0Hash) : 0ull,
-						named ? static_cast<unsigned long long>(key.CLUTHash) : 0ull, static_cast<unsigned>(m_cached_ctx.TEX0.PSM),
-						1u << static_cast<unsigned>(m_cached_ctx.TEX0.TW), 1u << static_cast<unsigned>(m_cached_ctx.TEX0.TH),
-						static_cast<unsigned>(m_cached_ctx.TEX0.TBP0), static_cast<unsigned>(src->m_from_hash_cache->alpha_minmax.first),
-						static_cast<unsigned>(src->m_from_hash_cache->alpha_minmax.second), static_cast<unsigned>(m_cached_ctx.TEST.ATST),
-						static_cast<unsigned>(m_cached_ctx.TEST.AREF), static_cast<unsigned>(m_cached_ctx.TEST.AFAIL),
-						static_cast<unsigned>(m_context->TEX1.MMAG), static_cast<unsigned>(m_context->TEX1.MMIN));
-				}
-			}
 			if (!IsPossibleChannelShuffle() && src->m_valid_alpha_minmax)
 			{
 				CalcAlphaMinMax(src->m_alpha_minmax.first, src->m_alpha_minmax.second);
@@ -10260,7 +10184,7 @@ __ri void GSRendererHW::DrawPrims(GSTextureCache::Target* rt, GSTextureCache::Ta
 	if (g_gs_device->Features().copyless_ds_as_rt && g_gs_device->IsDSAsRTActive())
 		g_gs_device->EndDSAsRT();
 
-	KamiteDumpDraw(rt, ds, tex); // pcsx2gs (Kamite): the Shift+F10 draw dump, when it is recording
+	KamiteDumpDraw(rt, ds); // pcsx2gs (Kamite): the Shift+F10 draw dump, when it is recording
 }
 
 // If the EE uploaded a new CLUT since the last draw, use that.
