@@ -2318,6 +2318,12 @@ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
 
                     int tagsProcessed = 0;
                     uint32_t lastTagUpper = (chcr >> 16) & 0xFFFFu;
+                    // A chain that comes back to a tag in the same walker state (address, call stack) loops forever:
+                    // the PS2's DMA would hang there. Brent's cycle check finds it exactly at no cost per tag; the
+                    // chain is then dropped instead of handing the GS a million laps of data (a crash in the GS).
+                    uint32_t loopTag = tagAddr, loopAsp = asp, loopAsr0 = asr0, loopAsr1 = asr1;
+                    int loopPower = 1, loopLength = 0;
+                    bool chainLooped = false;
 
                     while (tagsProcessed < kMaxChainTags)
                     {
@@ -2433,12 +2439,32 @@ bool PS2Memory::writeIORegister(uint32_t address, uint32_t value)
                             endChain = true;
                         if (endChain)
                             break;
+                        if (tagAddr == loopTag && asp == loopAsp && asr0 == loopAsr0 && asr1 == loopAsr1)
+                        {
+                            chainLooped = true;
+                            break;
+                        }
+                        if (++loopLength == loopPower)
+                        {
+                            loopTag = tagAddr;
+                            loopAsp = asp;
+                            loopAsr0 = asr0;
+                            loopAsr1 = asr1;
+                            loopPower <<= 1;
+                            loopLength = 0;
+                        }
                     }
 
-                    if (tagsProcessed >= kMaxChainTags)
+                    if (chainLooped || tagsProcessed >= kMaxChainTags)
                     {
-                        std::fprintf(stderr, "[dma] chain on 0x%08x stopped after %d tags at 0x%08x\n", channelBase, tagsProcessed, tagAddr);
-                        std::fflush(stderr);
+                        static std::atomic<int> s_droppedChains{0};
+                        if (s_droppedChains.fetch_add(1) < 8)
+                        {
+                            std::fprintf(stderr, "[dma] chain on 0x%08x %s after %d tags at 0x%08x: dropped\n", channelBase,
+                                         chainLooped ? "loops back on itself" : "has no end", tagsProcessed, tagAddr);
+                            std::fflush(stderr);
+                        }
+                        chainBuf.clear();
                     }
                     m_ioRegisters[channelBase + 0x30] = tagAddr;
                     m_ioRegisters[channelBase + 0x40] = asr0;
