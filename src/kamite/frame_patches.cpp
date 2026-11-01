@@ -524,10 +524,9 @@ namespace kamite
             runtime->eeScheduler().endHostCall();
             *ctx = saved;
         }
-        // The held vblank is the second half of the 30 FPS frame in which the old step ran its last frame: the old
-        // motion goes on as that step moved it (moveMotion 0x157C18, cObjBase_addNullSpeed_Rotation 0x14F9F0 and
-        // cObjBase_addNullSpeed 0x14F928 at 1.0, as the walking and idle steps do every frame), unless the change set
-        // a new motion already. Without it each change lost half a 30 FPS frame of root motion (66sec case: the grab
+        // The held vblank is the second half of the 30 FPS frame in which the old step ran its last frame: the current
+        // motion (the old one, or the one the change set) goes on (moveMotion 0x157C18, cObjBase_addNullSpeed_Rotation
+        // 0x14F9F0 and cObjBase_addNullSpeed 0x14F928 at 1.0, as the walking and idle steps do every frame). Without it each change lost half a 30 FPS frame of root motion (66sec case: the grab
         // lunge ended 0.1 m short, the grab put Gene 0.19 m off, and the other goon chose otherwise from there).
         // The same hold on the hit reactions' dispatchers (Nov 1; the juggle case: the launch ran a vblank ahead of
         // the 30 FPS run): mode 1 func_0024C0F0 (jalr a2 at 0x24C370: 0x24C368 / 0x24C36C) and mode 2 func_0025E600
@@ -566,16 +565,16 @@ namespace kamite
             const uint32_t counter = gameFrames(rdram);
             EnemyStep &last = g_enemyStep[obj];
             const bool changed = last.counter + 1u == counter && last.state != state;
-            const bool sameMotion = last.motion == motion;
             last = EnemyStep{state, counter, motion};
             if (changed && thinkSkipped(rdram))
             {
-                if (sameMotion)
-                {
-                    callGuest(rdram, ctx, runtime, 0x157C18u, obj, 0.0f);
-                    callGuest(rdram, ctx, runtime, 0x14F9F0u, obj, 1.0f);
-                    callGuest(rdram, ctx, runtime, 0x14F928u, obj, 1.0f);
-                }
+                // Also when the change set a new motion (Nov 1): at 30 the frame that sets a motion steps it a whole
+                // frame (set before moveMotion), so the held half steps it too; skipping it started every such motion
+                // half a frame behind (Gene and enemies, all cases; the case csv's mframe is +0x41C, copied by
+                // Motion_seq_ctr before the step, so it shows each vblank's step one row later).
+                callGuest(rdram, ctx, runtime, 0x157C18u, obj, 0.0f);
+                callGuest(rdram, ctx, runtime, 0x14F9F0u, obj, 1.0f);
+                callGuest(rdram, ctx, runtime, 0x14F928u, obj, 1.0f);
                 SET_GPR_U32(ctx, FnReg, 0x100318u);
                 if (CarryPress && g_slowRateAt + 1u == counter && g_slowRateManager != 0u)
                     callGuest(rdram, ctx, runtime, 0x292F38u, g_slowRateManager, g_slowRateValue);
