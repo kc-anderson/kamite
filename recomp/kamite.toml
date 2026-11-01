@@ -836,6 +836,18 @@ flag = "test_cases"
 address = "0x0030F16C"
 hook = "km_fps60_rand_object_end"
 flag = "test_cases"
+# moveMotion at 60 (family 5b, Nov 1, Shockwave): speed keys looked up once per 30 FPS frame, and the PS2's integer
+# snap after a 1.0 step done on the second half of a 0.5-step frame (frame_patches.cpp motionSpeedHold / motionSnap).
+[[patches.hooks]]
+address = "0x00157C70"
+hook = "km_fps60_motion_speed_hold"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x00157F48"
+hook = "km_fps60_motion_snap"
+replace = true
+flag = "fps60"
 [[patches.hooks]] # cEmManage_SetSpeedRate: the enemies' slow-motion rate (manager +0x548), half at 60 (enemySlowRate)
 address = "0x00292F38"
 hook = "km_fps60_enemy_slow_rate"

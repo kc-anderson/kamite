@@ -540,6 +540,12 @@ namespace kamite
         // func_00123938 from 62 states, the mash states), which exists on one vblank only, so a press on a held vblank
         // is carried into the next one instead of being lost.
         uint32_t g_genePressCarry = 0, g_genePressAt = 0;
+        // Gene's slow-motion states call cEmManage_SetSpeedRate every frame (the roulette moves 0.1 / 0.05, the dodge's
+        // slow-mo; the manager's +0x548 and the effect / object rates fall back to normal every frame). The held vblank
+        // skips his handler, so the world ran one vblank at full speed after each such state change (Nov 1, case
+        // shockwave30: the enemies' rate 0.05, 0.5, 0.05 as Shockwave began). The hold repeats the last call.
+        uint32_t g_slowRateAt = 0, g_slowRateManager = 0;
+        float g_slowRateValue = 1.0f;
         template <int ObjReg, int FnReg = 6, bool CarryPress = false>
         void enemyStepHold(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
@@ -571,6 +577,8 @@ namespace kamite
                     callGuest(rdram, ctx, runtime, 0x14F928u, obj, 1.0f);
                 }
                 SET_GPR_U32(ctx, FnReg, 0x100318u);
+                if (CarryPress && g_slowRateAt + 1u == counter && g_slowRateManager != 0u)
+                    callGuest(rdram, ctx, runtime, 0x292F38u, g_slowRateManager, g_slowRateValue);
                 if (CarryPress)
                 {
                     std::memcpy(&g_genePressCarry, &ram8(rdram, pressedAt), sizeof(g_genePressCarry));
@@ -580,6 +588,63 @@ namespace kamite
             if ((counter & 0x3FFu) == 0u)
                 for (auto it = g_enemyStep.begin(); it != g_enemyStep.end();)
                     it = counter - it->second.counter > 2u ? g_enemyStep.erase(it) : std::next(it);
+        }
+
+        // moveMotion (0x157C18), the game's own 60 Hz code, at 60 (family 5b, Nov 1; case shockwave30: Shockwave's slow
+        // window ended 2 frames early, the enemies' long motions 2-3 frames short in every Shockwave case).
+        // 1. Speed keys: func_2C7FD0 sets +0x440 = 1.0 or the speed of the motion's key span holding frame +0x430 (u16
+        //    start, u16 end, float speed; 0x2C8080..0x2C8110), before every step. At 30 a frame steps at the speed
+        //    looked up at its start; at 60 a span entered on the first half took over on the second (Gene's E3D8A0:
+        //    13.999 + 0.1 = 14.099, then 1.0 from 14.099 where the PS2 still stepped 0.2 to 14.199). The second half
+        //    keeps the first half's speed (same object, same motion). Replaces lui v0,0x74 after the call (0x157C70).
+        // 2. The snap: a step of exactly 1.0 truncates the frame to a whole number (0x157F4C c.eq.s f21, 1.0, then
+        //    trunc(frame + 0.0001)), so at 30 every normal-speed frame wipes the fraction a slow or fast span left. At
+        //    60 the step is 0.5 and the fraction lived on: motions ran up to a frame ahead after every speed span or
+        //    slow motion (Gene and enemies). Now the second half of a 30 FPS frame stepping 0.5 snaps, the first half
+        //    never does, and a 1.0 step (speed 2 at 60) doesn't. Replaces add.s f2,f0,f21 at 0x157F48 (f1 is 1.0 there).
+        //    For k: snap on the k-th sub-step when the step is 1/k; hold the speed over the k-1 sub-steps after the tick.
+        struct MotionSpeed
+        {
+            uint32_t counter;
+            uint32_t motion;
+            float speed;
+        };
+        std::unordered_map<uint32_t, MotionSpeed> g_motionSpeed;
+        // moveMotion's own test for its 60 Hz mode (GameWork +0x569 == 1: the advance is halved); cutscenes run at 30.
+        bool motion60(uint8_t *rdram) { return ram8(rdram, 0x7474A0u + 0x569u) == 1u; }
+        void motionSpeedHold(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            SET_GPR_U32(ctx, 2, 0x740000u);
+            const uint32_t obj = GPR_U32(ctx, 17);
+            if (obj < 0x100000u || obj >= 0x2000000u - 0x500u || !motion60(rdram))
+                return;
+            uint32_t motion = 0;
+            std::memcpy(&motion, &ram8(rdram, obj + 0x428u), sizeof(motion));
+            const uint32_t counter = gameFrames(rdram);
+            auto it = g_motionSpeed.find(obj);
+            if (thinkSkipped(rdram) && it != g_motionSpeed.end() && it->second.counter + 1u == counter &&
+                it->second.motion == motion)
+            {
+                setRamF32(rdram, obj + 0x440u, it->second.speed);
+                return;
+            }
+            float speed = 1.0f;
+            std::memcpy(&speed, &ram8(rdram, obj + 0x440u), sizeof(speed));
+            g_motionSpeed[obj] = MotionSpeed{counter, motion, speed};
+            if ((counter & 0x3FFu) == 0u)
+                for (auto e = g_motionSpeed.begin(); e != g_motionSpeed.end();)
+                    e = counter - e->second.counter > 2u ? g_motionSpeed.erase(e) : std::next(e);
+        }
+        void motionSnap(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const float step = ctx->f[21];
+            ctx->f[2] = ctx->f[0] + step;
+            if (!motion60(rdram))
+                return;
+            if (step == 0.5f && thinkSkipped(rdram))
+                ctx->f[1] = step; // c.eq.s f21, f1: snap
+            else if (step == 1.0f)
+                ctx->f[1] = -1.0f; // a 2.0 step at 30: no snap
         }
 
         // The launched enemy's flight (mode 1 phase 9 step 1, func_002557F8 0x255AEC / 0x255AF8): y += vy, vy -= 0.026
@@ -1196,6 +1261,13 @@ namespace kamite
         // at both rates). Replaces the swc1: half at 60. The effect and object rates it also sets stay 1.0-based.
         void enemySlowRate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
+            const uint32_t caller = GPR_U32(ctx, 31);
+            if (caller >= 0x108000u && caller < 0x128000u) // Gene's states (pl00)
+            {
+                g_slowRateAt = gameFrames(rdram);
+                g_slowRateManager = GPR_U32(ctx, 4);
+                g_slowRateValue = ctx->f[12];
+            }
             const float value = ctx->f[12] * 0.5f;
             std::memcpy(&ram8(rdram, GPR_U32(ctx, 4) + 0x548u), &value, sizeof(value));
         }
@@ -1393,6 +1465,8 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_enemy_step_hold", &enemyStepHold<17>);
         ps2xRegisterHostHook("km_fps60_enemy_step_hold_s0", &enemyStepHold<16>);
         ps2xRegisterHostHook("km_fps60_gene_step_hold", &enemyStepHold<6, 7, true>);
+        ps2xRegisterHostHook("km_fps60_motion_speed_hold", &motionSpeedHold);
+        ps2xRegisterHostHook("km_fps60_motion_snap", &motionSnap);
         ps2xRegisterHostHook("km_fps60_tgt_turn_rate", &tgtTurnRate);
         ps2xRegisterHostHook("km_fps60_launch_rise", &launchRise);
         ps2xRegisterHostHook("km_fps60_launch_fall", &launchFall);
