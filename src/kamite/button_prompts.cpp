@@ -255,9 +255,15 @@ namespace kamite::button_prompts
         }
 
         // Gives a sheet's CLUT its art set's mark (see the builder): an entry with alpha 0 that no texel of the sheet
-        // uses (else the first with alpha 0) gets 0xA0 + the set's number in its red. Nothing shows it.
-        void markClut(const uint8_t *payload, uint8_t *clut, uint8_t mark)
+        // uses (else the first with alpha 0) gets 0xA0 + the set's number in its red and `variant` in its green and
+        // blue. Nothing shows it.
+        void markClut(const uint8_t *payload, uint8_t *clut, uint8_t mark, uint16_t variant)
         {
+            const auto put = [&](uint8_t *e) {
+                e[0] = static_cast<uint8_t>(0xA0u | mark);
+                e[1] = static_cast<uint8_t>(variant & 0xFFu);
+                e[2] = static_cast<uint8_t>(variant >> 8);
+            };
             std::vector<uint8_t> indices(static_cast<size_t>(sheets::kSheetSize) * sheets::kSheetSize);
             sheets::unswizzle(payload, indices.data());
             std::array<bool, 256> used{};
@@ -272,14 +278,28 @@ namespace kamite::button_prompts
                     continue;
                 if (!used[static_cast<size_t>(k)])
                 {
-                    e[0] = static_cast<uint8_t>(0xA0u | mark);
+                    put(e);
                     return;
                 }
                 if (!first)
                     first = e;
             }
             if (first)
-                first[0] = static_cast<uint8_t>(0xA0u | mark);
+                put(first);
+        }
+
+        // The labels' hash for markClut (16 bits: the sheets' names differ per binding).
+        uint16_t labelsHash(const sheets::PromptLabels &labels)
+        {
+            std::string all;
+            for (const std::string &l : labels.icon)
+                all += l + '\x1F';
+            for (const std::string &l : labels.leftStick)
+                all += l + '\x1F';
+            for (const std::string &l : labels.rightStick)
+                all += l + '\x1F';
+            const uint64_t h = fnv1a64(reinterpret_cast<const uint8_t *>(all.data()), all.size());
+            return static_cast<uint16_t>(h ^ (h >> 16) ^ (h >> 32) ^ (h >> 48));
         }
 
         // ---- builder thread ----
@@ -321,20 +341,6 @@ namespace kamite::button_prompts
             put(sheets::R3, bindings::R3);
             put(sheets::Start, bindings::Start);
             put(sheets::Select, bindings::Select);
-            // A controller's A/B/X/Y in an Xbox pad's colours (the PS2 art is coloured symbols on grey caps; white
-            // letters read as a Switch pad). Keys stay white.
-            if (pad)
-            {
-                for (const sheets::Icon icon : {sheets::Circle, sheets::Triangle, sheets::Square, sheets::Cross})
-                {
-                    const std::string &l = labels.icon[icon];
-                    labels.tint[icon] = l == "A"   ? sheets::Tint::Green
-                                        : l == "B" ? sheets::Tint::Red
-                                        : l == "X" ? sheets::Tint::Blue
-                                        : l == "Y" ? sheets::Tint::Yellow
-                                                   : sheets::Tint::White;
-                }
-            }
             // Sticks: on keys an inverted T of the four direction keys (Up Right Down Left); a controller's stick keeps
             // the original stick art (all four empty).
             if (!pad)
@@ -461,43 +467,21 @@ namespace kamite::button_prompts
                 const bool playStation = set == prompt_hd::Set::PlayStation;
                 const sheets::PromptLabels labels = labelsFor(bindings::snapshot(), device);
                 std::string summary = std::string(prompt_hd::setName(set)) + " prompts";
-                if (playStation)
+                // Every set starts from the disc's art. PlayStation keeps it; the others get full-resolution images
+                // (prompt_hd) of the pack's buttons over it, under the sheets' own texture names. The CLUT's mark makes the
+                // names: the set, and a hash of the labels (a rebinding gets new images), so a texture pack's image for
+                // the original sheets (often Xbox buttons) never applies over them.
+                for (int i = 0; i < kSheetCount; ++i)
                 {
-                    // The disc's art, with the set's mark in the CLUT (a texture pack's image for the original sheets,
-                    // often Xbox buttons, must not apply over it).
-                    for (int i = 0; i < kSheetCount; ++i)
-                    {
-                        images->payload[i] = g_origPayload[i];
-                        images->clut[i] = g_origClut[i];
-                        images->patched[i] = true;
-                    }
+                    images->payload[i] = g_origPayload[i];
+                    images->clut[i] = g_origClut[i];
+                    images->patched[i] = true;
                 }
-                else
-                {
-                    // The PS2-resolution drawing (what shows with replacements off), Nintendo's letters on a Switch pad.
-                    sheets::PromptLabels drawn = labels;
-                    if (set == prompt_hd::Set::Switch)
-                    {
-                        for (const sheets::Icon icon : {sheets::Circle, sheets::Triangle, sheets::Square, sheets::Cross})
-                        {
-                            std::string &l = drawn.icon[icon];
-                            l = l == "A" ? "B" : l == "B" ? "A" : l == "X" ? "Y" : l == "Y" ? "X" : l;
-                            drawn.tint[icon] = sheets::Tint::White;
-                        }
-                    }
-                    images->patched[0] = sheets::buildIconSheet(g_origPayload[0].data(), g_origClut[0].data(), drawn, images->payload[0].data(),
-                                                                images->clut[0].data());
-                    images->patched[1] = sheets::buildActionSheet(g_origPayload[1].data(), g_origClut[1].data(), drawn, images->payload[1].data(),
-                                                                  images->clut[1].data());
+                if (!playStation)
                     summary += std::string(device == bindings::Device::Controller ? " (controller" : " (keys") + ": circle " +
                                labels.icon[sheets::Circle] + ", triangle " + labels.icon[sheets::Triangle] + ", square " +
                                labels.icon[sheets::Square] + ", cross " + labels.icon[sheets::Cross] + ", start " +
-                               labels.icon[sheets::Start] + ")" + (images->patched[0] ? "" : " (text icons kept: build failed)") +
-                               (images->patched[1] ? "" : " (action prompt kept: build failed)");
-                    for (int i = 0; i < kSheetCount; ++i)
-                        if (!images->patched[i])
-                            images->clut[i] = g_origClut[i];
-                }
+                               labels.icon[sheets::Start] + ")";
                 // The style list's arrows in the icon sheet's empty cells (every set, PlayStation's too).
                 if (images->patched[0] && !sheets::addStyleArrows(images->payload[0].data(), images->clut[0].data()))
                     summary += " (style arrows not added: the icon sheet's empty cells are not empty)";
@@ -508,7 +492,8 @@ namespace kamite::button_prompts
                 {
                     if (!images->patched[i])
                         continue;
-                    markClut(images->payload[i].data(), images->clut[i].data(), static_cast<uint8_t>(static_cast<int>(set) + 1));
+                    markClut(images->payload[i].data(), images->clut[i].data(), static_cast<uint8_t>(static_cast<int>(set) + 1),
+                             playStation ? 0u : labelsHash(labels));
                     if (playStation || !hd_textures::enabled())
                         continue;
                     const std::string name = hd_textures::name8(images->payload[i].data(), 64, 64, images->clut[i].data(),
@@ -526,6 +511,8 @@ namespace kamite::button_prompts
                     GSPcsx2Backend::SetOption("texture_add", std::string(native.begin(), native.end()).c_str());
                     added = true;
                 }
+                if (!playStation && !added)
+                    summary += " (no full-resolution images: the disc's art shows)";
                 if (added)
                 {
                     summary += ", full resolution";

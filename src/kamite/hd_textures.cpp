@@ -77,12 +77,10 @@ namespace kamite::hd_textures
     void install(const fs::path &exeDir)
     {
         g_exeDir = exeDir;
+        // The port's own images (the button prompts) are always used; "Use replacement textures" off only leaves the
+        // texture pack out (K, Nov 1: the prompts the port drew at the PS2's resolution are gone).
         const char *textures = std::getenv("PS2X_PCSX2_TEXTURES");
-        if (textures && *textures == '0')
-        {
-            KM_INFO(Boot, "hd textures: texture replacements are off; the port's changed textures draw at the PS2's resolution");
-            return;
-        }
+        const bool packOn = !(textures && *textures == '0');
         std::error_code ec;
         g_generated = exeDir / "cache" / "hd-textures";
         fs::create_directories(g_generated, ec);
@@ -102,7 +100,7 @@ namespace kamite::hd_textures
         setEnv("PS2X_PCSX2_TEXTURE_EXTRA", folders);
 
         const char *dir = std::getenv("PS2X_PCSX2_TEXTURE_DIR");
-        const fs::path pack = dir && *dir ? fs::path(reinterpret_cast<const char8_t *>(dir)) / "replacements" : fs::path();
+        const fs::path pack = packOn && dir && *dir ? fs::path(reinterpret_cast<const char8_t *>(dir)) / "replacements" : fs::path();
         size_t files = 0;
         if (!pack.empty() && fs::is_directory(pack, ec))
         {
@@ -118,7 +116,7 @@ namespace kamite::hd_textures
                 ++files;
             }
         }
-        KM_INFO(Boot, "hd textures: " << files << " images in the texture pack" << (files ? "" : " (none: no pack set or found)")
+        KM_INFO(Boot, "hd textures: " << files << " images in the texture pack" << (files ? "" : packOn ? " (none: no pack set or found)" : " (replacement textures off)")
                                       << "; the port's own in " << utf8(g_generated));
     }
 

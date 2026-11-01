@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 1, 2026
 
+- Button prompts: the prompt pack's buttons always show, also with replacement textures off; the port's own drawn letters are gone.
 - NPC poses: hands hold still on the counter (counter idle and counter tease; "Hands: pinned" in F2 > NPCs > Pose NPC, 0% = as before).
 
 ## November 1, 2026

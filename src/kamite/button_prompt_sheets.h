@@ -1,12 +1,9 @@
 #pragma once
 
-// The game's button-prompt sheets redrawn with the player's PC bindings (port_prep/prompts/DESIGN_2026-10-18.md,
-// option A: patch the sheets where they sit in guest RAM; the game re-sends them from EE RAM on every draw).
-//
-// Pure functions: given a sheet's original 16 KB payload and its 1 KB CLUT (both read from guest RAM) and the labels,
-// they write the patched payload. No runtime state, no guest RAM access, and the CLUT is never changed: every new
-// texel is the nearest palette entry (premultiplied RGBA) among the entries the original cell already uses, plus
-// index 0 (transparent), plus (icon sheet) the sheet's own white lettering ramp.
+// The game's button-prompt sheets: where they are and their layout. The port no longer redraws them (K, Nov 1): the
+// disc's art stays in guest RAM under a marked CLUT, and prompt_hd draws the prompt pack's buttons over it as
+// full-resolution replacement images (button_prompts.cpp). Here: the sheet facts, the payload <-> index helpers and
+// the Techniques style list's arrows (drawn into the icon sheet's two empty cells).
 //
 // Both sheets are 128x128 PSMT8 with TBW 2 (TEX0 0x20000001DD308000), stored pre-swizzled as the CT32 64x64 (DBW 1)
 // image the game uploads, so texel (x, y) lives at payload byte inv32[addrPSMT8(0, 2, x, y) >> 2] * 4 + (addr & 3),
@@ -62,45 +59,16 @@ namespace kamite::prompt_sheets
         IconCount
     };
 
-    // The colour of a cell's label. White: the port's key caps. The others: an Xbox pad's lettering (A green, B red,
-    // X blue, Y yellow), drawn from the sheet's own colour ramps (the red circle's, the green triangle's, the blue
-    // cross's, and the pink square's ramp recoloured to yellow in the CLUT: nothing else uses it).
-    enum class Tint : uint8_t
-    {
-        White,
-        Red,
-        Green,
-        Blue,
-        Yellow
-    };
-
     struct PromptLabels
     {
         // What each icon cell shows: prompt_art::Label::compact of the bound key or button ("F", "Spc", "Ctrl", "LB").
         // Empty = keep the original art of that cell. LeftStick/RightStick are not used here (see the sticks below).
         std::string icon[IconCount];
-        Tint tint[IconCount] = {};
         // The stick cells: the four directions as an inverted T, in controls.ini's LUp LRight LDown LLeft order
         // (keyboard: W D S A). All four empty = keep the original stick art (right for a controller's stick).
         std::string leftStick[4];
         std::string rightStick[4];
     };
-
-    // Texture 0x18. icon[0..13] go to their cells: the PS2 symbol, L1/R1/L2/R2/L3/R3 letters or START/SELECT word is
-    // replaced by the label on the cell's own key cap (the circle or rounded-rectangle rim is kept; START/SELECT get
-    // the R1 cap). origPayload must be the unpatched sheet (the hook keeps its own copy of it). False (outPayload
-    // untouched) when an argument is null, the payload does not look like the sheet, or a label could not be drawn.
-    // outPayload may equal origPayload. outClut (1 KB) gets the CLUT to use with it: the original, with the pink ramp
-    // turned yellow when a label asks for yellow. Takes a few milliseconds (GDI): build on a worker thread.
-    bool buildIconSheet(const uint8_t *origPayload, const uint8_t *clut, const PromptLabels &labels, uint8_t *outPayload,
-                        uint8_t *outClut);
-
-    // Texture 0x0F. Its bottom row holds the four outline shapes the action prompt puts on its grey button
-    // (func_001F7680 kinds 0-3); each is replaced by icon[Circle/Triangle/Square/Cross] drawn in that shape's own
-    // colour, so the red circle becomes a red "F". Same contract as buildIconSheet.
-    bool buildActionSheet(const uint8_t *origPayload, const uint8_t *clut, const PromptLabels &labels, uint8_t *outPayload,
-                          uint8_t *outClut);
-
 
     // Sheet <-> 128x128 palette indices (row-major), and the CLUT as 256 RGBA entries in index order (alpha as
     // stored, 0x80 = opaque). For the hook's checks and offline tools.
