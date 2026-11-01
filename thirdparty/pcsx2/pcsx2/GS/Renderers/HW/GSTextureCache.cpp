@@ -1739,8 +1739,18 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 
 					// Situations where font has been uploaded to the alpha channel and they use a different buffer width, this can't currently be translated correctly.
 					const GSLocalMemory::psm_t req_psm = GSLocalMemory::m_psm[psm];
+					// pcsx2gs (Kamite): not applied (upstream 73d21a3, after PCSX2 v2.8.2). God Hand's sepia flashbacks copy the
+					// frame's green into the alpha of TBP 0x2800 (a CT16 shuffle at width 8, over the 256-wide depth-of-field
+					// target there) and read it back as 8H at width 8 through the sepia palette. The check refused that
+					// target, so the index came from stale GS memory: dark splotches. v2.8.2 renders it clean.
 					if (!possible_shuffle && req_psm.trbpp <= 8 && req_psm.bpp == 32 && t->m_TEX0.TBW != bw && static_cast<int>(bw * 64) != t->m_valid.z && r.w > req_psm.pgs.y)
-						match = false;
+					{
+						static u32 s_km_kept = 0;
+						if (s_km_kept++ < 8)
+							std::fprintf(stderr, "[pcsx2-gs] 8H/8-bit alpha read kept on its target: tex %04x bw %u psm %02x, target %04x bw %u psm %02x valid %d,%d,%d,%d\n",
+								bp, bw, psm, t->m_TEX0.TBP0, static_cast<u32>(t->m_TEX0.TBW), static_cast<u32>(t->m_TEX0.PSM),
+								t->m_valid.x, t->m_valid.y, t->m_valid.z, t->m_valid.w);
+					}
 
 					// Different swizzle, different width, and dirty, so probably not what we want.
 					//	DevCon.Warning("Expected %x Got %x shuffle %d draw %d", psm, t_psm, possible_shuffle, GSState::s_n);
