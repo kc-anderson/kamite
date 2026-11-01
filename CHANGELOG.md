@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## November 1, 2026
 
+- 60 FPS: Gene and enemies act on their animations' cues (Shockwave's slow motion, attack and cancel windows) on the same frame as on the PS2 instead of half a frame early.
+- 60 FPS: slow motion started by Gene reaches the enemies on the same frame as on the PS2.
 - Test cases: a case recorded at 30 FPS hands the 60 FPS replay each frame's pad read on both halves of that frame (the first half got the previous frame's).
 - 60 FPS: animations keep the PS2's frame timing after speed changes and slow motion, and new animations no longer start half a frame late.
 - 60 FPS: slow-motion moves (Shockwave and other roulette moves) no longer let the world run at full speed for a frame as they start.

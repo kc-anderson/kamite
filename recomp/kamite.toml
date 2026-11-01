@@ -848,6 +848,23 @@ address = "0x00157F48"
 hook = "km_fps60_motion_snap"
 replace = true
 flag = "fps60"
+# The seq words (+0x3AC level, +0x3A0/2/4 events) a frame later on the second half (family 15, Nov 1, shockwave30):
+# their values before Motion_seq_ctr (frame_patches.cpp seqBefore; after the call: motionSpeedHold, frameStart).
+[[patches.hooks]]
+address = "0x00157C64"
+hook = "km_fps60_seq_before"
+flag = "fps60"
+# cEmManage's update hands the enemies the tick's rate on the second half and keeps +0x548 (managerRateRead / Reset).
+[[patches.hooks]]
+address = "0x00290578"
+hook = "km_fps60_em_rate_read"
+replace = true
+flag = "fps60"
+[[patches.hooks]] # in jal func_291D48's delay slot
+address = "0x002905AC"
+hook = "km_fps60_em_rate_reset"
+replace = true
+flag = "fps60"
 [[patches.hooks]] # cEmManage_SetSpeedRate: the enemies' slow-motion rate (manager +0x548), half at 60 (enemySlowRate)
 address = "0x00292F38"
 hook = "km_fps60_enemy_slow_rate"

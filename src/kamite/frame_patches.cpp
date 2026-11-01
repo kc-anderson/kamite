@@ -611,12 +611,133 @@ namespace kamite
         std::unordered_map<uint32_t, MotionSpeed> g_motionSpeed;
         // moveMotion's own test for its 60 Hz mode (GameWork +0x569 == 1: the advance is halved); cutscenes run at 30.
         bool motion60(uint8_t *rdram) { return ram8(rdram, 0x7474A0u + 0x569u) == 1u; }
+
+        // The motion's seq words seen a frame later (family 15, Nov 1; case shockwave30: Gene's Shockwave slowed the
+        // world 1-2 vblanks early, so the whole slow window and every enemy motion in it ran early). Motion_seq_ctr
+        // (0x2C7FD0, the top of moveMotion) rewrites +0x3AC (the seq level: bits of the key spans holding the frame;
+        // 869 reads in 255 functions, 79 of Gene's states, 164 enemy functions) and the one-shot events +0x3A0 /
+        // +0x3A2 / +0x3A4 every call. Handlers mostly read them before their moveMotion, i.e. what the previous frame's
+        // step left: at 30 a span entered on frame k is acted on at frame k + 1. At 60 the tick's step sets it and the
+        // second half's handler acted on it, half a frame early (Shockwave: +0x3AC & 0x100 -> SetSpeedRate 0.03 at
+        // 0x114788). Now the second half sees the words as the tick's handler saw them (the tick's moveMotion changes
+        // undone at its start, frameStart), and the next tick sees what the tick's step left (the second half's
+        // moveMotion changes undone: a span ending on the tick's frame still shows, as at 30). Code after moveMotion
+        // in the same frame sees the fresh words, as at 30. For k: undo on the k-1 frames after the tick, restore at the
+        // next tick.
+        struct SeqWords
+        {
+            uint16_t w[4] = {}; // +0x3AC, +0x3A0, +0x3A2, +0x3A4
+            bool operator==(const SeqWords &o) const { return std::memcmp(w, o.w, sizeof(w)) == 0; }
+        };
+        constexpr uint32_t kSeqAt[4] = {0x3ACu, 0x3A0u, 0x3A2u, 0x3A4u};
+        SeqWords readSeq(uint8_t *rdram, uint32_t obj)
+        {
+            SeqWords s;
+            for (int i = 0; i < 4; ++i)
+                std::memcpy(&s.w[i], &ram8(rdram, obj + kSeqAt[i]), sizeof(uint16_t));
+            return s;
+        }
+        void writeSeq(uint8_t *rdram, uint32_t obj, const SeqWords &s)
+        {
+            for (int i = 0; i < 4; ++i)
+                std::memcpy(&ram8(rdram, obj + kSeqAt[i]), &s.w[i], sizeof(uint16_t));
+        }
+        struct SeqTick
+        {
+            uint32_t counter = 0, motion = 0;
+            SeqWords pre, post, post2; // before / after the tick's moveMotion; after the second half's
+            bool hidden = false, stepped2 = false;
+        };
+        std::unordered_map<uint32_t, SeqTick> g_seqTick;
+        uint32_t g_seqPreObj = 0;
+        SeqWords g_seqPre;
+        // 0x157C64 lw a1,0x42C(s1), before moveMotion's Motion_seq_ctr call (s1 = the object).
+        void seqBefore(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t obj = GPR_U32(ctx, 17);
+            if (obj < 0x100000u || obj >= 0x2000000u - 0x500u)
+                return;
+            g_seqPreObj = obj;
+            g_seqPre = readSeq(rdram, obj);
+        }
+        // After the call (motionSpeedHold).
+        void seqAfter(uint8_t *rdram, uint32_t obj)
+        {
+            if (g_seqPreObj != obj)
+                return;
+            g_seqPreObj = 0;
+            const uint32_t counter = gameFrames(rdram);
+            uint32_t motion = 0;
+            std::memcpy(&motion, &ram8(rdram, obj + 0x428u), sizeof(motion));
+            const SeqWords now = readSeq(rdram, obj);
+            if (!thinkSkipped(rdram))
+            {
+                SeqTick &t = g_seqTick[obj];
+                if (t.counter != counter || t.motion != motion) // the tick's first step of this motion
+                    t = SeqTick{counter, motion, g_seqPre, now, now, false, false};
+                else
+                    t.post = now;
+                if (t.pre == t.post)
+                    g_seqTick.erase(obj);
+                return;
+            }
+            auto it = g_seqTick.find(obj);
+            if (it != g_seqTick.end() && it->second.counter + 1u == counter && it->second.motion == motion)
+            {
+                it->second.post2 = now;
+                it->second.stepped2 = true;
+            }
+        }
+        // frameStart, before the game counts the frame up (the frame about to run sees counter + 1).
+        void seqFrameStart(uint8_t *rdram)
+        {
+            if (g_seqTick.empty())
+                return;
+            const uint32_t next = gameFrames(rdram) + 1u;
+            const bool second = ((next - g_counterBase) & 1u) != 0u;
+            for (auto it = g_seqTick.begin(); it != g_seqTick.end();)
+            {
+                const uint32_t obj = it->first;
+                SeqTick &t = it->second;
+                uint32_t motion = 0;
+                std::memcpy(&motion, &ram8(rdram, obj + 0x428u), sizeof(motion));
+                SeqWords cur = readSeq(rdram, obj);
+                // +0x3AC: flip back the bits a moveMotion changed, when the handler has not touched them since (it may
+                // set its own latch bits after the step, e.g. 0x800 at 0x1149C4: kept). Events: put back when untouched.
+                const auto undo = [&](const SeqWords &from, const SeqWords &to, bool keepNewerEvents) {
+                    const uint16_t d = static_cast<uint16_t>(from.w[0] ^ to.w[0]);
+                    if ((cur.w[0] & d) == (from.w[0] & d))
+                        cur.w[0] = static_cast<uint16_t>(cur.w[0] ^ d);
+                    for (int i = 1; i < 4; ++i)
+                        if (cur.w[i] == from.w[i] && !(keepNewerEvents && from.w[i] != 0u))
+                            cur.w[i] = to.w[i];
+                    writeSeq(rdram, obj, cur);
+                };
+                if (second && t.counter + 1u == next && !t.hidden && motion == t.motion)
+                {
+                    undo(t.post, t.pre, false); // the second half sees what the tick's handler saw
+                    t.hidden = true;
+                    ++it;
+                    continue;
+                }
+                if (!second && t.counter + 2u == next && t.hidden && motion == t.motion)
+                {
+                    if (t.stepped2)
+                        undo(t.post2, t.post, true); // the tick's step's words; an event of the second half's own stands
+                    else
+                        undo(t.pre, t.post, false);
+                }
+                it = g_seqTick.erase(it);
+            }
+        }
+
         void motionSpeedHold(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             SET_GPR_U32(ctx, 2, 0x740000u);
             const uint32_t obj = GPR_U32(ctx, 17);
             if (obj < 0x100000u || obj >= 0x2000000u - 0x500u || !motion60(rdram))
                 return;
+            seqAfter(rdram, obj);
             uint32_t motion = 0;
             std::memcpy(&motion, &ram8(rdram, obj + 0x428u), sizeof(motion));
             const uint32_t counter = gameFrames(rdram);
@@ -821,6 +942,7 @@ namespace kamite
                 rouletteDpad(rdram);
                 return;
             }
+            seqFrameStart(rdram);
             // The pnach writes the held value over the game's and reads it back the next frame as if it came from the
             // pad. The game does not rewrite these bytes every frame here, so a written 0xFF came back as a new full
             // deflection and was held again, forever (stick stuck at full right/left; the pnach's "input loop" with
@@ -1270,6 +1392,33 @@ namespace kamite
             const float value = ctx->f[12] * 0.5f;
             std::memcpy(&ram8(rdram, GPR_U32(ctx, 4) + 0x548u), &value, sizeof(value));
         }
+        // cEmManage's update (func_00290250) hands every enemy the manager's rate (+0x5A8 = +0x548 x GameWork +0x574,
+        // 0x290578) and then resets it (+0x548 = 1.0, 0.5 at 60: 0x2905AC); a slow-motion state keeps calling
+        // cEmManage_SetSpeedRate every frame. It runs before Gene, so at 30 a rate he sets in frame k reaches the enemies
+        // in frame k + 1. At 60 a rate set on the tick reached them on the second half, a vblank early (shockwave30,
+        // Nov 1: the enemies slowed one vblank after Gene instead of one 30 FPS frame). The second half hands out what
+        // the tick did and leaves +0x548 alone, so the tick's and the second half's calls reach the next tick, as the
+        // 30 FPS frame's call reaches the next frame. For k: hold on the k-1 frames after the tick.
+        uint32_t g_managerRateAt = ~0u;
+        float g_managerRate = 0.5f;
+        void managerRateRead(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // replaces lwc1 f1,0x548(s0)
+        {
+            const uint32_t counter = gameFrames(rdram);
+            if (thinkSkipped(rdram) && g_managerRateAt + 1u == counter)
+            {
+                ctx->f[1] = g_managerRate;
+                return;
+            }
+            ctx->f[1] = ramF32(rdram, GPR_U32(ctx, 16) + 0x548u);
+            if (!thinkSkipped(rdram))
+                g_managerRate = ctx->f[1], g_managerRateAt = counter;
+        }
+        void managerRateReset(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // replaces swc1 f0,0x548(s0)
+        {
+            if (thinkSkipped(rdram) && g_managerRateAt + 1u == gameFrames(rdram))
+                return;
+            setRamF32(rdram, GPR_U32(ctx, 16) + 0x548u, ctx->f[0]);
+        }
         template <int ObjReg, int FReg>
         void enemyRate30(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
@@ -1465,6 +1614,9 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_enemy_step_hold_s0", &enemyStepHold<16>);
         ps2xRegisterHostHook("km_fps60_gene_step_hold", &enemyStepHold<6, 7, true>);
         ps2xRegisterHostHook("km_fps60_motion_speed_hold", &motionSpeedHold);
+        ps2xRegisterHostHook("km_fps60_seq_before", &seqBefore);
+        ps2xRegisterHostHook("km_fps60_em_rate_read", &managerRateRead);
+        ps2xRegisterHostHook("km_fps60_em_rate_reset", &managerRateReset);
         ps2xRegisterHostHook("km_fps60_motion_snap", &motionSnap);
         ps2xRegisterHostHook("km_fps60_tgt_turn_rate", &tgtTurnRate);
         ps2xRegisterHostHook("km_fps60_launch_rise", &launchRise);
