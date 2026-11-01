@@ -3920,3 +3920,14 @@ address = "0x001095C4"
 hook = "km_fps60_gene_fall_y_f1"
 flag = "fps60"
 replace = true
+
+# 60 FPS: the step hold on Gene's state dispatcher (func_0010B6B0, jalr a3 at 0x10B748; Gene in a2), on the b's delay
+# slot and the fall-through before the jalr; a press on a held vblank is carried into the next (frame_patches.cpp).
+[[patches.hooks]]
+address = "0x0010B740"
+hook = "km_fps60_gene_step_hold"
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0010B744"
+hook = "km_fps60_gene_step_hold"
+flag = "fps60"

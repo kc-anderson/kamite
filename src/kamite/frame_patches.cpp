@@ -102,7 +102,12 @@ namespace kamite
             std::memcpy(&value, &ram8(rdram, game::GameWork::address(game::GameWork::kFrameCount)), sizeof(value));
             return value;
         }
-        bool skipFrame(uint8_t *rdram) { return (gameFrames(rdram) & 1u) != 0u; }
+        // The second half of a 30 FPS frame (frame30 grid below): countdowns step on first halves only, and the step
+        // holds (enemyStepHold) hold handlers on second halves only, so a held vblank can never eat a countdown's step.
+        // (Until Nov 1 this was the counter's own parity, a grid of its own: when the two disagreed, a held handler
+        // skipped the frame its countdowns were due to step.)
+        bool thinkSkipped(uint8_t *rdram);
+        bool skipFrame(uint8_t *rdram) { return thinkSkipped(rdram); }
 
         // KAMITE_CALL_PROFILE=1 with KAMITE_CALL_PROFILE_EVERY=<game frames>: a call count report of every function
         // called in each window of that many frames (finding the code behind something seen on screen: compare the
@@ -479,7 +484,7 @@ namespace kamite
         // case, Oct 31: both goons reacted to Gene 2-4 vblanks early and the fight parted from there). Replaces the
         // counter load: every other frame a value no slot test of this enemy matches, otherwise the 30 FPS frame count,
         // kept across rate changes and in save states ("kamite.frame30") so a state thinks on the same frames at both.
-        uint32_t g_frame30Base = 0, g_counterBase = 0, g_frame30Saved = 0;
+        uint32_t g_frame30Base = 0, g_counterBase = 0, g_frame30Saved = 0, g_frame30Half = 0;
         bool g_frame30Loaded = false;
         uint8_t *g_rdram = nullptr;
         bool thinkSkipped(uint8_t *rdram) { return ((gameFrames(rdram) - g_counterBase) & 1u) != 0u; }
@@ -526,10 +531,27 @@ namespace kamite
         // the 30 FPS run): mode 1 func_0024C0F0 (jalr a2 at 0x24C370: 0x24C368 / 0x24C36C) and mode 2 func_0025E600
         // (jalr a2 at 0x25E770: 0x25E768 / 0x25E76C), the enemy in s0. g_enemyStep is shared, so a mode change (the
         // hit itself, mode 0 -> 1) counts as a change wherever the next frame's dispatcher runs.
-        template <int ObjReg>
+        // Gene's state dispatcher func_0010B6B0 (jalr a3 at 0x10B748: 0x10B740 / 0x10B744, Gene in a2), Nov 1: each move
+        // of a mashed string starts with a one-frame step 0, 2 vblanks at 30 and 1 at 60, so his strings ran ~10%
+        // faster at 60 (statue case 2026-11-01_15-41-58: 42 vblanks ahead after 26 moves) and every change came a
+        // vblank early. Same hold; and his handlers read the pad's pressed edge (GameWork +0x08: the action chooser
+        // func_00123938 from 62 states, the mash states), which exists on one vblank only, so a press on a held vblank
+        // is carried into the next one instead of being lost.
+        uint32_t g_genePressCarry = 0, g_genePressAt = 0;
+        template <int ObjReg, int FnReg = 6, bool CarryPress = false>
         void enemyStepHold(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const uint32_t obj = GPR_U32(ctx, ObjReg);
+            const uint32_t pressedAt = game::GameWork::address(game::GameWork::kPadBtn);
+            if (CarryPress && g_genePressCarry != 0u && g_genePressAt + 1u == gameFrames(rdram))
+            {
+                uint32_t pressed = 0;
+                std::memcpy(&pressed, &ram8(rdram, pressedAt), sizeof(pressed));
+                pressed |= g_genePressCarry;
+                std::memcpy(&ram8(rdram, pressedAt), &pressed, sizeof(pressed));
+            }
+            if (CarryPress)
+                g_genePressCarry = 0u;
             uint32_t state = 0, motion = 0;
             std::memcpy(&state, &ram8(rdram, obj + 0x2F4u), sizeof(state));
             std::memcpy(&motion, &ram8(rdram, obj + 0x428u), sizeof(motion));
@@ -546,7 +568,12 @@ namespace kamite
                     callGuest(rdram, ctx, runtime, 0x14F9F0u, obj, 1.0f);
                     callGuest(rdram, ctx, runtime, 0x14F928u, obj, 1.0f);
                 }
-                SET_GPR_U32(ctx, 6, 0x100318u);
+                SET_GPR_U32(ctx, FnReg, 0x100318u);
+                if (CarryPress)
+                {
+                    std::memcpy(&g_genePressCarry, &ram8(rdram, pressedAt), sizeof(g_genePressCarry));
+                    g_genePressAt = counter;
+                }
             }
             if ((counter & 0x3FFu) == 0u)
                 for (auto it = g_enemyStep.begin(); it != g_enemyStep.end();)
@@ -627,12 +654,20 @@ namespace kamite
             ps2x::savestate::registerExtension(
                 "kamite.frame30",
                 [](ps2x::state::Writer &out) {
-                    uint32_t version = 1u, frame = g_rdram ? (g_fps60 ? frame30(g_rdram) : gameFrames(g_rdram)) : 0u;
-                    ps2x::state::fields(out, version, frame);
+                    // version 2 adds the half: 1 when the saved frame was the first half of its 30 FPS frame (the next
+                    // update is that frame's second half), so a load resumes on the same grid as the run that saved it
+                    // (the test cases' live runs never reload their state: without it about half of all 60 FPS
+                    // recordings replayed every hold and staggered think a vblank off the live run's grid).
+                    uint32_t version = 2u, frame = g_rdram ? (g_fps60 ? frame30(g_rdram) : gameFrames(g_rdram)) : 0u;
+                    uint32_t half = g_rdram && g_fps60 ? (((gameFrames(g_rdram) - g_counterBase) & 1u) == 0u ? 1u : 0u) : 0u;
+                    ps2x::state::fields(out, version, frame, half);
                 },
                 [](ps2x::state::Reader &in) {
                     uint32_t version = 0u;
                     ps2x::state::fields(in, version, g_frame30Saved);
+                    g_frame30Half = 0u;
+                    if (version >= 2u)
+                        ps2x::state::fields(in, g_frame30Half);
                     g_frame30Loaded = true;
                 });
         }
@@ -642,8 +677,11 @@ namespace kamite
         {
             const uint32_t counter = gameFrames(rdram);
             const uint32_t frame = g_frame30Loaded ? g_frame30Saved : counter;
-            if (g_fps60) // the game counts the frame up before its update: the first update after the load sees counter + 1
-                g_frame30Base = frame + 1u, g_counterBase = counter + 1u;
+            // The game counts the frame up before its update: the first update after the load sees counter + 1. A state
+            // saved on a first half resumes on that 30 FPS frame's second half (same 30 FPS frame, base one earlier).
+            const uint32_t half = g_frame30Loaded ? g_frame30Half : 0u;
+            if (g_fps60)
+                g_frame30Base = half ? frame : frame + 1u, g_counterBase = counter + 1u - half;
             else if (g_frame30Loaded && ram8(rdram, kFrameDivider) == 1u)
                 std::memcpy(&ram8(rdram, game::GameWork::address(game::GameWork::kFrameCount)), &frame, sizeof(frame));
             g_frame30Loaded = false;
@@ -1320,6 +1358,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_rand_float", &randFloat);
         ps2xRegisterHostHook("km_fps60_enemy_step_hold", &enemyStepHold<17>);
         ps2xRegisterHostHook("km_fps60_enemy_step_hold_s0", &enemyStepHold<16>);
+        ps2xRegisterHostHook("km_fps60_gene_step_hold", &enemyStepHold<6, 7, true>);
         ps2xRegisterHostHook("km_fps60_tgt_turn_rate", &tgtTurnRate);
         ps2xRegisterHostHook("km_fps60_launch_rise", &launchRise);
         ps2xRegisterHostHook("km_fps60_launch_fall", &launchFall);
