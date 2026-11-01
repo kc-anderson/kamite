@@ -4,7 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## November 1, 2026
 
-- 60 FPS: enemies hit on the in-between frame react to the blow's direction again (countered demons flew sideways).
+- 60 FPS: enemies hit on the in-between frame start their reaction in that frame, from the blow's direction (countered demons flew sideways).
+- Style indicator: comes back after the game's action prompt has been shown, and no longer shrinks the prompt.
 - The action prompt ("Throw") is back in its place; the gold counter's right alignment had pulled it into the minimap.
 - 60 FPS: Gene and enemies act on their animations' cues (Shockwave's slow motion, attack and cancel windows) on the same frame as on the PS2 instead of half a frame early.
 - 60 FPS: slow motion started by Gene reaches the enemies on the same frame as on the PS2.

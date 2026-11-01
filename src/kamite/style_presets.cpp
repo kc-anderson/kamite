@@ -815,29 +815,86 @@ namespace kamite::style_presets
         }
 
         // The money display's layout (cCockMoney): the indicator goes into its two spare text entries.
-        bool isHudLayout(uint32_t layout, uint32_t &text, uint32_t &shadow)
+        // The two entries are not always spare: cCockMoney's update (func_00143670, 0x143924..0x14394C) shows the
+        // game's action prompt in them ("A :Throw": message 0x3010 in both, the text entry's no-draw bit cleared) and
+        // afterwards only sets no-draw again, leaving 0x3010 in place. So: 0x3010 with no-draw set is free (Nov 1, K:
+        // after the first prompt the letters never came back), 0x3010 shown is the game's, and then the entries get
+        // back the alignment and scale the indicator changed (the prompt was drawn small and off its place).
+        constexpr uint16_t kGamePromptMessage = 0x3010u;
+        struct HudEntryWas
+        {
+            uint32_t entry = 0u, noDraw = 0u;
+            float sclX = 1.0f, sclY = 1.0f;
+            uint8_t align = 0u;
+        };
+        HudEntryWas g_hudWas[2];
+        // 0: not that layout; 1: free or ours; 2: the game's prompt is up.
+        int hudLayoutState(uint32_t layout, uint32_t &text, uint32_t &shadow)
         {
             if (!validPointer(layout, 0x10u) || rd32(layout + game::IDBase::kEntNum) != 6u)
-                return false;
+                return 0;
             const uint32_t entries = rd32(layout + game::IDBase::kEnt);
             if (!validPointer(entries, 6u * ent::kSize))
-                return false;
+                return 0;
             text = entries + 4u * ent::kSize;
             shadow = entries + 5u * ent::kSize;
             for (const uint32_t e : {text, shadow})
             {
                 const uint16_t msg = rd16(e + ent::kMsg);
-                if (g_ram[(e + ent::kKind) & 0x1FFFFFFu] != game::kIdentKindText || (msg != 0u && msg != kHudMessage && msg != kHudShadowMessage))
-                    return false;
+                if (g_ram[(e + ent::kKind) & 0x1FFFFFFu] != game::kIdentKindText ||
+                    (msg != 0u && msg != kHudMessage && msg != kHudShadowMessage && msg != kGamePromptMessage))
+                    return 0;
             }
-            return true;
+            if (rd16(text + ent::kMsg) == kGamePromptMessage && (rd32(text + ent::kFlags) & kNoDraw) == 0u)
+                return 2;
+            return 1;
+        }
+        void claimHudEntry(int i, uint32_t entry)
+        {
+            HudEntryWas &was = g_hudWas[i];
+            if (was.entry == entry)
+                return;
+            was.entry = entry;
+            was.noDraw = rd32(entry + ent::kFlags) & kNoDraw;
+            was.sclX = rdFloat(entry + ent::kDrawSclX);
+            was.sclY = rdFloat(entry + ent::kDrawSclY);
+            was.align = g_ram[(entry + ent::kAlign) & 0x1FFFFFFu];
+        }
+        // The game's prompt is in them: its scale and alignment back; the text's no-draw is the game's (clear), the
+        // shadow's as it was.
+        void releaseHudEntries()
+        {
+            for (int i = 0; i < 2; ++i)
+            {
+                HudEntryWas &was = g_hudWas[i];
+                if (was.entry == 0u || !validPointer(was.entry, ent::kSize))
+                {
+                    was.entry = 0u;
+                    continue;
+                }
+                if (i == 1)
+                    wr32(was.entry + ent::kFlags, (rd32(was.entry + ent::kFlags) & ~kNoDraw) | was.noDraw);
+                wrFloat(was.entry + ent::kDrawSclX, was.sclX);
+                wrFloat(was.entry + ent::kDrawSclY, was.sclY);
+                g_ram[(was.entry + ent::kAlign) & 0x1FFFFFFu] = was.align;
+                was.entry = 0u;
+            }
+            g_hudShown = false;
         }
 
         void hudIndicator(uint32_t layout)
         {
             uint32_t text, shadow;
-            if (!isHudLayout(layout, text, shadow))
+            const int state = hudLayoutState(layout, text, shadow);
+            if (state == 0)
                 return;
+            if (state == 2)
+            {
+                releaseHudEntries();
+                return;
+            }
+            claimHudEntry(0, text);
+            claimHudEntry(1, shadow);
             const uint32_t data = dataPointer();
             Store store{};
             const bool show = data && readStore(data, store) && store.used != 0u;
