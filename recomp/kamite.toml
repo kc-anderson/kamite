@@ -854,6 +854,22 @@ flag = "fps60"
 address = "0x00157C64"
 hook = "km_fps60_seq_before"
 flag = "fps60"
+# Effect texture scrolls at half step (frame_patches.cpp scrollHalf; Nov 1, sky clouds / ground dust / summoning clouds).
+[[patches.hooks]] # UvScroll_step: add.s f3,f3,f2
+address = "0x002EAA0C"
+hook = "km_fps60_uvscroll_u"
+replace = true
+flag = "fps60"
+[[patches.hooks]] # UvScroll_step: add.s f1,f1,f0
+address = "0x002EAA14"
+hook = "km_fps60_uvscroll_v"
+replace = true
+flag = "fps60"
+[[patches.hooks]] # ScrollObj_advanceScroll: add.s f0,f0,f1
+address = "0x002EC34C"
+hook = "km_fps60_scrollobj"
+replace = true
+flag = "fps60"
 # cEmManage's update hands the enemies the tick's rate on the second half and keeps +0x548 (managerRateRead / Reset).
 [[patches.hooks]]
 address = "0x00290578"

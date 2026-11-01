@@ -783,6 +783,13 @@ namespace kamite
         // a frame, without the speed rate the other airborne states multiply in, so at 60 the arc ran in half the time
         // (66sec case, Oct 31: 18 vblanks in the air instead of 36, the horizontal speed right). At 60 half steps that
         // meet the 30 FPS arc on every 30 FPS frame: y += vy / 2 + g / 8, vy -= g / 2 (f2 = g).
+        // Texture scrolls in the effect code below the forced slow paths (0x2E0000..0x2F5000), stepped once a game frame
+        // with no rate: UvScroll_step (0x2EAA0C / 0x2EAA14: +0x2B8 / +0x2BC += +0x2C0 / +0x2C4, a vtable method) and
+        // ScrollObj_advanceScroll (0x2EC34C: +0x2D8 += +0x2DC; trails and others). At 60 they scrolled twice as fast
+        // (Nov 1, K: the first room's sky clouds and the dust drifting over the ground, the demon's summoning clouds).
+        // Visual only: half the step each vblank (k: 1/k).
+        template <int Dst, int A, int B>
+        void scrollHalf(uint8_t *, R5900Context *ctx, PS2Runtime *) { ctx->f[Dst] = ctx->f[A] + ctx->f[B] * 0.5f; }
         void launchRise(uint8_t *, R5900Context *ctx, PS2Runtime *) // add.s f1,f1,f0
         {
             ctx->f[1] = ctx->f[1] + ctx->f[0] * 0.5f + ctx->f[2] * 0.125f;
@@ -1627,6 +1634,9 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_gene_step_hold", &enemyStepHold<6, 7, true>);
         ps2xRegisterHostHook("km_fps60_motion_speed_hold", &motionSpeedHold);
         ps2xRegisterHostHook("km_fps60_seq_before", &seqBefore);
+        ps2xRegisterHostHook("km_fps60_uvscroll_u", &scrollHalf<3, 3, 2>);
+        ps2xRegisterHostHook("km_fps60_uvscroll_v", &scrollHalf<1, 1, 0>);
+        ps2xRegisterHostHook("km_fps60_scrollobj", &scrollHalf<0, 0, 1>);
         ps2xRegisterHostHook("km_fps60_em_rate_read", &managerRateRead);
         ps2xRegisterHostHook("km_fps60_em_rate_reset", &managerRateReset);
         ps2xRegisterHostHook("km_fps60_motion_snap", &motionSnap);
