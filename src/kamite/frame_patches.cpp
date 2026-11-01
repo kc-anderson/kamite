@@ -522,9 +522,14 @@ namespace kamite
         // cObjBase_addNullSpeed 0x14F928 at 1.0, as the walking and idle steps do every frame), unless the change set
         // a new motion already. Without it each change lost half a 30 FPS frame of root motion (66sec case: the grab
         // lunge ended 0.1 m short, the grab put Gene 0.19 m off, and the other goon chose otherwise from there).
+        // The same hold on the hit reactions' dispatchers (Nov 1; the juggle case: the launch ran a vblank ahead of
+        // the 30 FPS run): mode 1 func_0024C0F0 (jalr a2 at 0x24C370: 0x24C368 / 0x24C36C) and mode 2 func_0025E600
+        // (jalr a2 at 0x25E770: 0x25E768 / 0x25E76C), the enemy in s0. g_enemyStep is shared, so a mode change (the
+        // hit itself, mode 0 -> 1) counts as a change wherever the next frame's dispatcher runs.
+        template <int ObjReg>
         void enemyStepHold(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
-            const uint32_t obj = GPR_U32(ctx, 17);
+            const uint32_t obj = GPR_U32(ctx, ObjReg);
             uint32_t state = 0, motion = 0;
             std::memcpy(&state, &ram8(rdram, obj + 0x2F4u), sizeof(state));
             std::memcpy(&motion, &ram8(rdram, obj + 0x428u), sizeof(motion));
@@ -1296,7 +1301,8 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_pl56e_store_s1", &countdownStore16<17, 2, 3, 0x56Eu>);
         ps2xRegisterHostHook("km_fps60_rand_int", &randInt);
         ps2xRegisterHostHook("km_fps60_rand_float", &randFloat);
-        ps2xRegisterHostHook("km_fps60_enemy_step_hold", &enemyStepHold);
+        ps2xRegisterHostHook("km_fps60_enemy_step_hold", &enemyStepHold<17>);
+        ps2xRegisterHostHook("km_fps60_enemy_step_hold_s0", &enemyStepHold<16>);
         ps2xRegisterHostHook("km_fps60_tgt_turn_rate", &tgtTurnRate);
         ps2xRegisterHostHook("km_fps60_launch_rise", &launchRise);
         ps2xRegisterHostHook("km_fps60_launch_fall", &launchFall);

@@ -3814,6 +3814,24 @@ flag = "fps60"
 address = "0x0020FAEC"
 hook = "km_fps60_enemy_step_hold"
 flag = "fps60"
+# The same hold on the hit reactions' dispatchers (the enemy in s0): mode 1 func_0024C0F0 (jalr a2 at 0x24C370) and
+# mode 2 func_0025E600 (jalr a2 at 0x25E770), each on the b's delay slot and the fall-through before the jalr.
+[[patches.hooks]]
+address = "0x0024C368"
+hook = "km_fps60_enemy_step_hold_s0"
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0024C36C"
+hook = "km_fps60_enemy_step_hold_s0"
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0025E768"
+hook = "km_fps60_enemy_step_hold_s0"
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0025E76C"
+hook = "km_fps60_enemy_step_hold_s0"
+flag = "fps60"
 
 # 60 FPS: the enemies' SetMotion (func_002A8578, 856 callers) passes the speed rate +0x5A8 as the new motion's step: 0.5
 # at 60, then halved by moveMotion, so every enemy motion's first frame advanced a quarter frame (x2, as 0x290584 does
