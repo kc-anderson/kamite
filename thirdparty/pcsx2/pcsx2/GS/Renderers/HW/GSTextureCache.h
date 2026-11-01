@@ -615,6 +615,17 @@ public:
 
 	/// Injects a texture into the hash cache, by using GSTexture::Swap(), transitively applying to all sources. Ownership of tex is transferred.
 	void InjectHashCacheTexture(const HashCacheKey& key, GSTexture* tex, const std::pair<u8, u8>& alpha_minmax);
+	// pcsx2gs (Kamite): the key a hash cache entry is stored under (diagnostics: a replacement's file name).
+	bool KamiteKeyOf(const HashCacheEntry* entry, HashCacheKey& key) const
+	{
+		for (const auto& [k, e] : m_hash_cache)
+			if (&e == entry)
+			{
+				key = k;
+				return true;
+			}
+		return false;
+	}
 };
 
 extern std::unique_ptr<GSTextureCache> g_texture_cache;

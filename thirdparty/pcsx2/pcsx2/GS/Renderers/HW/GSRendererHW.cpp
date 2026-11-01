@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include "GS/Renderers/HW/GSRendererHW.h"
+#include <unordered_set>
 #include "GS/Renderers/HW/GSTextureReplacements.h"
 #include "GS/GSGL.h"
 #include "GS/GSPerfMon.h"
@@ -3764,6 +3765,27 @@ void GSRendererHW::Draw()
 			// recompute it, and everything derived from it again if it changes.
 			// No channel shuffle as the alpha of a target used a source is meaningless to us,
 			// since it's not really an indexed texture.
+			// pcsx2gs (Kamite): every alpha-tested draw with a pack texture, once per texture (at most 400): its file
+			// name and alpha range against the test. A pack texture whose texels the game's test rejects draws colour
+			// without depth (AFAIL FB_ONLY) and vanishes under whatever is drawn after it (the Kick Me sign, Nov 1).
+			if (src->m_from_hash_cache && src->m_from_hash_cache->is_replacement && m_cached_ctx.TEST.ATE)
+			{
+				static std::unordered_set<const void*> s_km_seen;
+				if (s_km_seen.size() < 400 && s_km_seen.insert(src->m_from_hash_cache).second)
+				{
+					HashCacheKey key;
+					const bool named = g_texture_cache->KamiteKeyOf(src->m_from_hash_cache, key);
+					std::fprintf(stderr,
+						"[pcsx2-gs] alpha-tested HD texture %016llx-%016llx: psm %02x %ux%u tbp %04x, alpha %u..%u, test atst %u aref %02x afail %u, mmag %u mmin %u\n",
+						named ? static_cast<unsigned long long>(key.TEX0Hash) : 0ull,
+						named ? static_cast<unsigned long long>(key.CLUTHash) : 0ull, static_cast<unsigned>(m_cached_ctx.TEX0.PSM),
+						1u << static_cast<unsigned>(m_cached_ctx.TEX0.TW), 1u << static_cast<unsigned>(m_cached_ctx.TEX0.TH),
+						static_cast<unsigned>(m_cached_ctx.TEX0.TBP0), static_cast<unsigned>(src->m_from_hash_cache->alpha_minmax.first),
+						static_cast<unsigned>(src->m_from_hash_cache->alpha_minmax.second), static_cast<unsigned>(m_cached_ctx.TEST.ATST),
+						static_cast<unsigned>(m_cached_ctx.TEST.AREF), static_cast<unsigned>(m_cached_ctx.TEST.AFAIL),
+						static_cast<unsigned>(m_context->TEX1.MMAG), static_cast<unsigned>(m_context->TEX1.MMIN));
+				}
+			}
 			if (!IsPossibleChannelShuffle() && src->m_valid_alpha_minmax)
 			{
 				CalcAlphaMinMax(src->m_alpha_minmax.first, src->m_alpha_minmax.second);
