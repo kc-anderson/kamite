@@ -790,6 +790,11 @@ namespace kamite
         // Visual only: half the step each vblank (k: 1/k).
         template <int Dst, int A, int B>
         void scrollHalf(uint8_t *, R5900Context *ctx, PS2Runtime *) { ctx->f[Dst] = ctx->f[A] + ctx->f[B] * 0.5f; }
+        // cModel_ScrollTexture (0x14E4D0: the model's texture scroll += its speed x f12, every call) is given the
+        // enemies' rate +0x5A8 by enemy code (already half at 60) but a plain 1.0 by cObjSimple_Update (0x2B6974) and
+        // func_001B76D8 (0x1B7740), once a game frame: those objects' textures scrolled twice as fast at 60 (Nov 1, K:
+        // the first room's sky clouds still fast after the effect scrolls). Replaces mtc1 at,f12 (1.0): 0.5.
+        void modelScrollHalf(uint8_t *, R5900Context *ctx, PS2Runtime *) { ctx->f[12] = 0.5f; }
         void launchRise(uint8_t *, R5900Context *ctx, PS2Runtime *) // add.s f1,f1,f0
         {
             ctx->f[1] = ctx->f[1] + ctx->f[0] * 0.5f + ctx->f[2] * 0.125f;
@@ -1634,6 +1639,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_gene_step_hold", &enemyStepHold<6, 7, true>);
         ps2xRegisterHostHook("km_fps60_motion_speed_hold", &motionSpeedHold);
         ps2xRegisterHostHook("km_fps60_seq_before", &seqBefore);
+        ps2xRegisterHostHook("km_fps60_model_scroll", &modelScrollHalf);
         ps2xRegisterHostHook("km_fps60_uvscroll_u", &scrollHalf<3, 3, 2>);
         ps2xRegisterHostHook("km_fps60_uvscroll_v", &scrollHalf<1, 1, 0>);
         ps2xRegisterHostHook("km_fps60_scrollobj", &scrollHalf<0, 0, 1>);

@@ -4,7 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 1, 2026
 
-- 60 FPS: scrolling effect textures (sky clouds, dust drifting over the ground, a demon's summoning clouds) move at the PS2's speed.
+- 60 FPS: scrolling effect textures (dust drifting over the ground, a demon's summoning clouds) and scrolling textures on level objects (the sky clouds) move at the PS2's speed.
 - 60 FPS: enemies hit on the in-between frame start their reaction in that frame, from the blow's direction (countered demons flew sideways).
 - Style indicator: comes back after the game's action prompt has been shown, and no longer shrinks the prompt.
 - The action prompt ("Throw") is back at the top left, at the screen edge in 16:9 (the gold counter's alignment had pulled it into the minimap).

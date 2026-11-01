@@ -870,6 +870,17 @@ address = "0x002EC34C"
 hook = "km_fps60_scrollobj"
 replace = true
 flag = "fps60"
+# Object texture scrolls given 1.0 a frame (frame_patches.cpp modelScrollHalf; Nov 1, the first room's sky clouds).
+[[patches.hooks]] # cObjSimple_Update: mtc1 at,f12 before jal cModel_ScrollTexture
+address = "0x002B6974"
+hook = "km_fps60_model_scroll"
+replace = true
+flag = "fps60"
+[[patches.hooks]] # func_001B76D8: mtc1 at,f12 before jal cModel_ScrollTexture
+address = "0x001B7740"
+hook = "km_fps60_model_scroll"
+replace = true
+flag = "fps60"
 # cEmManage's update hands the enemies the tick's rate on the second half and keeps +0x548 (managerRateRead / Reset).
 [[patches.hooks]]
 address = "0x00290578"
