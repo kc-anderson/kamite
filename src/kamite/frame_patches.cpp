@@ -561,6 +561,29 @@ namespace kamite
             ctx->f[0] = ctx->f[0] - ctx->f[2] * 0.5f;
         }
 
+        // The other airborne states (family 12b, Nov 1; case "Goon jump out of juggle incorrect speed", the juggle
+        // mode 1 phase 8): y += vy x rate, then vy -= g x rate. Two half steps at 60 land g x rate^2 / 4 short of
+        // the 30 FPS frame's y += vy (the juggle's peak 0.058 m low over an 18-frame rise). This replaces the vy store
+        // `swc1 fF, 0x5C4(base)` that follows the y step: store, then y += (vy before - vy after) x rate / 2 (=
+        // g x rate^2 / 2), which puts every 30 FPS frame's y back on the 30 FPS arc. Sites: tools in fps60-notes 12b.
+        template <int F, int Base>
+        void airStep(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t obj = GPR_U32(ctx, Base);
+            const float after = ctx->f[F];
+            float before = 0.0f, rate = 0.0f, y = 0.0f;
+            uint32_t pos = 0u;
+            std::memcpy(&before, rdram + ((obj + 0x5C4u) & 0x01FFFFFFu), 4);
+            std::memcpy(&rate, rdram + ((obj + 0x5A8u) & 0x01FFFFFFu), 4);
+            std::memcpy(rdram + ((obj + 0x5C4u) & 0x01FFFFFFu), &after, 4);
+            std::memcpy(&pos, rdram + ((obj + 0xF0u) & 0x01FFFFFFu), 4);
+            if (pos == 0u)
+                return;
+            std::memcpy(&y, rdram + ((pos + 4u) & 0x01FFFFFFu), 4);
+            y += (before - after) * rate * 0.5f;
+            std::memcpy(rdram + ((pos + 4u) & 0x01FFFFFFu), &y, 4);
+        }
+
         // cGameObj_SetTgtTurn (0x2A7498) is 60-aware: the turn per call is f12 x GameWork +0x55C (1.0, or 0.5 when the
         // divider is 1: func_0030AC40 0x30AF14). 182 callers pass f12 = the enemy's speed rate x a turn step, and the
         // rate is 0.5 at 60 too (0x29059C), so those turns ran at a quarter speed (66sec case, Oct 31: the grab lunge,
@@ -1277,6 +1300,9 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_tgt_turn_rate", &tgtTurnRate);
         ps2xRegisterHostHook("km_fps60_launch_rise", &launchRise);
         ps2xRegisterHostHook("km_fps60_launch_fall", &launchFall);
+        ps2xRegisterHostHook("km_fps60_air_step_f0_s1", &airStep<0, 17>);
+        ps2xRegisterHostHook("km_fps60_air_step_f0_s2", &airStep<0, 18>);
+        ps2xRegisterHostHook("km_fps60_air_step_f2_s2", &airStep<2, 18>);
         ps2xRegisterHostHook("km_fps60_em_rate_f12_a0", &enemyRate30<4, 12>);
         ps2xRegisterHostHook("km_fps60_think_a0_v0", &thinkFrame<4, 2>);
         ps2xRegisterHostHook("km_fps60_think_v1_a0", &thinkFrame<3, 4>);

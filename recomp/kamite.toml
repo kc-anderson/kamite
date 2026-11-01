@@ -3843,3 +3843,38 @@ address = "0x002A74B0"
 hook = "km_fps60_tgt_turn_rate"
 flag = "fps60"
 replace = true
+
+# 60 FPS: the airborne states that step y += vy x rate, then vy -= g x rate (family 12b): the vy store also puts back
+# the g x rate^2 / 2 that two half steps lose against the 30 FPS frame (frame_patches.cpp airStep). Mode 0 (0x216230
+# in a bc1f delay slot, 0x2164F0), mode 1 phase 8 (the juggle, 0x254A58), phase 10 (0x2562A0, 0x25660C), phase 11
+# (0x257200). Phase 9 has its own half steps (km_fps60_launch_*).
+[[patches.hooks]]
+address = "0x00216230"
+hook = "km_fps60_air_step_f0_s1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x002164F0"
+hook = "km_fps60_air_step_f0_s1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00254A58"
+hook = "km_fps60_air_step_f0_s1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x002562A0"
+hook = "km_fps60_air_step_f2_s2"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0025660C"
+hook = "km_fps60_air_step_f0_s2"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00257200"
+hook = "km_fps60_air_step_f0_s2"
+flag = "fps60"
+replace = true
