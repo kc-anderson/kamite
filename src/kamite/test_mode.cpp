@@ -822,7 +822,6 @@ namespace kamite::test_mode
             size_t hostNext = 0;      // the first entry not yet played
             std::FILE *ram = nullptr; // play: <csv stem>.ram.bin, the RAM dump (writeRamFrame)
             std::FILE *snap = nullptr; // play: <csv stem>.snap.bin, the whole RAM once a second (writeSnapshot)
-            std::FILE *esp = nullptr;  // play: <csv stem>.esp.csv, effect kills and fades (espEvent; dev-only, strip-list)
             std::vector<uint32_t> snapPrev;
             ReadTrack reads;          // play: the case's read track (empty: the polls alone feed the game)
             size_t readNext = 0;      // the first entry not yet reached
@@ -962,11 +961,6 @@ namespace kamite::test_mode
                 std::fclose(run.snap);
                 run.snap = nullptr;
             }
-            if (run.esp)
-            {
-                std::fclose(run.esp);
-                run.esp = nullptr;
-            }
             if (!ok)
                 run.failed = true;
             KM_INFO(Game, "test: " << (ok ? "done" : "failed") << " after " << run.frame << " frames; stopping the run");
@@ -1055,9 +1049,6 @@ namespace kamite::test_mode
                     const std::string stem = run.csv.string().substr(0, run.csv.string().size() - 4);
                     run.ram = openOut(stem + ".ram.bin");
                     run.snap = openOut(stem + ".snap.bin");
-                    run.esp = openOut(stem + ".esp.csv");
-                    if (run.esp)
-                        std::fputs("frame,event,slot,template,group,owner,a,b,ra\n", run.esp);
                 }
                 run.phase = Run::Phase::Running;
                 KM_INFO(Game, "test: running " << run.runFrames << " frames at " << (run.divider == 1u ? 60 : 30) << " FPS"
@@ -1806,22 +1797,4 @@ namespace kamite::test_mode
             ++run.rollStats[g_rollSite].fresh;
         run.rollLast[key] = value;
     }
-    // Effect trace (dev-only, claude/strip-list.md; the Shockwave glow, Nov 1): one line per effect kill, fade request,
-    // group kill or construction while a case replays (frame_patches.cpp espTrace hooks).
-    void espEvent(const char *what, uint8_t *rdram, uint32_t effect, uint32_t a, uint32_t b, uint32_t ra)
-    {
-        Run &run = g_run;
-        if (run.phase != Run::Phase::Running || !run.esp)
-            return;
-        auto rd = [rdram](uint32_t address) {
-            uint32_t value = 0;
-            std::memcpy(&value, rdram + (address & 0x01FFFFFCu), sizeof(value));
-            return value;
-        };
-        const bool isEffect = effect >= 0x61B7C0u && effect < 0x61B7C0u + 0x400u * 0x400u;
-        const int slot = isEffect ? static_cast<int>((effect - 0x61B7C0u) / 0x400u) : -1;
-        std::fprintf(run.esp, "%u,%s,%d,%X,%X,%X,%X,%X,%X\n", run.frame, what, slot, isEffect ? rd(effect + 0x110u) : 0u,
-                     isEffect ? rd(effect + 0x10Cu) : 0u, isEffect ? rd(effect + 0x108u) : effect, a, b, ra);
-    }
-
 }

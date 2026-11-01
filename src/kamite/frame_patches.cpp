@@ -32,6 +32,8 @@
 // next frame (0x30ADD8..0x30ADF0), where the pnach's stick hook ran; the per-vblank writes run there too, once per
 // game frame.
 #include "kamite/frame_patches.h"
+
+#include <cmath>
 #include "kamite/character_mods.h"
 #include "kamite/hud_layout.h"
 #include "kamite/npc_poses.h"
@@ -615,18 +617,6 @@ namespace kamite
             ctx->f[Dst] = ctx->f[Dst] + ctx->f[V] * 0.5f - g * 0.125f;
         }
 
-        // Effect trace (dev-only, claude/strip-list.md; the Shockwave glow, Nov 1): entry hooks on the effect system's
-        // kill / fade paths, logged by test_mode::espEvent while a case replays. Effect in Obj (or 0 when the call
-        // takes an owner), the next two arguments, the caller (ra; s-register hooks inside MoveEsp log ra = 0).
-        template <int Obj, int A, int B, int Tag>
-        void espTrace(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
-        {
-            static const char *const names[] = {"kill", "fade", "fadeOwnerGroup", "fn2FBB78", "killEvent", "killGroupNumber",
-                                                "killGroup", "killGroupPair", "allKill", "killRequested", "construct"};
-            test_mode::espEvent(names[Tag], rdram, GPR_U32(ctx, Obj), GPR_U32(ctx, A), GPR_U32(ctx, B),
-                                Tag == 9 ? 0u : GPR_U32(ctx, 31));
-        }
-
         template <int F, int Base>
         void airStep(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
@@ -859,6 +849,21 @@ namespace kamite
         void effectWorldSlow(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
             SET_GPR_U32(ctx, 3, (GPR_U32(ctx, 3) | 0x20000u) & GPR_U32(ctx, 4));
+        }
+        // The effects' colour fade at 60 (Nov 1; kamite.toml at 0x2FC7F0): RGBA x a per-frame factor each PS2 frame, so
+        // the square root of each factor a vblank (two vblanks = one 30 FPS frame). Replaces mul.s f0,f0,f4 (R, with G
+        // f6 and B f7 already loaded) and mul.s f3,f3,f5 (A).
+        float fadeRoot(float factor) { return factor > 0.0f ? std::sqrt(factor) : factor; }
+        void effectFadeRgb(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            ctx->f[4] = fadeRoot(ctx->f[4]);
+            ctx->f[6] = fadeRoot(ctx->f[6]);
+            ctx->f[7] = fadeRoot(ctx->f[7]);
+            ctx->f[0] = ctx->f[0] * ctx->f[4];
+        }
+        void effectFadeA(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            ctx->f[3] = ctx->f[3] * fadeRoot(ctx->f[5]);
         }
         // Replaces swc1 f12,0x1DC0(v1) in cEmManage_SetSpeedRate: the effects' slow-motion rate, half at 60.
         void effectSlowRate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
@@ -1375,17 +1380,8 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_launch_rise", &launchRise);
         ps2xRegisterHostHook("km_fps60_launch_fall", &launchFall);
         ps2xRegisterHostHook("km_fps60_air_step_f0_s1", &airStep<0, 17>);
-        ps2xRegisterHostHook("km_esp_kill", &espTrace<4, 5, 6, 0>);
-        ps2xRegisterHostHook("km_esp_fade", &espTrace<4, 5, 6, 1>);
-        ps2xRegisterHostHook("km_esp_fade_owner_group", &espTrace<4, 5, 6, 2>);
-        ps2xRegisterHostHook("km_esp_fn2fbb78", &espTrace<4, 5, 6, 3>);
-        ps2xRegisterHostHook("km_esp_kill_event", &espTrace<4, 5, 6, 4>);
-        ps2xRegisterHostHook("km_esp_kill_group_number", &espTrace<4, 5, 6, 5>);
-        ps2xRegisterHostHook("km_esp_kill_group", &espTrace<4, 5, 6, 6>);
-        ps2xRegisterHostHook("km_esp_kill_group_pair", &espTrace<4, 5, 6, 7>);
-        ps2xRegisterHostHook("km_esp_all_kill", &espTrace<4, 5, 6, 8>);
-        ps2xRegisterHostHook("km_esp_kill_requested", &espTrace<18, 5, 6, 9>);
-        ps2xRegisterHostHook("km_esp_construct", &espTrace<4, 5, 6, 10>);
+        ps2xRegisterHostHook("km_fps60_effect_fade_rgb", &effectFadeRgb);
+        ps2xRegisterHostHook("km_fps60_effect_fade_a", &effectFadeA);
         ps2xRegisterHostHook("km_fps60_gene_fall_v_f1", &geneFallSpeed<1, 2, 1>);
         ps2xRegisterHostHook("km_fps60_gene_fall_y_f0", &geneFallY<0, 1>);
         ps2xRegisterHostHook("km_fps60_gene_fall_v_f0", &geneFallSpeed<0, 2, 0>);

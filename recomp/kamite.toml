@@ -48,7 +48,7 @@ runtime_relocations = "kamite_runtime_relocations.csv"
 # slow-motion path. Twenty tests of GameWork flags5E4 STA_WORLD_SLOW (`lw v1,0x7A84(v0); and v1,v1,a0` with a0 =
 # 0x20000, all in 0x2F5000..0x305000) pick, per step, either the full PS2-frame step (frames += 1.0, positions +=
 # velocity, spins, scales) or the same step x the effect rate (func_2FA350: frames += rate x GameWork +0x574 in
-# hundredths; motion x 0x741DC0 x +0x574). The pnach port halved four of the frame steps by hand (lui 0x3F00 at
+# hundredths; motion x 0x741DC0 x +0x574): 19 of the 20 (the colour fade at 0x2FC738 is the exception, below). The pnach port halved four of the frame steps by hand (lui 0x3F00 at
 # 0x302D04 / 0x304500 / 0x303910 / 0x2FCA8C) and held every-frame emitters to even frames; the other sixteen steps
 # (particle motion, most frame counters) ran 2x. Now every effect takes the slow path at 60 (km_fps60_effect_world_slow
 # on each `and`) with the effect rate at half: MoveEffect's reset 1.0 -> 0.5 (0x30F274) and cEmManage_SetSpeedRate's
@@ -73,9 +73,19 @@ address = "0x002FC114"
 hook = "km_fps60_effect_world_slow"
 replace = true
 flag = "fps60"
+# Not 0x2FC738 (Nov 1, the Shockwave glow, case 2026-11-01_16-14-13): there the slow path is another formula, not the
+# normal one at the effect rate. The colour fade multiplies RGBA +0x188..+0x194 by +0x1A8..+0x1B4 a frame (kill below
+# alpha 0.005); slow motion subtracts +0x1C8..+0x1D4 x the rate instead, zero for many effects (the Shockwave glow
+# B3EF60: alpha x 0.8 a frame, nothing in slow motion), so forced at 60 they never faded and never died. That test
+# keeps the game's own flag; the normal fade takes the square root of each factor at 60 (km_fps60_effect_fade_*).
 [[patches.hooks]]
-address = "0x002FC738"
-hook = "km_fps60_effect_world_slow"
+address = "0x002FC7F0"
+hook = "km_fps60_effect_fade_rgb"
+replace = true
+flag = "fps60"
+[[patches.hooks]]
+address = "0x002FC800"
+hook = "km_fps60_effect_fade_a"
 replace = true
 flag = "fps60"
 [[patches.hooks]]
@@ -3931,50 +3941,3 @@ flag = "fps60"
 address = "0x0010B744"
 hook = "km_fps60_gene_step_hold"
 flag = "fps60"
-
-# Effect trace (dev-only, claude/strip-list.md; the Shockwave glow, Nov 1): the effect system's kill / fade paths,
-# logged to <case>.<rate>.esp.csv while a case replays (frame_patches.cpp espTrace, test_mode.cpp espEvent).
-[[patches.hooks]] # func_002FBE50: an effect ends (a0)
-address = "0x002FBE50"
-hook = "km_esp_kill"
-flag = "test_cases"
-[[patches.hooks]] # vtable +0x30 fade start (delay slot of its jr)
-address = "0x002FEBE4"
-hook = "km_esp_fade"
-flag = "test_cases"
-[[patches.hooks]] # fade by owner + group
-address = "0x002FBA60"
-hook = "km_esp_fade_owner_group"
-flag = "test_cases"
-[[patches.hooks]] # VanishEffect path
-address = "0x002FBB78"
-hook = "km_esp_fn2fbb78"
-flag = "test_cases"
-[[patches.hooks]] # KillEventEsp
-address = "0x002FB4C0"
-hook = "km_esp_kill_event"
-flag = "test_cases"
-[[patches.hooks]] # Esp_killByGroupNumber
-address = "0x002FB6C8"
-hook = "km_esp_kill_group_number"
-flag = "test_cases"
-[[patches.hooks]] # Esp_killByGroup
-address = "0x002FB7B0"
-hook = "km_esp_kill_group"
-flag = "test_cases"
-[[patches.hooks]] # Esp_killByGroupPair
-address = "0x002FB898"
-hook = "km_esp_kill_group_pair"
-flag = "test_cases"
-[[patches.hooks]] # EspAllKill
-address = "0x002FB998"
-hook = "km_esp_all_kill"
-flag = "test_cases"
-[[patches.hooks]] # MoveEsp: a kill-requested effect is destroyed (s2)
-address = "0x002FB1F0"
-hook = "km_esp_kill_requested"
-flag = "test_cases"
-[[patches.hooks]] # effect constructor (a0)
-address = "0x002FBE28"
-hook = "km_esp_construct"
-flag = "test_cases"
