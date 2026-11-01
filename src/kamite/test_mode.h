@@ -51,4 +51,7 @@ namespace kamite::test_mode
     // keeps it, a replay counts it per site (the report's roll check).
     [[nodiscard]] uint32_t rollBefore(uint32_t site, uint32_t object, uint32_t drawn);
     void rollAfter(uint32_t value);
+    // Effect trace (dev-only): see test_mode.cpp.
+    void espEvent(const char *what, uint8_t *rdram, uint32_t effect, uint32_t a, uint32_t b, uint32_t ra);
+
 }

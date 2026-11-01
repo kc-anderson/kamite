@@ -3931,3 +3931,50 @@ flag = "fps60"
 address = "0x0010B744"
 hook = "km_fps60_gene_step_hold"
 flag = "fps60"
+
+# Effect trace (dev-only, claude/strip-list.md; the Shockwave glow, Nov 1): the effect system's kill / fade paths,
+# logged to <case>.<rate>.esp.csv while a case replays (frame_patches.cpp espTrace, test_mode.cpp espEvent).
+[[patches.hooks]] # func_002FBE50: an effect ends (a0)
+address = "0x002FBE50"
+hook = "km_esp_kill"
+flag = "test_cases"
+[[patches.hooks]] # vtable +0x30 fade start (delay slot of its jr)
+address = "0x002FEBE4"
+hook = "km_esp_fade"
+flag = "test_cases"
+[[patches.hooks]] # fade by owner + group
+address = "0x002FBA60"
+hook = "km_esp_fade_owner_group"
+flag = "test_cases"
+[[patches.hooks]] # VanishEffect path
+address = "0x002FBB78"
+hook = "km_esp_fn2fbb78"
+flag = "test_cases"
+[[patches.hooks]] # KillEventEsp
+address = "0x002FB4C0"
+hook = "km_esp_kill_event"
+flag = "test_cases"
+[[patches.hooks]] # Esp_killByGroupNumber
+address = "0x002FB6C8"
+hook = "km_esp_kill_group_number"
+flag = "test_cases"
+[[patches.hooks]] # Esp_killByGroup
+address = "0x002FB7B0"
+hook = "km_esp_kill_group"
+flag = "test_cases"
+[[patches.hooks]] # Esp_killByGroupPair
+address = "0x002FB898"
+hook = "km_esp_kill_group_pair"
+flag = "test_cases"
+[[patches.hooks]] # EspAllKill
+address = "0x002FB998"
+hook = "km_esp_all_kill"
+flag = "test_cases"
+[[patches.hooks]] # MoveEsp: a kill-requested effect is destroyed (s2)
+address = "0x002FB1F0"
+hook = "km_esp_kill_requested"
+flag = "test_cases"
+[[patches.hooks]] # effect constructor (a0)
+address = "0x002FBE28"
+hook = "km_esp_construct"
+flag = "test_cases"

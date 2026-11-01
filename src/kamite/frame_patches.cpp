@@ -615,6 +615,18 @@ namespace kamite
             ctx->f[Dst] = ctx->f[Dst] + ctx->f[V] * 0.5f - g * 0.125f;
         }
 
+        // Effect trace (dev-only, claude/strip-list.md; the Shockwave glow, Nov 1): entry hooks on the effect system's
+        // kill / fade paths, logged by test_mode::espEvent while a case replays. Effect in Obj (or 0 when the call
+        // takes an owner), the next two arguments, the caller (ra; s-register hooks inside MoveEsp log ra = 0).
+        template <int Obj, int A, int B, int Tag>
+        void espTrace(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            static const char *const names[] = {"kill", "fade", "fadeOwnerGroup", "fn2FBB78", "killEvent", "killGroupNumber",
+                                                "killGroup", "killGroupPair", "allKill", "killRequested", "construct"};
+            test_mode::espEvent(names[Tag], rdram, GPR_U32(ctx, Obj), GPR_U32(ctx, A), GPR_U32(ctx, B),
+                                Tag == 9 ? 0u : GPR_U32(ctx, 31));
+        }
+
         template <int F, int Base>
         void airStep(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
@@ -1363,6 +1375,17 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_launch_rise", &launchRise);
         ps2xRegisterHostHook("km_fps60_launch_fall", &launchFall);
         ps2xRegisterHostHook("km_fps60_air_step_f0_s1", &airStep<0, 17>);
+        ps2xRegisterHostHook("km_esp_kill", &espTrace<4, 5, 6, 0>);
+        ps2xRegisterHostHook("km_esp_fade", &espTrace<4, 5, 6, 1>);
+        ps2xRegisterHostHook("km_esp_fade_owner_group", &espTrace<4, 5, 6, 2>);
+        ps2xRegisterHostHook("km_esp_fn2fbb78", &espTrace<4, 5, 6, 3>);
+        ps2xRegisterHostHook("km_esp_kill_event", &espTrace<4, 5, 6, 4>);
+        ps2xRegisterHostHook("km_esp_kill_group_number", &espTrace<4, 5, 6, 5>);
+        ps2xRegisterHostHook("km_esp_kill_group", &espTrace<4, 5, 6, 6>);
+        ps2xRegisterHostHook("km_esp_kill_group_pair", &espTrace<4, 5, 6, 7>);
+        ps2xRegisterHostHook("km_esp_all_kill", &espTrace<4, 5, 6, 8>);
+        ps2xRegisterHostHook("km_esp_kill_requested", &espTrace<18, 5, 6, 9>);
+        ps2xRegisterHostHook("km_esp_construct", &espTrace<4, 5, 6, 10>);
         ps2xRegisterHostHook("km_fps60_gene_fall_v_f1", &geneFallSpeed<1, 2, 1>);
         ps2xRegisterHostHook("km_fps60_gene_fall_y_f0", &geneFallY<0, 1>);
         ps2xRegisterHostHook("km_fps60_gene_fall_v_f0", &geneFallSpeed<0, 2, 0>);
