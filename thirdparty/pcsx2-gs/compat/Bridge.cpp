@@ -283,8 +283,16 @@ namespace
         std::memcpy(g_regs + 0x1080, &regs->siglblid, 8);
         // As PCSX2's MTGS: CSR.FIELD (bit 13) picks the field.
         pcsx2gs::g_frame.fetch_add(1u, std::memory_order_relaxed);
-        if (pcsx2gs::g_drawDumpState.load(std::memory_order_relaxed) == 2)
+        // A frame's draws can all land in the other field (the game at 30 frames a second, e.g. every cutscene: two
+        // empty dumps from K, Nov 1): the recording goes on until a field had draws, at most 8 fields.
+        static int s_dumpFields = 0;
+        if (pcsx2gs::g_drawDumpState.load(std::memory_order_relaxed) == 2 && pcsx2gs::g_drawDumpFile &&
+            std::ftell(pcsx2gs::g_drawDumpFile) == 0 && ++s_dumpFields < 8)
         {
+        }
+        else if (pcsx2gs::g_drawDumpState.load(std::memory_order_relaxed) == 2)
+        {
+            s_dumpFields = 0;
             pcsx2gs::FinishDrawDump();
             std::fprintf(stderr, "[pcsx2-gs] draw dump written: %s.bin, _scene.png, _rt.png, _depth.png\n", pcsx2gs::g_drawDumpBase.c_str());
             pcsx2gs::g_drawDumpState.store(0, std::memory_order_relaxed);
