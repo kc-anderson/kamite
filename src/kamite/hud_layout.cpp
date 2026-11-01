@@ -512,7 +512,15 @@ namespace kamite::hud
             }
             // The style indicator rides in the money display's layout but belongs with the level meter at the left
             // edge: its own group, anchored there, so its draws neither follow the money nor widen its extent.
-            if (style_presets::onHudEntry(g_entry) && g_wide && !menuNow())
+            // The game's action prompt ("A :Throw") rides in the same two text entries (+0x9C / +0xA0, message 0x3010)
+            // and sits at the top left of the 4:3 screen (x 16, y 14; K's F6, Nov 1): with the money it followed the
+            // minimap's anchor and landed mid-screen at 16:9. It goes with the left edge, like the indicator.
+            bool leftEdge = style_presets::onHudEntry(g_entry);
+            if (!leftEdge && g_moneyLayout != 0u && g_curLayout == g_moneyLayout &&
+                (g_entry == (read32(rdram, g_moneyLayout + kMoneyText) & 0x01FFFFFFu) ||
+                 g_entry == (read32(rdram, g_moneyLayout + kMoneyShadow) & 0x01FFFFFFu)))
+                leftEdge = true;
+            if (leftEdge && g_wide && !menuNow())
             {
                 const float width = screenWidth(rdram);
                 g_savedCtx = g_ctx;
