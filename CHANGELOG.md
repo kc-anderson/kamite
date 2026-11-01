@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 1, 2026
 
+- Flashbacks: the sepia no longer has dark splotches (the renderer now runs in the CPU's normal rounding mode, as in PCSX2).
 - Renderer: PCSX2's graphics fixes of the last three weeks (texture cache, full-screen effects).
 - 60 FPS: particles and effects (hit spit, glass shards, sparks, glows) move and animate at the PS2's speed instead of twice as fast.
 - HD textures: a pack texture can no longer make parts the game draws fully opaque see-through or vanish (the Kick Me sign flickered).

@@ -21,6 +21,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <xmmintrin.h>
 
 namespace pcsx2gs
 {
@@ -39,6 +40,24 @@ namespace pcsx2gs
 }
 
 extern Pcsx2Config EmuConfig;
+
+namespace
+{
+    // PCSX2's renderer runs with the CPU's normal floating-point mode (MXCSR 0x1F80: round to nearest, no
+    // flush-to-zero), as on PCSX2's own GS thread. The port's GS thread takes the game thread's mode (round toward
+    // zero, denormals flushed: the PS2's FPU), which made the renderer's own maths a hair low: TEXA's TA1 0x80 / 255
+    // came out 0.50196075, the shader's * 255 gave 127.99999, and the flashback sepia's CT16 shuffle wrote green's
+    // top bit as 0 (every green >= 128 picked the palette's dark end: the splotches, Nov 1). Every entry sets it.
+    struct HostFpuMode
+    {
+        unsigned saved;
+        HostFpuMode() : saved(_mm_getcsr()) { _mm_setcsr(0x1F80u); }
+        ~HostFpuMode() { _mm_setcsr(saved); }
+        HostFpuMode(const HostFpuMode &) = delete;
+        HostFpuMode &operator=(const HostFpuMode &) = delete;
+    };
+}
+
 
 namespace
 {
@@ -188,6 +207,7 @@ namespace
 
     int Open(const Pcsx2GsOpenParams *params)
     {
+        const HostFpuMode fpu;
         if (g_open || !params || !params->hwnd)
             return 0;
         g_window = {};
@@ -231,6 +251,7 @@ namespace
 
     void Close()
     {
+        const HostFpuMode fpu;
         if (!g_open)
             return;
         GSclose();
@@ -239,6 +260,7 @@ namespace
 
     void Gif(const uint8_t *data, uint32_t qwc)
     {
+        const HostFpuMode fpu;
         if (g_open && data && qwc)
             GSgifTransfer(data, qwc);
     }
@@ -273,6 +295,7 @@ namespace
 
     void Vsync(const Pcsx2GsPrivRegs *regs)
     {
+        const HostFpuMode fpu;
         if (!g_open || !regs)
             return;
         for (u32 i = 0; i < 15u; ++i)
@@ -319,18 +342,21 @@ namespace
 
     void Reset()
     {
+        const HostFpuMode fpu;
         if (g_open)
             GSreset(false);
     }
 
     void ReadFifo(uint8_t *dst, uint32_t qwc)
     {
+        const HostFpuMode fpu;
         if (g_open && dst && qwc)
             GSInitAndReadFIFO(dst, qwc);
     }
 
     void Resize(uint32_t width, uint32_t height)
     {
+        const HostFpuMode fpu;
         if (!g_open || width == 0u || height == 0u)
             return;
         g_window.surface_width = width;
@@ -341,6 +367,7 @@ namespace
 
     void SetScale(float scale)
     {
+        const HostFpuMode fpu;
         if (!g_open)
             return;
         Pcsx2Config::GSOptions options = GSConfig;
@@ -352,6 +379,7 @@ namespace
     // As GSState::Defrost: a hardware reset (the HW renderer empties its texture cache and targets), then the memory.
     void LoadVram(const uint8_t *data, uint32_t size)
     {
+        const HostFpuMode fpu;
         if (!g_open || !data || !g_gs_renderer)
             return;
         g_gs_renderer->Reset(true);
@@ -360,6 +388,7 @@ namespace
 
     uint32_t SaveVram(uint8_t *dst, uint32_t size)
     {
+        const HostFpuMode fpu;
         if (!g_open || !dst || !g_gs_renderer)
             return 0;
         g_gs_renderer->Flush(GSState::GSFlushReason::SAVESTATE);
@@ -372,6 +401,7 @@ namespace
     // As GSState::InitReadFIFO, for an arbitrary transfer and leaving m_env/m_tr alone.
     uint32_t ReadLocal(uint8_t *dst, uint32_t size, uint64_t bitbltbuf, uint64_t trxpos, uint64_t trxreg)
     {
+        const HostFpuMode fpu;
         if (!g_open || !dst || !size || !g_gs_renderer)
             return 0;
         GIFRegBITBLTBUF blit{bitbltbuf};
@@ -387,6 +417,7 @@ namespace
 
     int Snapshot(const char *path)
     {
+        const HostFpuMode fpu;
         u32 width = 0, height = 0;
         std::vector<u32> pixels;
         if (!g_open || !path || !GSSaveSnapshotToMemory(0, 0, false, false, &width, &height, &pixels) || !width || !height)
@@ -500,6 +531,7 @@ namespace pcsx2gs
 
 extern "C" __declspec(dllexport) void pcsx2gs_set_option(const char *key, const char *value)
 {
+    const HostFpuMode fpu;
     if (!key || !value)
         return;
     if (std::strcmp(key, "see_through") == 0)
@@ -559,6 +591,7 @@ extern "C" __declspec(dllexport) void pcsx2gs_set_overlay(const float *lines, co
 // it to follow the game's own 4:3 / 16:9 option. Exported on its own so that the API table above stays the same.
 extern "C" __declspec(dllexport) void pcsx2gs_set_aspect(uint32_t mode)
 {
+    const HostFpuMode fpu;
     // 3 = 4:3 even with a custom (widescreen) aspect: the port pillarboxes menus drawn for 4:3.
     EmuConfig.CurrentAspectRatio = mode == 2u ? AspectRatioType::Stretch : mode == 1u ? AspectRatioType::R16_9 : AspectRatioType::R4_3;
     if (mode == 0u && g_customAspect > 0.0f)
