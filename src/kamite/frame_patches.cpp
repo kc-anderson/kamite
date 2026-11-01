@@ -865,6 +865,22 @@ namespace kamite
         {
             ctx->f[3] = ctx->f[3] * fadeRoot(ctx->f[5]);
         }
+        // Replaces sw zero,0x3BB8(v1) at 0x30F254, at the top of MoveEffect (before the effects step; Nov 1, the
+        // Shockwave case shockwave30 / shockwave60). Gene's roulette moves call cEmManage_SetSpeedRate (0.1 / 0.05) to
+        // slow the enemies, which also writes the effect rate 0x741DC0; at 30 the effects read that rate only on their
+        // slow path, i.e. while GameWork flags5E4 STA_WORLD_SLOW (0x20000) is set. At 60 every effect takes the slow
+        // path, so with the flag clear they ran at the enemies' slow rate (Gene's brace pieces in slow motion, the wave
+        // late against its sound, the glow's growth stalled while its fade ran). Flag clear: the effect rate is the
+        // plain 60 FPS step (1/k of a PS2 frame); flag set: the slowed rate stands (already x0.5, effectSlowRate).
+        void effectRateForFlag(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t zero = 0;
+            std::memcpy(&ram8(rdram, GPR_U32(ctx, 3) + 0x3BB8u), &zero, sizeof(zero));
+            uint32_t flags = 0;
+            std::memcpy(&flags, &ram8(rdram, 0x747A84u), sizeof(flags));
+            if ((flags & 0x20000u) == 0u)
+                setRamF32(rdram, 0x741DC0u, 0.5f);
+        }
         // Replaces swc1 f12,0x1DC0(v1) in cEmManage_SetSpeedRate: the effects' slow-motion rate, half at 60.
         void effectSlowRate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
@@ -1367,6 +1383,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_em_rate_f1_v0", &enemyRate30<2, 1>);
         ps2xRegisterHostHook("km_fps60_effect_world_slow", &effectWorldSlow);
         ps2xRegisterHostHook("km_fps60_effect_slow_rate", &effectSlowRate);
+        ps2xRegisterHostHook("km_fps60_effect_rate_for_flag", &effectRateForFlag);
         ps2xRegisterHostHook("km_fps60_wiggle_begin", &wiggleBegin);
         ps2xRegisterHostHook("km_fps60_wiggle_end", &wiggleEnd);
         ps2xRegisterHostHook("km_fps60_pl56e_store_s0", &countdownStore16<16, 2, 3, 0x56Eu>);

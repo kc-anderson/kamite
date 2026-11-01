@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 1, 2026
 
+- 60 FPS: effects during roulette moves (Shockwave's glow, wave and flying brace pieces) play at the PS2's speed instead of in slow motion.
 - 60 FPS: effect glows (Shockwave, the demon's entrance flash) fade out as on the PS2 instead of lingering.
 - 60 FPS: Gene's combos and moves chain at the PS2's pace (mashed strings ran about 10% fast).
 - 60 FPS: Gene falls from ledges and drops at the PS2's speed (he fell twice as fast).

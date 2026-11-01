@@ -172,6 +172,14 @@ address = "0x00292F44"
 hook = "km_fps60_effect_slow_rate"
 replace = true
 flag = "fps60"
+# MoveEffect's top (Nov 1, Shockwave): the forced slow path must not pick up the enemies' slow-motion rate that the
+# roulette moves write to 0x741DC0 while STA_WORLD_SLOW is clear (at 30 the effects ignore it then): 0.5 unless the flag
+# is set. Replaces sw zero,0x3BB8(v1).
+[[patches.hooks]]
+address = "0x0030F254"
+hook = "km_fps60_effect_rate_for_flag"
+replace = true
+flag = "fps60"
 
 # The HUD's tension bar (func_00142060) eases its shown value toward the gauge by 0.1 of the gap a frame (0x1426BC
 # lui / 0x1426C0 ori = 0.1): 1 - 0.9^0.5 = 0.0513 at 60 (0x3D523176), the same easing in real time.
