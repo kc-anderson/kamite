@@ -864,6 +864,8 @@ namespace kamite::test_mode
             // both 60 FPS frames of that window get it. With poll 2k on the first half, a press that reached the 30 FPS
             // frame acted only on the second half at 60 and Gene ran a vblank of the old state first (66sec case: 0.05 m
             // off from 0.22 s, fps60-notes "30-recorded cases"). Replay-only; 60 FPS recordings are fed as before.
+            // Cases with a read track (all since Oct 29) hand the game the recorded reads instead (padReadCopy): the
+            // polls only feed reads before the first recorded one.
             if (run.rec.divider == 2u && fps60())
                 use |= 1u;
             use = use < last ? use : last;
@@ -1537,7 +1539,14 @@ namespace kamite::test_mode
             // The recorded frame at or before this one in time (the other rate: frames x divider), and its read n (or
             // its last).
             const std::vector<ReadEntry> &entries = run.reads.entries;
-            const uint64_t now = static_cast<uint64_t>(run.frame) * run.divider;
+            uint64_t now = static_cast<uint64_t>(run.frame) * run.divider;
+            // A 30 FPS recording at 60: the read of 30 FPS update k (tagged k + 1) belongs to the 60 FPS updates 2k and
+            // 2k + 1 (tags 2k + 1, 2k + 2: the tick and the held half of that 30 FPS frame), as the rolls already do
+            // (now rounded up to even). Rounding down gave it to 2k + 1 and 2k + 2, so every tick read the previous
+            // frame's pad and a press acted a 30 FPS frame late whenever the held half was held (66sec case, Nov 1:
+            // Gene's first attack ran a frame of DB2FA0 and its root motion, 0.11 m off for the rest of the fight).
+            if (run.reads.divider > run.divider)
+                now = (now + run.reads.divider - 1u) / run.reads.divider * run.reads.divider;
             while (run.readNext + 1u < entries.size() && static_cast<uint64_t>(entries[run.readNext + 1u].frame) * run.reads.divider <= now)
                 ++run.readNext;
             size_t at = run.readNext;
