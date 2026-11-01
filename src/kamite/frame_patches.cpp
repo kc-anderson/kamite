@@ -571,6 +571,23 @@ namespace kamite
         // the 30 FPS frame's y += vy (the juggle's peak 0.058 m low over an 18-frame rise). This replaces the vy store
         // `swc1 fF, 0x5C4(base)` that follows the y step: store, then y += (vy before - vy after) x rate / 2 (=
         // g x rate^2 / 2), which puts every 30 FPS frame's y back on the 30 FPS arc. Sites: tools in fps60-notes 12b.
+        // Gene's fall (Nov 1, static read; his common update func_00108AB0 0x10954C..0x1095E8): once he is 0.4 m or more
+        // above the floor, vy (+0x1608) -= g (+0x1604, 0.02 from 0x1088AC), then y += vy, every game frame and without
+        // a rate: at 60 he fell with 4x the acceleration. Exact half steps for this order (speed first): vy -= g / 2,
+        // y += vy / 2 - g / 8 (k frames per 30 FPS frame: vy -= g / k, y += vy / k - g (k - 1) / (2 k^2)).
+        template <int Dst, int V, int G>
+        void geneFallSpeed(uint8_t *, R5900Context *ctx, PS2Runtime *) // sub.s Dst, V, G
+        {
+            ctx->f[Dst] = ctx->f[V] - ctx->f[G] * 0.5f;
+        }
+        template <int Dst, int V>
+        void geneFallY(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // add.s Dst, Dst, V (y + new vy); Gene in s1
+        {
+            float g = 0.0f;
+            std::memcpy(&g, rdram + ((GPR_U32(ctx, 17) + 0x1604u) & 0x01FFFFFFu), 4);
+            ctx->f[Dst] = ctx->f[Dst] + ctx->f[V] * 0.5f - g * 0.125f;
+        }
+
         template <int F, int Base>
         void airStep(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
@@ -1307,6 +1324,10 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_launch_rise", &launchRise);
         ps2xRegisterHostHook("km_fps60_launch_fall", &launchFall);
         ps2xRegisterHostHook("km_fps60_air_step_f0_s1", &airStep<0, 17>);
+        ps2xRegisterHostHook("km_fps60_gene_fall_v_f1", &geneFallSpeed<1, 2, 1>);
+        ps2xRegisterHostHook("km_fps60_gene_fall_y_f0", &geneFallY<0, 1>);
+        ps2xRegisterHostHook("km_fps60_gene_fall_v_f0", &geneFallSpeed<0, 2, 0>);
+        ps2xRegisterHostHook("km_fps60_gene_fall_y_f1", &geneFallY<1, 0>);
         ps2xRegisterHostHook("km_fps60_air_step_f0_s2", &airStep<0, 18>);
         ps2xRegisterHostHook("km_fps60_air_step_f2_s2", &airStep<2, 18>);
         ps2xRegisterHostHook("km_fps60_em_rate_f12_a0", &enemyRate30<4, 12>);

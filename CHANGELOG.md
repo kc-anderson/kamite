@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 1, 2026
 
+- 60 FPS: Gene falls from ledges and drops at the PS2's speed (he fell twice as fast).
 - 60 FPS: enemies react to hits on the same frame as at 30 FPS (they were a frame early).
 - 60 FPS: juggled and airborne enemies fly as high as at 30 FPS (the juggle arc peaked a few centimetres low).
 - Loading a save state made at 60 FPS while playing at 30 no longer crashes the game.

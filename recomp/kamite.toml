@@ -3896,3 +3896,27 @@ address = "0x00257200"
 hook = "km_fps60_air_step_f0_s2"
 flag = "fps60"
 replace = true
+
+# 60 FPS: Gene's fall in his common update (func_00108AB0: vy +0x1608 -= g +0x1604, then y += vy, no rate) at exact
+# half steps (frame_patches.cpp geneFallSpeed / geneFallY). Two paths: vy == 0 and 0.4 m or more above the floor
+# (0x10959C / 0x1095A8), already falling (0x1095B8 / 0x1095C4).
+[[patches.hooks]]
+address = "0x0010959C"
+hook = "km_fps60_gene_fall_v_f1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x001095A8"
+hook = "km_fps60_gene_fall_y_f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x001095B8"
+hook = "km_fps60_gene_fall_v_f0"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x001095C4"
+hook = "km_fps60_gene_fall_y_f1"
+flag = "fps60"
+replace = true
