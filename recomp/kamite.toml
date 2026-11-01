@@ -854,6 +854,13 @@ flag = "fps60"
 address = "0x00157C64"
 hook = "km_fps60_seq_before"
 flag = "fps60"
+# A held hit reaction keeps the hit's damage take into the tick (frame_patches.cpp damageRelease; the enemy's update top
+# func_00208858 frees +0x698 every frame; Nov 1, demon counter launched sideways).
+[[patches.hooks]]
+address = "0x00208888"
+hook = "km_fps60_damage_release"
+replace = true
+flag = "fps60"
 # cEmManage's update hands the enemies the tick's rate on the second half and keeps +0x548 (managerRateRead / Reset).
 [[patches.hooks]]
 address = "0x00290578"

@@ -539,6 +539,32 @@ namespace kamite
         // func_00123938 from 62 states, the mash states), which exists on one vblank only, so a press on a held vblank
         // is carried into the next one instead of being lost.
         uint32_t g_genePressCarry = 0, g_genePressAt = 0;
+        // A hit's damage take (cDamageManage record, enemy +0x698) lives until the enemy's next update, whose top
+        // (func_00208858, 0x208888) frees it. At 30 the hit reaction's step 0 reads it in the frame of the hit (the
+        // blow's direction: heading, which launch motion). At 60 a hit landing on a second half is held to the tick
+        // (above), whose top freed it first: step 0 took its no-record branch (Nov 1, K's demon counter cases: launched
+        // sideways, heading 0, motion 1DC4E00 instead of 1DBF940 straight back). A held enemy keeps its record into the
+        // tick; the update after frees it. For k: kept over the k-1 held frames.
+        uint32_t word32(uint8_t *rdram, uint32_t address)
+        {
+            uint32_t value = 0;
+            std::memcpy(&value, &ram8(rdram, address), sizeof(value));
+            return value;
+        }
+        std::unordered_map<uint32_t, uint32_t> g_keepDamage;
+        void damageRelease(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // replaces lw a1,0x698(s1)
+        {
+            const uint32_t obj = GPR_U32(ctx, 17);
+            uint32_t take = word32(rdram, obj + 0x698u);
+            const auto it = g_keepDamage.find(obj);
+            if (it != g_keepDamage.end())
+            {
+                if (it->second + 1u == gameFrames(rdram))
+                    take = 0u; // the record stays for the tick's step 0
+                g_keepDamage.erase(it);
+            }
+            SET_GPR_U32(ctx, 5, take);
+        }
         // Gene's slow-motion states call cEmManage_SetSpeedRate every frame (the roulette moves 0.1 / 0.05, the dodge's
         // slow-mo; the manager's +0x548 and the effect / object rates fall back to normal every frame). The held vblank
         // skips his handler, so the world ran one vblank at full speed after each such state change (Nov 1, case
@@ -576,6 +602,8 @@ namespace kamite
                 callGuest(rdram, ctx, runtime, 0x14F9F0u, obj, 1.0f);
                 callGuest(rdram, ctx, runtime, 0x14F928u, obj, 1.0f);
                 SET_GPR_U32(ctx, FnReg, 0x100318u);
+                if (!CarryPress && word32(rdram, obj + 0x698u) != 0u)
+                    g_keepDamage[obj] = counter;
                 if (CarryPress && g_slowRateAt + 1u == counter && g_slowRateManager != 0u)
                     callGuest(rdram, ctx, runtime, 0x292F38u, g_slowRateManager, g_slowRateValue);
                 if (CarryPress)
@@ -1615,6 +1643,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_gene_step_hold", &enemyStepHold<6, 7, true>);
         ps2xRegisterHostHook("km_fps60_motion_speed_hold", &motionSpeedHold);
         ps2xRegisterHostHook("km_fps60_seq_before", &seqBefore);
+        ps2xRegisterHostHook("km_fps60_damage_release", &damageRelease);
         ps2xRegisterHostHook("km_fps60_em_rate_read", &managerRateRead);
         ps2xRegisterHostHook("km_fps60_em_rate_reset", &managerRateReset);
         ps2xRegisterHostHook("km_fps60_motion_snap", &motionSnap);
