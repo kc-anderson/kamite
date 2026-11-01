@@ -551,6 +551,12 @@ namespace kamite::hud
                 return v;
             };
             const uint32_t font = GPR_U32(ctx, 18) & 0x01FFFFFFu;
+            // The same two text entries carry the game's action prompt ("A :Throw", message 0x3010), drawn at the top
+            // (y about 23..49 in the F6 dump, left of the minimap). Right-aligning it to the minimap's edge put it
+            // inside the minimap (Nov 1, K; since 5142a68). Only the counter under the minimap (y past its bottom,
+            // about 101) is aligned; font +0x24 is the text's y.
+            if (!(loadF(font + 0x24u) >= 100.0f))
+                return;
             const float textWidth = loadF(font + 0x70u);
             if (!(textWidth > 0.0f && textWidth < 640.0f))
                 return;

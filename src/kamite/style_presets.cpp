@@ -814,84 +814,30 @@ namespace kamite::style_presets
             wr32(entry + ent::kFlags, hidden ? (flags | kNoDraw) : (flags & ~kNoDraw));
         }
 
-        // The money display's layout (cCockMoney): the indicator goes into its two spare text entries. They are not
-        // always spare: the game shows the action prompt in them (Nov 1, K: "A :Throw" drawn small and up in the
-        // minimap, message 0x3010). Then they are the game's: what we changed in them (alignment, scale, the no-draw
-        // bit) is put back as the game left it, and they are taken again once their message is 0.
-        // 0: not that layout; 1: free or ours; 2: the game's text is in them.
-        int hudLayoutState(uint32_t layout, uint32_t &text, uint32_t &shadow)
+        // The money display's layout (cCockMoney): the indicator goes into its two spare text entries.
+        bool isHudLayout(uint32_t layout, uint32_t &text, uint32_t &shadow)
         {
             if (!validPointer(layout, 0x10u) || rd32(layout + game::IDBase::kEntNum) != 6u)
-                return 0;
+                return false;
             const uint32_t entries = rd32(layout + game::IDBase::kEnt);
             if (!validPointer(entries, 6u * ent::kSize))
-                return 0;
+                return false;
             text = entries + 4u * ent::kSize;
             shadow = entries + 5u * ent::kSize;
-            int state = 1;
             for (const uint32_t e : {text, shadow})
             {
-                if (g_ram[(e + ent::kKind) & 0x1FFFFFFu] != game::kIdentKindText)
-                    return 0;
                 const uint16_t msg = rd16(e + ent::kMsg);
-                if (msg != 0u && msg != kHudMessage && msg != kHudShadowMessage)
-                    state = 2;
+                if (g_ram[(e + ent::kKind) & 0x1FFFFFFu] != game::kIdentKindText || (msg != 0u && msg != kHudMessage && msg != kHudShadowMessage))
+                    return false;
             }
-            return state;
-        }
-
-        // The entries' own values before the indicator first changed them.
-        struct HudEntryWas
-        {
-            uint32_t entry = 0u, flags = 0u;
-            float sclX = 1.0f, sclY = 1.0f;
-            uint8_t align = 0u;
-        };
-        HudEntryWas g_hudWas[2];
-        void claimHudEntry(int i, uint32_t entry)
-        {
-            HudEntryWas &was = g_hudWas[i];
-            if (was.entry == entry)
-                return;
-            was.entry = entry;
-            was.flags = rd32(entry + ent::kFlags) & kNoDraw;
-            was.sclX = rdFloat(entry + ent::kDrawSclX);
-            was.sclY = rdFloat(entry + ent::kDrawSclY);
-            was.align = g_ram[(entry + ent::kAlign) & 0x1FFFFFFu];
-        }
-        void releaseHudEntries()
-        {
-            for (HudEntryWas &was : g_hudWas)
-            {
-                if (was.entry == 0u || !validPointer(was.entry, ent::kSize))
-                {
-                    was.entry = 0u;
-                    continue;
-                }
-                wr32(was.entry + ent::kFlags, (rd32(was.entry + ent::kFlags) & ~kNoDraw) | was.flags);
-                wrFloat(was.entry + ent::kDrawSclX, was.sclX);
-                wrFloat(was.entry + ent::kDrawSclY, was.sclY);
-                g_ram[(was.entry + ent::kAlign) & 0x1FFFFFFu] = was.align;
-                was.entry = 0u;
-            }
-            g_hudShown = false;
-            g_hudText = g_hudShadow = 0u;
+            return true;
         }
 
         void hudIndicator(uint32_t layout)
         {
             uint32_t text, shadow;
-            const int state = hudLayoutState(layout, text, shadow);
-            if (state == 0)
+            if (!isHudLayout(layout, text, shadow))
                 return;
-            if (state == 2)
-            {
-                if (g_hudWas[0].entry == text || g_hudWas[1].entry == shadow)
-                    releaseHudEntries();
-                return;
-            }
-            claimHudEntry(0, text);
-            claimHudEntry(1, shadow);
             const uint32_t data = dataPointer();
             Store store{};
             const bool show = data && readStore(data, store) && store.used != 0u;

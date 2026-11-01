@@ -563,6 +563,13 @@ namespace kamite
                     take = 0u; // the record stays for the tick's step 0
                 g_keepDamage.erase(it);
             }
+            // Whatever delayed it (the hold, or the hit landing after this enemy's update on the vblank before): a hit
+            // reaction (mode 1 / 2) whose step 0 has not run yet still needs the record (K's demon60 case, Nov 1: 1.4.0
+            // shown a vblank, then step 0 with the record freed). At 30 step 0 runs in the hit's frame, so this never
+            // keeps one there.
+            const uint8_t mode = ram8(rdram, obj + 0x2F4u), step = ram8(rdram, obj + 0x2F6u);
+            if (take != 0u && (mode == 1u || mode == 2u) && step == 0u)
+                take = 0u;
             SET_GPR_U32(ctx, 5, take);
         }
         // Gene's slow-motion states call cEmManage_SetSpeedRate every frame (the roulette moves 0.1 / 0.05, the dodge's
