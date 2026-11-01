@@ -3773,7 +3773,7 @@ void GSRendererHW::Draw()
 				static std::unordered_set<const void*> s_km_seen;
 				if (s_km_seen.size() < 400 && s_km_seen.insert(src->m_from_hash_cache).second)
 				{
-					HashCacheKey key;
+					GSTextureCache::HashCacheKey key;
 					const bool named = g_texture_cache->KamiteKeyOf(src->m_from_hash_cache, key);
 					std::fprintf(stderr,
 						"[pcsx2-gs] alpha-tested HD texture %016llx-%016llx: psm %02x %ux%u tbp %04x, alpha %u..%u, test atst %u aref %02x afail %u, mmag %u mmin %u\n",
