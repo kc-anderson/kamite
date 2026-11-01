@@ -136,6 +136,29 @@ void GSRendererHW::KamiteDumpDraw(GSTextureCache::Target* rt, GSTextureCache::Ta
 		pcsx2gs::s_ddRt = rt_tex;
 		pcsx2gs::s_ddDs = ds->m_texture;
 	}
+	// The game's full-screen passes (every draw after the scene): the target after each, at the PS2's resolution with
+	// its alpha, as _p<draw>_<fbp>_<psm>.png (at most 160), to compare pass by pass with PCSX2's own draw dumps (the
+	// flashback sepia's splotches, Nov 1).
+	static u32 s_post_saved = 0;
+	if (!pcsx2gs::s_ddSceneDone)
+		s_post_saved = 0;
+	else if (rt && rt_tex && s_post_saved < 160u && rt_tex->GetFormat() == GSTexture::Format::Color)
+	{
+		const GSVector2i us(std::max(1, rt->GetUnscaledWidth()), std::max(1, rt->GetUnscaledHeight()));
+		if (GSTexture* small = g_gs_device->CreateRenderTarget(us.x, us.y, GSTexture::Format::Color, false))
+		{
+			const float sx = std::min(1.0f, static_cast<float>(us.x) * rt->GetScale() / static_cast<float>(rt_tex->GetWidth()));
+			const float sy = std::min(1.0f, static_cast<float>(us.y) * rt->GetScale() / static_cast<float>(rt_tex->GetHeight()));
+			g_gs_device->StretchRect(rt_tex, GSVector4(0.0f, 0.0f, sx, sy), small,
+				GSVector4(0.0f, 0.0f, static_cast<float>(us.x), static_cast<float>(us.y)), ShaderConvert::COPY, Nearest);
+			char name[96];
+			std::snprintf(name, sizeof(name), "_p%05u_%04x_%02x.png", static_cast<u32>(s_n),
+				static_cast<u32>(m_cached_ctx.FRAME.Block()), static_cast<u32>(m_cached_ctx.FRAME.PSM));
+			small->Save(pcsx2gs::g_drawDumpBase + name);
+			g_gs_device->Recycle(small);
+			s_post_saved++;
+		}
+	}
 }
 
 using PS_ATST  = GSShader::PS_ATST;
