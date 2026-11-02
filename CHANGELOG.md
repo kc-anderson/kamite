@@ -4,6 +4,9 @@ Newest first, one line per change; the code comments say how.
 
 ## November 2, 2026
 
+- 60 FPS: enemies (and some objects) fade out and in at the PS2's speed.
+- Wild Curry Funk: a carried chair sits lower, on Gene's hands (F2 > Gameplay > Wild Curry Funk moves it).
+- Launcher: the notice ends with an exclamation mark; Wild Curry Funk's text mentions throwing.
 - Experimental: Wild Curry Funk, chairs (stage 1) can be picked up, carried, thrown and smashed like crates.
 - Launcher: a desert background with heat haze and drifting clouds; the text under the logo and at the bottom is readable over it.
 - Button prompts keep the chosen set after loading a save state made in another session or build (it showed the PlayStation art).

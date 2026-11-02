@@ -7,6 +7,11 @@
 // "lift_chairs" 0x304 is read as 0x30A for the switch (before sq s1 at 0x30FE7C) and put back once the object exists
 // (before daddu a0,s2 at 0x3125B4): a crate-class object with the chair's id, mesh (Fx_chrNN), texture and break
 // effect. claude/chair-notes.md.
+// Held, the crate class's carry (cOmThrow phase 0, func_001C8020) poses the object with its own carry motion and then
+// moves part 0 (+0x278[0] +0xD0, the translation in Gene's frame) by a per-id offset x the blend +0x624 (crate 0x30A:
+// -0.1, 0.1, 0.2; none for 0x304). A chair's part 0 sits at the top of its backrest (1.0 m up, 0.27 m back), so it rode
+// ~0.4 m over Gene's hands (case chair, Nov 2). km_lift_chairs_hold (before ori at 0x1C8248, every path after the
+// offsets) adds the chair's own offset; F2 > Gameplay > Wild Curry Funk sets it live.
 //
 // UnlockHard: the difficulty select is in the title room DLL r020 (cR020::titleLevelSel, 0x79B0E0). It reads the save's
 // "Hard unlocked" bit (0x747A28 & 0x200000, set by clearing the game) three times: for the menu's item animation
@@ -56,6 +61,7 @@
 #include "kamite/frame_patches.h"
 #include "kamite/log.h"
 #include "ps2_runtime_macros.h"
+#include "runtime/ps2_game_menu.h"
 #include "runtime/ee_scheduler.h"
 
 #include <algorithm>
@@ -63,6 +69,11 @@
 #include <cstdlib>
 #include <cstring>
 #include "runtime/ps2_save_state.h"
+
+#if __has_include("pcsx2gs_api.h")
+#include "pcsx2gs_api.h"
+#define KAMITE_HAS_GS_MENU 1
+#endif
 
 namespace kamite
 {
@@ -296,6 +307,46 @@ namespace kamite
             SET_GPR_U32(ctx, 16, kCrateId);
         }
 
+        // Held chair offset (metres, Gene's frame: x, y up, z); F2 > Gameplay sets it live.
+        std::atomic<float> g_chairHold[3] = {0.0f, -0.3f, 0.0f};
+
+        // Before ori at,at,0xCCCD at 0x1C8248 (func_001C8020, the held phase; s0 = the object, s1 = its part 0).
+        void liftChairsHold(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t obj = GPR_U32(ctx, 16), part = GPR_U32(ctx, 17);
+            if (!part || (ram32(rdram, obj + 0x2FCu) >> 16) != kChairId)
+                return;
+            const uint32_t at = ram32(rdram, part + 0xD0u) & 0x1FFFFFFu;
+            float blend = 0.0f;
+            std::memcpy(&blend, rdram + ((obj + 0x624u) & 0x1FFFFFFu), sizeof(blend));
+            for (int i = 0; i < 3; ++i)
+            {
+                float v = 0.0f;
+                std::memcpy(&v, rdram + at + 4u * i, sizeof(v));
+                v += g_chairHold[i].load(std::memory_order_relaxed) * blend;
+                std::memcpy(rdram + at + 4u * i, &v, sizeof(v));
+            }
+        }
+
+#ifdef KAMITE_HAS_GS_MENU
+        void drawChairPanel(const Pcsx2GsUi *ui)
+        {
+            if (!envOn("KAMITE_LIFT_CHAIRS"))
+                return;
+            if (ui->version >= 4u && !ui->collapsing_header("Wild Curry Funk", 0))
+                return;
+            const char *names[3] = {"Held chair: sideways##chairx", "Held chair: up##chairy", "Held chair: forward##chairz"};
+            for (int i = 0; i < 3; ++i)
+            {
+                float v = g_chairHold[i].load(std::memory_order_relaxed);
+                ui->set_next_width(340.0f);
+                if (ui->slider_float(names[i], &v, -1.0f, 1.0f, "%.2f m"))
+                    g_chairHold[i].store(v, std::memory_order_relaxed);
+            }
+            ui->text_disabled("Moves a carried chair against Gene's hands (his own frame). Tell Claude the values that look right.");
+        }
+#endif
+
         // Before daddu a0,s2,zero at 0x3125B4 (the object exists): the chair's id back for +0x2FE / +0x300 / the data.
         void liftChairsId(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
@@ -316,6 +367,10 @@ namespace kamite
         const bool liftChairs = envOn("KAMITE_LIFT_CHAIRS");
         ps2xRegisterHostHook("km_lift_chairs_switch", &liftChairsSwitch);
         ps2xRegisterHostHook("km_lift_chairs_id", &liftChairsId);
+        ps2xRegisterHostHook("km_lift_chairs_hold", &liftChairsHold);
+#ifdef KAMITE_HAS_GS_MENU
+        ps2x::menu::addPanel("Gameplay", &drawChairPanel);
+#endif
         ps2xSetPatchFlag("lift_chairs", liftChairs);
         ps2xSetPatchFlag("skip_intro", skipIntro);
         ps2xRegisterHostHook("km_roulette_no_orbs", &rouletteNoOrbs);

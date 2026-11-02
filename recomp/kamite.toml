@@ -320,6 +320,11 @@ flag = "lift_chairs"
 address = "0x003125B4"
 hook = "km_lift_chairs_id"
 flag = "lift_chairs"
+# The held chair's own offset in the carry phase (func_001C8020), after the per-id offsets, before the blend's step.
+[[patches.hooks]]
+address = "0x001C8248"
+hook = "km_lift_chairs_hold"
+flag = "lift_chairs"
 # [Game] RouletteNoOrbs (game_options.cpp): cCoreSave_getGodItem's save pointer, aimed at a non-zero byte when the orb
 # slots are empty (its only caller is Gene's R1 check at 0x123B2C).
 [[patches.hooks]]
@@ -829,6 +834,78 @@ flag = "fps60"
 [[patches.conditional]] # fade 0.1 -> 0.05
 address = "0x001BBD80"
 value = "0x3C013D4C"
+flag = "fps60"
+# Alpha fades (+0x24C, family 3; Nov 2, case enemy_fade: enemies vanished twice as fast at 60): every main-ELF
+# 'alpha +-= constant' step (scan: lwc1 0x24C, add.s / sub.s with a lui constant, swc1 0x24C) halved at 60. Steps
+# scaled by the enemy's +0x5A8 (func_00217980 / 00218C48 / 0023FA88 / 00240548) are right already. Not scanned:
+# em*.rel / r*.rel modules. 1.0 / 0.1 / 0.02 end on the same frame count (10 -> 20, 51 -> 101 vblanks).
+[[patches.conditional]] # cEm00_stepFadeIn: +0x1704 -= 0.02 (alpha = 1 - it) -> 0.01
+address = "0x0026EA90"
+value = "0x3C013C23"
+flag = "fps60"
+[[patches.conditional]] # cEm00_stepFadeOutAndReleaseNoStart: alpha -= 0.1 -> 0.05
+address = "0x00279878"
+value = "0x3C013D4C"
+flag = "fps60"
+[[patches.conditional]] # cEm00_stepFadeOutAndRelease (the death fade in case enemy_fade: 0.30 s at 30, 0.15 at 60)
+address = "0x00288CE8"
+value = "0x3C013D4C"
+flag = "fps60"
+[[patches.conditional]] # cEm00_stepFadeOutAndReleaseB
+address = "0x0028AB98"
+value = "0x3C013D4C"
+flag = "fps60"
+[[patches.conditional]] # func_00208BE0 (common enemy update): alpha -= 0.1 down to 0.3
+address = "0x00209964"
+value = "0x3C013D4C"
+flag = "fps60"
+[[patches.conditional]] # func_00208BE0: alpha += 0.1 back to 1.0
+address = "0x00209A00"
+value = "0x3C013D4C"
+flag = "fps60"
+[[patches.conditional]] # func_002856C0: alpha -= 0.1 down to 0.3
+address = "0x00285910"
+value = "0x3C013D4C"
+flag = "fps60"
+[[patches.conditional]] # func_002856C0: alpha += 0.1 back to 1.0
+address = "0x002859A0"
+value = "0x3C013D4C"
+flag = "fps60"
+[[patches.conditional]] # func_00289E38: alpha -= 0.1 down to 0.3
+address = "0x00289FF0"
+value = "0x3C013D4C"
+flag = "fps60"
+[[patches.conditional]] # object state func_001C0678: alpha -= 0.02
+address = "0x001C1D9C"
+value = "0x3C013C23"
+flag = "fps60"
+[[patches.conditional]] # object state func_001C0678: alpha -= 0.02
+address = "0x001C1FEC"
+value = "0x3C013C23"
+flag = "fps60"
+[[patches.conditional]] # object state func_001CC668: alpha -= 0.02
+address = "0x001CC994"
+value = "0x3C013C23"
+flag = "fps60"
+[[patches.conditional]] # object state func_001CE6C8: alpha -= 0.1
+address = "0x001CE820"
+value = "0x3C013D4C"
+flag = "fps60"
+[[patches.conditional]] # object state func_001CED40: alpha += 0.1
+address = "0x001CEDC0"
+value = "0x3C013D4C"
+flag = "fps60"
+[[patches.conditional]] # object state func_001CED40: alpha -= 0.1
+address = "0x001CEEC8"
+value = "0x3C013D4C"
+flag = "fps60"
+[[patches.conditional]] # object state func_001CEF28: alpha -= 0.1
+address = "0x001CF0D8"
+value = "0x3C013D4C"
+flag = "fps60"
+[[patches.conditional]] # held object (func_001C8020): the carry offset's blend +0x624 += 0.05 -> 0.025
+address = "0x001C8244"
+value = "0x3C013CCC"
 flag = "fps60"
 # Random rolls made every frame (frame_patches.cpp randPaired; fps60-notes family 8): a roll at the same call site for
 # the same object on two game frames in a row repeats the first frame's number. Hooks after the twister returns in

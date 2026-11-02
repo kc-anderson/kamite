@@ -657,7 +657,7 @@ void main()
                 pushSize(state, 16.0f);
                 const char *lines[] = {"God Hand\u2122 is a trademark of CAPCOM CO., LTD. All rights to the game belong to Capcom.",
                                        "Kamite is a fan-made project, not affiliated with or endorsed by Capcom or Clover Studio. "
-                                       "It contains no game data: play your own damn copy."};
+                                       "It contains no game data: play your own damn copy!"};
                 const float lineHeight = ImGui::GetTextLineHeightWithSpacing();
                 const float y = ImGui::GetWindowHeight() - lineHeight * 2.0f - fontSize(state, 18.0f);
                 if (ImGui::GetCursorPosY() < y)
@@ -1630,7 +1630,7 @@ void main()
                                                     "the dissolve).",
                                      "F2 > Camera sizes it while playing.");
                         iniCheckbox(state, "On##seethrough", "Video", "SeeThrough", true);
-                        settingLabel("Wild Curry Funk", "Lets you pick up and carry chairs.");
+                        settingLabel("Wild Curry Funk", "Lets you pick up, carry, and throw chairs.");
                         iniCheckbox(state, "On##liftchairs", "Game", "LiftChairs", false);
                         ImGui::EndTable();
                     }
