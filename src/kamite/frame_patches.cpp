@@ -635,11 +635,25 @@ namespace kamite
             runtime->eeScheduler().endHostCall();
             *ctx = saved;
         }
+        // Gene's per-frame flags +0x15F4 (cleared every frame before his handler; the action chooser sets 0x400 and 0x100
+        // at 0x124108 / 0x1242BC, "an action is available"): the action button display (the "B :Carry" prompt) needs
+        // them, so on a held vblank the prompt vanished (Nov 2, K's video: off / on / off at each state change next to a
+        // pickup since d834476; case 2026-11-02_11-38-52 frames 145 and 147: 0x520 -> 0x20). The hold sets the bits the
+        // tick's handler added.
+        uint32_t g_geneFlagsObj = 0, g_geneFlagsAt = 0, g_geneFlagsBefore = 0, g_geneFlagsAdded = 0;
+        constexpr uint32_t kGeneFrameFlags = 0x15F4u;
         // After a dispatcher's jalr returns (0x10B750, 0x20FAF8, 0x24C37C, 0x25E778).
-        void handlerEnd(uint8_t *, R5900Context *, PS2Runtime *)
+        void handlerEnd(uint8_t *rdram, R5900Context *, PS2Runtime *)
         {
-            if (g_handlerDepth > 0)
-                --g_handlerDepth;
+            if (g_handlerDepth <= 0)
+                return;
+            const uint32_t obj = g_handlerStack[--g_handlerDepth];
+            if (obj != 0u && obj == g_geneFlagsObj && g_geneFlagsAt == gameFrames(rdram))
+            {
+                uint32_t flags = 0;
+                std::memcpy(&flags, &ram8(rdram, obj + kGeneFrameFlags), sizeof(flags));
+                g_geneFlagsAdded = flags & ~g_geneFlagsBefore;
+            }
         }
         template <int ObjReg, int FnReg = 6, bool CarryPress = false>
         void enemyStepHold(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
@@ -678,6 +692,13 @@ namespace kamite
             if (g_handlerDepth >= 8)
                 g_handlerDepth = 0;
             g_handlerStack[g_handlerDepth++] = thinkSkipped(rdram) ? 0u : obj;
+            if (CarryPress && !thinkSkipped(rdram))
+            {
+                g_geneFlagsObj = obj;
+                g_geneFlagsAt = counter;
+                std::memcpy(&g_geneFlagsBefore, &ram8(rdram, obj + kGeneFrameFlags), sizeof(g_geneFlagsBefore));
+                g_geneFlagsAdded = 0u;
+            }
             if (!thinkSkipped(rdram))
             {
                 HandlerMoves &moves = g_handlerMoves[obj];
@@ -712,6 +733,13 @@ namespace kamite
                     callGuest(rdram, ctx, runtime, 0x14F928u, obj, 1.0f);
                 }
                 g_holdCalling = false;
+                if (CarryPress && obj == g_geneFlagsObj && g_geneFlagsAt + 1u == counter && g_geneFlagsAdded != 0u)
+                {
+                    uint32_t flags = 0;
+                    std::memcpy(&flags, &ram8(rdram, obj + kGeneFrameFlags), sizeof(flags));
+                    flags |= g_geneFlagsAdded;
+                    std::memcpy(&ram8(rdram, obj + kGeneFrameFlags), &flags, sizeof(flags));
+                }
                 SET_GPR_U32(ctx, FnReg, 0x100318u);
                 if (CarryPress && g_slowRateAt + 1u == counter && g_slowRateManager != 0u)
                     callGuest(rdram, ctx, runtime, 0x292F38u, g_slowRateManager, g_slowRateValue);
