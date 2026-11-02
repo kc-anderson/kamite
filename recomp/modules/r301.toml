@@ -45,3 +45,12 @@ address = "0x0079C5D8"
 hook = "km_fps60_r301_cd_s2_70"
 flag = "fps60"
 replace = true
+
+# The start countdown's driver (r301CannonGameId::ExecCountDownAnim, K Nov 2: the 3-2-1 ran twice as fast) runs on the
+# 30 FPS tick only: its running-bit load reads 0 on second halves (frame_patches.cpp tickOnlyGate; its beeps play on a
+# timer value, so the timer alone can't be halved).
+[[patches.hooks]]
+address = "0x0079D5C4"
+hook = "km_fps60_r301_countdown_tick"
+flag = "fps60"
+replace = true

@@ -5,6 +5,7 @@
 
 #include "kamite/button_prompt_sheets.h"
 #include "kamite/crate_prompts.h"
+#include "kamite/disc_files.h"
 #include "kamite/log.h"
 #include "kamite/prompt_art.h"
 #include "kamite/sha256.h"
@@ -64,6 +65,8 @@ namespace kamite::button_prompts
         using CrateClut = std::array<uint8_t, crate_prompts::kClutBytes>;
         CratePayload g_crateOrig;                              // builder thread writes once, then g_crateCaptured
         CrateClut g_crateOrigClut;                             // its CLUT (right after the pixels), captured with it
+        std::array<uint8_t, 0x40> g_crateHeader{};             // its TIM3 header (the 0x40 bytes before the pixels)
+        std::atomic<uint64_t> g_crateFoundHash{0u};            // the pixels found in RAM (scanCrate -> applyCrate)
         std::atomic<bool> g_crateCaptured{false};
         std::atomic<uint32_t> g_crateAddress{0u};              // guest address of the pixels, 0 = not located
         std::atomic<bool> g_crateRebuild{false};
@@ -185,6 +188,10 @@ namespace kamite::button_prompts
                 g_crateKnown.push_back(fnv1a64(g_crateOrig.data(), crate_prompts::kPayloadBytes));
             if (fresh && images.cratePatched && !crateKnown(images.crateHash))
                 g_crateKnown.push_back(images.crateHash);
+            // What the scan accepted there (e.g. an earlier build's patch that a save state brought back) may be
+            // replaced too.
+            if (const uint64_t found = g_crateFoundHash.load(std::memory_order_acquire); found != 0u && !crateKnown(found))
+                g_crateKnown.push_back(found);
             uint8_t *guest = g_ram + address;
             const uint8_t *want = images.cratePatched ? images.crate.data() : g_crateOrig.data();
             if (std::memcmp(guest, want, crate_prompts::kPayloadBytes) != 0)
@@ -387,8 +394,50 @@ namespace kamite::button_prompts
         // Builder thread, about once a second while the crates are not located: look for the TIM3 header in front of
         // the crate pixels (16-byte aligned) and check the pixels are the disc's (first sight) or an image this
         // thread built (a savestate taken while patched).
-        void scanCrate(const std::vector<uint64_t> &built)
+        // The disc's crate, from st3/r301.dat (the room's data file holds the TIM3 uncompressed, pixels at 0xB820 on the USA
+        // disc): the original even when RAM only ever shows a crate an earlier build patched (a save state taken in
+        // the room keeps it; such a run never saw the disc's pixels, K Nov 2: the old letter colours stayed).
+        bool captureCrateFromDisc()
         {
+            if (!disc_files::open())
+                return false;
+            const auto file = disc_files::find("st3/r301.dat");
+            std::vector<uint8_t> data;
+            if (!file || !disc_files::read(*file, data))
+                return false;
+            const size_t need = 0x40u + crate_prompts::kPayloadBytes + crate_prompts::kClutBytes;
+            for (size_t at = 0; at + need <= data.size(); at += 16u)
+            {
+                uint32_t magic;
+                uint64_t prefix;
+                std::memcpy(&magic, data.data() + at, sizeof(magic));
+                std::memcpy(&prefix, data.data() + at + 0x40u, sizeof(prefix));
+                if (magic != kTim3Magic || prefix != kCratePrefix)
+                    continue;
+                const uint8_t *pixels = data.data() + at + 0x40u;
+                Sha256 sha;
+                sha.update(pixels, crate_prompts::kPayloadBytes);
+                if (sha.finishHex().rfind(kCrateShaPrefix, 0) != 0)
+                    continue;
+                std::memcpy(g_crateHeader.data(), data.data() + at, g_crateHeader.size());
+                std::memcpy(g_crateOrig.data(), pixels, crate_prompts::kPayloadBytes);
+                std::memcpy(g_crateOrigClut.data(), pixels + crate_prompts::kPayloadBytes, crate_prompts::kClutBytes);
+                g_crateCaptured.store(true, std::memory_order_release);
+                g_crateRebuild.store(true, std::memory_order_release);
+                return true;
+            }
+            return false;
+        }
+
+        void scanCrate(const std::vector<uint64_t> &built, const std::vector<uint64_t> &builtCluts)
+        {
+            static bool discTried = false;
+            if (!discTried && !g_crateCaptured.load(std::memory_order_acquire))
+            {
+                discTried = true;
+                if (captureCrateFromDisc())
+                    KM_INFO(Game, "button prompts: the minigame crates' original read from the disc");
+            }
             constexpr uint32_t kEnd = 0x2000000u - 0x40u - static_cast<uint32_t>(crate_prompts::kPayloadBytes);
             for (uint32_t address = 0x100000u; address < kEnd; address += 16u)
             {
@@ -408,6 +457,7 @@ namespace kamite::button_prompts
                     sha.update(data, crate_prompts::kPayloadBytes);
                     if (sha.finishHex().rfind(kCrateShaPrefix, 0) != 0)
                         continue;
+                    std::memcpy(g_crateHeader.data(), data - 0x40u, g_crateHeader.size());
                     std::memcpy(g_crateOrig.data(), data, crate_prompts::kPayloadBytes);
                     std::memcpy(g_crateOrigClut.data(), data + crate_prompts::kPayloadBytes, crate_prompts::kClutBytes);
                     g_crateCaptured.store(true, std::memory_order_release);
@@ -419,8 +469,19 @@ namespace kamite::button_prompts
                     bool ours = hash == fnv1a64(g_crateOrig.data(), crate_prompts::kPayloadBytes);
                     for (uint64_t h : built)
                         ours |= h == hash;
+                    // Or the crate as any build patched it: the disc's TIM3 header and a CLUT that is the disc's or
+                    // one built here (builds before f44adae kept the disc's CLUT).
+                    if (!ours && std::memcmp(data - 0x40u, g_crateHeader.data(), g_crateHeader.size()) == 0)
+                    {
+                        const uint8_t *clut = data + crate_prompts::kPayloadBytes;
+                        ours = std::memcmp(clut, g_crateOrigClut.data(), crate_prompts::kClutBytes) == 0;
+                        const uint64_t clutHash = fnv1a64(clut, crate_prompts::kClutBytes);
+                        for (uint64_t h : builtCluts)
+                            ours |= h == clutHash;
+                    }
                     if (!ours)
                         continue;
+                    g_crateFoundHash.store(hash, std::memory_order_release);
                 }
                 g_crateAddress.store(pixels, std::memory_order_release);
                 KM_INFO(Game, "button prompts: pirate minigame crates found at 0x" << std::hex << pixels << std::dec);
@@ -451,7 +512,7 @@ namespace kamite::button_prompts
 
         void builderLoop()
         {
-            std::vector<uint64_t> builtCrates;
+            std::vector<uint64_t> builtCrates, builtCrateCluts;
             uint32_t ticks = 0u;
             uint32_t lastGeneration = 0u;
             bindings::Device lastDevice = bindings::Device::Keys;
@@ -474,7 +535,7 @@ namespace kamite::button_prompts
                                                                 : bindings::lastDevice();
                 const bindings::PadStyle style = forced == 'x' ? bindings::PadStyle::Xbox : bindings::padStyle();
                 if (++ticks % 10u == 0u && g_crateAddress.load(std::memory_order_acquire) == 0u)
-                    scanCrate(builtCrates);
+                    scanCrate(builtCrates, builtCrateCluts);
                 const bool crateNew = g_crateRebuild.exchange(false, std::memory_order_acq_rel);
                 const bool setNew = g_promptsRebuild.exchange(false, std::memory_order_acq_rel);
                 if (built && !crateNew && !setNew && generation == lastGeneration && device == lastDevice && style == lastStyle)
@@ -580,6 +641,7 @@ namespace kamite::button_prompts
                         {
                             images->crateHash = fnv1a64(images->crate.data(), crate_prompts::kPayloadBytes);
                             builtCrates.push_back(images->crateHash);
+                            builtCrateCluts.push_back(fnv1a64(images->crateClut.data(), crate_prompts::kClutBytes));
                             if (wantHd && crateHd.width > 0)
                             {
                                 const auto path = hd_textures::generatedDir() /

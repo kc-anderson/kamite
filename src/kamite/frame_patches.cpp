@@ -1666,6 +1666,18 @@ namespace kamite
                 SET_GPR_U32(ctx, 5, std::min(frames * 2u, 0xFFFFu));
         }
 
+        // r301's start countdown (r301CannonGameId::ExecCountDownAnim 0x79D5A0, K Nov 2: "ran twice as fast"): its
+        // phases (+0x348) and timer (+0x34A, decremented through one store at 0x79DA04) step once a game frame, and the
+        // beeps play when the timer equals 30, so halving the timer alone would beep twice. Its first test
+        // (`lwu v0,0(s1)`, bit 0 = running, 0x79D5C4) reads "not running" on second halves: the driver runs on the
+        // 30 FPS tick only (the anims it starts run in the ID system at their own rate).
+        void tickOnlyGate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            uint32_t value = 0;
+            std::memcpy(&value, rdram + (GPR_U32(ctx, 17) & 0x01FFFFFFu), 4);
+            SET_GPR_U32(ctx, 2, skipFrame(rdram) ? (value & ~1u) : value);
+        }
+
         // The stick-wiggle button prompt (cCockActButton move, type 4, 0x13BF08..0x13C020) swings its stick icon a
         // fixed 30 degrees and 5 units per frame (a 4-frame cycle). At 60 frames/s the swing of every other frame is
         // undone: the icon's angle (+0x48) and x (+0x38) of the entry at +0xD8 and the swing direction (0x3BD6E0).
@@ -1738,6 +1750,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_r301_cd_s1_a0", &countdownLoad<17, 0xA0u>);
         ps2xRegisterHostHook("km_fps60_r301_cd_s1_78", &countdownLoad<17, 0x78u>);
         ps2xRegisterHostHook("km_fps60_r301_cd_s2_70", &countdownLoad<18, 0x70u>);
+        ps2xRegisterHostHook("km_fps60_r301_countdown_tick", &tickOnlyGate);
         ps2xRegisterHostHook("km_fps60_flash_guard_rate", &flashGuardRate);
         ps2xRegisterHostHook("km_fps60_tension_drain", &tensionDrainRate);
         ps2xRegisterHostHook("km_fps60_enemy_slow_rate", &enemySlowRate);
