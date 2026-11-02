@@ -56,6 +56,7 @@ namespace kamite::button_prompts
         Payload g_origPayload[kSheetCount];
         Clut g_origClut[kSheetCount];
         std::atomic<bool> g_captured{false};
+        bool g_fromDisc = false; // EE thread: the originals came from the disc's core_usa.bin
 
         // ---- pirate minigame crates (crate_prompts.h): a TIM3 file in the room heap, found by scanning ----
         using CratePayload = std::array<uint8_t, crate_prompts::kPayloadBytes>;
@@ -133,14 +134,55 @@ namespace kamite::button_prompts
             return false;
         }
 
-        // First sight of both sheets: keep the original bytes, but only when they are the disc's (a savestate taken
-        // while patched would otherwise be taken for the original).
+        // The originals from the disc's core_usa.bin (the block in RAM is the file, as for radar_glow): whatever a save
+        // state brought back into the sheets (an earlier session's set mark, any build's style arrows or letters) is then
+        // replaced like the port's own bytes. K Nov 2: loading a save state made in another session or build showed
+        // the PS2 art ("the text icons sheet is not the disc's" in every replay).
+        bool captureFromDisc()
+        {
+            if (!disc_files::open())
+                return false;
+            const auto file = disc_files::find("core_usa.bin");
+            std::vector<uint8_t> data;
+            if (!file || !disc_files::read(*file, data) || data.size() < kCoreSpan)
+                return false;
+            for (int i = 0; i < kSheetCount; ++i)
+            {
+                Sha256 sha;
+                sha.update(data.data() + kPlaces[i].data, sheets::kPayloadBytes);
+                if (sha.finishHex().rfind(kShaPrefix[i], 0) != 0)
+                    return false;
+            }
+            for (int i = 0; i < kSheetCount; ++i)
+            {
+                std::memcpy(g_origPayload[i].data(), data.data() + kPlaces[i].data, sheets::kPayloadBytes);
+                std::memcpy(g_origClut[i].data(), data.data() + kPlaces[i].clut, sheets::kClutBytes);
+                g_known[i].push_back(fnv1a64(g_origPayload[i].data(), sheets::kPayloadBytes));
+            }
+            g_fromDisc = true;
+            return true;
+        }
+
+        // First sight of both sheets: the originals from the disc, or else from RAM, but only when RAM holds the disc's
+        // (a savestate taken while patched would otherwise be taken for the original).
         bool capture(uint32_t core)
         {
             static uint32_t nextTry = 0u;
             if (g_vblanks < nextTry)
                 return false;
             nextTry = g_vblanks + 60u;
+            static bool discTried = false;
+            if (!discTried)
+            {
+                discTried = true;
+                if (captureFromDisc())
+                {
+                    g_captured.store(true, std::memory_order_release);
+                    KM_INFO(Game, "button prompts: sheets found at core 0x" << std::hex << core << std::dec
+                                                                             << " (originals from the disc); drawing the bound keys");
+                    return true;
+                }
+            }
             for (int i = 0; i < kSheetCount; ++i)
             {
                 const uint8_t *data = g_ram + core + kPlaces[i].data;
@@ -252,7 +294,9 @@ namespace kamite::button_prompts
                 const uint8_t *want = images->patched[i] ? images->payload[i].data() : g_origPayload[i].data();
                 if (std::memcmp(guest, want, sheets::kPayloadBytes) == 0)
                     continue;
-                if (!known(i, fnv1a64(guest, sheets::kPayloadBytes)))
+                // With the disc's originals, the sheet's slot (its TEX0 checked above) is the port's to write whatever
+                // a save state left there; without them only bytes this code knows are replaced.
+                if (!g_fromDisc && !known(i, fnv1a64(guest, sheets::kPayloadBytes)))
                 {
                     if (!g_warnedForeign[i])
                     {
@@ -271,7 +315,7 @@ namespace kamite::button_prompts
                 const uint8_t *want = images->patched[i] ? images->clut[i].data() : g_origClut[i].data();
                 if (std::memcmp(guest, want, sheets::kClutBytes) == 0)
                     continue;
-                const bool ours = std::memcmp(guest, g_origClut[i].data(), sheets::kClutBytes) == 0 ||
+                const bool ours = g_fromDisc || std::memcmp(guest, g_origClut[i].data(), sheets::kClutBytes) == 0 ||
                                   (g_applied && std::memcmp(guest, g_applied->clut[i].data(), sheets::kClutBytes) == 0) ||
                                   std::memcmp(guest, images->clut[i].data(), sheets::kClutBytes) == 0;
                 if (ours)
