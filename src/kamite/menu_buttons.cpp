@@ -171,6 +171,29 @@ namespace kamite::menu_buttons
             }
         }
 
+        // A fix to the US core text, in every style (a data bug of the release, not a button choice), in RAM so a save
+        // state made before it is fixed too. The petit devil's "Up for my challenge?" (message 0x3004): its options
+        // are cursor codes [A804 n] (cMessDrawFont draws the arrow at the code whose n is the selection, 0x2B00A0; each
+        // raises the option count to n + 1, 0x2B3B40; [A602 0] before them starts at 0, left / right clamped,
+        // 0x2B3EC8). The disc labels "Of course!!" 3 and "Leave me alone!" 0, but its handler fights on 0
+        // (func_0028E858 0x28E918): the arrow sat on "Leave" while A accepted, and 1 / 2 were blank slots (K, Nov 2).
+        // Labelled 0 and 1 here.
+        void applyCoreFixes()
+        {
+            const uint32_t core = rd32(kCorePointer);
+            if (core < 0x100000u || core >= kRamBytes - 0x100000u || (core & 0xFu) != 0u)
+                return;
+            constexpr uint32_t kChallenge = 0x577A6u; // core_usa.bin offset of "[A804 3] Of course!! [A804 0]"
+            static const uint16_t kOriginal[18] = {0xA804u, 0x0003u, 0xFFFFu, 0xFFFFu, 0x004Eu, 0x005Fu, 0x0035u, 0x005Cu, 0x0068u,
+                                                   0x006Eu, 0x006Bu, 0x006Cu, 0x005Eu, 0x0023u, 0x0023u, 0x0010u, 0xA804u, 0x0000u};
+            uint8_t *guest = g_ram + core + kChallenge;
+            if (std::memcmp(guest, kOriginal, sizeof(kOriginal)) != 0)
+                return; // fixed already, or not the US disc's text
+            const uint16_t first = 0u, second = 1u;
+            std::memcpy(guest + 2u, &first, 2u);
+            std::memcpy(guest + 17u * 2u, &second, 2u);
+        }
+
         // Menu-file strings: the scanner thread lists where each rewrite's original text is, the EE thread rewrites.
         std::mutex g_foundMutex;
         std::vector<std::pair<size_t, uint32_t>> g_found; // rewrite index, guest address
@@ -307,7 +330,10 @@ namespace kamite::menu_buttons
             ++vblanks;
             applyTables();
             if (vblanks % 30u == 0u)
+            {
                 applyCoreText();
+                applyCoreFixes();
+            }
             if (current() == Style::Classic)
                 return;
             if (!g_menuFilesOnDisc)
