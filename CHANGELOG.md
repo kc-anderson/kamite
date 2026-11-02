@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 2, 2026
 
+- The petit devil's fight ring keeps the widescreen picture instead of switching to 4:3.
 - 60 FPS: sky clouds and other scrolling map textures move at the PS2's speed in every room.
 - 60 FPS: the pickup prompt no longer flickers as Gene steps toward or away from an object.
 - 60 FPS: Gene no longer slides back a few centimetres when he starts an attack (moves now carry on only as the game moved them).

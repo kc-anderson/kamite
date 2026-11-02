@@ -62,6 +62,12 @@ namespace kamite::hud
         // 0x1F5EE4) over the live scene with an invisible backdrop bigger than the screen (texture 0x3800, alpha 0):
         // an in-world screen like the tutorial pop-up, not a menu (counted as one, the picture went 4:3, Oct 25).
         constexpr uint32_t kJukeBoxTransReturn = 0x001F5EE4u;
+        // The petit devil's ring (room 0x40, r040.rel, linked at 0x799080): PetitDevilId::Trans (0x7995B8) draws two
+        // layouts; the first's entry 0 is the ring's own screen fade (SetFade 0x799888 shows / hides it), full screen
+        // and left shown through the fight. Counted as a menu background, the ring went 4:3 (K, Nov 2 F6 dump). The
+        // return address is only r040's while its code is there: the jal and the delay slot around it are checked.
+        constexpr uint32_t kPetitDevilFadeReturn = 0x007995D0u;
+        bool petitDevilFade(const uint8_t *rdram, uint32_t caller);
         constexpr uint32_t kPlayerBar = 0xF0000001u, kRadar = 0xF0000002u, kRoulette = 0xF0000003u, kMoney = 0xF0000004u;
         // The gold counter under the minimap (cCockMoney, its trans func_00143998 is a cockpit vtable method, not in
         // the radar's trans): the cIDBase_trans of its own layout returns to 0x1439E0, its "+gold" pop-ups' to
@@ -167,6 +173,12 @@ namespace kamite::hud
                 return false;
             const int8_t state = static_cast<int8_t>(rdram[(game + kTutorialState) & (PS2_RAM_SIZE - 1u)]);
             return state > 0 && state < 5;
+        }
+
+        bool petitDevilFade(const uint8_t *rdram, uint32_t caller)
+        {
+            return caller == kPetitDevilFadeReturn && read32(rdram, 0x007995C8u) == 0x0C0AAB0Au && // jal cIDBase_trans
+                   read32(rdram, 0x007995CCu) == 0x26040010u;                                       // a0 = this + 0x10
         }
 
         float screenWidth(const uint8_t *rdram)
@@ -294,7 +306,8 @@ namespace kamite::hud
                 // Full height too: letterbox bars in cutscenes are full width but thin.
                 const float height = 448.0f; // the game's 2D screen (0..448, NTSC)
                 if (g_inIdTrans && !g_ctx.active && !g_menuSeen && y1 - y0 >= 0.8f * height &&
-                    g_idCaller != kJukeBoxTransReturn && (g_subScreenOpen || !tutorialUp(rdram)))
+                    g_idCaller != kJukeBoxTransReturn && !petitDevilFade(rdram, g_idCaller) &&
+                    (g_subScreenOpen || !tutorialUp(rdram)))
                 {
                     g_menuSeen = true; // a menu's background (fades are drawn outside any layout)
                     if (g_wide && g_menuMode == MenuMode::Pillarbox)
