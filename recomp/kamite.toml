@@ -1519,11 +1519,12 @@ replace = true
 address = "0x00308650"
 value = "0x34420000"
 flag = "keep_walls"
-# The hide-model pass's end (lq s1 in the epilogue; the early exit joins at 0x3089B4): the object Gene holds is shown
-# again with the Modern controls (camera.cpp hidePassDone; Nov 2, K: an invisible carried object).
+# The camera fade of map objects (func_002A87E8, a0 = the object): its calls are noted, and an object whose fade stopped
+# running while faded (picked up, thrown) gets its alpha back (camera.cpp cameraFadeSweep; Nov 2, K: an invisible
+# carried object).
 [[patches.hooks]]
-address = "0x003089B8"
-hook = "km_cam_hide_held"
+address = "0x002A87E8"
+hook = "km_cam_fade_called"
 flag = "fov"
 
 # The radar's turn (func_00143D20, lqc2 $vf4,128(sp): Gene's rotation copied there): the Modern free camera's yaw while

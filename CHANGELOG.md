@@ -5,9 +5,9 @@ Newest first, one line per change; the code comments say how.
 ## November 2, 2026
 
 - 60 FPS: sky clouds and other scrolling map textures move at the PS2's speed in every room.
-- 60 FPS: the pickup prompt no longer flickers as Gene walks up to an object (and a button press on that frame is no longer lost).
+- 60 FPS: pickup prompts and their button stay active on the frame after Gene changes state.
 - 60 FPS: Gene no longer slides back a few centimetres when he starts an attack (moves now carry on only as the game moved them).
-- Modern camera: an object Gene carries is no longer hidden as if it blocked the view.
+- Objects Gene picks up no longer stay invisible, carried or thrown, after the camera came close to them.
 - L3 dash: dashes as soon as L3 is clicked, without stopping Gene first.
 
 ## November 1, 2026

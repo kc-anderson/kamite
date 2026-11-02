@@ -49,6 +49,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <unordered_map>
 #include <string>
 
 #if __has_include("pcsx2gs_api.h")
@@ -360,53 +361,68 @@ namespace kamite
             ps2xSetPatchFlag("keep_walls", want);
         }
 
-        // The object Gene holds is never hidden as a blocker (Nov 2, K: with the Modern camera Gene picked up an
-        // object he faced the camera with, next to a wall, and carried it invisible; see-through on or off). The
-        // hide-model manager's pass (func_00307B28, a0 = its list of 32 hidden models, kept at sp+0x168) hides
-        // every mesh a ray from the camera to Gene hits (+0x380 bit 0; the model goes in the list, whose meshes
-        // all come back at the next pass, func_00308BC0) and marks hit actors (+0x5A0 |= 2 at 0x30878C / 0x30887C /
-        // 0x308998; cleared next pass only for actors in the object list 0x754C58). A carried object is between the
-        // Modern camera and Gene whenever he faces it. At the pass's end (0x3089B8): the held objects (Gene +0x698,
-        // carried; +0x6A0, the weapon) shown again as the next pass would. Classic keeps the game's own.
-        void hidePassDone(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        // The camera fade of map objects lets go when it stops running (Nov 2, K: with the Modern camera an object Gene
+        // picked up stayed invisible, carried and thrown; case 2026-11-02_11-38-52). func_002A87E8, called every frame
+        // from an object's update while it lies on the ground, sets its alpha +0x24C from the camera's distance when
+        // it is nearer the camera than Gene (the translucent flag +0x250 0x10 with it; under 0.15: alpha 0, flag clear),
+        // else 1.0. The carried and flying updates never call it, so an object picked up while faded kept its last
+        // alpha (0.97 .. 0.17, then 0.0 at frames 390-398, and 0.0 to the end). The PS2's camera seldom comes that
+        // close; the Modern one does. Now: an object whose fade did not run for two frames, with the alpha the fade
+        // left still in place (no other code wrote it: break and respawn fades keep theirs), and the same class
+        // (+0x214), gets 1.0 and the flag cleared, as the fade gives an object that isn't in the way.
+        struct CameraFade
         {
-            if (!modern::enabled())
+            uint32_t frame = 0, vtable = 0, alphaBits = 0;
+        };
+        std::unordered_map<uint32_t, CameraFade> g_cameraFade;
+        uint32_t gameFrame(const uint8_t *rdram)
+        {
+            uint32_t frame = 0;
+            std::memcpy(&frame, rdram + game::GameWork::address(game::GameWork::kFrameCount), sizeof(frame));
+            return frame;
+        }
+        // 0x2A87E8, the fade's entry (a0 = the object).
+        void cameraFadeCalled(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t obj = GPR_U32(ctx, 4);
+            if (obj < 0x100000u || obj >= PS2_RAM_SIZE - 0x600u)
                 return;
-            const auto valid = [](uint32_t p) { return p >= 0x100000u && p < PS2_RAM_SIZE - 0x1000u; };
-            uint32_t player = 0, list = 0;
-            std::memcpy(&player, rdram + kPlayerPointer, sizeof(player));
-            std::memcpy(&list, rdram + ((GPR_U32(ctx, 29) + 0x168u) & (PS2_RAM_SIZE - 1u)), sizeof(list));
-            if (!valid(player))
-                return;
-            for (const uint32_t at : {0x698u, 0x6A0u})
+            CameraFade &f = g_cameraFade[obj];
+            f.frame = gameFrame(rdram);
+            std::memcpy(&f.vtable, rdram + obj + 0x214u, sizeof(f.vtable));
+        }
+        // Once a frame (cameraMatrixReady).
+        void cameraFadeSweep(uint8_t *rdram)
+        {
+            const uint32_t now = gameFrame(rdram);
+            for (auto it = g_cameraFade.begin(); it != g_cameraFade.end();)
             {
-                uint32_t held = 0;
-                std::memcpy(&held, rdram + player + at, sizeof(held));
-                if (!valid(held))
-                    continue;
-                uint32_t flags = 0;
-                std::memcpy(&flags, rdram + held + 0x5A0u, sizeof(flags));
-                flags &= ~2u;
-                std::memcpy(rdram + held + 0x5A0u, &flags, sizeof(flags));
-                bool listed = false;
-                for (uint32_t i = 0; valid(list) && i < 32u && !listed; ++i)
+                const uint32_t obj = it->first;
+                CameraFade &f = it->second;
+                uint32_t alpha = 0, vtable = 0;
+                std::memcpy(&alpha, rdram + obj + 0x24Cu, sizeof(alpha));
+                std::memcpy(&vtable, rdram + obj + 0x214u, sizeof(vtable));
+                if (vtable != f.vtable || now - f.frame > 600u)
                 {
-                    uint32_t entry = 0;
-                    std::memcpy(&entry, rdram + list + 4u * i, sizeof(entry));
-                    listed = entry == held;
-                }
-                if (!listed)
+                    it = g_cameraFade.erase(it);
                     continue;
-                uint32_t mesh = 0;
-                std::memcpy(&mesh, rdram + held + 0x25Cu, sizeof(mesh));
-                for (int n = 0; valid(mesh) && n < 64; ++n)
-                {
-                    uint32_t disp = 0;
-                    std::memcpy(&disp, rdram + mesh + 0x380u, sizeof(disp));
-                    disp &= ~1u;
-                    std::memcpy(rdram + mesh + 0x380u, &disp, sizeof(disp));
-                    std::memcpy(&mesh, rdram + mesh + 0x404u, sizeof(mesh));
                 }
+                if (now - f.frame < 2u)
+                {
+                    f.alphaBits = alpha; // what the fade left (read a frame or less after it ran)
+                    ++it;
+                    continue;
+                }
+                if (alpha == f.alphaBits && alpha != 0x3F800000u)
+                {
+                    const uint32_t one = 0x3F800000u;
+                    uint32_t flags = 0;
+                    std::memcpy(rdram + obj + 0x24Cu, &one, sizeof(one));
+                    std::memcpy(&flags, rdram + obj + 0x250u, sizeof(flags));
+                    flags &= ~0x10u;
+                    std::memcpy(rdram + obj + 0x250u, &flags, sizeof(flags));
+                }
+                it = g_cameraFade.erase(it);
             }
         }
 
@@ -414,6 +430,7 @@ namespace kamite
         void cameraMatrixReady(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             updateKeepWalls();
+            cameraFadeSweep(rdram);
             const uint32_t camera = GPR_U32(ctx, 20);
             if (camera >= 0x100000u && camera < PS2_RAM_SIZE - 0x1000u)
                 hitbox_overlay::noteScreenMatrix(reinterpret_cast<const float *>(rdram + camera)); // any camera: the last built wins
@@ -1134,7 +1151,7 @@ namespace kamite
         g_mul = fovFactor();
         ps2xRegisterHostHook("km_radar_yaw", &radarYaw);
         ps2xRegisterHostHook("km_cam_matrix", &cameraMatrixReady);
-        ps2xRegisterHostHook("km_cam_hide_held", &hidePassDone);
+        ps2xRegisterHostHook("km_cam_fade_called", &cameraFadeCalled);
         ps2xRegisterHostHook("km_fov_ease_a", &fovEaseA);
         ps2xRegisterHostHook("km_fov_ease_b", &fovEaseB);
         ps2xRegisterHostHook("km_fov_reset", &fovReset);
