@@ -4,7 +4,7 @@
     ram_counters.py cases\\2026-10-29_11-33-11.case [--min 8] [--top 60]   (needs numpy; Claude runs it, not the testers)
 
 Reads <case>.30.ram.bin and <case>.60.ram.bin (a record a replay frame: u32 frame, Gene's object 0x1800 bytes,
-GameWork 0x800, the save data 0x200, Gene's held / in-reach object 4 + 0x700, the button-action list 0x340). Every aligned byte, halfword, word and float is scanned for runs where it
+GameWork 0x800, the save data 0x200). Every aligned byte, halfword, word and float is scanned for runs where it
 changes by the same step every game frame (at least --min frames). A field that steps by the same amount per game
 frame at 30 and at 60 runs twice as fast in real time at 60: listed first. A field whose step at 60 is half the 30
 one is already compensated. Fields counting at one rate only are listed last (situations that drift).
@@ -12,7 +12,7 @@ one is already compensated. Fields counting at one rate only are listed last (si
 import sys
 import numpy as np
 
-REGIONS = [("pl", 0x1800), ("gw", 0x800), ("save", 0x200), ("obj", 0x704), ("act", 0x340)]
+REGIONS = [("pl", 0x1800), ("gw", 0x800), ("save", 0x200)]
 RECORD = 4 + sum(size for _, size in REGIONS)
 
 

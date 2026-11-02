@@ -876,37 +876,21 @@ namespace kamite::test_mode
         // The RAM dump of a replay (dev-only; tools/fps60/ram_counters.py): a record a frame, the frame number (u32) then
         // Gene's object (0x1800 bytes), GameWork (0x800) and the save data (0x200, *D_00569B70), zeros where a pointer is
         // not valid. For finding what counts game frames without knowing where it lives (the God Hand gauge, Oct 29).
-        // Nov 2 (diagnostic, strip with the pickup prompt / invisible carried object fixes): the object Gene holds or
-        // has in reach (the first set of his +0x6A0 weapon, +0x698 carried, +0x6A4 / +0x69C in reach: u32 address, then
-        // 0x700 bytes) and the button-action list at 0x568288 (0x340 bytes: the prompts requested this frame).
-        constexpr uint32_t kRamGene = 0x1800u, kRamGameWork = 0x800u, kRamSave = 0x200u, kRamObj = 4u + 0x700u, kRamActions = 0x340u;
+        constexpr uint32_t kRamGene = 0x1800u, kRamGameWork = 0x800u, kRamSave = 0x200u;
         void writeRamFrame(std::FILE *out, const uint8_t *rdram, uint32_t frame)
         {
             if (!out)
                 return;
-            static std::vector<uint8_t> buffer(4u + kRamGene + kRamGameWork + kRamSave + kRamObj + kRamActions);
+            static std::vector<uint8_t> buffer(4u + kRamGene + kRamGameWork + kRamSave);
             std::fill(buffer.begin(), buffer.end(), 0u);
             std::memcpy(buffer.data(), &frame, 4u);
             const auto copy = [&](uint32_t at, uint32_t address, uint32_t size) {
                 if (address >= 0x100000u && address + size <= 0x2000000u)
                     std::memcpy(buffer.data() + at, rdram + address, size);
             };
-            const uint32_t gene = rd32(rdram, GameWork::address(GameWork::kPlayerObj));
-            copy(4u, gene, kRamGene);
+            copy(4u, rd32(rdram, GameWork::address(GameWork::kPlayerObj)), kRamGene);
             copy(4u + kRamGene, GameWork::kAddress, kRamGameWork);
             copy(4u + kRamGene + kRamGameWork, rd32(rdram, 0x569B70u), kRamSave);
-            uint32_t object = 0u;
-            if (gene >= 0x100000u && gene + kRamGene <= 0x2000000u)
-                for (const uint32_t at : {0x6A0u, 0x698u, 0x6A4u, 0x69Cu})
-                    if ((object = rd32(rdram, gene + at)) >= 0x100000u && object + 0x700u <= 0x2000000u)
-                        break;
-            const uint32_t objectAt = 4u + kRamGene + kRamGameWork + kRamSave;
-            if (object >= 0x100000u && object + 0x700u <= 0x2000000u)
-            {
-                std::memcpy(buffer.data() + objectAt, &object, 4u);
-                copy(objectAt + 4u, object, 0x700u);
-            }
-            copy(objectAt + kRamObj, 0x568288u, kRamActions);
             std::fwrite(buffer.data(), 1u, buffer.size(), out);
         }
 
