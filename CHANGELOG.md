@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 2, 2026
 
+- 60 FPS: defeated enemies fade out at the PS2's speed (the common goons' fade was still twice as fast); some objects no longer fade at half speed.
 - 60 FPS: enemies (and some objects) fade out and in at the PS2's speed.
 - Wild Curry Funk: a carried chair sits lower, on Gene's hands (F2 > Gameplay > Wild Curry Funk moves it).
 - Launcher: the notice ends with an exclamation mark; Wild Curry Funk's text mentions throwing.

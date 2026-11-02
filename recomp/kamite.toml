@@ -838,7 +838,7 @@ flag = "fps60"
 # Alpha fades (+0x24C, family 3; Nov 2, case enemy_fade: enemies vanished twice as fast at 60): every main-ELF
 # 'alpha +-= constant' step (scan: lwc1 0x24C, add.s / sub.s with a lui constant, swc1 0x24C) halved at 60. Steps
 # scaled by the enemy's +0x5A8 (func_00217980 / 00218C48 / 0023FA88 / 00240548) are right already. Not scanned:
-# em*.rel / r*.rel modules. 1.0 / 0.1 / 0.02 end on the same frame count (10 -> 20, 51 -> 101 vblanks).
+# r*.rel modules (enemies have no modules). 1.0 / 0.1 / 0.02 end on the same frame count (10 -> 20, 51 -> 101).
 [[patches.conditional]] # cEm00_stepFadeIn: +0x1704 -= 0.02 (alpha = 1 - it) -> 0.01
 address = "0x0026EA90"
 value = "0x3C013C23"
@@ -887,20 +887,32 @@ flag = "fps60"
 address = "0x001CC994"
 value = "0x3C013C23"
 flag = "fps60"
-[[patches.conditional]] # object state func_001CE6C8: alpha -= 0.1
-address = "0x001CE820"
+# Nov 2 (cases enemyfade30 / enemyfade60: the goon's death fade still 0.15 s at 60): the scan above missed loads in
+# branch delay slots (bc1fl / bnel ... lwc1 0x24C) far from the step. Wider scan: every lui 0x3DCC / 0x3CA3 in a
+# function that stores +0x24C. Removed again: func_001CE6C8 / 001CED40 / 001CEF28 multiply 0.1 by
+# cEmManage_GetSpeedRate (0x292F50, already 0.5 at 60), so halving them made those objects fade at a quarter speed.
+[[patches.conditional]] # func_0025F1F0 (kind 0x202's death, mode 2 phase 2 step 1): alpha -= 0.1 -> 0.05
+address = "0x0025F7AC"
 value = "0x3C013D4C"
 flag = "fps60"
-[[patches.conditional]] # object state func_001CED40: alpha += 0.1
-address = "0x001CEDC0"
+[[patches.conditional]] # func_0025F1F0: +0x240 -= 0.1 -> 0.05 (both paths meet at the lui)
+address = "0x0025F5B4"
 value = "0x3C013D4C"
 flag = "fps60"
-[[patches.conditional]] # object state func_001CED40: alpha -= 0.1
-address = "0x001CEEC8"
+[[patches.conditional]] # func_00208BE0: alpha += 0.1 back to 1.0 (second path)
+address = "0x002099AC"
 value = "0x3C013D4C"
 flag = "fps60"
-[[patches.conditional]] # object state func_001CEF28: alpha -= 0.1
-address = "0x001CF0D8"
+[[patches.conditional]] # func_002856C0: alpha += 0.1 back to 1.0 (second path)
+address = "0x00285958"
+value = "0x3C013D4C"
+flag = "fps60"
+[[patches.conditional]] # func_00289E38: alpha += 0.1 back to 1.0
+address = "0x0028A038"
+value = "0x3C013D4C"
+flag = "fps60"
+[[patches.conditional]] # func_00289E38: alpha += 0.1 back to 1.0 (second path)
+address = "0x0028A07C"
 value = "0x3C013D4C"
 flag = "fps60"
 [[patches.conditional]] # held object (func_001C8020): the carry offset's blend +0x624 += 0.05 -> 0.025
