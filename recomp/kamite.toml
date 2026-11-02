@@ -44,6 +44,14 @@ runtime_relocations = "kamite_runtime_relocations.csv"
 # SLUS-21503_6FB69282.pnach "60 Fps" (Puggsy + Claude Ai + Gemini). "frame_hook": always on.
 [patches]
 
+# Scripted waits (task family, Nov 2; frame_patches.cpp taskSleep): cTaskWork_sleep stores the frames a script task
+# sleeps (`sh a1,0xE(a0)`); a duration of 2 or more becomes 2N vblanks at 60, sleep(1) (a poll) stays one frame.
+# Case 2026-11-02_13-47-31 (r301's lever: the cannon game stopped the world before the event camera ended: hard lock).
+[[patches.hooks]]
+address = "0x002D5AAC"
+hook = "km_fps60_task_sleep"
+flag = "fps60"
+
 # Effects at 60 FPS (Nov 1, K: the punch spit and the glass shards ran at double speed): the effect system has its own
 # slow-motion path. Twenty tests of GameWork flags5E4 STA_WORLD_SLOW (`lw v1,0x7A84(v0); and v1,v1,a0` with a0 =
 # 0x20000, all in 0x2F5000..0x305000) pick, per step, either the full PS2-frame step (frames += 1.0, positions +=

@@ -1651,6 +1651,21 @@ namespace kamite
             SET_GPR_U32(ctx, Dst, skipFrame(rdram) && value != 0u ? value + 1u : value);
         }
 
+        // Scripted waits (task family, Nov 2): cTaskWork_sleep(task, frames) (0x2D5AA0) stores the game frames a script
+        // task sleeps (task +0xE, `sh a1,0xE(a0)` at 0x2D5AAC); cTaskWork_step (0x2D5838) counts it down once a game
+        // frame and wakes the task on the frame it reaches 0. Room scripts, soft events and the scenario wait this way
+        // (r301's lever: sleep 25 + 55 before the cannon game may stop the world; at 60 it ran ahead of the event
+        // camera, the camera froze, waitCam never returned and the soft event's key stop locked the game). A duration
+        // (2 or more) becomes 2N vblanks = N 30 FPS frames (k: N x k). sleep(1) stays one game frame: the scripts use it
+        // as "poll again next frame" (r301: all 13 are wait-until loops), so a condition or a press is seen on the
+        // vblank it happens; a counted sleep(1) loop would run at 2x.
+        void taskSleep(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t frames = GPR_U32(ctx, 5) & 0xFFFFu;
+            if (frames >= 2u)
+                SET_GPR_U32(ctx, 5, std::min(frames * 2u, 0xFFFFu));
+        }
+
         // The stick-wiggle button prompt (cCockActButton move, type 4, 0x13BF08..0x13C020) swings its stick icon a
         // fixed 30 degrees and 5 units per frame (a 4-frame cycle). At 60 frames/s the swing of every other frame is
         // undone: the icon's angle (+0x48) and x (+0x38) of the entry at +0xD8 and the swing direction (0x3BD6E0).
@@ -1717,6 +1732,12 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_countdown", &buttonTimer);
         ps2xRegisterHostHook("km_fps60_countdown_self", &countdownSelf);
         ps2xRegisterHostHook("km_fps60_countdown_float", &countdownFloat);
+        ps2xRegisterHostHook("km_fps60_task_sleep", &taskSleep);
+        // r301 (the cannon game, recomp/modules/r301.toml): ExecStart's wait before the explanation, ExecGame's
+        // cannonball interval, ChkMastCannonBallHit's +0x70.
+        ps2xRegisterHostHook("km_fps60_r301_cd_s1_a0", &countdownLoad<17, 0xA0u>);
+        ps2xRegisterHostHook("km_fps60_r301_cd_s1_78", &countdownLoad<17, 0x78u>);
+        ps2xRegisterHostHook("km_fps60_r301_cd_s2_70", &countdownLoad<18, 0x70u>);
         ps2xRegisterHostHook("km_fps60_flash_guard_rate", &flashGuardRate);
         ps2xRegisterHostHook("km_fps60_tension_drain", &tensionDrainRate);
         ps2xRegisterHostHook("km_fps60_enemy_slow_rate", &enemySlowRate);

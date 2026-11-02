@@ -22,3 +22,26 @@ skip = []
 stubs = []
 # No runtime relocations: every import resolves to a boot .sndata export at static-link time
 # (r301_runtime_relocations.csv has 0 rows).
+
+# 60 FPS family 1 (countdowns once a game frame; frame_patches.cpp countdownLoad, flag fps60): the decrement sits in a
+# bnez delay slot, so the load before it is raised on second halves.
+#   0x79BE14  cR301CannonGame::ExecStart +0xA0: the 30 frames before the explanation (and its world stop)
+#   0x79C068  cR301CannonGame::ExecGame +0x78: the cannonball interval (30, then 15 / 12 / 11 by level)
+#   0x79C5D8  cR301CannonGame::ChkMastCannonBallHit +0x70
+[[patches.hooks]]
+address = "0x0079BE14"
+hook = "km_fps60_r301_cd_s1_a0"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x0079C068"
+hook = "km_fps60_r301_cd_s1_78"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x0079C5D8"
+hook = "km_fps60_r301_cd_s2_70"
+flag = "fps60"
+replace = true
