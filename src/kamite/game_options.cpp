@@ -316,6 +316,10 @@ namespace kamite
         // its middle); F2 > Gameplay sets them live.
         constexpr float kChairHoldDefault[3] = {0.0f, 0.0f, 0.0f};
         constexpr float kChairTurnDefault[3] = {0.0f, 0.0f, 0.0f};
+        // What the chair is attached to (F2): Gene's two hands (default), one hand, or the crate's carry motion.
+        enum ChairFollow : int { kFollowBothHands, kFollowLeftHand, kFollowRightHand, kFollowMotion };
+        std::atomic<int> g_chairFollow{kFollowBothHands};
+        constexpr uint32_t kGeneLeftHand = 10u, kGeneRightHand = 16u; // each other's mirror (part +0x14C)
         std::atomic<float> g_chairHold[3] = {kChairHoldDefault[0], kChairHoldDefault[1], kChairHoldDefault[2]};
         std::atomic<float> g_chairTurn[3] = {kChairTurnDefault[0], kChairTurnDefault[1], kChairTurnDefault[2]};
         // The chair's middle in part 0's frame (part 0 = the top of the backrest: 1.0 m up, 0.27 m back of the seat).
@@ -339,6 +343,78 @@ namespace kamite
             const Mat3 rz{{{cz, sz, 0}, {-sz, cz, 0}, {0, 0, 1}}};
             return mul(mul(rx, ry), rz);
         }
+        Mat3 transpose(const Mat3 &a)
+        {
+            Mat3 m{};
+            for (int r = 0; r < 3; ++r)
+                for (int c = 0; c < 3; ++c)
+                    m[r][c] = a[c][r];
+            return m;
+        }
+        // The mean of two rotations (their quaternions summed in one hemisphere): follows both when both turn alike
+        // (mean(A D, B D) = mean(A, B) D), unlike a fixed axis taken from either.
+        std::array<float, 4> toQuat(const Mat3 &m)
+        {
+            const float tr = m[0][0] + m[1][1] + m[2][2];
+            std::array<float, 4> q{};
+            if (tr > 0.0f)
+            {
+                const float s = std::sqrt(tr + 1.0f) * 2.0f;
+                q = {0.25f * s, (m[1][2] - m[2][1]) / s, (m[2][0] - m[0][2]) / s, (m[0][1] - m[1][0]) / s};
+            }
+            else if (m[0][0] > m[1][1] && m[0][0] > m[2][2])
+            {
+                const float s = std::sqrt(1.0f + m[0][0] - m[1][1] - m[2][2]) * 2.0f;
+                q = {(m[1][2] - m[2][1]) / s, 0.25f * s, (m[1][0] + m[0][1]) / s, (m[2][0] + m[0][2]) / s};
+            }
+            else if (m[1][1] > m[2][2])
+            {
+                const float s = std::sqrt(1.0f + m[1][1] - m[0][0] - m[2][2]) * 2.0f;
+                q = {(m[2][0] - m[0][2]) / s, (m[1][0] + m[0][1]) / s, 0.25f * s, (m[2][1] + m[1][2]) / s};
+            }
+            else
+            {
+                const float s = std::sqrt(1.0f + m[2][2] - m[0][0] - m[1][1]) * 2.0f;
+                q = {(m[0][1] - m[1][0]) / s, (m[2][0] + m[0][2]) / s, (m[2][1] + m[1][2]) / s, 0.25f * s};
+            }
+            return q;
+        }
+        Mat3 fromQuat(std::array<float, 4> q)
+        {
+            const float n = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+            for (float &v : q)
+                v /= n;
+            const float w = q[0], x = q[1], y = q[2], z = q[3];
+            return Mat3{{{1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w)},
+                         {2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w)},
+                         {2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y)}}};
+        }
+        Mat3 meanRotation(const Mat3 &a, const Mat3 &b)
+        {
+            std::array<float, 4> qa = toQuat(a), qb = toQuat(b);
+            const float dot = qa[0] * qb[0] + qa[1] * qb[1] + qa[2] * qb[2] + qa[3] * qb[3];
+            for (int i = 0; i < 4; ++i)
+                qa[i] += dot < 0.0f ? -qb[i] : qb[i];
+            return fromQuat(qa);
+        }
+
+        // The reference: case chair (fb14772), snapshot 240, Gene standing with the chair (carry idle E1F460), in the
+        // chair's root frame (Gene's frame). The carry motion had the chair at angles kRefAngles (deg) with its middle
+        // at kRefMiddle; each attachment's frame (rotation, origin) there is below. The sliders' zero is that pose,
+        // 0.3 m lower (K: it rode over his hands), and they read in Gene's frame at that moment.
+        constexpr float kRefAngles[3] = {-75.7558f, -6.0369f, -10.1902f};
+        constexpr float kRefMiddle[3] = {-0.40877f, 2.15203f - 0.3f, 0.41078f};
+        struct HandRef
+        {
+            Mat3 rotation;
+            float origin[3];
+        };
+        const HandRef kRefBoth{{{{0.78761f, 0.21788f, 0.57636f}, {0.43872f, -0.85510f, -0.27627f}, {0.43265f, 0.47045f, -0.76908f}}},
+                               {-0.2971f, 1.5561f, 0.1598f}};
+        const HandRef kRefLeft{{{{0.85850f, -0.49624f, -0.12933f}, {-0.50877f, -0.79258f, -0.33610f}, {0.06428f, 0.35434f, -0.93290f}}},
+                               {-0.5694f, 1.4848f, -0.1355f}};
+        const HandRef kRefRight{{{{-0.12519f, 0.57068f, 0.81157f}, {0.89176f, -0.29380f, 0.34415f}, {0.43484f, 0.76682f, -0.47213f}}},
+                                {-0.0247f, 1.6274f, 0.4551f}};
 
         // Before ori at,at,0xCCCD at 0x1C8248 (func_001C8020, the held phase; s0 = the object, s1 = its part 0).
         void liftChairsHold(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
@@ -346,28 +422,101 @@ namespace kamite
             const uint32_t obj = GPR_U32(ctx, 16), part = GPR_U32(ctx, 17);
             if (!part || (ram32(rdram, obj + 0x2FCu) >> 16) != kChairId)
                 return;
-            // The carry motion (made for the crate) gives part 0 a pose (angles part +0x100: x, y, z rad, matrix Rx Ry
-            // Rz rebuilt after this point; translation +0xD0 -> part +0x30) whose origin is the crate's middle: the
-            // walk's bob and sway turn the object round it. A chair's origin is the top of its backrest, so the same
-            // swing threw it about (K, Nov 2). The chair rides that pose as a crate would: its middle c at the motion's
-            // origin + offset (Gene's frame), turned by the sliders relative to the motion's angles, the motion's turn
-            // then applied round the middle: R = Turn R_motion, t = t_motion + offset - c R. Blended in by +0x624.
+            // Part 0's pose: angles part +0x100 (x, y, z rad, matrix Rx Ry Rz, rebuilt after this point) and translation
+            // +0xD0 -> part +0x30, in the chair's root frame (Gene's position *(+0xF0) and angles +0x100: world = local x
+            // Root + pos). The crate's carry motion sets it; its sway doesn't follow Gene's hands (a big crate hides
+            // that; the chair floated over his shoulder when he ran, K's video Nov 2). Attached to the hands instead:
+            // the frame of both hands (their mean rotation, the point between them) or of one, taken relative to the
+            // reference pose (D = Ref^T A): R = Turn Ref D, middle = origin + (Ref middle - Ref origin + offset) D.
+            // Gene's parts are this frame's (he updates before MoveObj). Blended in from the motion's pose by +0x624.
             const uint32_t at = ram32(rdram, part + 0xD0u) & 0x1FFFFFFu;
             const uint32_t angles = (part + 0x100u) & 0x1FFFFFFu;
+            auto vec = [&](uint32_t address, float *out) { std::memcpy(out, rdram + (address & 0x1FFFFFFu), sizeof(float) * 3); };
             float e[3], t[3], blend = 0.0f;
-            std::memcpy(e, rdram + angles, sizeof(e));
-            std::memcpy(t, rdram + at, sizeof(t));
+            vec(angles, e);
+            vec(at, t);
             std::memcpy(&blend, rdram + ((obj + 0x624u) & 0x1FFFFFFu), sizeof(blend));
             constexpr float kDeg = 3.14159265f / 180.0f;
-            const Mat3 r = mul(turnMatrix(g_chairTurn[0].load(std::memory_order_relaxed) * kDeg,
-                                          g_chairTurn[1].load(std::memory_order_relaxed) * kDeg,
-                                          g_chairTurn[2].load(std::memory_order_relaxed) * kDeg),
-                               turnMatrix(e[0], e[1], e[2]));
+            const Mat3 turn = turnMatrix(g_chairTurn[0].load(std::memory_order_relaxed) * kDeg,
+                                         g_chairTurn[1].load(std::memory_order_relaxed) * kDeg,
+                                         g_chairTurn[2].load(std::memory_order_relaxed) * kDeg);
+            float offset[3];
+            for (int k = 0; k < 3; ++k)
+                offset[k] = g_chairHold[k].load(std::memory_order_relaxed);
+            const int follow = g_chairFollow.load(std::memory_order_relaxed);
+            Mat3 r{};
+            float middle[3];
+            const uint32_t gene = ram32(rdram, obj + 0x644u);
+            const uint32_t geneParts = gene ? ram32(rdram, gene + 0x278u) : 0u;
+            if (follow == kFollowMotion || !geneParts || rdram[(gene + 0x2B4u) & 0x1FFFFFFu] <= kGeneRightHand)
+            {
+                // The crate's way: the motion's pose re-centred on the chair's middle, at the motion's origin + offset.
+                r = mul(turn, turnMatrix(e[0], e[1], e[2]));
+                for (int k = 0; k < 3; ++k)
+                    middle[k] = t[k] + offset[k];
+            }
+            else
+            {
+                float pos[3], rootAngles[3];
+                vec(ram32(rdram, obj + 0xF0u), pos);
+                vec(obj + 0x100u, rootAngles);
+                const Mat3 rootT = transpose(turnMatrix(rootAngles[0], rootAngles[1], rootAngles[2]));
+                // A hand part's rotation (world +0x80 rows) and position (+0xB0) in the root frame.
+                auto hand = [&](uint32_t index, Mat3 &rot, float *origin) {
+                    const uint32_t p = ram32(rdram, geneParts + 4u * index) & 0x1FFFFFFu;
+                    Mat3 w{};
+                    float wp[3];
+                    for (int row = 0; row < 3; ++row)
+                        std::memcpy(w[row].data(), rdram + p + 0x80u + 0x10u * row, sizeof(float) * 3);
+                    vec(p + 0xB0u, wp);
+                    rot = mul(w, rootT);
+                    for (int k = 0; k < 3; ++k)
+                    {
+                        origin[k] = 0.0f;
+                        for (int j = 0; j < 3; ++j)
+                            origin[k] += (wp[j] - pos[j]) * rootT[j][k];
+                    }
+                };
+                Mat3 a{};
+                float origin[3];
+                const HandRef *ref = &kRefBoth;
+                if (follow == kFollowLeftHand)
+                {
+                    hand(kGeneLeftHand, a, origin);
+                    ref = &kRefLeft;
+                }
+                else if (follow == kFollowRightHand)
+                {
+                    hand(kGeneRightHand, a, origin);
+                    ref = &kRefRight;
+                }
+                else
+                {
+                    Mat3 left{}, right{};
+                    float lo[3], ro[3];
+                    hand(kGeneLeftHand, left, lo);
+                    hand(kGeneRightHand, right, ro);
+                    a = meanRotation(left, right);
+                    for (int k = 0; k < 3; ++k)
+                        origin[k] = (lo[k] + ro[k]) * 0.5f;
+                }
+                const Mat3 d = mul(transpose(ref->rotation), a);
+                r = mul(mul(turn, turnMatrix(kRefAngles[0] * kDeg, kRefAngles[1] * kDeg, kRefAngles[2] * kDeg)), d);
+                float local[3];
+                for (int k = 0; k < 3; ++k)
+                    local[k] = kRefMiddle[k] - ref->origin[k] + offset[k];
+                for (int k = 0; k < 3; ++k)
+                {
+                    middle[k] = origin[k];
+                    for (int j = 0; j < 3; ++j)
+                        middle[k] += local[j] * d[j][k];
+                }
+            }
             const float target[3] = {std::atan2(r[1][2], r[2][2]), std::asin(std::clamp(-r[0][2], -1.0f, 1.0f)),
                                      std::atan2(r[0][1], r[0][0])};
             for (int k = 0; k < 3; ++k)
             {
-                float placed = t[k] + g_chairHold[k].load(std::memory_order_relaxed);
+                float placed = middle[k];
                 for (int j = 0; j < 3; ++j)
                     placed -= kChairMiddle[j] * r[j][k];
                 t[k] += (placed - t[k]) * blend;
@@ -384,6 +533,13 @@ namespace kamite
                 return;
             if (ui->version >= 4u && !ui->collapsing_header("Wild Curry Funk", 0))
                 return;
+            {
+                const char *const follows[4] = {"Both hands", "Left hand", "Right hand", "Carry animation (as a crate)"};
+                int follow = g_chairFollow.load(std::memory_order_relaxed);
+                ui->set_next_width(340.0f);
+                if (ui->combo("Held by##chairfollow", &follow, follows, 4))
+                    g_chairFollow.store(follow, std::memory_order_relaxed);
+            }
             const char *names[3] = {"Held chair: sideways##chairx", "Held chair: up##chairy", "Held chair: forward##chairz"};
             for (int i = 0; i < 3; ++i)
             {
@@ -409,9 +565,8 @@ namespace kamite
                     g_chairTurn[i].store(kChairTurnDefault[i], std::memory_order_relaxed);
                 }
             }
-            ui->text_disabled("A carried chair rides the carry animation as a crate does, round its own middle. Move: "
-                              "its middle, in Gene's frame (metres). Turn: about its middle, on top of the "
-                              "animation's sway (degrees). "
+            ui->text_disabled("Held by: what the chair is fixed to (it moves and turns with it). Move / turn: from "
+                              "the starting pose, in Gene's own directions while he stands (metres / degrees). "
                               "Tell Claude the values that look right.");
         }
 #endif
