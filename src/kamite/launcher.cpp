@@ -113,6 +113,8 @@ namespace kamite::launcher
         const ImVec4 kAccentActive(0.78f, 0.28f, 0.10f, 1.0f);
         const ImVec4 kPanel(0.10f, 0.09f, 0.09f, 0.92f);
         const ImVec4 kTextDim(0.66f, 0.62f, 0.58f, 1.0f);
+        const ImVec4 kTextSoft(0.80f, 0.77f, 0.73f, 1.0f); // dimmer text straight on the background
+        const ImVec4 kText(0.95f, 0.92f, 0.88f, 1.0f);
 
         void applyStyle()
         {
@@ -231,7 +233,7 @@ namespace kamite::launcher
             Texture2D burst{}; // resources/images/burst.png: the speed lines behind the logo
             Texture2D background{};   // resources/images/background.png: the desert (the gradient without it)
             Shader backgroundShader{}; // kBackgroundShader: heat haze, depth of field, clouds (none: the plain image)
-            int backgroundTexel = -1, backgroundTime = -1;
+            int backgroundTexel = -1, backgroundTime = -1, backgroundView = -1;
             Font splashFont{}; // resources/splash/splash.fnt, the Dominican font baked as an atlas
             std::string splash; // a random line of resources/splash/splash.txt, "" when there is none
             // The title's motion: the cursor (eased) shifts the burst layers and the kana by different amounts,
@@ -279,6 +281,7 @@ uniform sampler2D texture0;
 uniform vec4 colDiffuse;
 uniform vec2 texel; // 1 / the image's size
 uniform float time; // seconds
+uniform vec4 view;  // the part of the image in the window: x, y, width, height in image uv
 out vec4 finalColor;
 
 const float kHorizon = 0.625; // the horizon's height in background.png (0 top, 1 bottom)
@@ -322,7 +325,7 @@ void main()
 
     // Fake depth of field: the horizon (the town, the walkers) in focus, the near sand soft; a little softening
     // everywhere hides the image's low resolution.
-    float radius = 0.9 + 2.8 * smoothstep(0.03, 0.37, d) + 0.5 * smoothstep(0.0, -0.4, d);
+    float radius = 1.3 + 2.8 * smoothstep(0.03, 0.37, d) + 0.5 * smoothstep(0.0, -0.4, d);
     vec3 centre = texture(texture0, uv).rgb;
     vec3 col = centre;
     for (int i = 0; i < 12; ++i)
@@ -341,12 +344,16 @@ void main()
         a *= smoothstep(0.0, 0.08, centre.b - centre.r); // only over the sky, behind the town
         col = mix(col, mix(vec3(1.0), col, 0.2), a);
     }
+    // Toned down so the launcher's text reads over it: a little darker overall, more towards the bottom, a vignette.
+    vec2 sp = (fragTexCoord - view.xy) / view.zw; // 0..1 over the window
+    vec2 v = sp - 0.5;
+    col *= (1.0 - 0.08) * (1.0 - 0.45 * smoothstep(0.45, 1.0, sp.y)) * (1.0 - 0.3 * smoothstep(0.2, 0.75, dot(v, v) * 2.0));
     finalColor = vec4(col, 1.0) * colDiffuse * fragColor;
 }
 )glsl";
 
-        // The desert, covering the window: anchored right (the town and the walkers stay in frame when the window is
-        // narrower), centred vertically, shifted a little with the mouse (less than the burst in front of it).
+        // The desert, covering the window: fitted to the height up to the image's own width (2.76:1; wider windows crop
+        // it vertically), anchored right so the town and the walkers stay in frame when the window is narrower.
         // False without background.png (the gradient is drawn instead).
         bool drawDesert(const State &state)
         {
@@ -355,17 +362,17 @@ void main()
                 return false;
             const float width = static_cast<float>(GetScreenWidth()), height = static_cast<float>(GetScreenHeight());
             const float imageWidth = static_cast<float>(image.width), imageHeight = static_cast<float>(image.height);
-            const float scale = std::max(width / imageWidth, height / imageHeight) * 1.04f; // 4% spare for the shift
+            const float scale = std::max(width / imageWidth, height / imageHeight);
             const float shownWidth = width / scale, shownHeight = height / scale;
-            const float travelX = shownWidth * 0.012f, travelY = shownHeight * 0.012f;
-            const float x = imageWidth - shownWidth - travelX + state.parallax.x * travelX;
-            const float y = (imageHeight - shownHeight) * 0.5f + state.parallax.y * travelY;
+            const float x = imageWidth - shownWidth, y = (imageHeight - shownHeight) * 0.5f;
             const bool shaded = state.backgroundShader.id != 0u && state.backgroundShader.id != rlGetShaderIdDefault();
             if (shaded)
             {
                 const float texel[2] = {1.0f / imageWidth, 1.0f / imageHeight};
                 SetShaderValue(state.backgroundShader, state.backgroundTexel, texel, SHADER_UNIFORM_VEC2);
                 SetShaderValue(state.backgroundShader, state.backgroundTime, &state.time, SHADER_UNIFORM_FLOAT);
+                const float view[4] = {x / imageWidth, y / imageHeight, shownWidth / imageWidth, shownHeight / imageHeight};
+                SetShaderValue(state.backgroundShader, state.backgroundView, view, SHADER_UNIFORM_VEC4);
                 BeginShaderMode(state.backgroundShader);
             }
             DrawTexturePro(image, Rectangle{x, y, shownWidth, shownHeight}, Rectangle{0.0f, 0.0f, width, height},
@@ -477,10 +484,21 @@ void main()
             DrawTextPro(state.splashFont, text, at, origin, -18.0f, size, 0.0f, Color{255, 236, 64, alpha});
         }
 
+        // Text straight on the background, centred, with a soft dark shadow so it reads over the bright desert.
         void centeredText(const char *text, const ImVec4 &color)
         {
             const float width = ImGui::CalcTextSize(text).x;
             ImGui::SetCursorPosX(std::max(0.0f, (ImGui::GetWindowWidth() - width) * 0.5f));
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            ImDrawList *draw = ImGui::GetWindowDrawList();
+            const float size = ImGui::GetFontSize(), r = std::max(1.0f, size * 0.09f);
+            for (int ring = 1; ring <= 2; ++ring)
+                for (int i = 0; i < 12; ++i)
+                {
+                    const float a = static_cast<float>(i) * 0.5236f;
+                    draw->AddText(ImVec2(at.x + std::cos(a) * r * ring, at.y + r * 0.6f + std::sin(a) * r * ring),
+                                  IM_COL32(10, 6, 4, ring == 1 ? 46 : 22), text);
+                }
             ImGui::TextColored(color, "%s", text);
         }
 
@@ -537,7 +555,7 @@ void main()
                 ImGui::PopFont();
             }
             pushSize(state, 22.0f);
-            centeredText("God Hand\u2122 for PS2 Recompiled, Refined, Rearmed.", kTextDim);
+            centeredText("God Hand\u2122 for PS2 Recompiled, Refined, Rearmed.", kText);
             ImGui::PopFont();
             ImGui::Dummy(ImVec2(0.0f, fontSize(state, 40.0f)));
         }
@@ -580,7 +598,7 @@ void main()
             if (!state.installed)
             {
                 pushSize(state, 22.0f);
-                centeredText("To play, point the port to your own copy of the game.", kTextDim);
+                centeredText("To play, point the port to your own copy of the game.", kTextSoft);
                 ImGui::PopFont();
                 ImGui::Dummy(ImVec2(0.0f, fontSize(state, 10.0f)));
                 if (bigButton(state, "Install", buttonWidth, true))
@@ -639,13 +657,13 @@ void main()
                 pushSize(state, 16.0f);
                 const char *lines[] = {"God Hand\u2122 is a trademark of CAPCOM CO., LTD. All rights to the game belong to Capcom.",
                                        "Kamite is a fan-made project, not affiliated with or endorsed by Capcom or Clover Studio. "
-                                       "It contains no game data: play your own copy."};
+                                       "It contains no game data: play your own damn copy."};
                 const float lineHeight = ImGui::GetTextLineHeightWithSpacing();
                 const float y = ImGui::GetWindowHeight() - lineHeight * 2.0f - fontSize(state, 18.0f);
                 if (ImGui::GetCursorPosY() < y)
                     ImGui::SetCursorPosY(y);
                 for (const char *line : lines)
-                    centeredText(line, kTextDim);
+                    centeredText(line, kTextSoft);
                 ImGui::PopFont();
             }
             state.focusFirst = false;
@@ -1733,6 +1751,7 @@ void main()
                     state.backgroundShader = LoadShaderFromMemory(nullptr, source.c_str());
                     state.backgroundTexel = GetShaderLocation(state.backgroundShader, "texel");
                     state.backgroundTime = GetShaderLocation(state.backgroundShader, "time");
+                    state.backgroundView = GetShaderLocation(state.backgroundShader, "view");
                 }
             }
         }
