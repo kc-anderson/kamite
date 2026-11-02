@@ -11,9 +11,10 @@
 // angles +0x100, translation +0x30) and then
 // moves part 0 (+0x278[0] +0xD0, the translation in Gene's frame) by a per-id offset x the blend +0x624 (crate 0x30A:
 // -0.1, 0.1, 0.2; none for 0x304). A chair's part 0 sits at the top of its backrest (1.0 m up, 0.27 m back), so it rode
-// ~0.4 m over Gene's hands and wobbled out of them as he walked (case chair, Nov 2). km_lift_chairs_hold (before ori
-// at 0x1C8248, every path after the offsets) pins the chair's middle to the point between his hand parts, with an
-// offset and angles F2 > Gameplay > Wild Curry Funk sets live.
+// ~0.4 m over Gene's hands and swung out of them as he walked: the motion turns the object round its origin, the
+// crate's middle but the chair's backrest top (case chair, Nov 2). km_lift_chairs_hold (before ori at 0x1C8248, every
+// path after the offsets) re-centres the pose on the chair's middle, with an offset and turn F2 > Gameplay > Wild
+// Curry Funk sets live.
 //
 // UnlockHard: the difficulty select is in the title room DLL r020 (cR020::titleLevelSel, 0x79B0E0). It reads the save's
 // "Hard unlocked" bit (0x747A28 & 0x200000, set by clearing the game) three times: for the menu's item animation
@@ -313,12 +314,10 @@ namespace kamite
 
         // Held chair offset (metres, Gene's frame: x, y up, z) and turn (degrees about the chair's own x, y, z, round
         // its middle); F2 > Gameplay sets them live.
-        constexpr float kChairHoldDefault[3] = {0.0f, 0.3f, 0.0f};
-        constexpr float kChairTurnDefault[3] = {-76.0f, -6.0f, -10.0f}; // about the crate motion's own pose
+        constexpr float kChairHoldDefault[3] = {0.0f, 0.0f, 0.0f};
+        constexpr float kChairTurnDefault[3] = {0.0f, 0.0f, 0.0f};
         std::atomic<float> g_chairHold[3] = {kChairHoldDefault[0], kChairHoldDefault[1], kChairHoldDefault[2]};
         std::atomic<float> g_chairTurn[3] = {kChairTurnDefault[0], kChairTurnDefault[1], kChairTurnDefault[2]};
-        // Gene's hand parts (left / right; each other's mirror at part +0x14C).
-        constexpr uint32_t kGeneLeftHand = 10u, kGeneRightHand = 16u;
         // The chair's middle in part 0's frame (part 0 = the top of the backrest: 1.0 m up, 0.27 m back of the seat).
         constexpr float kChairMiddle[3] = {0.0f, -0.5f, 0.27f};
 
@@ -347,50 +346,32 @@ namespace kamite
             const uint32_t obj = GPR_U32(ctx, 16), part = GPR_U32(ctx, 17);
             if (!part || (ram32(rdram, obj + 0x2FCu) >> 16) != kChairId)
                 return;
-            // Pinned to Gene's hands: the chair's middle goes to the point between his hand parts (world translation
-            // at part +0xB0; Gene updates and calculates his parts before MoveObj, so they are this frame's) plus the
-            // offset, turned by the sliders in Gene's frame. Part 0's local translation is +0xD0 -> part +0x30, its
-            // angles part +0x100 (x, y, z rad, matrix Rx Ry Rz, rebuilt after this point); the object's root is Gene's
-            // position (+0xF0 ->) and angles (+0x100): world = local x Root + pos (checked on case chair, Nov 2). The
-            // carry motion's own pose is blended out by +0x624 as the chair comes up.
-            const uint32_t gene = ram32(rdram, obj + 0x644u);
-            const uint32_t geneParts = gene ? ram32(rdram, gene + 0x278u) : 0u;
-            if (!geneParts || rdram[(gene + 0x2B4u) & 0x1FFFFFFu] <= kGeneRightHand)
-                return;
-            auto vec = [&](uint32_t address, float *out) { std::memcpy(out, rdram + (address & 0x1FFFFFFu), sizeof(float) * 3); };
-            float pos[3], rootAngles[3], left[3], right[3], e[3], t[3], blend = 0.0f;
-            vec(ram32(rdram, obj + 0xF0u), pos);
-            vec(obj + 0x100u, rootAngles);
-            vec(ram32(rdram, geneParts + 4u * kGeneLeftHand) + 0xB0u, left);
-            vec(ram32(rdram, geneParts + 4u * kGeneRightHand) + 0xB0u, right);
+            // The carry motion (made for the crate) gives part 0 a pose (angles part +0x100: x, y, z rad, matrix Rx Ry
+            // Rz rebuilt after this point; translation +0xD0 -> part +0x30) whose origin is the crate's middle: the
+            // walk's bob and sway turn the object round it. A chair's origin is the top of its backrest, so the same
+            // swing threw it about (K, Nov 2). The chair rides that pose as a crate would: its middle c at the motion's
+            // origin + offset (Gene's frame), turned by the sliders relative to the motion's angles, the motion's turn
+            // then applied round the middle: R = Turn R_motion, t = t_motion + offset - c R. Blended in by +0x624.
             const uint32_t at = ram32(rdram, part + 0xD0u) & 0x1FFFFFFu;
             const uint32_t angles = (part + 0x100u) & 0x1FFFFFFu;
-            vec(angles, e);
-            vec(at, t);
+            float e[3], t[3], blend = 0.0f;
+            std::memcpy(e, rdram + angles, sizeof(e));
+            std::memcpy(t, rdram + at, sizeof(t));
             std::memcpy(&blend, rdram + ((obj + 0x624u) & 0x1FFFFFFu), sizeof(blend));
-            const Mat3 root = turnMatrix(rootAngles[0], rootAngles[1], rootAngles[2]);
-            float hands[3];
-            for (int k = 0; k < 3; ++k)
-            {
-                // (world - pos) x Root^T: the point between the hands in the chair's root frame.
-                hands[k] = 0.0f;
-                for (int j = 0; j < 3; ++j)
-                    hands[k] += ((left[j] + right[j]) * 0.5f - pos[j]) * root[k][j];
-            }
             constexpr float kDeg = 3.14159265f / 180.0f;
-            const float turn[3] = {g_chairTurn[0].load(std::memory_order_relaxed) * kDeg,
-                                   g_chairTurn[1].load(std::memory_order_relaxed) * kDeg,
-                                   g_chairTurn[2].load(std::memory_order_relaxed) * kDeg};
-            const Mat3 r = turnMatrix(turn[0], turn[1], turn[2]);
+            const Mat3 r = mul(turnMatrix(g_chairTurn[0].load(std::memory_order_relaxed) * kDeg,
+                                          g_chairTurn[1].load(std::memory_order_relaxed) * kDeg,
+                                          g_chairTurn[2].load(std::memory_order_relaxed) * kDeg),
+                               turnMatrix(e[0], e[1], e[2]));
+            const float target[3] = {std::atan2(r[1][2], r[2][2]), std::asin(std::clamp(-r[0][2], -1.0f, 1.0f)),
+                                     std::atan2(r[0][1], r[0][0])};
             for (int k = 0; k < 3; ++k)
             {
-                // Middle c at hands + offset: t = hands + offset - c R.
-                float pinned = hands[k] + g_chairHold[k].load(std::memory_order_relaxed);
+                float placed = t[k] + g_chairHold[k].load(std::memory_order_relaxed);
                 for (int j = 0; j < 3; ++j)
-                    pinned -= kChairMiddle[j] * r[j][k];
-                t[k] += (pinned - t[k]) * blend;
-                float d = std::remainder(turn[k] - e[k], 2.0f * 3.14159265f);
-                e[k] += d * blend;
+                    placed -= kChairMiddle[j] * r[j][k];
+                t[k] += (placed - t[k]) * blend;
+                e[k] += std::remainder(target[k] - e[k], 2.0f * 3.14159265f) * blend;
             }
             std::memcpy(rdram + angles, e, sizeof(e));
             std::memcpy(rdram + at, t, sizeof(t));
@@ -428,8 +409,9 @@ namespace kamite
                     g_chairTurn[i].store(kChairTurnDefault[i], std::memory_order_relaxed);
                 }
             }
-            ui->text_disabled("A carried chair's middle follows the point between Gene's hands. Move: from that point, "
-                              "in his own frame (metres). Turn: the chair's angles about its middle (degrees). "
+            ui->text_disabled("A carried chair rides the carry animation as a crate does, round its own middle. Move: "
+                              "its middle, in Gene's frame (metres). Turn: about its middle, on top of the "
+                              "animation's sway (degrees). "
                               "Tell Claude the values that look right.");
         }
 #endif
