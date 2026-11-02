@@ -11,7 +11,13 @@ logo.png, in src/kamite/launcher.cpp) and shifted a little with the mouse.
 nothing at the circle's edge). The launcher draws it twice, turning and pulsing, squashed to 3/4 height, centred on the
 wordmark (`kLogoCentreX/Y` in src/kamite/launcher.cpp: 0.480, 0.737 of logo.png), and shifts it with the mouse.
 
-All three are built by `tools/logo/build_logo.py --wordmark <render.png> --kana <kana.png> [--psd layers.psd]`, or
+`background.png`: the desert behind everything (K's own art). It covers the window, anchored right so the town and
+the walkers stay in frame, and shifts slightly with the mouse. `kBackgroundShader` in src/kamite/launcher.cpp adds
+heat haze along the horizon, fake depth of field and procedural clouds (masked to blue sky pixels, so they pass behind
+the town); its `kHorizon` (0.625) is the horizon's height in this image. Without the file the launcher draws its
+brown gradient.
+
+The logo images are built by `tools/logo/build_logo.py --wordmark <render.png> --kana <kana.png> [--psd layers.psd]`, or
 from that PSD again with `--layers layers.psd`; the script prints the wordmark's centre for `kLogoCentreX/Y` and the
 kana's rectangle for `kKanaRect` if the layout changes. The whole `resources/` folder is copied next
 to kamite.exe at build time.

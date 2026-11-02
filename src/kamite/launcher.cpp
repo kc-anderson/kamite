@@ -229,6 +229,9 @@ namespace kamite::launcher
             Texture2D logo{};  // resources/images/logo.png when present (the KAMITE wordmark; it stays still)
             Texture2D kana{};  // resources/images/kana.png: the painted kana over the wordmark's top right
             Texture2D burst{}; // resources/images/burst.png: the speed lines behind the logo
+            Texture2D background{};   // resources/images/background.png: the desert (the gradient without it)
+            Shader backgroundShader{}; // kBackgroundShader: heat haze, depth of field, clouds (none: the plain image)
+            int backgroundTexel = -1, backgroundTime = -1;
             Font splashFont{}; // resources/splash/splash.fnt, the Dominican font baked as an atlas
             std::string splash; // a random line of resources/splash/splash.txt, "" when there is none
             // The title's motion: the cursor (eased) shifts the burst layers and the kana by different amounts,
@@ -263,6 +266,113 @@ namespace kamite::launcher
             state.parallax.y += (target.y - state.parallax.y) * ease;
             const float shown = screen == Screen::Options ? 0.0f : 1.0f;
             state.burstShown += (shown - state.burstShown) * (1.0f - std::exp(-dt * 5.0f));
+        }
+
+        // background.png's effects, drawn over the whole window: a rising heat haze along the horizon, a fake depth of
+        // field (the town and the walkers in focus, the near sand soft, a little softening everywhere to hide the
+        // image's low resolution) and wispy clouds drifting on a plane above the desert, behind the town. The header
+        // (#version) is added for the GL version raylib runs.
+        const char *const kBackgroundShader = R"glsl(
+in vec2 fragTexCoord;
+in vec4 fragColor;
+uniform sampler2D texture0;
+uniform vec4 colDiffuse;
+uniform vec2 texel; // 1 / the image's size
+uniform float time; // seconds
+out vec4 finalColor;
+
+const float kHorizon = 0.625; // the horizon's height in background.png (0 top, 1 bottom)
+
+float hash(vec2 p)
+{
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+float noise(vec2 p)
+{
+    vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float fbm(vec2 p)
+{
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 5; ++i)
+    {
+        v += a * noise(p);
+        p = p * 2.03 + vec2(17.1, 9.2);
+        a *= 0.5;
+    }
+    return v;
+}
+
+const vec2 kDisc[12] = vec2[](vec2(-0.326, -0.406), vec2(-0.840, -0.074), vec2(-0.696, 0.457), vec2(-0.203, 0.621),
+                              vec2(0.962, -0.195), vec2(0.473, -0.480), vec2(0.519, 0.767), vec2(0.185, -0.893),
+                              vec2(0.507, 0.064), vec2(0.896, 0.412), vec2(-0.322, -0.933), vec2(-0.792, -0.598));
+
+void main()
+{
+    vec2 uv = fragTexCoord;
+    float d = uv.y - kHorizon; // < 0 sky, > 0 sand
+
+    // Heat haze: rising shimmer, strongest along the horizon, weaker over the sand, none high in the sky.
+    float haze = smoothstep(-0.07, 0.0, d) * (0.35 + 0.65 * exp(-max(d, 0.0) * 14.0));
+    float w = noise(vec2(uv.x * 60.0, uv.y * 150.0 + time * 2.4)) + 0.5 * noise(vec2(uv.x * 120.0, uv.y * 300.0 + time * 4.1)) - 0.75;
+    uv += vec2(2.6, 0.8) * w * haze * texel;
+
+    // Fake depth of field: the horizon (the town, the walkers) in focus, the near sand soft; a little softening
+    // everywhere hides the image's low resolution.
+    float radius = 0.9 + 2.8 * smoothstep(0.03, 0.37, d) + 0.5 * smoothstep(0.0, -0.4, d);
+    vec3 centre = texture(texture0, uv).rgb;
+    vec3 col = centre;
+    for (int i = 0; i < 12; ++i)
+        col += texture(texture0, uv + kDisc[i] * radius * texel).rgb;
+    col /= 13.0;
+
+    // Wispy clouds on a plane above the desert, drifting sideways (no loop seam: the noise never repeats).
+    float h = kHorizon - fragTexCoord.y;
+    if (h > 0.0)
+    {
+        float depth = 0.12 / (h + 0.03);
+        vec2 q = vec2((fragTexCoord.x - 0.5) * depth * 6.0 + time * 0.018, depth * 14.0);
+        q += 0.7 * vec2(fbm(q * 0.7 + vec2(0.0, time * 0.02)), fbm(q * 0.7 + vec2(5.2, 1.3)));
+        float c = fbm(q);
+        float a = smoothstep(0.50, 0.82, c) * smoothstep(0.0, 0.14, h) * 0.6;
+        a *= smoothstep(0.0, 0.08, centre.b - centre.r); // only over the sky, behind the town
+        col = mix(col, mix(vec3(1.0), col, 0.2), a);
+    }
+    finalColor = vec4(col, 1.0) * colDiffuse * fragColor;
+}
+)glsl";
+
+        // The desert, covering the window: anchored right (the town and the walkers stay in frame when the window is
+        // narrower), centred vertically, shifted a little with the mouse (less than the burst in front of it).
+        // False without background.png (the gradient is drawn instead).
+        bool drawDesert(const State &state)
+        {
+            const Texture2D &image = state.background;
+            if (image.id == 0u || image.width <= 0 || image.height <= 0)
+                return false;
+            const float width = static_cast<float>(GetScreenWidth()), height = static_cast<float>(GetScreenHeight());
+            const float imageWidth = static_cast<float>(image.width), imageHeight = static_cast<float>(image.height);
+            const float scale = std::max(width / imageWidth, height / imageHeight) * 1.04f; // 4% spare for the shift
+            const float shownWidth = width / scale, shownHeight = height / scale;
+            const float travelX = shownWidth * 0.012f, travelY = shownHeight * 0.012f;
+            const float x = imageWidth - shownWidth - travelX + state.parallax.x * travelX;
+            const float y = (imageHeight - shownHeight) * 0.5f + state.parallax.y * travelY;
+            const bool shaded = state.backgroundShader.id != 0u && state.backgroundShader.id != rlGetShaderIdDefault();
+            if (shaded)
+            {
+                const float texel[2] = {1.0f / imageWidth, 1.0f / imageHeight};
+                SetShaderValue(state.backgroundShader, state.backgroundTexel, texel, SHADER_UNIFORM_VEC2);
+                SetShaderValue(state.backgroundShader, state.backgroundTime, &state.time, SHADER_UNIFORM_FLOAT);
+                BeginShaderMode(state.backgroundShader);
+            }
+            DrawTexturePro(image, Rectangle{x, y, shownWidth, shownHeight}, Rectangle{0.0f, 0.0f, width, height},
+                           Vector2{0.0f, 0.0f}, 0.0f, WHITE);
+            if (shaded)
+                EndShaderMode();
+            return true;
         }
 
         // One layer of the burst: the texture centred at (x, y), radius in pixels, squashed vertically, turned.
@@ -1604,6 +1714,28 @@ namespace kamite::launcher
                 SetTextureFilter(state.burst, TEXTURE_FILTER_TRILINEAR);
             }
         }
+        const fs::path backgroundPath = context.exeDir / "resources" / "images" / "background.png";
+        if (fs::is_regular_file(backgroundPath, error))
+        {
+            state.background = LoadTexture(utf8(backgroundPath).c_str());
+            if (state.background.id != 0u)
+            {
+                GenTextureMipmaps(&state.background);
+                SetTextureFilter(state.background, TEXTURE_FILTER_TRILINEAR);
+                SetTextureWrap(state.background, TEXTURE_WRAP_CLAMP);
+                const int gl = rlGetVersion();
+                const char *header = (gl == RL_OPENGL_33 || gl == RL_OPENGL_43) ? "#version 330\n"
+                                     : gl == RL_OPENGL_ES_30                    ? "#version 300 es\nprecision highp float;\n"
+                                                                                : nullptr;
+                if (header != nullptr)
+                {
+                    const std::string source = std::string(header) + kBackgroundShader;
+                    state.backgroundShader = LoadShaderFromMemory(nullptr, source.c_str());
+                    state.backgroundTexel = GetShaderLocation(state.backgroundShader, "texel");
+                    state.backgroundTime = GetShaderLocation(state.backgroundShader, "time");
+                }
+            }
+        }
         loadSplash(state, context.exeDir / "resources" / "splash");
         KM_INFO(Boot, "launcher: shown (" << (state.installed ? "installed" : "not installed") << ")");
 
@@ -1618,7 +1750,8 @@ namespace kamite::launcher
             feedGamepads(io);
             updateMotion(state, state.screen);
             BeginDrawing();
-            drawBackground();
+            if (!drawDesert(state))
+                drawBackground();
             drawBurst(state);
             rlImGuiBegin();
             ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
@@ -1653,6 +1786,10 @@ namespace kamite::launcher
             UnloadTexture(state.kana);
         if (state.burst.id != 0u)
             UnloadTexture(state.burst);
+        if (state.background.id != 0u)
+            UnloadTexture(state.background);
+        if (state.backgroundShader.id != 0u && state.backgroundShader.id != rlGetShaderIdDefault())
+            UnloadShader(state.backgroundShader);
         if (state.splashFont.texture.id != 0u)
             UnloadFont(state.splashFont);
         rlImGuiShutdown(); // the F12 debugger sets ImGui up again later

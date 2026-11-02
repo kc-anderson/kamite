@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 2, 2026
 
+- Launcher: a desert background with heat haze, drifting clouds and a slight mouse parallax.
 - Button prompts keep the chosen set after loading a save state made in another session or build (it showed the PlayStation art).
 - 60 FPS: room-specific timers run at the PS2's speed (the ring's FIGHT / YOU WIN / TIME UP banners, the Chihuahua, the stage 5 shooting minigame, the electric floor and other room waits).
 - 60 FPS: the cannon game's 3-2-1 countdown runs at the PS2's speed.
