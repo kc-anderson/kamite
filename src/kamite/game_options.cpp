@@ -7,7 +7,8 @@
 // "lift_chairs" 0x304 is read as 0x30A for the switch (before sq s1 at 0x30FE7C) and put back once the object exists
 // (before daddu a0,s2 at 0x3125B4): a crate-class object with the chair's id, mesh (Fx_chrNN), texture and break
 // effect. claude/chair-notes.md.
-// Held, the crate class's carry (cOmThrow phase 0, func_001C8020) poses the object with its own carry motion and then
+// Held, the crate class's carry (cOmThrow phase 0, func_001C8020) poses the object with its own carry motion (part
+// angles +0x100, translation +0x30) and then
 // moves part 0 (+0x278[0] +0xD0, the translation in Gene's frame) by a per-id offset x the blend +0x624 (crate 0x30A:
 // -0.1, 0.1, 0.2; none for 0x304). A chair's part 0 sits at the top of its backrest (1.0 m up, 0.27 m back), so it rode
 // ~0.4 m over Gene's hands (case chair, Nov 2). km_lift_chairs_hold (before ori at 0x1C8248, every path after the
@@ -341,30 +342,33 @@ namespace kamite
             const uint32_t obj = GPR_U32(ctx, 16), part = GPR_U32(ctx, 17);
             if (!part || (ram32(rdram, obj + 0x2FCu) >> 16) != kChairId)
                 return;
-            // +0xD0 points at the local matrix's translation row (part +0x30); its rotation rows are the 0x30 before it.
+            // +0xD0 points at part 0's local translation (part +0x30). Its rotation comes from the angles at part +0x100
+            // (x, y, z radians; the matrix is Rx Ry Rz, rebuilt after this point: case chair, Nov 2), so the turn is
+            // made on the angles: R_new = Turn R_old, back to angles, and the translation keeps the middle in place.
             const uint32_t at = ram32(rdram, part + 0xD0u) & 0x1FFFFFFu;
-            if (at < 0x30u)
-                return;
+            const uint32_t angles = (part + 0x100u) & 0x1FFFFFFu;
             float blend = 0.0f;
             std::memcpy(&blend, rdram + ((obj + 0x624u) & 0x1FFFFFFu), sizeof(blend));
-            Mat3 m{};
-            float t[3];
-            for (int r = 0; r < 3; ++r)
-                std::memcpy(m[r].data(), rdram + at - 0x30u + 0x10u * r, sizeof(float) * 3);
+            float e[3], t[3];
+            std::memcpy(e, rdram + angles, sizeof(e));
             std::memcpy(t, rdram + at, sizeof(t));
             constexpr float kDeg = 3.14159265f / 180.0f;
-            const Mat3 r = turnMatrix(g_chairTurn[0].load(std::memory_order_relaxed) * kDeg * blend,
-                                      g_chairTurn[1].load(std::memory_order_relaxed) * kDeg * blend,
-                                      g_chairTurn[2].load(std::memory_order_relaxed) * kDeg * blend);
-            // Turn round the middle c: p' = ((p - c) R + c) M -> rotation R M, translation t + (c - c R) M.
-            float d[3];
+            const Mat3 m = turnMatrix(e[0], e[1], e[2]);
+            const Mat3 turned = mul(turnMatrix(g_chairTurn[0].load(std::memory_order_relaxed) * kDeg * blend,
+                                               g_chairTurn[1].load(std::memory_order_relaxed) * kDeg * blend,
+                                               g_chairTurn[2].load(std::memory_order_relaxed) * kDeg * blend),
+                                    m);
+            // Middle c fixed: t += c M - c R_new.
             for (int k = 0; k < 3; ++k)
-                d[k] = kChairMiddle[k] - (kChairMiddle[0] * r[0][k] + kChairMiddle[1] * r[1][k] + kChairMiddle[2] * r[2][k]);
+                for (int j = 0; j < 3; ++j)
+                    t[k] += kChairMiddle[j] * (m[j][k] - turned[j][k]);
             for (int k = 0; k < 3; ++k)
-                t[k] += d[0] * m[0][k] + d[1] * m[1][k] + d[2] * m[2][k] + g_chairHold[k].load(std::memory_order_relaxed) * blend;
-            const Mat3 turned = mul(r, m);
-            for (int row = 0; row < 3; ++row)
-                std::memcpy(rdram + at - 0x30u + 0x10u * row, turned[row].data(), sizeof(float) * 3);
+                t[k] += g_chairHold[k].load(std::memory_order_relaxed) * blend;
+            // Rx(a) Ry(b) Rz(c): row 0 = (cb cc, cb sc, -sb), row 1 z = sa cb, row 2 z = ca cb.
+            e[0] = std::atan2(turned[1][2], turned[2][2]);
+            e[1] = std::asin(std::clamp(-turned[0][2], -1.0f, 1.0f));
+            e[2] = std::atan2(turned[0][1], turned[0][0]);
+            std::memcpy(rdram + angles, e, sizeof(e));
             std::memcpy(rdram + at, t, sizeof(t));
         }
 
