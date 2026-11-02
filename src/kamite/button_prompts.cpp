@@ -12,6 +12,7 @@
 #include "runtime/ps2_pnach.h"
 
 #include <array>
+#include <algorithm>
 #include <filesystem>
 #include <atomic>
 #include <chrono>
@@ -60,7 +61,9 @@ namespace kamite::button_prompts
         constexpr uint32_t kTim3Magic = 0x334D4954u;          // "TIM3", 0x40 bytes before the pixels
         constexpr uint64_t kCratePrefix = 0x0221111112221111ull; // first 8 payload bytes (little endian)
         constexpr const char *kCrateShaPrefix = "ac15f235994f08f3";
+        using CrateClut = std::array<uint8_t, crate_prompts::kClutBytes>;
         CratePayload g_crateOrig;                              // builder thread writes once, then g_crateCaptured
+        CrateClut g_crateOrigClut;                             // its CLUT (right after the pixels), captured with it
         std::atomic<bool> g_crateCaptured{false};
         std::atomic<uint32_t> g_crateAddress{0u};              // guest address of the pixels, 0 = not located
         std::atomic<bool> g_crateRebuild{false};
@@ -76,6 +79,7 @@ namespace kamite::button_prompts
             uint64_t hash[kSheetCount] = {};
             bool cratePatched = false;
             CratePayload crate;
+            CrateClut crateClut;
             uint64_t crateHash = 0u;
         };
         std::mutex g_imagesMutex;
@@ -86,6 +90,7 @@ namespace kamite::button_prompts
         std::shared_ptr<const Images> g_applied;
         std::vector<uint64_t> g_known[kSheetCount]; // hashes of every sheet content this code put there (or found there)
         std::vector<uint64_t> g_crateKnown;         // the same for the crate texture
+        std::vector<uint64_t> g_crateClutKnown;     // and for its CLUT
         uint32_t g_vblanks = 0u;
         bool g_warnedForeign[kSheetCount] = {};
 
@@ -182,14 +187,29 @@ namespace kamite::button_prompts
                 g_crateKnown.push_back(images.crateHash);
             uint8_t *guest = g_ram + address;
             const uint8_t *want = images.cratePatched ? images.crate.data() : g_crateOrig.data();
-            if (std::memcmp(guest, want, crate_prompts::kPayloadBytes) == 0)
-                return;
-            if (!crateKnown(fnv1a64(guest, crate_prompts::kPayloadBytes)))
+            if (std::memcmp(guest, want, crate_prompts::kPayloadBytes) != 0)
             {
-                g_crateAddress.store(0u, std::memory_order_release);
-                return;
+                if (!crateKnown(fnv1a64(guest, crate_prompts::kPayloadBytes)))
+                {
+                    g_crateAddress.store(0u, std::memory_order_release);
+                    return;
+                }
+                std::memcpy(guest, want, crate_prompts::kPayloadBytes);
             }
-            std::memcpy(guest, want, crate_prompts::kPayloadBytes);
+            // The CLUT right after the pixels: the set's letter colours (the disc's for PlayStation). Only over a CLUT
+            // this code knows (the disc's or one it wrote).
+            uint8_t *guestClut = guest + crate_prompts::kPayloadBytes;
+            const uint8_t *wantClut = images.cratePatched ? images.crateClut.data() : g_crateOrigClut.data();
+            if (std::memcmp(guestClut, wantClut, crate_prompts::kClutBytes) == 0)
+                return;
+            if (g_crateClutKnown.empty())
+                g_crateClutKnown.push_back(fnv1a64(g_crateOrigClut.data(), crate_prompts::kClutBytes));
+            const uint64_t wantHash = fnv1a64(wantClut, crate_prompts::kClutBytes);
+            if (std::find(g_crateClutKnown.begin(), g_crateClutKnown.end(), wantHash) == g_crateClutKnown.end())
+                g_crateClutKnown.push_back(wantHash);
+            const uint64_t guestHash = fnv1a64(guestClut, crate_prompts::kClutBytes);
+            if (std::find(g_crateClutKnown.begin(), g_crateClutKnown.end(), guestHash) != g_crateClutKnown.end())
+                std::memcpy(guestClut, wantClut, crate_prompts::kClutBytes);
         }
 
         // Every vblank (EE thread, ps2x::pnach frame hook): copy the newest built image over the sheets when it changed,
@@ -389,6 +409,7 @@ namespace kamite::button_prompts
                     if (sha.finishHex().rfind(kCrateShaPrefix, 0) != 0)
                         continue;
                     std::memcpy(g_crateOrig.data(), data, crate_prompts::kPayloadBytes);
+                    std::memcpy(g_crateOrigClut.data(), data + crate_prompts::kPayloadBytes, crate_prompts::kClutBytes);
                     g_crateCaptured.store(true, std::memory_order_release);
                     g_crateRebuild.store(true, std::memory_order_release);
                 }
@@ -405,6 +426,27 @@ namespace kamite::button_prompts
                 KM_INFO(Game, "button prompts: pirate minigame crates found at 0x" << std::hex << pixels << std::dec);
                 return;
             }
+        }
+
+        // The crates' letter colours (K, Nov 2): the Xbox 360 face buttons in their own colours (any other label, e.g.
+        // a shoulder button bound there, white); the Switch and Steam Deck sets draw their buttons grey, so white
+        // letters; keys a warm white like the key caps.
+        uint32_t crateColour(prompt_hd::Set set, const std::string &label)
+        {
+            if (set == prompt_hd::Set::Xbox360)
+            {
+                if (label == "Y")
+                    return 0xFFCD28u;
+                if (label == "B")
+                    return 0xEB3C2Du;
+                if (label == "X")
+                    return 0x3278FFu;
+                if (label == "A")
+                    return 0x5AD73Cu;
+            }
+            if (set == prompt_hd::Set::Keyboard)
+                return 0xF5EBD7u;
+            return 0xF0F0F0u;
         }
 
         void builderLoop()
@@ -525,13 +567,35 @@ namespace kamite::button_prompts
                     {
                         const std::array<std::string, 4> crateLabels{labels.icon[sheets::Triangle], labels.icon[sheets::Circle],
                                                                      labels.icon[sheets::Square], labels.icon[sheets::Cross]};
-                        images->cratePatched = crate_prompts::build(g_crateOrig.data(), crateLabels, images->crate.data());
+                        std::array<uint32_t, 4> crateColours{};
+                        for (int c = 0; c < 4; ++c)
+                            crateColours[c] = crateColour(set, crateLabels[c]);
+                        hd_textures::Image crateHd;
+                        const bool wantHd = hd_textures::enabled();
+                        images->cratePatched = crate_prompts::build(g_crateOrig.data(), g_crateOrigClut.data(), crateLabels, crateColours,
+                                                                    images->crate.data(), images->crateClut.data(),
+                                                                    wantHd ? &crateHd : nullptr);
+                        bool crateHdAdded = false;
                         if (images->cratePatched)
                         {
                             images->crateHash = fnv1a64(images->crate.data(), crate_prompts::kPayloadBytes);
                             builtCrates.push_back(images->crateHash);
+                            if (wantHd && crateHd.width > 0)
+                            {
+                                const auto path = hd_textures::generatedDir() /
+                                                  (hd_textures::name4(images->crate.data(), images->crateClut.data()) + ".png");
+                                std::error_code ec;
+                                if (std::filesystem::exists(path, ec) || hd_textures::savePng(path, crateHd))
+                                {
+                                    const std::u8string native = path.u8string();
+                                    GSPcsx2Backend::SetOption("texture_add", std::string(native.begin(), native.end()).c_str());
+                                    crateHdAdded = true;
+                                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                                }
+                            }
                         }
-                        summary += images->cratePatched ? "; minigame crates too" : "; minigame crates kept: build failed";
+                        summary += images->cratePatched ? (crateHdAdded ? "; minigame crates too (full resolution)" : "; minigame crates too")
+                                                        : "; minigame crates kept: build failed";
                     }
                 }
                 for (int i = 0; i < kSheetCount; ++i)

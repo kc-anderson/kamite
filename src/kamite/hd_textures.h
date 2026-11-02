@@ -35,6 +35,10 @@ namespace kamite::hd_textures
     // the 16x16 PSMCT32 CSM1 block the game sends (1 KB). TCC on (the 0x4000 bit PCSX2's dumps of this game carry).
     // Checked against the pack's names for the radar (9c64c8261344d14c-82a523a12b163049-000061d3) and both prompt sheets.
     std::string name8(const uint8_t *payload, int ctWidth, int ctHeight, const uint8_t *clut, int width, int height);
+    // The same for a 128x128 PSMT4 texture (TBW 2) uploaded as one CT32 64x32 page (payload 0x2000 bytes), its CLUT the
+    // 16 entries in index order (64 bytes). Checked against the pack's name of the cannon game's crates
+    // (974a46b6a4ad4f41-6b4b15d5c8a2cda4-00005dd4).
+    std::string name4(const uint8_t *payload, const uint8_t *clut16);
 
     // RGBA8 images (the pack's PNGs keep the PS2's alpha scale: 0x80 = opaque). Load: false when the file is not a
     // readable PNG. Save writes a PNG.

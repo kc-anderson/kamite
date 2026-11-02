@@ -141,6 +141,31 @@ namespace kamite::hd_textures
         return g_generated;
     }
 
+    std::string name4(const uint8_t *payload, const uint8_t *clut16)
+    {
+        // GS memory of the one page the CT32 64x32 upload fills.
+        std::vector<uint8_t> mem(8192u);
+        for (int y = 0; y < 32; ++y)
+            for (int x = 0; x < 64; ++x)
+                std::memcpy(&mem[static_cast<size_t>(kBlock32[y / 8][x / 8] * 256 + kColumn32[y % 8][x % 8] * 4)],
+                            payload + (static_cast<size_t>(y) * 64 + x) * 4u, 4u);
+        // PSMT4 blocks are 32x16 texels, in the page's block order (GSTables _blockTable4), hashed row by row of blocks.
+        constexpr uint8_t kBlock4[8][4] = {{0, 2, 8, 10},    {1, 3, 9, 11},    {4, 6, 12, 14},   {5, 7, 13, 15},
+                                           {16, 18, 24, 26}, {17, 19, 25, 27}, {20, 22, 28, 30}, {21, 23, 29, 31}};
+        XXH3_state_t state;
+        XXH3_64bits_reset(&state);
+        for (int by = 0; by < 8; ++by)
+            for (int bx = 0; bx < 4; ++bx)
+                XXH3_64bits_update(&state, &mem[static_cast<size_t>(kBlock4[by][bx]) * 256u], 256u);
+        const uint64_t texHash = XXH3_64bits_digest(&state);
+        const uint64_t clutHash = XXH3_64bits(clut16, 64u);
+        const unsigned bits = 0x14u | (7u << 6) | (7u << 10) | 0x4000u;
+        char name[64];
+        std::snprintf(name, sizeof(name), "%llx-%llx-%08x", static_cast<unsigned long long>(texHash),
+                      static_cast<unsigned long long>(clutHash), bits);
+        return name;
+    }
+
     std::string name8(const uint8_t *payload, int ctWidth, int ctHeight, const uint8_t *clut, int width, int height)
     {
         // GS memory at TBP 0 as the PSMCT32 upload leaves it (TBW = ctWidth / 64).

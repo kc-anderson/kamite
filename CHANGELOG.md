@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 2, 2026
 
+- Cannon game crates: the button letters now have the prompt set's colours (Xbox yellow / red / blue / green) and a sharp full-resolution version.
 - 60 FPS: the cannon game no longer locks up after the lever (scripted event waits now last as long as on the PS2).
 - The petit devil's "Up for my challenge?" choice: the arrow now points at the option A picks (fixed in the US release's text).
 - The petit devil's fight ring keeps the widescreen picture instead of switching to 4:3.
