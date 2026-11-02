@@ -65,6 +65,8 @@
 #include "runtime/ee_scheduler.h"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
@@ -307,8 +309,31 @@ namespace kamite
             SET_GPR_U32(ctx, 16, kCrateId);
         }
 
-        // Held chair offset (metres, Gene's frame: x, y up, z); F2 > Gameplay sets it live.
+        // Held chair offset (metres, Gene's frame: x, y up, z) and turn (degrees about the chair's own x, y, z, round
+        // its middle); F2 > Gameplay sets them live.
         std::atomic<float> g_chairHold[3] = {0.0f, -0.3f, 0.0f};
+        std::atomic<float> g_chairTurn[3] = {0.0f, 0.0f, 0.0f};
+        // The chair's middle in part 0's frame (part 0 = the top of the backrest: 1.0 m up, 0.27 m back of the seat).
+        constexpr float kChairMiddle[3] = {0.0f, -0.5f, 0.27f};
+
+        using Mat3 = std::array<std::array<float, 3>, 3>;
+        Mat3 mul(const Mat3 &a, const Mat3 &b)
+        {
+            Mat3 m{};
+            for (int r = 0; r < 3; ++r)
+                for (int c = 0; c < 3; ++c)
+                    m[r][c] = a[r][0] * b[0][c] + a[r][1] * b[1][c] + a[r][2] * b[2][c];
+            return m;
+        }
+        // Row-vector rotation (p' = p R) by x, then y, then z, in radians.
+        Mat3 turnMatrix(float x, float y, float z)
+        {
+            const float cx = std::cos(x), sx = std::sin(x), cy = std::cos(y), sy = std::sin(y), cz = std::cos(z), sz = std::sin(z);
+            const Mat3 rx{{{1, 0, 0}, {0, cx, sx}, {0, -sx, cx}}};
+            const Mat3 ry{{{cy, 0, -sy}, {0, 1, 0}, {sy, 0, cy}}};
+            const Mat3 rz{{{cz, sz, 0}, {-sz, cz, 0}, {0, 0, 1}}};
+            return mul(mul(rx, ry), rz);
+        }
 
         // Before ori at,at,0xCCCD at 0x1C8248 (func_001C8020, the held phase; s0 = the object, s1 = its part 0).
         void liftChairsHold(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
@@ -316,16 +341,31 @@ namespace kamite
             const uint32_t obj = GPR_U32(ctx, 16), part = GPR_U32(ctx, 17);
             if (!part || (ram32(rdram, obj + 0x2FCu) >> 16) != kChairId)
                 return;
+            // +0xD0 points at the local matrix's translation row (part +0x30); its rotation rows are the 0x30 before it.
             const uint32_t at = ram32(rdram, part + 0xD0u) & 0x1FFFFFFu;
+            if (at < 0x30u)
+                return;
             float blend = 0.0f;
             std::memcpy(&blend, rdram + ((obj + 0x624u) & 0x1FFFFFFu), sizeof(blend));
-            for (int i = 0; i < 3; ++i)
-            {
-                float v = 0.0f;
-                std::memcpy(&v, rdram + at + 4u * i, sizeof(v));
-                v += g_chairHold[i].load(std::memory_order_relaxed) * blend;
-                std::memcpy(rdram + at + 4u * i, &v, sizeof(v));
-            }
+            Mat3 m{};
+            float t[3];
+            for (int r = 0; r < 3; ++r)
+                std::memcpy(m[r].data(), rdram + at - 0x30u + 0x10u * r, sizeof(float) * 3);
+            std::memcpy(t, rdram + at, sizeof(t));
+            constexpr float kDeg = 3.14159265f / 180.0f;
+            const Mat3 r = turnMatrix(g_chairTurn[0].load(std::memory_order_relaxed) * kDeg * blend,
+                                      g_chairTurn[1].load(std::memory_order_relaxed) * kDeg * blend,
+                                      g_chairTurn[2].load(std::memory_order_relaxed) * kDeg * blend);
+            // Turn round the middle c: p' = ((p - c) R + c) M -> rotation R M, translation t + (c - c R) M.
+            float d[3];
+            for (int k = 0; k < 3; ++k)
+                d[k] = kChairMiddle[k] - (kChairMiddle[0] * r[0][k] + kChairMiddle[1] * r[1][k] + kChairMiddle[2] * r[2][k]);
+            for (int k = 0; k < 3; ++k)
+                t[k] += d[0] * m[0][k] + d[1] * m[1][k] + d[2] * m[2][k] + g_chairHold[k].load(std::memory_order_relaxed) * blend;
+            const Mat3 turned = mul(r, m);
+            for (int row = 0; row < 3; ++row)
+                std::memcpy(rdram + at - 0x30u + 0x10u * row, turned[row].data(), sizeof(float) * 3);
+            std::memcpy(rdram + at, t, sizeof(t));
         }
 
 #ifdef KAMITE_HAS_GS_MENU
@@ -343,7 +383,27 @@ namespace kamite
                 if (ui->slider_float(names[i], &v, -1.0f, 1.0f, "%.2f m"))
                     g_chairHold[i].store(v, std::memory_order_relaxed);
             }
-            ui->text_disabled("Moves a carried chair against Gene's hands (his own frame). Tell Claude the values that look right.");
+            const char *turns[3] = {"Held chair: tip forward / back##chairrx", "Held chair: spin##chairry",
+                                    "Held chair: roll##chairrz"};
+            for (int i = 0; i < 3; ++i)
+            {
+                float v = g_chairTurn[i].load(std::memory_order_relaxed);
+                ui->set_next_width(340.0f);
+                if (ui->slider_float(turns[i], &v, -180.0f, 180.0f, "%.0f deg"))
+                    g_chairTurn[i].store(v, std::memory_order_relaxed);
+            }
+            if (ui->button("Reset##chairreset"))
+            {
+                const float hold[3] = {0.0f, -0.3f, 0.0f};
+                for (int i = 0; i < 3; ++i)
+                {
+                    g_chairHold[i].store(hold[i], std::memory_order_relaxed);
+                    g_chairTurn[i].store(0.0f, std::memory_order_relaxed);
+                }
+            }
+            ui->text_disabled("Moves a carried chair against Gene's hands (his own frame, metres) and turns it about "
+                              "its own middle (degrees, about the chair's own sideways / up / front axes). "
+                              "Tell Claude the values that look right.");
         }
 #endif
 
