@@ -2,6 +2,10 @@
 
 Newest first, one line per change; the code comments say how.
 
+## November 2, 2026
+
+- 60 FPS: sky clouds and other scrolling map textures move at the PS2's speed in every room.
+
 ## November 1, 2026
 
 - 60 FPS: scrolling effect textures (dust drifting over the ground, a demon's summoning clouds) and scrolling textures on level objects (the sky clouds) move at the PS2's speed.

@@ -881,6 +881,31 @@ address = "0x001B7740"
 hook = "km_fps60_model_scroll"
 replace = true
 flag = "fps60"
+# The map's scroll objects (sky domes; vtable 0x450CE8) at the PS2's speed (frame_patches.cpp mapScroll*; Nov 2).
+[[patches.hooks]] # func_00319970: mul.s f1,f0,f20 (+0x38C step)
+address = "0x00319A80"
+hook = "km_fps60_map_scroll_step"
+replace = true
+flag = "fps60"
+[[patches.hooks]] # func_00319970: mul.s f1,f0,f20 (+0x390 step)
+address = "0x00319B54"
+hook = "km_fps60_map_scroll_step"
+replace = true
+flag = "fps60"
+[[patches.hooks]] # func_00318B58: mul.s f23,f0,f1 (bnez delay slot)
+address = "0x00318BB4"
+hook = "km_fps60_map_scroll_step23"
+replace = true
+flag = "fps60"
+[[patches.hooks]] # func_00318B58: mul.s f0,f2,f0 ((counter & 0xFF) / 256)
+address = "0x00319088"
+hook = "km_fps60_map_scroll_counter"
+replace = true
+flag = "fps60"
+[[patches.hooks]] # func_00318B58: before lui at,0x3B80 (f3 = the counter on both paths)
+address = "0x003191A0"
+hook = "km_fps60_map_scroll_phase"
+flag = "fps60"
 # cEmManage's update hands the enemies the tick's rate on the second half and keeps +0x548 (managerRateRead / Reset).
 [[patches.hooks]]
 address = "0x00290578"

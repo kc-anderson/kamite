@@ -795,6 +795,23 @@ namespace kamite
         // func_001B76D8 (0x1B7740), once a game frame: those objects' textures scrolled twice as fast at 60 (Nov 1, K:
         // the first room's sky clouds still fast after the effect scrolls). Replaces mtc1 at,f12 (1.0): 0.5.
         void modelScrollHalf(uint8_t *, R5900Context *ctx, PS2Runtime *) { ctx->f[12] = 0.5f; }
+        // The map's scroll objects (vtable 0x450CE8: the sky domes and other texture-scrolled map pieces, every room;
+        // Nov 2, K: the sky clouds twice as fast at 60 everywhere; found in the standing case's RAM snapshots: the dome's
+        // texture-matrix V offset fell 0.06 a second at 30 and 0.12 at 60). Their time step is GameWork +0x574 x the
+        // object rate 0x754C48, 1.0 a game frame at either rate (moveMotion halves its own copy, these do not), and
+        // some of their phases come from the frame counter GameWork +0x210 directly. At 60: the step halved, the
+        // counter read as half the vblanks. Visual only (k: 1/k).
+        // func_00319970 (+0x38C / +0x390 += speed x step): mul.s f1,f0,f20 at 0x319A80 and 0x319B54.
+        void mapScrollStep(uint8_t *, R5900Context *ctx, PS2Runtime *) { ctx->f[1] = ctx->f[0] * ctx->f[20] * 0.5f; }
+        // func_00318B58's step f23 (counter x f23 at 0x319470, a vector step at 0x3190B8): mul.s f23,f0,f1 at 0x318BB4.
+        void mapScrollStep23(uint8_t *, R5900Context *ctx, PS2Runtime *) { ctx->f[23] = ctx->f[0] * ctx->f[1] * 0.5f; }
+        // func_00318B58's camera-locked dome: V += (counter & 0xFF) / 256 (mul.s f0,f2,f0 at 0x319088): half the count.
+        void mapScrollCounter(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            ctx->f[0] = std::fmod(static_cast<float>(gameFrames(rdram)) * 0.5f, 256.0f) * ctx->f[0];
+        }
+        // func_00318B58's wobble phase: the counter as a float in f3 (both paths meet at 0x3191A0): half of it.
+        void mapScrollPhase(uint8_t *, R5900Context *ctx, PS2Runtime *) { ctx->f[3] *= 0.5f; }
         void launchRise(uint8_t *, R5900Context *ctx, PS2Runtime *) // add.s f1,f1,f0
         {
             ctx->f[1] = ctx->f[1] + ctx->f[0] * 0.5f + ctx->f[2] * 0.125f;
@@ -1639,6 +1656,10 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_gene_step_hold", &enemyStepHold<6, 7, true>);
         ps2xRegisterHostHook("km_fps60_motion_speed_hold", &motionSpeedHold);
         ps2xRegisterHostHook("km_fps60_seq_before", &seqBefore);
+        ps2xRegisterHostHook("km_fps60_map_scroll_step", &mapScrollStep);
+        ps2xRegisterHostHook("km_fps60_map_scroll_step23", &mapScrollStep23);
+        ps2xRegisterHostHook("km_fps60_map_scroll_counter", &mapScrollCounter);
+        ps2xRegisterHostHook("km_fps60_map_scroll_phase", &mapScrollPhase);
         ps2xRegisterHostHook("km_fps60_model_scroll", &modelScrollHalf);
         ps2xRegisterHostHook("km_fps60_uvscroll_u", &scrollHalf<3, 3, 2>);
         ps2xRegisterHostHook("km_fps60_uvscroll_v", &scrollHalf<1, 1, 0>);
