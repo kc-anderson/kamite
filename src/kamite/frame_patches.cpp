@@ -25,8 +25,8 @@
 //   30ADF4 hook -> D0020 (left stick)             frameStart: a stick axis at full deflection last frame is held
 //                                                  there for one more frame (state in g_stick* instead of 0xD0200;
 //                                                  without the pnach's input loop, see frameStart)
-//   D05E8242 == 2: 005E8147 = 0, 005E81C7 = 0     frameStart with L3Dash: L3 held pushes the left stick fully
-//   (L3 dash, every vblank)                        forward
+//   D05E8242 == 2: 005E8147 = 0, 005E81C7 = 0     frameStart with L3Dash: L3 writes Gene's "dash requested" (+0x627)
+//   (L3 dash, every vblank)                        as the stick's double tap does; a centred stick is pushed forward
 //
 // The frame hook runs before the instruction at 0x30ADF4 (lw v0,0x3D84(s3)), right after the main loop's wait for the
 // next frame (0x30ADD8..0x30ADF0), where the pnach's stick hook ran; the per-vblank writes run there too, once per
@@ -128,13 +128,16 @@ namespace kamite
             callprofile::report(100000);
         }
 
-        // L3 alone (pad buttons == 2): a dash, as a quick double tap of the left stick forward (from centre) and then
-        // forward held while L3 is. The pnach this comes from wrote "stick up" every frame from PCSX2's patch engine, between the
-        // game's own pad reads, which the game saw as tapping; here the game reads the byte once and kept seeing a
-        // plain "up" (Gene walked). Each step lasts 2 frames at 30 frames/s (4 in the 60 FPS mode). Written after the
-        // stick hold, and marked as injected so the next frame puts the reading back.
+        // L3: a dash, the game's own way (Nov 2, K: the old double-tap macro felt less responsive than tapping the stick).
+        // The stick's second forward tap only writes Gene +0x627 ("dash requested", 2 at 30, 4 in the 60 FPS mode:
+        // the setter at 0x108FE8), and the action chooser (0x124104) turns a non-zero +0x627 into phase 6, the dash.
+        // The macro tapped neutral / forward / neutral / forward, 2 frames each: the dash came 5-6 frames after L3 at
+        // 30 (11-13 vblanks at 60; case L3_unresponsive) and Gene stopped for the neutral frames when already
+        // running. Now L3 going down writes +0x627 itself and keeps it up for the game's tap window (10 frames) until
+        // Gene is in phase 6, so a press during a move's last frames still dashes once he can. The stick stays the
+        // player's; with the stick centred, L3 pushes it forward while held (a dash straight ahead, as before).
         uint32_t g_dashFrames = 0; // frames since L3 went down (0 = not held)
-
+        bool g_dashArmed = false;
         // A stick value written over the game's: the reading is kept and the next frame puts it back.
         void injectStick(uint8_t *rdram, int axis, uint8_t value)
         {
@@ -266,23 +269,30 @@ namespace kamite
                 return;
             uint16_t buttons = 0;
             std::memcpy(&buttons, &ram8(rdram, kPadButtons), sizeof(buttons));
-            if (buttons != 2u)
+            if ((buttons & 2u) == 0u)
             {
                 g_dashFrames = 0;
+                g_dashArmed = false;
                 return;
             }
-            const uint32_t step = g_fps60 ? 4u : 2u;
-            const uint32_t phase = g_dashFrames++ / step; // 0 neutral, 1 forward, 2 neutral, 3.. forward
-            // While the tap is being made the stick is centred sideways too (a diagonal is not a forward tap, which is
-            // why a dash started while walking did nothing); once dashing, sideways is the player's again.
-            const bool tapping = phase < 3u;
-            const uint8_t forward = (phase == 1u || phase >= 3u) ? 0x00u : 0x80u;
-            for (int axis = 0; axis < 4; ++axis)
+            const uint32_t perFrame = g_fps60 ? 2u : 1u; // game frames per 30 FPS frame
+            if (g_dashFrames++ == 0u)
+                g_dashArmed = true;
+            uint32_t gene = 0;
+            std::memcpy(&gene, &ram8(rdram, game::GameWork::address(game::GameWork::kPlayerObj)), sizeof(gene));
+            if (gene >= 0x100000u && gene < PS2_RAM_SIZE - 0x1000u && g_dashArmed)
             {
-                const bool vertical = (axis & 1) != 0;
-                if (!vertical && !tapping)
-                    continue;
-                injectStick(rdram, axis, vertical ? forward : 0x80u);
+                if (ram8(rdram, gene + 0x2F5u) == 6u || g_dashFrames > 10u * perFrame)
+                    g_dashArmed = false;
+                else if (static_cast<int8_t>(ram8(rdram, gene + 0x627u)) < static_cast<int8_t>(2u * perFrame))
+                    ram8(rdram, gene + 0x627u) = static_cast<uint8_t>(2u * perFrame);
+            }
+            const uint8_t x = ram8(rdram, kStickBytes[0]), y = ram8(rdram, kStickBytes[1]);
+            const auto centred = [](uint8_t v) { return v >= 0x60u && v <= 0xA0u; };
+            if (centred(x) && centred(y))
+            {
+                injectStick(rdram, 1, 0x00u);
+                injectStick(rdram, 3, 0x00u);
             }
         }
 
@@ -545,6 +555,92 @@ namespace kamite
         // shockwave30: the enemies' rate 0.05, 0.5, 0.05 as Shockwave began). The hold repeats the last call.
         uint32_t g_slowRateAt = 0, g_slowRateManager = 0;
         float g_slowRateValue = 1.0f;
+        // What the tick's handler moved (Nov 2, 66sec: Gene 0.05 m off the 30 FPS run from his first attack on). The
+        // held vblank repeats the motion calls the handler made on the tick, with their f12, and only those: handlers
+        // differ (moveMotion alone at 0x10DAC0, addNullSpeed at 1.5 at 0x10DBCC). At 30 the one-frame step 0 of
+        // DB2FA0 steps its motion but applies no root motion; the hold's unconditional addNullSpeed moved Gene back
+        // 0.048 m. Recorded by hooks on the three functions' entries while a dispatcher's handler runs on a tick
+        // (handlerBegin in enemyStepHold, handlerEnd after the jalr returns); a held vblank with no record (the first
+        // after a load) keeps the old moveMotion + both at 1.0. For k: the same calls on each of the k-1 held frames.
+        // The same for the button-action requests a handler makes every frame (Nov 2, K: the pickup prompt flickers
+        // as Gene walks up to an object, 60 only): func_1F7858 / func_1F7900 put an entry in the list at 0x568288
+        // (button, message, the callback run on the press: the "B :Carry" prompt from the action chooser 0x124308 ->
+        // func_2DBD40 / func_2DBFB0), and func_1F75D0 releases every entry each frame. On a held vblank the handler
+        // didn't run, so the prompt (and a press on that vblank) was gone for a vblank after every state change. The
+        // hold makes the tick's requests again, with the same a0..t2. Enemy handlers' requests (0x237940.., the
+        // grab prompts) go the same way.
+        struct ActionRequest
+        {
+            uint32_t fn = 0;
+            uint32_t args[7] = {}; // a0..a3, t0..t2
+        };
+        struct HandlerMoves
+        {
+            uint32_t counter = 0;
+            uint8_t move = 0, rot = 0, null = 0, requests = 0;
+            float rotF12 = 1.0f, nullF12 = 1.0f;
+            ActionRequest request[4];
+        };
+        std::unordered_map<uint32_t, HandlerMoves> g_handlerMoves;
+        uint32_t g_handlerStack[8] = {};
+        int g_handlerDepth = 0;
+        bool g_holdCalling = false;
+        HandlerMoves *tickMoves(uint8_t *rdram, uint32_t obj)
+        {
+            if (g_holdCalling || g_handlerDepth <= 0 || obj == 0u || g_handlerStack[g_handlerDepth - 1] != obj)
+                return nullptr;
+            auto it = g_handlerMoves.find(obj);
+            return it != g_handlerMoves.end() && it->second.counter == gameFrames(rdram) ? &it->second : nullptr;
+        }
+        void moveMotionCalled(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            if (HandlerMoves *m = tickMoves(rdram, GPR_U32(ctx, 4)))
+                m->move = static_cast<uint8_t>(std::min(m->move + 1, 3));
+        }
+        void nullRotationCalled(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            if (HandlerMoves *m = tickMoves(rdram, GPR_U32(ctx, 4)))
+                m->rot = static_cast<uint8_t>(std::min(m->rot + 1, 3)), m->rotF12 = ctx->f[12];
+        }
+        void nullSpeedCalled(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            if (HandlerMoves *m = tickMoves(rdram, GPR_U32(ctx, 4)))
+                m->null = static_cast<uint8_t>(std::min(m->null + 1, 3)), m->nullF12 = ctx->f[12];
+        }
+        template <uint32_t Fn>
+        void actionRequested(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            if (g_holdCalling || g_handlerDepth <= 0 || g_handlerStack[g_handlerDepth - 1] == 0u)
+                return;
+            auto it = g_handlerMoves.find(g_handlerStack[g_handlerDepth - 1]);
+            if (it == g_handlerMoves.end() || it->second.counter != gameFrames(rdram) || it->second.requests >= 4u)
+                return;
+            ActionRequest &r = it->second.request[it->second.requests++];
+            r.fn = Fn;
+            for (int i = 0; i < 7; ++i)
+                r.args[i] = GPR_U32(ctx, 4 + i);
+        }
+        void callRequest(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, const ActionRequest &r)
+        {
+            if (!runtime || !runtime->hasFunction(r.fn))
+                return;
+            PS2Runtime::RecompiledFunction fn = runtime->lookupFunction(r.fn);
+            if (!fn)
+                return;
+            const R5900Context saved = *ctx;
+            for (int i = 0; i < 7; ++i)
+                SET_GPR_U32(ctx, 4 + i, r.args[i]);
+            runtime->eeScheduler().beginHostCall();
+            fn(rdram, ctx, runtime);
+            runtime->eeScheduler().endHostCall();
+            *ctx = saved;
+        }
+        // After a dispatcher's jalr returns (0x10B750, 0x20FAF8, 0x24C37C, 0x25E778).
+        void handlerEnd(uint8_t *, R5900Context *, PS2Runtime *)
+        {
+            if (g_handlerDepth > 0)
+                --g_handlerDepth;
+        }
         template <int ObjReg, int FnReg = 6, bool CarryPress = false>
         void enemyStepHold(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
@@ -578,15 +674,44 @@ namespace kamite
                     changed = false;
             }
             last = EnemyStep{state, counter, motion};
+            // The handler about to run (handlerEnd pops it); on a tick its motion calls are recorded for the hold.
+            if (g_handlerDepth >= 8)
+                g_handlerDepth = 0;
+            g_handlerStack[g_handlerDepth++] = thinkSkipped(rdram) ? 0u : obj;
+            if (!thinkSkipped(rdram))
+            {
+                HandlerMoves &moves = g_handlerMoves[obj];
+                if (moves.counter != counter) // a second dispatch in the same update adds to the first's record
+                    moves = HandlerMoves{counter};
+            }
             if (changed && thinkSkipped(rdram))
             {
                 // Also when the change set a new motion (Nov 1): at 30 the frame that sets a motion steps it a whole
                 // frame (set before moveMotion), so the held half steps it too; skipping it started every such motion
                 // half a frame behind (Gene and enemies, all cases; the case csv's mframe is +0x41C, copied by
-                // Motion_seq_ctr before the step, so it shows each vblank's step one row later).
-                callGuest(rdram, ctx, runtime, 0x157C18u, obj, 0.0f);
-                callGuest(rdram, ctx, runtime, 0x14F9F0u, obj, 1.0f);
-                callGuest(rdram, ctx, runtime, 0x14F928u, obj, 1.0f);
+                // Motion_seq_ctr before the step, so it shows each vblank's step one row later). Only the calls the
+                // tick's handler made (HandlerMoves, Nov 2).
+                auto rec = g_handlerMoves.find(obj);
+                g_holdCalling = true;
+                if (rec != g_handlerMoves.end() && rec->second.counter + 1u == counter)
+                {
+                    const HandlerMoves m = rec->second;
+                    for (int i = 0; i < m.move; ++i)
+                        callGuest(rdram, ctx, runtime, 0x157C18u, obj, 0.0f);
+                    for (int i = 0; i < m.rot; ++i)
+                        callGuest(rdram, ctx, runtime, 0x14F9F0u, obj, m.rotF12);
+                    for (int i = 0; i < m.null; ++i)
+                        callGuest(rdram, ctx, runtime, 0x14F928u, obj, m.nullF12);
+                    for (int i = 0; i < m.requests; ++i)
+                        callRequest(rdram, ctx, runtime, m.request[i]);
+                }
+                else
+                {
+                    callGuest(rdram, ctx, runtime, 0x157C18u, obj, 0.0f);
+                    callGuest(rdram, ctx, runtime, 0x14F9F0u, obj, 1.0f);
+                    callGuest(rdram, ctx, runtime, 0x14F928u, obj, 1.0f);
+                }
+                g_holdCalling = false;
                 SET_GPR_U32(ctx, FnReg, 0x100318u);
                 if (CarryPress && g_slowRateAt + 1u == counter && g_slowRateManager != 0u)
                     callGuest(rdram, ctx, runtime, 0x292F38u, g_slowRateManager, g_slowRateValue);
@@ -599,6 +724,9 @@ namespace kamite
             if ((counter & 0x3FFu) == 0u)
                 for (auto it = g_enemyStep.begin(); it != g_enemyStep.end();)
                     it = counter - it->second.counter > 2u ? g_enemyStep.erase(it) : std::next(it);
+            if ((counter & 0x3FFu) == 0u)
+                for (auto it = g_handlerMoves.begin(); it != g_handlerMoves.end();)
+                    it = counter - it->second.counter > 2u ? g_handlerMoves.erase(it) : std::next(it);
         }
 
         // moveMotion (0x157C18), the game's own 60 Hz code, at 60 (family 5b, Nov 1; case shockwave30: Shockwave's slow
@@ -935,6 +1063,7 @@ namespace kamite
         {
             pcsampler::noteMainContext(ctx);
             ++g_gameFrame;
+            g_handlerDepth = 0; // no dispatcher's handler spans a frame (a load or a rate switch left one open)
             forgetStickAfterLoad();
             forgetRandAfterLoad(rdram);
             forgetClothAfterLoad(rdram);
@@ -1655,6 +1784,12 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_enemy_step_hold_s0", &enemyStepHold<16>);
         ps2xRegisterHostHook("km_fps60_gene_step_hold", &enemyStepHold<6, 7, true>);
         ps2xRegisterHostHook("km_fps60_motion_speed_hold", &motionSpeedHold);
+        ps2xRegisterHostHook("km_fps60_hold_move_motion", &moveMotionCalled);
+        ps2xRegisterHostHook("km_fps60_hold_null_rotation", &nullRotationCalled);
+        ps2xRegisterHostHook("km_fps60_hold_null_speed", &nullSpeedCalled);
+        ps2xRegisterHostHook("km_fps60_hold_handler_end", &handlerEnd);
+        ps2xRegisterHostHook("km_fps60_hold_action_request", &actionRequested<0x1F7858u>);
+        ps2xRegisterHostHook("km_fps60_hold_action_request2", &actionRequested<0x1F7900u>);
         ps2xRegisterHostHook("km_fps60_seq_before", &seqBefore);
         ps2xRegisterHostHook("km_fps60_map_scroll_step", &mapScrollStep);
         ps2xRegisterHostHook("km_fps60_map_scroll_step23", &mapScrollStep23);

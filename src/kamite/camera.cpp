@@ -360,6 +360,56 @@ namespace kamite
             ps2xSetPatchFlag("keep_walls", want);
         }
 
+        // The object Gene holds is never hidden as a blocker (Nov 2, K: with the Modern camera Gene picked up an
+        // object he faced the camera with, next to a wall, and carried it invisible; see-through on or off). The
+        // hide-model manager's pass (func_00307B28, a0 = its list of 32 hidden models, kept at sp+0x168) hides
+        // every mesh a ray from the camera to Gene hits (+0x380 bit 0; the model goes in the list, whose meshes
+        // all come back at the next pass, func_00308BC0) and marks hit actors (+0x5A0 |= 2 at 0x30878C / 0x30887C /
+        // 0x308998; cleared next pass only for actors in the object list 0x754C58). A carried object is between the
+        // Modern camera and Gene whenever he faces it. At the pass's end (0x3089B8): the held objects (Gene +0x698,
+        // carried; +0x6A0, the weapon) shown again as the next pass would. Classic keeps the game's own.
+        void hidePassDone(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            if (!modern::enabled())
+                return;
+            const auto valid = [](uint32_t p) { return p >= 0x100000u && p < PS2_RAM_SIZE - 0x1000u; };
+            uint32_t player = 0, list = 0;
+            std::memcpy(&player, rdram + kPlayerPointer, sizeof(player));
+            std::memcpy(&list, rdram + ((GPR_U32(ctx, 29) + 0x168u) & (PS2_RAM_SIZE - 1u)), sizeof(list));
+            if (!valid(player))
+                return;
+            for (const uint32_t at : {0x698u, 0x6A0u})
+            {
+                uint32_t held = 0;
+                std::memcpy(&held, rdram + player + at, sizeof(held));
+                if (!valid(held))
+                    continue;
+                uint32_t flags = 0;
+                std::memcpy(&flags, rdram + held + 0x5A0u, sizeof(flags));
+                flags &= ~2u;
+                std::memcpy(rdram + held + 0x5A0u, &flags, sizeof(flags));
+                bool listed = false;
+                for (uint32_t i = 0; valid(list) && i < 32u && !listed; ++i)
+                {
+                    uint32_t entry = 0;
+                    std::memcpy(&entry, rdram + list + 4u * i, sizeof(entry));
+                    listed = entry == held;
+                }
+                if (!listed)
+                    continue;
+                uint32_t mesh = 0;
+                std::memcpy(&mesh, rdram + held + 0x25Cu, sizeof(mesh));
+                for (int n = 0; valid(mesh) && n < 64; ++n)
+                {
+                    uint32_t disp = 0;
+                    std::memcpy(&disp, rdram + mesh + 0x380u, sizeof(disp));
+                    disp &= ~1u;
+                    std::memcpy(rdram + mesh + 0x380u, &disp, sizeof(disp));
+                    std::memcpy(&mesh, rdram + mesh + 0x404u, sizeof(mesh));
+                }
+            }
+        }
+
         // 0x1388F0 (cCamera_update, lui at,0x4233 after MtxMultiply; s4 = the camera)
         void cameraMatrixReady(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
@@ -1084,6 +1134,7 @@ namespace kamite
         g_mul = fovFactor();
         ps2xRegisterHostHook("km_radar_yaw", &radarYaw);
         ps2xRegisterHostHook("km_cam_matrix", &cameraMatrixReady);
+        ps2xRegisterHostHook("km_cam_hide_held", &hidePassDone);
         ps2xRegisterHostHook("km_fov_ease_a", &fovEaseA);
         ps2xRegisterHostHook("km_fov_ease_b", &fovEaseB);
         ps2xRegisterHostHook("km_fov_reset", &fovReset);

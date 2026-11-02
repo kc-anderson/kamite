@@ -1519,6 +1519,12 @@ replace = true
 address = "0x00308650"
 value = "0x34420000"
 flag = "keep_walls"
+# The hide-model pass's end (lq s1 in the epilogue; the early exit joins at 0x3089B4): the object Gene holds is shown
+# again with the Modern controls (camera.cpp hidePassDone; Nov 2, K: an invisible carried object).
+[[patches.hooks]]
+address = "0x003089B8"
+hook = "km_cam_hide_held"
+flag = "fov"
 
 # The radar's turn (func_00143D20, lqc2 $vf4,128(sp): Gene's rotation copied there): the Modern free camera's yaw while
 # it has the view (camera.cpp).
@@ -4029,4 +4035,46 @@ flag = "fps60"
 [[patches.hooks]]
 address = "0x0010B744"
 hook = "km_fps60_gene_step_hold"
+flag = "fps60"
+# The hold repeats only the motion calls the tick's handler made (frame_patches.cpp HandlerMoves, Nov 2, 66sec): the
+# three functions' entries record them (moveMotion, cObjBase_addNullSpeed_Rotation, cObjBase_addNullSpeed) while a
+# dispatcher's handler runs; after each dispatcher's jalr returns the handler is popped (Gene 0x10B750, mode 0
+# 0x20FAF8, mode 1 0x24C37C: the jal's delay slot, mode 2 0x25E778).
+[[patches.hooks]]
+address = "0x00157C18"
+hook = "km_fps60_hold_move_motion"
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0014F9F0"
+hook = "km_fps60_hold_null_rotation"
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0014F928"
+hook = "km_fps60_hold_null_speed"
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0010B750"
+hook = "km_fps60_hold_handler_end"
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0020FAF8"
+hook = "km_fps60_hold_handler_end"
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0024C37C"
+hook = "km_fps60_hold_handler_end"
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0025E778"
+hook = "km_fps60_hold_handler_end"
+flag = "fps60"
+# ... and the button-action requests (func_1F7858 / func_1F7900, the list at 0x568288 released every frame: the pickup
+# prompt; frame_patches.cpp ActionRequest, Nov 2: K's prompt flicker at 60).
+[[patches.hooks]]
+address = "0x001F7858"
+hook = "km_fps60_hold_action_request"
+flag = "fps60"
+[[patches.hooks]]
+address = "0x001F7900"
+hook = "km_fps60_hold_action_request2"
 flag = "fps60"

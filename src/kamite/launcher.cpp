@@ -1402,7 +1402,7 @@ namespace kamite::launcher
                         settingLabel("60 FPS", "Runs the game at 60 frames a second instead of 30, with its timers kept "
                                                "at the PS2's speed.");
                         iniCheckbox(state, "On##fps60", "Game", "Fps60", false);
-                        settingLabel("L3 dash", "Clicking the left stick dashes (a quick double tap forward).");
+                        settingLabel("L3 dash", "Clicking the left stick dashes (where the stick points, or straight ahead).");
                         iniCheckbox(state, "On##l3", "Game", "L3Dash", false);
                         settingLabel("Style switching", "Save up to four sets of techniques as styles and swap "
                                                         "between them in play with the d-pad (on the Techniques "
