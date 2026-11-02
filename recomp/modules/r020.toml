@@ -71,3 +71,12 @@ flag = "skip_intro"
 address = "0x0079A204"
 value = "0x00031025"
 flag = "skip_intro"
+
+# 60 FPS family 1 (census Nov 2): cR020::MoveWait's 40-frame wait before the title (+8). The two other decrements in
+# r020 (titleGameSel +0x14, titleLevelSel +0x1C) move the menu cursor on an Up press: not timers, left alone.
+[[patches.hooks]]
+address = "0x007999C4"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+

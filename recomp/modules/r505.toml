@@ -22,3 +22,12 @@ skip = []
 stubs = []
 # No runtime relocations: every import resolves to a boot .sndata export at static-link time
 # (r505_runtime_relocations.csv has 0 rows).
+
+# 60 FPS family 1 (census Nov 2): cR505::ElectricTask's three countdowns (+0x30.., a sleep(1) loop: counted per poll,
+# so the load is raised on second halves).
+[[patches.hooks]]
+address = "0x00799C40"
+hook = "km_fps60_r505_cd_s2_0"
+flag = "fps60"
+replace = true
+

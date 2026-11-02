@@ -22,3 +22,11 @@ skip = []
 stubs = []
 # No runtime relocations: every import resolves to a boot .sndata export at static-link time
 # (r201_runtime_relocations.csv has 0 rows).
+
+# 60 FPS family 1 (census Nov 2): R201Move's wait (0x79BC00) once both enemies are down, before the scenario task starts.
+[[patches.hooks]]
+address = "0x00799860"
+hook = "km_fps60_countdown_v1"
+flag = "fps60"
+replace = true
+

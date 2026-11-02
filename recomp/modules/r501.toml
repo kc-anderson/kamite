@@ -22,3 +22,56 @@ skip = []
 stubs = []
 # No runtime relocations: every import resolves to a boot .sndata export at static-link time
 # (r501_runtime_relocations.csv has 0 rows).
+
+# 60 FPS family 1 (census Nov 2): the stage 5 shooting minigame's timers (UFO / EnemyShip / Site / CannonGame code
+# after the float helpers, unexported): +0x28 / +0x20 (0x79E2C0 / 0x79E2CC), +0x14 (load and decrement in delay
+# slots: its store at 0x79F354), +0x18, the state timers +0x70 (0x79F6F0, 0x79F8DC, 0x79FAAC load, 0x79FD54).
+# Not done: its per-frame float steps (e.g. 0x79F6D0..0x79F6FC: +0x10 +=, +0x14 -= 0.05): needs a case at 60.
+[[patches.hooks]]
+address = "0x0079E2C0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x0079E2CC"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x0079F354"
+hook = "km_fps60_r501_store_s1_14"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x0079F358"
+hook = "km_fps60_r501_cd_s1_18"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x0079F6F0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x0079F8DC"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x0079FAAC"
+hook = "km_fps60_r501_cd_s0_70"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x0079FD54"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+

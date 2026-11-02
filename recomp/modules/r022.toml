@@ -22,3 +22,11 @@ skip = []
 stubs = []
 # No runtime relocations: every import resolves to a boot .sndata export at static-link time
 # (r022_runtime_relocations.csv has 0 rows).
+
+# 60 FPS family 1 (census Nov 2): cR022::move state 8, +0xD4 = 15 frames, waited out with the 15-frame fade.
+[[patches.hooks]]
+address = "0x007998DC"
+hook = "km_fps60_countdown_a0v0"
+flag = "fps60"
+replace = true
+

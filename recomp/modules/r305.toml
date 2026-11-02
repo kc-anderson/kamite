@@ -22,3 +22,48 @@ skip = []
 stubs = []
 # No runtime relocations: every import resolves to a boot .sndata export at static-link time
 # (r305_runtime_relocations.csv has 0 rows).
+
+# 60 FPS family 1 (census Nov 2): cR305_Chihuahua's state waits (+0xC; decrement in the bnez delay slot, so the load
+# is raised on second halves): ExecNormalWait, ExecPlLookWait, Exec02 (2), Exec03, Exec04, Exec05.
+[[patches.hooks]]
+address = "0x007998CC"
+hook = "km_fps60_r305_cd_s0_c"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x00799984"
+hook = "km_fps60_r305_cd_s0_c"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x00799C24"
+hook = "km_fps60_r305_cd_s0_c"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x00799C5C"
+hook = "km_fps60_r305_cd_s0_c"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x00799DDC"
+hook = "km_fps60_r305_cd_s0_c"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x00799F68"
+hook = "km_fps60_r305_cd_s0_c"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x0079A00C"
+hook = "km_fps60_r305_cd_s0_c"
+flag = "fps60"
+replace = true
+

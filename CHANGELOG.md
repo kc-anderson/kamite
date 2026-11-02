@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 2, 2026
 
+- 60 FPS: room-specific timers run at the PS2's speed (the ring's FIGHT / YOU WIN / TIME UP banners, the Chihuahua, the stage 5 shooting minigame, the electric floor and other room waits).
 - 60 FPS: the cannon game's 3-2-1 countdown runs at the PS2's speed.
 - Cannon game crates: the button letters now have the prompt set's colours (Xbox yellow / red / blue / green) and a sharp full-resolution version.
 - 60 FPS: the cannon game no longer locks up after the lever (scripted event waits now last as long as on the PS2).

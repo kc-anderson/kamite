@@ -22,3 +22,26 @@ skip = []
 stubs = []
 # No runtime relocations: every import resolves to a boot .sndata export at static-link time
 # (r040_runtime_relocations.csv has 0 rows).
+
+# 60 FPS (census Nov 2): the FIGHT / YOU WIN / TIME UP banner drivers (PetitDevilId::ExecFight +0xEC0/+0xEC4,
+# ExecYouWin +0xEC8/+0xECC, ExecTimeUp +0xED0/+0xED4) step phase and timer every frame and act on timer values: their
+# running-bit loads read the bit clear on second halves (frame_patches.cpp tickOnlyGate), so each runs on the 30 FPS
+# tick. (The ring's own timer uses +0x574 and was already right.)
+[[patches.hooks]]
+address = "0x00799B88"
+hook = "km_fps60_r040_fight_tick"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x00799F38"
+hook = "km_fps60_r040_youwin_tick"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x0079A0C0"
+hook = "km_fps60_r040_timeup_tick"
+flag = "fps60"
+replace = true
+

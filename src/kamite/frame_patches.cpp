@@ -1666,16 +1666,26 @@ namespace kamite
                 SET_GPR_U32(ctx, 5, std::min(frames * 2u, 0xFFFFu));
         }
 
-        // r301's start countdown (r301CannonGameId::ExecCountDownAnim 0x79D5A0, K Nov 2: "ran twice as fast"): its
-        // phases (+0x348) and timer (+0x34A, decremented through one store at 0x79DA04) step once a game frame, and the
-        // beeps play when the timer equals 30, so halving the timer alone would beep twice. Its first test
-        // (`lwu v0,0(s1)`, bit 0 = running, 0x79D5C4) reads "not running" on second halves: the driver runs on the
-        // 30 FPS tick only (the anims it starts run in the ID system at their own rate).
+        // Drivers that step a phase and a timer once a game frame and act on timer values (a beep at 30, a sound at 10),
+        // so halving the timer would fire those twice (room DLLs, Nov 2): their "running" bit test `lwu v0,0(Base)`
+        // reads the bits in Mask clear on second halves, so the whole driver runs once per 30 FPS frame (the ID anims it
+        // starts run at their own rate). r301's start countdown (r301CannonGameId::ExecCountDownAnim, K: the 3-2-1 ran
+        // twice as fast), r040's FIGHT / YOU WIN / TIME UP banners (PetitDevilId::ExecFight / ExecYouWin / ExecTimeUp).
+        template <int Base, uint32_t Mask>
         void tickOnlyGate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             uint32_t value = 0;
-            std::memcpy(&value, rdram + (GPR_U32(ctx, 17) & 0x01FFFFFFu), 4);
-            SET_GPR_U32(ctx, 2, skipFrame(rdram) ? (value & ~1u) : value);
+            std::memcpy(&value, rdram + (GPR_U32(ctx, Base) & 0x01FFFFFFu), 4);
+            SET_GPR_U32(ctx, 2, skipFrame(rdram) ? (value & ~Mask) : value);
+        }
+
+        // A countdown whose load and decrement both sit in delay slots: its store `sw Src,Offset(Base)` (Src = old - 1 on
+        // every path to it) keeps the old value on second halves (r501 +0x14 at 0x79F354).
+        template <int Base, uint32_t Offset, int Src>
+        void countdownStore(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t value = GPR_U32(ctx, Src) + (skipFrame(rdram) ? 1u : 0u);
+            std::memcpy(rdram + ((GPR_U32(ctx, Base) + Offset) & 0x01FFFFFFu), &value, 4);
         }
 
         // The stick-wiggle button prompt (cCockActButton move, type 4, 0x13BF08..0x13C020) swings its stick icon a
@@ -1750,7 +1760,17 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_r301_cd_s1_a0", &countdownLoad<17, 0xA0u>);
         ps2xRegisterHostHook("km_fps60_r301_cd_s1_78", &countdownLoad<17, 0x78u>);
         ps2xRegisterHostHook("km_fps60_r301_cd_s2_70", &countdownLoad<18, 0x70u>);
-        ps2xRegisterHostHook("km_fps60_r301_countdown_tick", &tickOnlyGate);
+        ps2xRegisterHostHook("km_fps60_r301_countdown_tick", &tickOnlyGate<17, 1u>);
+        // The other room DLLs' countdowns (recomp/modules/r*.toml, census Nov 2).
+        ps2xRegisterHostHook("km_fps60_countdown_a0v0", &countdownPair<4, 2>); // addiu a0,v0,-1
+        ps2xRegisterHostHook("km_fps60_r040_fight_tick", &tickOnlyGate<19, 2u>);
+        ps2xRegisterHostHook("km_fps60_r040_youwin_tick", &tickOnlyGate<16, 4u>);
+        ps2xRegisterHostHook("km_fps60_r040_timeup_tick", &tickOnlyGate<16, 8u>);
+        ps2xRegisterHostHook("km_fps60_r305_cd_s0_c", &countdownLoad<16, 0xCu>);
+        ps2xRegisterHostHook("km_fps60_r505_cd_s2_0", &countdownLoad<18, 0x0u>);
+        ps2xRegisterHostHook("km_fps60_r501_cd_s1_18", &countdownLoad<17, 0x18u>);
+        ps2xRegisterHostHook("km_fps60_r501_cd_s0_70", &countdownLoad<16, 0x70u>);
+        ps2xRegisterHostHook("km_fps60_r501_store_s1_14", &countdownStore<17, 0x14u, 2>);
         ps2xRegisterHostHook("km_fps60_flash_guard_rate", &flashGuardRate);
         ps2xRegisterHostHook("km_fps60_tension_drain", &tensionDrainRate);
         ps2xRegisterHostHook("km_fps60_enemy_slow_rate", &enemySlowRate);
