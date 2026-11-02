@@ -12,6 +12,8 @@ namespace kamite
     //   RouletteNoOrbs (KAMITE_ROULETTE_NO_ORBS)  R1 opens the roulette with no orbs (moves stay greyed out; for the
     //                                     roulette camera).
     //   Dead Pan (always): the Japanese free roulette move, earned by a Kick Me Sign clear (or F2's every reel owned).
+    //   LiftChairs (KAMITE_LIFT_CHAIRS)  stage 1's chairs are built as crate-class objects: picked up, carried,
+    //                                     thrown and smashed like the crates (launcher: Experimental, Wild Curry Funk).
     //   MuteMusic  (KAMITE_MUTE_MUSIC)   the game's music streams (cSndBgmNode) play at volume 0; voices, sound
     //                                     effects and movies are unchanged.
     void installGameOptions(PS2Runtime &runtime);

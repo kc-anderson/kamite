@@ -1630,6 +1630,8 @@ void main()
                                                     "the dissolve).",
                                      "F2 > Camera sizes it while playing.");
                         iniCheckbox(state, "On##seethrough", "Video", "SeeThrough", true);
+                        settingLabel("Wild Curry Funk", "Lets you pick up and carry chairs.");
+                        iniCheckbox(state, "On##liftchairs", "Game", "LiftChairs", false);
                         ImGui::EndTable();
                     }
                     ImGui::EndTabItem();

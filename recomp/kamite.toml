@@ -310,6 +310,16 @@ flag = "frame_hook"
 # setters (src/kamite/game_options.cpp): func_00373FF0 (node a0, category a1, volume f12) for a one-channel node,
 # func_003745C0 (node a0, category a1, channel a2, volume f12) for a node with 2+ channels (node+0x58 > 1: the
 # stereo ADX music; UpdateSequenceNodeWeighted_373560 picks between them).
+# [Game] LiftChairs (game_options.cpp): the object factory func_0030FE68 builds a chair (0x304) with the crate class
+# (0x30A): s0 swapped before the switch, put back once the object exists (before the id and data are stored).
+[[patches.hooks]]
+address = "0x0030FE7C"
+hook = "km_lift_chairs_switch"
+flag = "lift_chairs"
+[[patches.hooks]]
+address = "0x003125B4"
+hook = "km_lift_chairs_id"
+flag = "lift_chairs"
 # [Game] RouletteNoOrbs (game_options.cpp): cCoreSave_getGodItem's save pointer, aimed at a non-zero byte when the orb
 # slots are empty (its only caller is Gene's R1 check at 0x123B2C).
 [[patches.hooks]]

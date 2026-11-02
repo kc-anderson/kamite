@@ -1,4 +1,12 @@
-// Optional changes to the game ([Game] UnlockHard / SkipIntro / MuteMusic / RouletteNoOrbs) and Dead Pan. See game_options.h.
+// Optional changes to the game ([Game] UnlockHard / SkipIntro / MuteMusic / RouletteNoOrbs / LiftChairs) and Dead Pan.
+// See game_options.h.
+//
+// LiftChairs: stage 1's chairs (om04, cOmBase, actor 0x304) have no carry or throw states; the crates in the same rooms
+// (om0a, cOmThrow, 0x30A) do. The object factory func_0030FE68(id a0, data id a1) switches on s0 = id to each class's
+// alloc + constructor, then stores the id (+0x2FE / +0x300) and picks the data (texture, mesh group) by it. Under
+// "lift_chairs" 0x304 is read as 0x30A for the switch (before sq s1 at 0x30FE7C) and put back once the object exists
+// (before daddu a0,s2 at 0x3125B4): a crate-class object with the chair's id, mesh (Fx_chrNN), texture and break
+// effect. claude/chair-notes.md.
 //
 // UnlockHard: the difficulty select is in the title room DLL r020 (cR020::titleLevelSel, 0x79B0E0). It reads the save's
 // "Hard unlocked" bit (0x747A28 & 0x200000, set by clearing the game) three times: for the menu's item animation
@@ -274,12 +282,41 @@ namespace kamite
     }
 
 
+    namespace
+    {
+        constexpr uint32_t kChairId = 0x304u, kCrateId = 0x30Au;
+        uint32_t g_chairSp = 0; // the factory call (its sp) that is building a chair as a crate
+
+        // Before sq s1,0x30(sp) at 0x30FE7C (func_0030FE68, flag lift_chairs): s0 = the id the switch reads.
+        void liftChairsSwitch(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            if (GPR_U32(ctx, 16) != kChairId)
+                return;
+            g_chairSp = GPR_U32(ctx, 29);
+            SET_GPR_U32(ctx, 16, kCrateId);
+        }
+
+        // Before daddu a0,s2,zero at 0x3125B4 (the object exists): the chair's id back for +0x2FE / +0x300 / the data.
+        void liftChairsId(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            if (g_chairSp && GPR_U32(ctx, 29) == g_chairSp && GPR_U32(ctx, 16) == kCrateId)
+            {
+                SET_GPR_U32(ctx, 16, kChairId);
+                g_chairSp = 0;
+            }
+        }
+    }
+
     void installGameOptions(PS2Runtime &)
     {
         const bool unlockHard = envOn("KAMITE_UNLOCK_HARD");
         const bool muteMusic = envOn("KAMITE_MUTE_MUSIC");
         const bool skipIntro = envOn("KAMITE_SKIP_INTRO");
         const bool rouletteAnyOrbs = envOn("KAMITE_ROULETTE_NO_ORBS");
+        const bool liftChairs = envOn("KAMITE_LIFT_CHAIRS");
+        ps2xRegisterHostHook("km_lift_chairs_switch", &liftChairsSwitch);
+        ps2xRegisterHostHook("km_lift_chairs_id", &liftChairsId);
+        ps2xSetPatchFlag("lift_chairs", liftChairs);
         ps2xSetPatchFlag("skip_intro", skipIntro);
         ps2xRegisterHostHook("km_roulette_no_orbs", &rouletteNoOrbs);
         ps2xRegisterHostHook("km_roulette_grey_no_orbs", &rouletteGreyWithoutOrbs);
@@ -293,7 +330,8 @@ namespace kamite
         ps2xSetPatchFlag("mute_music", muteMusic);
         KM_INFO(Game, "options: Hard " << (unlockHard ? "unlocked from the start" : "as saved") << "; music "
                                        << (muteMusic ? "muted" : "on") << (skipIntro ? "; boot straight to the main menu" : "")
-                                       << (rouletteAnyOrbs ? "; roulette without orbs" : ""));
+                                       << (rouletteAnyOrbs ? "; roulette without orbs" : "")
+                                       << (liftChairs ? "; chairs liftable" : ""));
     }
 
     bool muteMusic()

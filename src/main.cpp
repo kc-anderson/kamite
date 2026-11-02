@@ -397,6 +397,7 @@ namespace
         {"game", "unlockhard", "KAMITE_UNLOCK_HARD"},
         {"game", "skipintro", "KAMITE_SKIP_INTRO"},
         {"game", "roulettenoorbs", "KAMITE_ROULETTE_NO_ORBS"},
+        {"game", "liftchairs", "KAMITE_LIFT_CHAIRS"},
         {"sound", "mutemusic", "KAMITE_MUTE_MUSIC"},
         {"mods", "character", "KAMITE_CHARACTER"},
         {"run", "headless", "KAMITE_HEADLESS"},

@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 2, 2026
 
+- Experimental: Wild Curry Funk, chairs (stage 1) can be picked up, carried, thrown and smashed like crates.
 - Launcher: a desert background with heat haze and drifting clouds; the text under the logo and at the bottom is readable over it.
 - Button prompts keep the chosen set after loading a save state made in another session or build (it showed the PlayStation art).
 - 60 FPS: room-specific timers run at the PS2's speed (the ring's FIGHT / YOU WIN / TIME UP banners, the Chihuahua, the stage 5 shooting minigame, the electric floor and other room waits).
