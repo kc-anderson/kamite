@@ -2,6 +2,12 @@
 
 Newest first, one line per change; the code comments say how.
 
+## November 3, 2026
+
+- 60 FPS: running attacks and enemy lunges go through their target as on the PS2 (Gene's sprint attacks through Azel, the Elite Robot Dude's knee and elbow lunges through Gene).
+- 60 FPS: Azel turns to face Gene after blocking, before his sweep counter, as on the PS2.
+- 60 FPS: Azel's pummel and a few other enemy moves animate at the PS2's speed (they ran at half speed).
+
 ## November 2, 2026
 
 - 60 FPS: defeated enemies fade out at the PS2's speed (the common goons' fade was still twice as fast); some objects no longer fade at half speed.

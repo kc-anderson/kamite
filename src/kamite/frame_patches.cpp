@@ -45,6 +45,7 @@
 #include "kamite/counter_finder.h"
 #include "kamite/test_mode.h"
 #include "kamite/game_options.h"
+#include "kamite/function_hooks.h"
 #include "kamite/pc_sampler.h"
 #include "kamite/log.h"
 #include "kamite/game_layout.h"
@@ -568,7 +569,10 @@ namespace kamite
         // func_2DBD40 / func_2DBFB0), and func_1F75D0 releases every entry each frame. On a held vblank the handler
         // didn't run, so the prompt (and a press on that vblank) was gone for a vblank after every state change. The
         // hold makes the tick's requests again, with the same a0..t2. Enemy handlers' requests (0x237940.., the
-        // grab prompts) go the same way.
+        // grab prompts) go the same way. And the body switches (Nov 3, T1's lunge cases): cCollisionSolidManage_SetActive
+        // (0x1351D8) from a handler turns its owner's body spheres off for the frame (lunges, grabs: 0x239D84 ..), after
+        // the update turned them on (Gene 0x1092D8, enemies 0x20952C); the body push now runs on the second half
+        // (bodyPush below), which a held handler left with the body on.
         struct ActionRequest
         {
             uint32_t fn = 0;
@@ -579,7 +583,7 @@ namespace kamite
             uint32_t counter = 0;
             uint8_t move = 0, rot = 0, null = 0, requests = 0;
             float rotF12 = 1.0f, nullF12 = 1.0f;
-            ActionRequest request[4];
+            ActionRequest request[6];
         };
         std::unordered_map<uint32_t, HandlerMoves> g_handlerMoves;
         uint32_t g_handlerStack[8] = {};
@@ -613,7 +617,7 @@ namespace kamite
             if (g_holdCalling || g_handlerDepth <= 0 || g_handlerStack[g_handlerDepth - 1] == 0u)
                 return;
             auto it = g_handlerMoves.find(g_handlerStack[g_handlerDepth - 1]);
-            if (it == g_handlerMoves.end() || it->second.counter != gameFrames(rdram) || it->second.requests >= 4u)
+            if (it == g_handlerMoves.end() || it->second.counter != gameFrames(rdram) || it->second.requests >= 6u)
                 return;
             ActionRequest &r = it->second.request[it->second.requests++];
             r.fn = Fn;
@@ -679,12 +683,15 @@ namespace kamite
             // reaction's step 0 runs in the hit's own frame and reads the blow's direction from the take, which the
             // enemy's update frees at its end (func_00208858). Held to the tick, step 0 ran without it (Nov 1, K's
             // demon counters: launched sideways). Not held: the reaction starts in the frame of the hit, as at 30.
+            // Any mode (Nov 3, T1's "Azel sweep broken"): a blow on a guard starts a mode 0 reaction (Azel's phase 112
+            // func_0023E6B0, step 0 at 0x23ED24: the attacker's position into +0x5D0 and +0x5F0 = 10 frames of turning
+            // toward it before the counter). Held, step 0 found no take: no turn, the sweep came out facing the old way.
             if (!CarryPress && changed)
             {
-                const uint8_t mode = ram8(rdram, obj + 0x2F4u), step = ram8(rdram, obj + 0x2F6u);
+                const uint8_t step = ram8(rdram, obj + 0x2F6u);
                 uint32_t take = 0;
                 std::memcpy(&take, &ram8(rdram, obj + 0x698u), sizeof(take));
-                if ((mode == 1u || mode == 2u) && step == 0u && take != 0u)
+                if (step == 0u && take != 0u)
                     changed = false;
             }
             last = EnemyStep{state, counter, motion};
@@ -1031,6 +1038,95 @@ namespace kamite
                 inEnemyList(rdram, GPR_U32(ctx, 16)))
                 step *= 2.0f;
             ctx->f[13] = step;
+        }
+
+        // SetMotionStep (0x158288) from enemy handlers with a step made of the enemy's own rate (+0x5A8, 0.5 at 60) or
+        // cEmManage_GetSpeedRate (also 0.5): moveMotion already halves every advance at 60, so these motions ran at
+        // half the PS2's speed (Nov 3, T1's "Azel pummel logic": phase 90 func_002383D0, SetMotionStep(rate x 2) at
+        // 0x2385BC, 2 motion frames per 30 FPS frame at 30, 1 at 60). The manager's own call for every enemy is
+        // doubled at 0x290584; these are the handlers' own calls (census of the 57 callers: Gene's pass his rate,
+        // which stays the 30 FPS value; the mode 1 grab reactions 0x25C1FC.. copy Gene's; objects not checked).
+        constexpr uint32_t kMotionStepRateSites[] = {
+            0x22C984u, 0x22D3E0u, 0x2385A4u, 0x2385BCu, 0x2452A4u, 0x278B48u, // the enemy's +0x5A8 x a factor
+            0x27BBCCu, 0x27E0ECu, 0x27F1F0u, 0x280900u, 0x2819A8u, 0x282BD8u, // GetSpeedRate (cEm63 / 66 / 6b / 6c)
+        };
+        void motionStepRate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // at SetMotionStep's entry
+        {
+            const uint32_t site = GPR_U32(ctx, 31) - 8u;
+            if (std::binary_search(std::begin(kMotionStepRateSites), std::end(kMotionStepRateSites), site) &&
+                inEnemyList(rdram, GPR_U32(ctx, 4)))
+                ctx->f[12] *= 2.0f;
+        }
+
+        // The body push (Nov 3, T1's lunge cases: Gene's running attack no longer went through Azel at 60, the Elite
+        // Robot Dude's lunges no longer went through Gene). cCollisionSolidManage_ChkHit (0x1348E8, a1 = the owner)
+        // moves its owner out of every other active body sphere by the whole overlap (func_00134CB0). A sphere sits on
+        // its owner's matrix +0x80, which Gene's update rebuilds only after the push (cModel_calcParts 0x1097BC after
+        // ChkHit 0x109464) and an enemy's before it (0x209AAC / 0x209B54, ChkHit 0x209C2C). So at 30 each enemy is
+        // pushed out of where Gene stood at the start of the frame, and Gene out of the enemies' last spheres: a lunge's
+        // 0.3-0.5 m steps carry him past the enemy's centre and through (case Square lunge: Azel ends each frame 0.84 m
+        // from Gene's start position, frame 27 -> 28 Gene's start is past him). At 60 the same push every vblank on
+        // half steps holds him at 0.84 m minus half a step: never through. Here the characters' pushes run on the
+        // second half only, Gene's with the matrix he had at the tick (the 30 FPS frame's start): one push per 30 FPS
+        // frame from the same positions as the PS2. The tick's overlap of up to half a step is visible for a vblank.
+        // Objects (MoveObj's own ChkHit callers) push before they move: left as they are.
+        GuestFunction g_origChkHit = nullptr;
+        struct BodyMatrix
+        {
+            uint32_t counter = 0;
+            uint8_t m[64] = {};
+        };
+        std::unordered_map<uint32_t, BodyMatrix> g_bodyMatrix;
+        // The callers by return address: the player updates rebuild the matrix after the push (stale = true), the
+        // enemy updates before it.
+        bool bodyPushSite(uint32_t ra, bool &stale)
+        {
+            switch (ra)
+            {
+            case 0x10946Cu: // Gene, func_00108AB0
+            case 0x102260u: // func_00102150 (calcParts 0x102350)
+                stale = true;
+                return true;
+            case 0x209C34u: // enemies, func_00208BE0
+            case 0x277690u: // func_00277568
+            case 0x285AF0u: // func_002856C0
+            case 0x28A17Cu: // func_00289E38
+                stale = false;
+                return true;
+            default:
+                return false;
+            }
+        }
+        void bodyPush(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const uint32_t owner = GPR_U32(ctx, 5), ra = GPR_U32(ctx, 31);
+            bool stale = false;
+            if (!g_fps60 || ctx->pc != 0x1348E8u || owner < 0x100000u || owner >= 0x2000000u - 0x100u || !bodyPushSite(ra, stale))
+                return g_origChkHit(rdram, ctx, runtime);
+            const uint32_t counter = gameFrames(rdram);
+            if (!thinkSkipped(rdram))
+            {
+                if (stale)
+                {
+                    BodyMatrix &b = g_bodyMatrix[owner];
+                    b.counter = counter;
+                    std::memcpy(b.m, &ram8(rdram, owner + 0x80u), sizeof(b.m));
+                }
+                if ((counter & 0x3FFu) == 0u)
+                    for (auto it = g_bodyMatrix.begin(); it != g_bodyMatrix.end();)
+                        it = counter - it->second.counter > 2u ? g_bodyMatrix.erase(it) : std::next(it);
+                SET_GPR_U32(ctx, 2, 0u); // the callers ignore it
+                ctx->pc = ra;
+                return;
+            }
+            const auto it = stale ? g_bodyMatrix.find(owner) : g_bodyMatrix.end();
+            if (it == g_bodyMatrix.end() || it->second.counter + 1u != counter) // no tick seen (a load): as it is
+                return g_origChkHit(rdram, ctx, runtime);
+            uint8_t now[64];
+            std::memcpy(now, &ram8(rdram, owner + 0x80u), sizeof(now));
+            std::memcpy(&ram8(rdram, owner + 0x80u), it->second.m, sizeof(now));
+            g_origChkHit(rdram, ctx, runtime);
+            std::memcpy(&ram8(rdram, owner + 0x80u), now, sizeof(now));
         }
 
         void installFrame30State()
@@ -1872,6 +1968,8 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_hold_handler_end", &handlerEnd);
         ps2xRegisterHostHook("km_fps60_hold_action_request", &actionRequested<0x1F7858u>);
         ps2xRegisterHostHook("km_fps60_hold_action_request2", &actionRequested<0x1F7900u>);
+        ps2xRegisterHostHook("km_fps60_hold_body_switch", &actionRequested<0x1351D8u>);
+        ps2xRegisterHostHook("km_fps60_motion_step_rate", &motionStepRate);
         ps2xRegisterHostHook("km_fps60_seq_before", &seqBefore);
         ps2xRegisterHostHook("km_fps60_map_scroll_step", &mapScrollStep);
         ps2xRegisterHostHook("km_fps60_map_scroll_step23", &mapScrollStep23);
@@ -1905,6 +2003,14 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_rand_object_end", &randObjectEnd);
         installRandState();
         installClothState();
+        // The body push on the 30 FPS grid (bodyPush): a replacement, so it follows the F2 60 FPS switch.
+        if (!runtime.hasFunction(0x1348E8u) || !(g_origChkHit = runtime.lookupFunction(0x1348E8u)) ||
+            !FunctionHooks::instance().replace(0x1348E8u, "cCollisionSolidManage_ChkHit (60 FPS body push)", &bodyPush,
+                                               ReplacementStatus::Native, "60 FPS: one body push per 30 FPS frame"))
+        {
+            g_origChkHit = nullptr;
+            KM_WARN(Game, "fps60: cCollisionSolidManage_ChkHit is not hookable");
+        }
         g_rdram = runtime.memory().getRDRAM();
         installFrame30State();
         ps2x::savestate::onLoaded([rdram = runtime.memory().getRDRAM()] {

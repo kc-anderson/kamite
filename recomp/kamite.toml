@@ -4186,3 +4186,17 @@ flag = "fps60"
 address = "0x001F7900"
 hook = "km_fps60_hold_action_request2"
 flag = "fps60"
+# ... and the body switches a handler makes (cCollisionSolidManage_SetActive, Nov 3): the body push runs on the second
+# half (frame_patches.cpp bodyPush, a replacement of 0x1348E8), so a held handler's "body off" must be made again.
+[[patches.hooks]]
+address = "0x001351D8"
+hook = "km_fps60_hold_body_switch"
+flag = "fps60"
+
+# 60 FPS: enemy handlers' own SetMotionStep calls with a step made of the halved rate (+0x5A8 or GetSpeedRate) are
+# doubled like the manager's at 0x290584 (frame_patches.cpp motionStepRate, the sites in kMotionStepRateSites; Nov 3,
+# T1's Azel pummel at half speed).
+[[patches.hooks]]
+address = "0x00158288"
+hook = "km_fps60_motion_step_rate"
+flag = "fps60"
