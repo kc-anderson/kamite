@@ -63,6 +63,7 @@ set(KAMITE_HOST_SOURCES
     kamite/dev_menu.cpp
     kamite/roulette_bar.cpp
     kamite/radar_glow.cpp
+    kamite/tutorial_text.cpp
     kamite/ini_file.cpp
     kamite/counter_finder.cpp
     kamite/test_mode.cpp

@@ -20,6 +20,7 @@
 #include "kamite/button_prompts.h"
 #include "kamite/menu_buttons.h"
 #include "kamite/radar_glow.h"
+#include "kamite/tutorial_text.h"
 #include "kamite/style_presets.h"
 #include "kamite/npc_poses.h"
 #include "kamite/sprint_traversal.h"
@@ -1007,7 +1008,8 @@ int main(int argc, char *argv[])
         kamite::installHiresFlipCopy(runtime); // PS2X_GS_SCALE > 1 only: flip copy without the flicker filter
         kamite::button_prompts::install(runtime); // the button prompts show the bound keys (KAMITE_PROMPTS=0: PS2 art)
         kamite::menu_buttons::install(runtime.memory().getRDRAM()); // [Game] MenuButtons: the menus' confirm/cancel buttons
-        kamite::radar_glow::install(runtime.memory().getRDRAM()); // Modern: the radar glows while the original controls are in effect
+        kamite::radar_glow::install(runtime.memory().getRDRAM()); // Modern: the radar glows while the free camera is on
+        kamite::tutorial_text::install(runtime.memory().getRDRAM()); // Modern: Tutorial 1 explains Select and Auto
         kamite::hotkeys::install(exeDir / "kamite.ini"); // [Hotkeys]: the port's shortcut keys
         kamite::dev_menu::install(exeDir / "kamite.ini"); // F2: the dev menu's tab order, Display and Gameplay
         kamite::style_presets::install(runtime); // style presets: d-pad swaps in play, the Techniques screen's list and Y + d-pad

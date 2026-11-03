@@ -35,6 +35,8 @@ namespace kamite::modern
 
     // [Game] ControlStyle=modern is on (whatever is in effect now).
     bool enabled();
+    // Modern's Auto is on (F2 or [Game] ModernAuto). Any thread.
+    bool autoEnabled();
     // A hit between Gene and an enemy landed (either way; game thread, the damage steps): with Auto, brawl mode.
     void noteContact();
 

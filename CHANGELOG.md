@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 3, 2026
 
+- Modern controls: Tutorial 1 (the right stick) also explains Select and, with Auto on, Auto.
 - Modern controls: Auto starts brawl mode when a hit lands between Gene and an enemy (either way), not for crates or throws.
 - Modern controls: Select switches between the free camera and the original controls (kept across rooms; the radar glows while the free camera is on); Auto switches to the original controls when a fight starts and stays; L1 is always the quick turn; the hold option is gone.
 - Select is also on the middle mouse button by default (new controls files).

@@ -590,6 +590,8 @@ namespace kamite::modern
         return g_modern.load(std::memory_order_relaxed);
     }
 
+    bool autoEnabled() { return g_auto.load(std::memory_order_relaxed); }
+
     void noteContact()
     {
         if (g_auto.load(std::memory_order_relaxed) && g_modern.load(std::memory_order_relaxed) &&
