@@ -503,11 +503,12 @@ def main(argv):
 
 
 def read_rolls(path):
-    """<case>.<rate>.rolls.csv (a replay's random rolls per call site): {site: (calls, fresh, forced)}."""
+    """<case>.<rate>.rolls.csv (a replay's random rolls per call site): {site: (calls, fresh, forced, differs)}."""
     if not os.path.exists(path):
         return None
     with open(path, newline="") as f:
-        return {r["site"]: (int(r["calls"]), int(r["fresh"]), int(r["forced"])) for r in csv.DictReader(f)}
+        return {r["site"]: (int(r["calls"]), int(r["fresh"]), int(r["forced"]), int(r.get("differs") or 0))
+                for r in csv.DictReader(f)}
 
 
 def roll_report(path, sections, rec_div, secs30, secs60):
@@ -518,18 +519,28 @@ def roll_report(path, sections, rec_div, secs30, secs60):
     if r30 is None or r60 is None:
         return
     other = r30 if rec_div == 1 else r60
+    own = r60 if rec_div == 1 else r30
     if "rolls" in sections:
         kept = {k: v for k, v in other.items() if not 0x30AC40 <= int(k, 16) < 0x30B090}  # not the main loop's stir
         calls = sum(v[0] for v in kept.values())
         forced = sum(v[2] for v in kept.values())
         print(f"Rolls: the {60 // (3 - rec_div)} FPS replay took {forced} of its {calls} rolls from the recording "
               f"({100.0 * forced / calls if calls else 0:.0f}%).")
+        own_calls = sum(v[0] for v in own.values())
+        own_forced = sum(v[2] for v in own.values())
+        own_differs = sum(v[3] for v in own.values())
+        if own_forced:
+            # The replay at the case's own rate takes the exact same rolls (Nov 3). On the recording's build none may
+            # differ; on a later build a difference only says the game would have drawn another number there.
+            print(f"         the {60 // rec_div} FPS replay took {own_forced} of its {own_calls} rolls from the recording, "
+                  f"{own_differs} differing from the game's own draw"
+                  + ("  (same build: the random stream is not reproduced)" if own_differs else "") + ".")
     flagged = []
     for site in sorted(set(r30) | set(r60)):
         if 0x30AC40 <= int(site, 16) < 0x30B090:  # the main loop stirs the twister once a game frame: not a decision
             continue
-        f30 = r30.get(site, (0, 0, 0))[1] / secs30 if secs30 else 0.0
-        f60 = r60.get(site, (0, 0, 0))[1] / secs60 if secs60 else 0.0
+        f30 = r30.get(site, (0, 0, 0, 0))[1] / secs30 if secs30 else 0.0
+        f60 = r60.get(site, (0, 0, 0, 0))[1] / secs60 if secs60 else 0.0
         if f60 * secs60 >= 10 and f60 >= 1.6 * max(f30, 0.5):
             flagged.append(f"site {site}: {f30:.1f} / {f60:.1f} a second")
     if flagged:

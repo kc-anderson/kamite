@@ -697,8 +697,13 @@ namespace kamite::test_mode
         // within that frame for that site and object, the value. A replay at the other frame rate hands the game the
         // recorded value of the same roll (same site, object and number, in the same 30 FPS frame of time), so the
         // enemies make the tester's choices and the two runs stay comparable past the first coin flip; a roll with no
-        // match draws as usual. The replay at the case's own rate leaves the rolls alone, so its faithfulness check
-        // stays a real one. Rolls of the cloth step (0x104010..0x106218, its picture-only half step) are not kept.
+        // match draws as usual. The replay at the case's own rate (Nov 3) takes the recorded value of the exact same
+        // roll only (same frame, site, object and number): on the recording's build it is the value the game draws
+        // anyway (any that differs is counted: "differs" in rolls.csv, the faithfulness check of the random stream);
+        // on a later build one extra draw anywhere (a voice line) no longer shifts every later roll, so a fix is seen
+        // on the same fight instead of a fork (T1's sweep case on ac80751: Azel's string roll 0x21FE04 came out
+        // different and the fight never reached the guard). Only the numbers: the game's own code still decides.
+        // Rolls of the cloth step (0x104010..0x106218, its picture-only half step) are not kept.
         struct RollKey
         {
             uint32_t vblank = 0, site = 0, object = 0, k = 0;
@@ -748,7 +753,7 @@ namespace kamite::test_mode
         // does not cover shows twice the fresh values at 60), values taken from the recording.
         struct RollStat
         {
-            uint32_t calls = 0, fresh = 0, forced = 0;
+            uint32_t calls = 0, fresh = 0, forced = 0, differs = 0;
         };
 
         // Not kept: the cloth step (0x104010..0x106218, its picture-only half step) and the main loop's stir of the
@@ -826,7 +831,7 @@ namespace kamite::test_mode
             ReadTrack reads;          // play: the case's read track (empty: the polls alone feed the game)
             size_t readNext = 0;      // the first entry not yet reached
             RollTrack rolls;          // play: the case's rolls (byKey)
-            bool useRolls = false;    // a replay at the other rate than the recording's: hand back its rolls
+            bool useRolls = false;    // a replay at the other rate than the recording's: hand back its rolls (nearest)
             RollCounter rollCount;
             std::unordered_map<uint32_t, RollStat> rollStats; // play: per call site
             std::unordered_map<uint64_t, uint32_t> rollLast;  // play: the last value per (site, object)
@@ -944,11 +949,12 @@ namespace kamite::test_mode
             {
                 // <case>.<rate>.rolls.csv: the report's roll check (case_report.py)
                 const std::string stem = run.csv.string().substr(0, run.csv.string().size() - 4);
-                std::string text = "site,calls,fresh,forced\n";
+                std::string text = "site,calls,fresh,forced,differs\n";
                 char line[64];
                 for (const auto &[site, stat] : run.rollStats)
                 {
-                    std::snprintf(line, sizeof(line), "%06X,%u,%u,%u\n", site, stat.calls, stat.fresh, stat.forced);
+                    std::snprintf(line, sizeof(line), "%06X,%u,%u,%u,%u\n", site, stat.calls, stat.fresh, stat.forced,
+                                  stat.differs);
                     text += line;
                 }
                 writeFile(stem + ".rolls.csv", text);
@@ -1734,8 +1740,17 @@ namespace kamite::test_mode
             g_rollK = run.rollCount.next(run.frame, site, object);
             RollStat &stat = run.rollStats[site];
             ++stat.calls;
-            if (!run.useRolls)
-                return drawn;
+            if (!run.useRolls) // the case's own rate: the exact same roll only
+            {
+                const auto it = run.rolls.byKey.find(RollKey{run.frame * run.divider, site, object, g_rollK});
+                if (it == run.rolls.byKey.end())
+                    return drawn;
+                it->second.used = true;
+                ++stat.forced;
+                if (it->second.value != drawn)
+                    ++stat.differs;
+                return it->second.value;
+            }
             // Frame k's update sees k + 1 at either rate: a 30 FPS update seeing vblank t covers the 60 FPS updates
             // seeing t - 1 and t; a 60 FPS update seeing t lies in the 30 FPS update seeing t rounded up to even. That
             // frame first (a roll made every frame: always there); then, for a roll the other run made up to two 30 FPS
