@@ -4,6 +4,7 @@
 #include "kamite/log.h"
 #include "runtime/ps2_game_menu.h"
 #include "runtime/ps2_hotkeys.h"
+#include "ps2x/iop/iop_pad.h"
 
 #if __has_include("pcsx2gs_api.h")
 #include "pcsx2gs_api.h"
@@ -41,6 +42,8 @@ namespace kamite::hotkeys
             if (value == "\x01")
                 continue;
             rt::Binding binding;
+            if (rt::parse(value, binding) && action(i) == rt::Action::RecordCase && binding.pad == ps2x::iop::PadButton::R3)
+                continue; // the old default, saved by the F2 menu: R3 is Modern's switch now (Nov 3), Select records
             if (rt::parse(value, binding))
             {
                 rt::setBinding(action(i), binding);

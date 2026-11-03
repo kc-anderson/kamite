@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-// Control Style (modern_controls.cpp): Classic, or Modern (a free camera on the right stick; Select switches to the
+// Control Style (modern_controls.cpp): Classic, or Modern (a free camera on the right stick; R3 switches to the
 // original controls and back, the choice kept across rooms; with Auto a fight's battle camera switches to them; L1 is
 // always the game's quick turn). The input side runs on the window thread (a pad filter), the camera side in the camera hooks
 // (camera.cpp, game thread); they meet in the atomics behind these calls.

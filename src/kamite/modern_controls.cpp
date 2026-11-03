@@ -1,14 +1,17 @@
 // Control Style: Classic (the PS2's) or Modern.
 //
 // Modern: the right stick turns a free camera round Gene instead of dodging, and the left stick moves him relative to
-// the camera (he faces where he walks). Select (the one button the game leaves unused in play; only two casino
-// screens read it) switches between that and the original controls (tank movement, right stick = dodges, the camera
-// behind Gene) (K, Nov 3). The choice is kept across rooms, doors and loads; a launch starts in the free camera.
+// the camera (he faces where he walks). The right stick press (R3) switches between that and the original controls
+// (tank movement, right stick = dodges, the camera behind Gene) (K, Nov 3: on the camera's own stick; was Select). The
+// switch is on the release, and only when the stick stayed near the centre while pressed (a hard dodge flick that
+// clicks the stick does not switch). In Modern the game never sees R3: Gene's shared cancel check func_00123938 sends
+// an R3 press in a move's cancel window (seqFlags 0x10) to mode 0 state 4 (func_0010CB10, a short motion), which a
+// switch would otherwise fire. The choice is kept across rooms, doors and loads; a launch starts in the free camera.
 // With Auto, contact starts brawl mode: Gene's attack (or something he threw) hurting an enemy, or anything hurting
 // Gene (the two damage steps, debug_tools' hooks call noteContact). Not the battle camera: it also comes on for
 // crates and throws (K, Nov 3); not distance or enemy intent (K: free camera must still get you out of a fight).
-// Nothing switches back: Select returns to the free camera. L1 is always the game's own quick turn; in the free camera the camera swings back
-// behind Gene with him. A Select tap with Start held (Back+Start opens the Controls screen) does not switch. Whenever
+// Nothing switches back: R3 returns to the free camera. L1 is always the game's own quick turn; in the free camera the camera swings back
+// behind Gene with him. Whenever
 // the game takes the camera (a close-up for a grab or a special move, a cutscene, a menu: no player camera update for
 // a moment), everything is Classic for that moment and the choice comes back after it.
 //
@@ -67,6 +70,7 @@ namespace kamite::modern
         constexpr float kDegToRad = kPi / 180.0f;
         constexpr int64_t kNoCameraMs = 150;   // no player camera update for this long: the game has the camera
         constexpr float kStickDeadzone = 0.18f;
+        constexpr float kSwitchMaxStick = 0.5f; // an R3 press with the right stick further out than this: a flick, no switch
         constexpr float kPitchMin = -1.2f, kPitchMax = 0.9f; // extra pitch, radians (the floor is camera.cpp's: above the ground)
         constexpr int64_t kQuickTurnFollowMs = 650;            // the camera stays behind Gene this long after one
         constexpr float kTurnRate = 900.0f * (3.14159265f / 180.0f); // Gene turned toward the stick, radians a second
@@ -91,7 +95,7 @@ namespace kamite::modern
         std::atomic<float> g_geneYaw{0.0f};
 
         // Input side -> camera side.
-        std::atomic<bool> g_classic{false};     // the player's choice (Select, or Auto at a fight's start): original controls
+        std::atomic<bool> g_classic{false};     // the player's choice (R3, or Auto at a fight's start): original controls
         std::atomic<bool> g_classicByAuto{false}; // ... set by Auto (for the F2 status line)
         std::atomic<float> g_stickX{0.0f}, g_stickY{0.0f};
         std::atomic<bool> g_moving{false};      // the left stick asks for a direction (Modern movement)
@@ -101,8 +105,8 @@ namespace kamite::modern
 
         // Input side only (window thread).
         bool g_l1Was = false;
-        bool g_selectWas = false;
-        bool g_selectChord = false; // Start came with this Select press: not a switch
+        bool g_r3Was = false;
+        bool g_r3Stray = false; // the right stick left the centre during this press: not a switch
 
         int64_t nowMs()
         {
@@ -149,32 +153,34 @@ namespace kamite::modern
                 return;
             if (!g_modern.load(std::memory_order_relaxed))
                 return;
-            const bool select = (state.buttons & ps2x::iop::PadButton::Select) != 0u;
-            const bool start = (state.buttons & ps2x::iop::PadButton::Start) != 0u;
+            const bool r3 = (state.buttons & ps2x::iop::PadButton::R3) != 0u;
+            state.buttons = static_cast<uint16_t>(state.buttons & ~ps2x::iop::PadButton::R3); // the switch's, never the game's
+            const float rx = (static_cast<float>(state.rightX) - 128.0f) / 127.0f;
+            const float ry = (static_cast<float>(state.rightY) - 128.0f) / 127.0f;
             const bool l1 = (state.buttons & ps2x::iop::PadButton::L1) != 0u;
             if (gameHasCamera())
             {
-                // The game's own moment: everything as on the PS2; a Select held through it does not switch after.
+                // The game's own moment: everything as on the PS2; an R3 held through it does not switch after.
                 g_l1Was = l1;
-                g_selectWas = select;
-                g_selectChord = select;
+                g_r3Was = r3;
+                g_r3Stray = r3;
                 g_stickX = 0.0f;
                 g_stickY = 0.0f;
                 return;
             }
-            // Select switches on its release (so Back+Start, the Controls screen, can cancel it).
-            if (select && start)
-                g_selectChord = true;
-            if (!select && g_selectWas)
+            // R3 switches on its release, unless the stick was pushed out during the press (a dodge flick that clicked).
+            if (r3 && std::fmax(std::fabs(rx), std::fabs(ry)) > kSwitchMaxStick)
+                g_r3Stray = true;
+            if (!r3 && g_r3Was)
             {
-                if (!g_selectChord)
+                if (!g_r3Stray)
                 {
                     g_classic = !g_classic.load(std::memory_order_relaxed);
                     g_classicByAuto = false;
                 }
-                g_selectChord = false;
+                g_r3Stray = false;
             }
-            g_selectWas = select;
+            g_r3Was = r3;
             // L1 is the game's quick turn; in the free camera the camera swings back behind Gene with him.
             if (l1 && !g_l1Was && !classicByChoice())
                 g_recenter.fetch_add(1u, std::memory_order_relaxed);
@@ -342,9 +348,9 @@ namespace kamite::modern
             // The Modern settings show only with Modern selected (K, Oct 27).
             if (style == 1)
             {
-                ui->text_wrapped("Select switches between the free camera and brawl mode (classic controls); the choice "
+                ui->text_wrapped("The right stick press switches between the free camera and brawl mode (classic controls); the choice "
                                  "stays across rooms. L1 is the game's quick turn.");
-                checkbox(ui, "Auto: fighting starts brawl mode (Select switches back)##auto", g_auto);
+                checkbox(ui, "Auto: fighting starts brawl mode (the right stick press switches back)##auto", g_auto);
                 ui->separator_text("Free camera");
                 slider(ui, "Turn speed##yaw", g_yawSpeed, 40.0f, 400.0f, "%.0f deg/s");
                 slider(ui, "Up/down speed##pitch", g_pitchSpeed, 20.0f, 250.0f, "%.0f deg/s");
@@ -362,7 +368,7 @@ namespace kamite::modern
             const char *now = !g_modern.load()    ? "Classic"
                               : gameHasCamera()   ? "The game has the camera: brawl mode"
                               : classicByChoice() ? (g_classicByAuto.load() ? "Brawl mode (Auto: a hit landed)"
-                                                                            : "Brawl mode (Select)")
+                                                                            : "Brawl mode (right stick press)")
                                                   : "Free camera, camera-relative movement";
             ui->text(now);
 
@@ -620,7 +626,7 @@ namespace kamite::modern
         g_iniPath = cameraIniPath();
         ps2_host_input::setPadFilter(&padFilter);
         KM_INFO(Game, "control style: " << (g_modern.load() ? "modern" : "classic")
-                                        << (g_modern.load() ? (g_auto.load() ? " (Select switches; auto in battle)" : " (Select switches)") : ""));
+                                        << (g_modern.load() ? (g_auto.load() ? " (R3 switches; auto in battle)" : " (R3 switches)") : ""));
 #if defined(KAMITE_HAS_GS_MENU)
         static bool s_panel = false;
         if (!s_panel)

@@ -4,10 +4,11 @@ Newest first, one line per change; the code comments say how.
 
 ## November 3, 2026
 
-- Modern controls: Tutorial 1 (the right stick) also explains Select and, with Auto on, Auto.
+- Modern controls: Tutorial 1 (the right stick) also explains the switch and, with Auto on, Auto.
 - Modern controls: Auto starts brawl mode when a hit lands between Gene and an enemy (either way), not for crates or throws.
-- Modern controls: Select switches between the free camera and the original controls (kept across rooms; the radar glows while the free camera is on); Auto switches to the original controls when a fight starts and stays; L1 is always the quick turn; the hold option is gone.
-- Select is also on the middle mouse button by default (new controls files).
+- Modern controls: pressing the right stick switches between the free camera and the original controls (kept across rooms; the radar glows while the free camera is on); Auto switches to the original controls when a fight starts and stays; L1 is always the quick turn; the hold option is gone.
+- The right stick press is also on the middle mouse button by default (new controls files).
+- Test cases record with Select by default (was the right stick press).
 - Wild Curry Funk: the chair sits in both of Gene's hands and moves with them; F2 sets how each kind of held item sits, while it is held.
 - Launcher: Sprint attack traversal is now Busta-Chan Jive, in Experimental; See-through is now See Through.
 - 60 FPS: the female enemies' slap grab keeps them at the right height, so the hand lands on Gene's head (it sometimes closed above it).

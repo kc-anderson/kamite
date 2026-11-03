@@ -20,7 +20,7 @@ namespace ps2x::hotkeys
             {"Menu", "Dev menu (F2 menu)", {KEY_F2}},
             {"SaveState", "Save state", {KEY_F5}},
             {"LoadState", "Load state", {KEY_F9}},
-            {"RecordCase", "Record a test case (again: stop)", {0, false, false, ps2x::iop::PadButton::R3}},
+            {"RecordCase", "Record a test case (again: stop)", {0, false, false, ps2x::iop::PadButton::Select}}, // R3 is Modern's switch
             {"FpsOverlay", "FPS overlay", {KEY_F3}},
             {"Fullscreen", "Full screen", {KEY_F11}},
             {"HudLayout", "HUD layout 16:9 / 4:3", {KEY_F7}},

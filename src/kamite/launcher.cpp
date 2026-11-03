@@ -1110,7 +1110,8 @@ void main()
                 const hk::Action action = static_cast<hk::Action>(i);
                 const std::string value = state.ini.get("Hotkeys", hk::info(action).id, "\x01");
                 hk::Binding binding;
-                if (value != "\x01" && hk::parse(value, binding))
+                if (value != "\x01" && hk::parse(value, binding) &&
+                    !(action == hk::Action::RecordCase && binding.pad == ps2x::iop::PadButton::R3)) // old default (Nov 3)
                     hk::setBinding(action, binding);
             }
         }
@@ -1536,15 +1537,15 @@ void main()
                                                         "screen, hold Square / X + d-pad to save one).");
                         iniCheckbox(state, "On##styles", "Game", "StyleSwitching", false);
                         settingLabel("Control style", "Classic: as on the PS2. Modern: the free camera: the right stick "
-                                                      "turns the camera and Gene moves where you point; Select "
-                                                      "switches to brawl mode (classic controls) and back (the radar "
+                                                      "turns the camera and Gene moves where you point; pressing "
+                                                      "the right stick switches to brawl mode (classic controls) and back (the radar "
                                                       "glows while the free camera is on).",
                                      "F2 > Controls changes it while playing.");
                         iniCombo(state, "##controlstyle", "Game", "ControlStyle", "classic",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kControlStyles, value); });
                         if (lower(state.ini.get("Game", "ControlStyle", "classic")) == "modern")
                         {
-                            subSetting("Modern: auto", "Fighting starts brawl mode automatically; Select switches back "
+                            subSetting("Modern: auto", "Fighting starts brawl mode automatically; pressing the right stick switches back "
                                                        "to the free camera.");
                             iniCheckbox(state, "On##modernauto", "Game", "ModernAuto", true);
                             subSetting("Modern: mouse camera", "The mouse turns the free camera. Click in the game to "
