@@ -9,6 +9,7 @@ Newest first, one line per change; the code comments say how.
 - Modern controls: pressing the right stick switches between the free camera and the original controls (kept across rooms; the radar glows while the free camera is on); Auto switches to the original controls when a fight starts and stays; L1 is always the quick turn; the hold option is gone.
 - The right stick press is also on the middle mouse button by default (new controls files).
 - Test cases record with Select by default (was the right stick press).
+- Tutorials: with Xbox, Steam or Nintendo prompts, the stick pictures beside the text are the prompt set's sticks.
 - Wild Curry Funk: the chair sits in both of Gene's hands and moves with them; F2 sets how each kind of held item sits, while it is held.
 - Launcher: Sprint attack traversal is now Busta-Chan Jive, in Experimental; See-through is now See Through.
 - 60 FPS: the female enemies' slap grab keeps them at the right height, so the hand lands on Gene's head (it sometimes closed above it).

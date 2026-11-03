@@ -309,6 +309,24 @@ namespace kamite::prompt_hd
             return out;
         }
 
+        // Premultiplied canvas -> the PNG's straight RGBA, alpha in the PS2's scale (0x80 = opaque).
+        void toImage(const Canvas &canvas, hd_textures::Image &out)
+        {
+            out.width = canvas.w;
+            out.height = canvas.h;
+            out.rgba.assign(static_cast<size_t>(canvas.w) * canvas.h * 4u, 0u);
+            for (size_t i = 0; i < static_cast<size_t>(canvas.w) * canvas.h; ++i)
+            {
+                const float *p = &canvas.px[i * 4u];
+                const float a = std::clamp(p[3], 0.0f, 1.0f);
+                uint8_t *o = &out.rgba[i * 4u];
+                if (a > 0.0f)
+                    for (int c = 0; c < 3; ++c)
+                        o[c] = static_cast<uint8_t>(std::lround(std::clamp(p[c] / a, 0.0f, 1.0f) * 255.0f));
+                o[3] = static_cast<uint8_t>(std::lround(a * 128.0f));
+            }
+        }
+
         // One cell from the pack: true when drawn.
         bool drawCell(Canvas &canvas, Set set, const std::string &file, Rect clearRect, Rect box)
         {
@@ -463,19 +481,25 @@ namespace kamite::prompt_hd
         }
         if (drawn == 0)
             return false;
-        out.width = canvas.w;
-        out.height = canvas.h;
-        out.rgba.assign(static_cast<size_t>(canvas.w) * canvas.h * 4u, 0u);
-        for (size_t i = 0; i < static_cast<size_t>(canvas.w) * canvas.h; ++i)
+        toImage(canvas, out);
+        return true;
+    }
+
+    bool composeSticks(Set set, hd_textures::Image &out)
+    {
+        Canvas canvas(kStickSheetW * kScale, kStickSheetH * kScale);
+        int drawn = 0;
+        for (int side = 0; side < 2; ++side)
         {
-            const float *p = &canvas.px[i * 4u];
-            const float a = std::clamp(p[3], 0.0f, 1.0f);
-            uint8_t *o = &out.rgba[i * 4u];
-            if (a > 0.0f)
-                for (int c = 0; c < 3; ++c)
-                    o[c] = static_cast<uint8_t>(std::lround(std::clamp(p[c] / a, 0.0f, 1.0f) * 255.0f));
-            o[3] = static_cast<uint8_t>(std::lround(a * 128.0f)); // the PS2's scale: 0x80 = opaque
+            const float x = static_cast<float>(side * kStickSheetH); // each stick's cell is 64x64
+            drawn += drawCell(canvas, set, stickFile(set, side == 0), Rect{x, 0.0f, x + 64.0f, 64.0f},
+                              Rect{x + kStickInset, kStickInset, x + 64.0f - kStickInset, 64.0f - kStickInset})
+                         ? 1
+                         : 0;
         }
+        if (drawn == 0)
+            return false;
+        toImage(canvas, out);
         return true;
     }
 }

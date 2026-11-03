@@ -39,6 +39,10 @@ namespace kamite::hd_textures
     // 16 entries in index order (64 bytes). Checked against the pack's name of the cannon game's crates
     // (974a46b6a4ad4f41-6b4b15d5c8a2cda4-00005dd4).
     std::string name4(const uint8_t *payload, const uint8_t *clut16);
+    // The same for a PSMT8 texture the game uploads as PSMT8 (a TIM2's pixels as stored: width x height indices,
+    // row-major, TBW = width / 64, width 128 or more), its CLUT as stored (the 16x16 CSM1 block, 1 KB). Checked against
+    // the pack's name of the tutorials' stick sheet (432ba500d8d45a46-6d99a9e671d37be4-000059d3).
+    std::string name8Linear(const uint8_t *indices, const uint8_t *clut, int width, int height);
 
     // RGBA8 images (the pack's PNGs keep the PS2's alpha scale: 0x80 = opaque). Load: false when the file is not a
     // readable PNG. Save writes a PNG.

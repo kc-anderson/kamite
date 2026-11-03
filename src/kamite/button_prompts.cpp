@@ -554,6 +554,92 @@ namespace kamite::button_prompts
             return 0xF0F0F0u;
         }
 
+        // The tutorials' stick sheet: id/local/us/idtutorial_us.idd's third TIM2 (file 0x4FD0; 128x64 PSMT8, the LEFT and
+        // RIGHT sticks Tutorial 1 and the dash tutorial draw beside their text). With a set that has stick art the GS gets
+        // the pack's sticks for it (prompt_hd::composeSticks, K Nov 3: they match the inline stick icons); PlayStation and
+        // keys keep the disc's (or the texture pack's) art. The game uploads the TIM2 as stored, so the replacement name
+        // is the disc's (hd_textures::name8Linear; K's pack has 432ba500d8d45a46-6d99a9e671d37be4-000059d3) and the RAM
+        // copy is left alone. The images live in cache/hd-sticks/<set>/, outside the folders PCSX2 lists when the GS
+        // opens (an earlier session's set never applies), and each is handed over with texture_add.
+        constexpr size_t kStickTim = 0x4FD0u, kStickPixels = 128u * 64u, kStickClut = 1024u;
+        struct StickSheet
+        {
+            bool tried = false, ok = false;
+            std::string name;
+            hd_textures::Image disc; // the disc's art at 1x (when ours must go and the pack has none)
+        };
+        StickSheet g_stickSheet;
+        int g_sticksShown = -1; // builder thread: the set whose sticks the GS has (-1: the disc's or the pack's)
+
+        bool loadStickSheet()
+        {
+            if (g_stickSheet.tried)
+                return g_stickSheet.ok;
+            g_stickSheet.tried = true;
+            const auto file = disc_files::open() ? disc_files::find("idtutorial_us.idd") : std::nullopt;
+            std::vector<uint8_t> data;
+            if (!file || !disc_files::read(*file, data) || data.size() < kStickTim + 0x40u + kStickPixels + kStickClut ||
+                std::memcmp(data.data() + kStickTim, "TIM2", 4) != 0)
+            {
+                KM_WARN(Game, "button prompts: the tutorials' stick sheet is not where expected; their sticks stay the disc's");
+                return false;
+            }
+            const uint8_t *pixels = data.data() + kStickTim + 0x40u;
+            const uint8_t *clut = pixels + kStickPixels;
+            g_stickSheet.name = hd_textures::name8Linear(pixels, clut, 128, 64);
+            hd_textures::Image &disc = g_stickSheet.disc;
+            disc.width = 128;
+            disc.height = 64;
+            disc.rgba.resize(kStickPixels * 4u);
+            for (size_t i = 0; i < kStickPixels; ++i)
+            {
+                const int k = pixels[i];
+                const int slot = (k & 0xE7) | ((k & 0x08) << 1) | ((k & 0x10) >> 1); // CSM1
+                std::memcpy(&disc.rgba[i * 4u], clut + slot * 4, 4u);                 // alpha already in the PS2's scale
+            }
+            g_stickSheet.ok = true;
+            return true;
+        }
+
+        // Builder thread, after every rebuild.
+        void updateSticks(prompt_hd::Set set)
+        {
+            if (!hd_textures::enabled() || !loadStickSheet())
+                return;
+            const bool art = set != prompt_hd::Set::PlayStation && set != prompt_hd::Set::Keyboard;
+            const int want = art ? static_cast<int>(set) : -1;
+            if (want == g_sticksShown)
+                return;
+            namespace fs = std::filesystem;
+            const fs::path dir = hd_textures::exeDirectory() / "cache" / "hd-sticks";
+            std::error_code ec;
+            fs::path path;
+            if (art)
+            {
+                path = dir / ("set" + std::to_string(want)) / (g_stickSheet.name + ".png");
+                hd_textures::Image hd;
+                if (!fs::exists(path, ec) &&
+                    (!prompt_hd::composeSticks(set, hd) || (!fs::create_directories(path.parent_path(), ec) && ec) ||
+                     !hd_textures::savePng(path, hd)))
+                    return;
+            }
+            else
+            {
+                path = hd_textures::packFile(g_stickSheet.name);
+                if (path.empty())
+                {
+                    path = dir / "disc" / (g_stickSheet.name + ".png");
+                    if (!fs::exists(path, ec) && ((!fs::create_directories(path.parent_path(), ec) && ec) ||
+                                                  !hd_textures::savePng(path, g_stickSheet.disc)))
+                        return;
+                }
+            }
+            const std::u8string native = path.u8string();
+            GSPcsx2Backend::SetOption("texture_add", std::string(native.begin(), native.end()).c_str());
+            g_sticksShown = want;
+            KM_INFO(Game, "button prompts: the tutorials' sticks: " << (art ? prompt_hd::setName(set) : "the original art"));
+        }
+
         void builderLoop()
         {
             std::vector<uint64_t> builtCrates, builtCrateCluts;
@@ -704,6 +790,7 @@ namespace kamite::button_prompts
                                                         : "; minigame crates kept: build failed";
                     }
                 }
+                updateSticks(set);
                 for (int i = 0; i < kSheetCount; ++i)
                     if (images->patched[i])
                         images->hash[i] = fnv1a64(images->payload[i].data(), sheets::kPayloadBytes);

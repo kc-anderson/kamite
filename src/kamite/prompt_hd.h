@@ -50,4 +50,12 @@ namespace kamite::prompt_hd
     constexpr int kScale = 3;
     bool compose(Set set, int sheet, const uint8_t *payload, const uint8_t *clut, const prompt_sheets::PromptLabels &labels,
                  hd_textures::Image &out);
+
+    // The tutorials' stick sheet (128x64: the LEFT stick's 64x64 cell, then the RIGHT's; Tutorial 1 and the dash
+    // tutorial draw them beside their text) at kScale x: the set's left and right sticks from the pack, each fitted into
+    // its cell kStickInset texels in from every side, nothing else (the disc's LEFT / RIGHT lettering goes). False for
+    // the sets without stick art (PlayStation, keys) or when the pack's files are missing.
+    constexpr int kStickSheetW = 128, kStickSheetH = 64;
+    constexpr float kStickInset = 4.0f; // 10 = about the disc's stick cap (K picks; mock Nov 3)
+    bool composeSticks(Set set, hd_textures::Image &out);
 }
