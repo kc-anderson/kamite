@@ -152,15 +152,20 @@ namespace kamite::prompt_hd
             }
         }
 
-        std::string stickFile(Set set, bool left)
+        // The sticks are the click images' side view without the click arrow (K Nov 3: the stick icons must match the
+        // stick-press icons exactly): "#noarrow" keeps the click image's frame, so the stick sits at the same size and
+        // place as in the press icon; "#stick" crops to the stick alone (the tutorials' big stick pictures).
+        std::string stickFile(Set set, bool left, const char *variant = "#noarrow")
         {
+            std::string file;
             switch (set)
             {
-            case Set::Xbox360: return left ? "360_Left_Stick" : "360_Right_Stick";
-            case Set::SteamDeck: return left ? "SteamDeck_Left_Stick" : "SteamDeck_Right_Stick";
-            case Set::Switch: return left ? "Switch_Left_Stick" : "Switch_Right_Stick";
+            case Set::Xbox360: file = left ? "360_Left_Stick_Click" : "360_Right_Stick_Click"; break;
+            case Set::SteamDeck: file = left ? "SteamDeck_Left_Stick_Click" : "SteamDeck_Right_Stick_Click"; break;
+            case Set::Switch: file = left ? "Switch_Left_Stick_Click" : "Switch_Right_Stick_Click"; break;
             default: return {};
             }
+            return file + variant;
         }
 
         // A pack image, premultiplied and cropped to its visible part. Loaded once (builder thread).
@@ -179,25 +184,45 @@ namespace kamite::prompt_hd
             if (it != cache.end())
                 return it->second;
             Art &entry = cache[key];
-            const fs::path path = hd_textures::exeDirectory() / "resources" / "prompts" / "xelu" / folder(set) / (file + ".png");
+            const size_t hash = file.find('#');
+            const std::string name = file.substr(0, hash), variant = hash == std::string::npos ? std::string() : file.substr(hash);
+            const fs::path path = hd_textures::exeDirectory() / "resources" / "prompts" / "xelu" / folder(set) / (name + ".png");
             hd_textures::Image raw;
             if (!hd_textures::loadPng(path, raw))
             {
-                KM_WARN(Game, "button prompts: missing prompt image " << key << ".png");
+                KM_WARN(Game, "button prompts: missing prompt image " << folder(set) << "/" << name << ".png");
                 return entry;
             }
-            int x0 = raw.width, y0 = raw.height, x1 = -1, y1 = -1;
-            for (int y = 0; y < raw.height; ++y)
-                for (int x = 0; x < raw.width; ++x)
-                    if (raw.rgba[(static_cast<size_t>(y) * raw.width + x) * 4u + 3u] > 4u)
-                    {
-                        x0 = std::min(x0, x);
-                        y0 = std::min(y0, y);
-                        x1 = std::max(x1, x);
-                        y1 = std::max(y1, y);
-                    }
+            const auto visible = [&](int x, int y) { return raw.rgba[(static_cast<size_t>(y) * raw.width + x) * 4u + 3u] > 4u; };
+            const auto bounds = [&](int &x0, int &y0, int &x1, int &y1)
+            {
+                x0 = raw.width, y0 = raw.height, x1 = -1, y1 = -1;
+                for (int y = 0; y < raw.height; ++y)
+                    for (int x = 0; x < raw.width; ++x)
+                        if (visible(x, y))
+                        {
+                            x0 = std::min(x0, x);
+                            y0 = std::min(y0, y);
+                            x1 = std::max(x1, x);
+                            y1 = std::max(y1, y);
+                        }
+            };
+            int x0, y0, x1, y1;
+            bounds(x0, y0, x1, y1);
             if (x1 < x0)
                 return entry;
+            if (!variant.empty())
+            {
+                // The click arrow: the first run of visible rows from the top, above a clear row (rows 6-17 in every set;
+                // the stick from row 20 or 23).
+                int y = y0;
+                while (y <= y1 && [&] { for (int x = 0; x < raw.width; ++x) if (visible(x, y)) return true; return false; }())
+                    ++y;
+                if (y <= y1)
+                    std::fill(raw.rgba.begin(), raw.rgba.begin() + static_cast<std::ptrdiff_t>(static_cast<size_t>(y) * raw.width * 4u), uint8_t{0});
+                if (variant == "#stick")
+                    bounds(x0, y0, x1, y1);
+            }
             entry.image = Canvas(x1 - x0 + 1, y1 - y0 + 1);
             for (int y = y0; y <= y1; ++y)
             {
@@ -485,14 +510,14 @@ namespace kamite::prompt_hd
         return true;
     }
 
-    bool composeSticks(Set set, hd_textures::Image &out)
+    bool composeSticks(Set set, bool hideRight, hd_textures::Image &out)
     {
         Canvas canvas(kStickSheetW * kScale, kStickSheetH * kScale);
         int drawn = 0;
-        for (int side = 0; side < 2; ++side)
+        for (int side = 0; side < (hideRight ? 1 : 2); ++side)
         {
             const float x = static_cast<float>(side * kStickSheetH); // each stick's cell is 64x64
-            drawn += drawCell(canvas, set, stickFile(set, side == 0), Rect{x, 0.0f, x + 64.0f, 64.0f},
+            drawn += drawCell(canvas, set, stickFile(set, side == 0, "#stick"), Rect{x, 0.0f, x + 64.0f, 64.0f},
                               Rect{x + kStickInset, kStickInset, x + 64.0f - kStickInset, 64.0f - kStickInset})
                          ? 1
                          : 0;

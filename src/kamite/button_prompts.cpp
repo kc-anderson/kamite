@@ -7,6 +7,7 @@
 #include "kamite/crate_prompts.h"
 #include "kamite/disc_files.h"
 #include "kamite/log.h"
+#include "kamite/modern_controls.h"
 #include "kamite/prompt_art.h"
 #include "kamite/sha256.h"
 #include "ps2_host_input.h"
@@ -556,8 +557,9 @@ namespace kamite::button_prompts
 
         // The tutorials' stick sheet: id/local/us/idtutorial_us.idd's third TIM2 (file 0x4FD0; 128x64 PSMT8, the LEFT and
         // RIGHT sticks Tutorial 1 and the dash tutorial draw beside their text). With a set that has stick art the GS gets
-        // the pack's sticks for it (prompt_hd::composeSticks, K Nov 3: they match the inline stick icons); PlayStation and
-        // keys keep the disc's (or the texture pack's) art. The game uploads the TIM2 as stored, so the replacement name
+        // the pack's sticks for it (prompt_hd::composeSticks, K Nov 3: the same side view as the stick icons); PlayStation
+        // and keys keep the disc's (or the texture pack's) art. With Modern the RIGHT cell is empty whatever the set:
+        // Modern's Tutorial 1 draws both its stick icons in the text (tutorial_text.cpp), the big one would sit under it. The game uploads the TIM2 as stored, so the replacement name
         // is the disc's (hd_textures::name8Linear; K's pack has 432ba500d8d45a46-6d99a9e671d37be4-000059d3) and the RAM
         // copy is left alone. The images live in cache/hd-sticks/<set>/, outside the folders PCSX2 lists when the GS
         // opens (an earlier session's set never applies), and each is handed over with texture_add.
@@ -569,7 +571,7 @@ namespace kamite::button_prompts
             hd_textures::Image disc; // the disc's art at 1x (when ours must go and the pack has none)
         };
         StickSheet g_stickSheet;
-        int g_sticksShown = -1; // builder thread: the set whose sticks the GS has (-1: the disc's or the pack's)
+        int g_sticksShown = -1; // builder thread: what the GS has (set * 2 + Modern; -1: the disc's or the pack's)
 
         bool loadStickSheet()
         {
@@ -584,6 +586,8 @@ namespace kamite::button_prompts
                 KM_WARN(Game, "button prompts: the tutorials' stick sheet is not where expected; their sticks stay the disc's");
                 return false;
             }
+            std::error_code ec;
+            std::filesystem::remove_all(hd_textures::exeDirectory() / "cache" / "hd-sticks", ec); // an older build's art
             const uint8_t *pixels = data.data() + kStickTim + 0x40u;
             const uint8_t *clut = pixels + kStickPixels;
             g_stickSheet.name = hd_textures::name8Linear(pixels, clut, 128, 64);
@@ -602,25 +606,32 @@ namespace kamite::button_prompts
         }
 
         // Builder thread, after every rebuild.
-        void updateSticks(prompt_hd::Set set)
+        void updateSticks(prompt_hd::Set set, bool modern)
         {
             if (!hd_textures::enabled() || !loadStickSheet())
                 return;
             const bool art = set != prompt_hd::Set::PlayStation && set != prompt_hd::Set::Keyboard;
-            const int want = art ? static_cast<int>(set) : -1;
+            const int want = art || modern ? static_cast<int>(set) * 2 + (modern ? 1 : 0) : -1;
             if (want == g_sticksShown)
                 return;
             namespace fs = std::filesystem;
             const fs::path dir = hd_textures::exeDirectory() / "cache" / "hd-sticks";
             std::error_code ec;
             fs::path path;
-            if (art)
+            if (art || modern)
             {
-                path = dir / ("set" + std::to_string(want)) / (g_stickSheet.name + ".png");
-                hd_textures::Image hd;
+                path = dir / ("look" + std::to_string(want)) / (g_stickSheet.name + ".png");
+                hd_textures::Image image;
+                if (!art)
+                {
+                    // The disc's art with the RIGHT cell cleared.
+                    image = g_stickSheet.disc;
+                    for (int y = 0; y < image.height; ++y)
+                        std::fill_n(&image.rgba[(static_cast<size_t>(y) * image.width + 64u) * 4u], 64u * 4u, uint8_t{0});
+                }
                 if (!fs::exists(path, ec) &&
-                    (!prompt_hd::composeSticks(set, hd) || (!fs::create_directories(path.parent_path(), ec) && ec) ||
-                     !hd_textures::savePng(path, hd)))
+                    ((art && !prompt_hd::composeSticks(set, modern, image)) || (!fs::create_directories(path.parent_path(), ec) && ec) ||
+                     !hd_textures::savePng(path, image)))
                     return;
             }
             else
@@ -637,7 +648,8 @@ namespace kamite::button_prompts
             const std::u8string native = path.u8string();
             GSPcsx2Backend::SetOption("texture_add", std::string(native.begin(), native.end()).c_str());
             g_sticksShown = want;
-            KM_INFO(Game, "button prompts: the tutorials' sticks: " << (art ? prompt_hd::setName(set) : "the original art"));
+            KM_INFO(Game, "button prompts: the tutorials' sticks: " << (art ? prompt_hd::setName(set) : "the original art")
+                                                                    << (modern ? " (Modern: no RIGHT stick picture)" : ""));
         }
 
         void builderLoop()
@@ -647,6 +659,7 @@ namespace kamite::button_prompts
             uint32_t lastGeneration = 0u;
             bindings::Device lastDevice = bindings::Device::Keys;
             bindings::PadStyle lastStyle = bindings::PadStyle::Unknown;
+            bool lastModern = false;
             bool built = false;
             uint64_t version = 0u;
             for (;;)
@@ -668,8 +681,11 @@ namespace kamite::button_prompts
                     scanCrate(builtCrates, builtCrateCluts);
                 const bool crateNew = g_crateRebuild.exchange(false, std::memory_order_acq_rel);
                 const bool setNew = g_promptsRebuild.exchange(false, std::memory_order_acq_rel);
-                if (built && !crateNew && !setNew && generation == lastGeneration && device == lastDevice && style == lastStyle)
+                const bool modern = modern::enabled();
+                if (built && !crateNew && !setNew && generation == lastGeneration && device == lastDevice && style == lastStyle &&
+                    modern == lastModern)
                     continue;
+                lastModern = modern;
                 built = true;
                 lastGeneration = generation;
                 lastDevice = device;
@@ -790,7 +806,7 @@ namespace kamite::button_prompts
                                                         : "; minigame crates kept: build failed";
                     }
                 }
-                updateSticks(set);
+                updateSticks(set, modern);
                 for (int i = 0; i < kSheetCount; ++i)
                     if (images->patched[i])
                         images->hash[i] = fnv1a64(images->payload[i].data(), sheets::kPayloadBytes);

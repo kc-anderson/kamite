@@ -37,7 +37,8 @@ namespace kamite::tutorial_text
         constexpr uint32_t kEntry0Offset = 0x6Cu;
 
         constexpr uint16_t kSpace = 0x35u, kNewline = 0xA001u, kEnd = 0x8001u, kClose = 0xA301u, kScale = 0xB002u;
-        constexpr uint16_t kSwitchIcon = 9u; // R3 (Modern's switch)
+        constexpr uint16_t kStickIcon = 11u, kSwitchIcon = 9u; // RS (the right stick), R3 (Modern's switch)
+        constexpr uint16_t kGapCode = 0xA802u, kGapNever = 0xFFFFu; // see indent()
         // The popup centres the whole block on the original's place, so a line much wider than the original's
         // (26 letters at 100%) pushes the block over the stick sprite on the left (K's screenshot, Nov 3): lines are
         // kept to ~35 letters at 75%. Icons at 1.5x the text, as the other tutorials (150 / 100), or they sit high.
@@ -87,19 +88,49 @@ namespace kamite::tutorial_text
             out.insert(out.end(), {kScale, kGapScale, kSpace, kNewline, kScale, kTextScale});
         }
 
-        // K's wording (Nov 3), the Auto block only with Auto on.
+        // A line's start where the text after an icon starts (the hanging indent), no taller than a text line. Widths
+        // from the menu font (func_002A4B20 on the font at *0x3C2380, read from a state): icons 9 / 11 are 31 units, the
+        // space 6; a plain code also gets the font's letter spacing, a control code does not (measureText; the draw
+        // loop advances every code by measureCode too). The icon at 112% = 34.72 units + spacing; one space at 72%
+        // (4.32 + spacing) and the 0xA8 gap code at 76% (40 units x scale = 30.4) make the same, and neither is taller
+        // than the text (space 32 x 0.72, gap 26 x 0.76, text 32 x 0.75). The gap code draws the page marker when its
+        // parameter equals the font's +0x54 (func_002B00A0, read as a signed short): 0xFFFF, read unsigned, never does.
+        void indent(std::vector<uint16_t> &out)
+        {
+            static_assert(kIconScale == 112u && kTextScale == 75u, "indent() is worked out for these scales");
+            out.insert(out.end(), {kScale, 72u, kSpace, kScale, 76u, kGapCode, kGapNever, kScale, kTextScale});
+        }
+        void iconLine(std::vector<uint16_t> &out, uint16_t icon, const char *text)
+        {
+            out.insert(out.end(), {kScale, kIconScale, icon, kScale, kTextScale});
+            add(out, text);
+            add(out, "\n");
+        }
+        void indentedLine(std::vector<uint16_t> &out, const char *text, bool last = false)
+        {
+            indent(out);
+            add(out, text);
+            if (!last)
+                add(out, "\n");
+        }
+
+        // K's wording (Nov 3), the Auto block only with Auto on. Each block: an icon (or none) and the text beside it,
+        // both lines starting where the text after the icon does. The stick icons are the prompt set's side views
+        // (prompt_hd: RS without the click arrow, R3 with it); the layout's big stick picture is hidden with Modern
+        // (button_prompts updateSticks). Lines up to ~36 letters: without the picture the centred block may be wider.
         std::vector<uint16_t> modernText(bool autoOn)
         {
             std::vector<uint16_t> out{kScale, kTextScale};
-            add(out, "Use the right analog stick to evade\nenemy attacks in brawling mode.\n");
+            iconLine(out, kStickIcon, "Use the right analog stick to evade");
+            indentedLine(out, "enemy attacks while brawling.");
             gap(out);
-            out.insert(out.end(), {kScale, kIconScale, kSwitchIcon, kScale, kTextScale});
-            add(out, "Switch between brawling mode\nand 3rd person free camera.");
+            iconLine(out, kSwitchIcon, "Press the right stick down to switch");
+            indentedLine(out, "between brawling and freecam.", !autoOn);
             if (autoOn)
             {
-                add(out, "\n");
                 gap(out);
-                add(out, "AUTO: Brawling mode starts when\nyou deal or take damage.");
+                indentedLine(out, "AUTO: Brawling starts automatically");
+                indentedLine(out, "when you deal or take damage.", true);
             }
             out.insert(out.end(), {kClose, kEnd});
             return out;
