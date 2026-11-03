@@ -646,12 +646,37 @@ namespace kamite
         // tick's handler added.
         uint32_t g_geneFlagsObj = 0, g_geneFlagsAt = 0, g_geneFlagsBefore = 0, g_geneFlagsAdded = 0;
         constexpr uint32_t kGeneFrameFlags = 0x15F4u;
+        // The enemies' per-frame flags (Nov 3, T1's "Female enemy grab (bitchslap attack)"): their update clears these
+        // bits of +0x16D0 / +0x16D4 every frame before the handler (func_00208BE0 0x209038..0x209068, masks 0x77288B82
+        // / 0xFFB1DBBB), and handlers set the ones they want for that frame. The slap grab (phase 88 func_00237F98)
+        // lowers her by (scale - 1) x 1.6 in step 0 and sets +0x16D0 bit 0x10000 every frame ("no floor snap", read at
+        // 0x209CA0 before func_001329C0): a held vblank after step 0 left the bit clear, the floor check put her back
+        // up 0.24 m and her hand closed above Gene's head for the whole grab. The hold sets the bits the tick's
+        // handler added, within the per-frame masks only.
+        struct EnemyFlags
+        {
+            uint32_t counter = 0, before[2] = {}, added[2] = {};
+        };
+        std::unordered_map<uint32_t, EnemyFlags> g_enemyFlags;
+        constexpr uint32_t kEnemyFrameFlags[2] = {0x16D0u, 0x16D4u};
+        constexpr uint32_t kEnemyFrameMask[2] = {~0x77288B82u, ~0xFFB1DBBBu}; // the bits the update clears every frame
         // After a dispatcher's jalr returns (0x10B750, 0x20FAF8, 0x24C37C, 0x25E778).
         void handlerEnd(uint8_t *rdram, R5900Context *, PS2Runtime *)
         {
             if (g_handlerDepth <= 0)
                 return;
             const uint32_t obj = g_handlerStack[--g_handlerDepth];
+            if (obj != 0u && obj != g_geneFlagsObj)
+            {
+                auto it = g_enemyFlags.find(obj);
+                if (it != g_enemyFlags.end() && it->second.counter == gameFrames(rdram))
+                    for (int i = 0; i < 2; ++i)
+                    {
+                        uint32_t flags = 0;
+                        std::memcpy(&flags, &ram8(rdram, obj + kEnemyFrameFlags[i]), sizeof(flags));
+                        it->second.added[i] |= flags & ~it->second.before[i] & kEnemyFrameMask[i];
+                    }
+            }
             if (obj != 0u && obj == g_geneFlagsObj && g_geneFlagsAt == gameFrames(rdram))
             {
                 uint32_t flags = 0;
@@ -706,6 +731,16 @@ namespace kamite
                 std::memcpy(&g_geneFlagsBefore, &ram8(rdram, obj + kGeneFrameFlags), sizeof(g_geneFlagsBefore));
                 g_geneFlagsAdded = 0u;
             }
+            if (!CarryPress && !thinkSkipped(rdram))
+            {
+                EnemyFlags &f = g_enemyFlags[obj];
+                if (f.counter != counter) // a second dispatch in the same update adds to the first's record
+                {
+                    f = EnemyFlags{counter};
+                    for (int i = 0; i < 2; ++i)
+                        std::memcpy(&f.before[i], &ram8(rdram, obj + kEnemyFrameFlags[i]), sizeof(f.before[i]));
+                }
+            }
             if (!thinkSkipped(rdram))
             {
                 HandlerMoves &moves = g_handlerMoves[obj];
@@ -740,6 +775,18 @@ namespace kamite
                     callGuest(rdram, ctx, runtime, 0x14F928u, obj, 1.0f);
                 }
                 g_holdCalling = false;
+                if (!CarryPress)
+                {
+                    auto f = g_enemyFlags.find(obj);
+                    if (f != g_enemyFlags.end() && f->second.counter + 1u == counter)
+                        for (int i = 0; i < 2; ++i)
+                        {
+                            uint32_t flags = 0;
+                            std::memcpy(&flags, &ram8(rdram, obj + kEnemyFrameFlags[i]), sizeof(flags));
+                            flags |= f->second.added[i];
+                            std::memcpy(&ram8(rdram, obj + kEnemyFrameFlags[i]), &flags, sizeof(flags));
+                        }
+                }
                 if (CarryPress && obj == g_geneFlagsObj && g_geneFlagsAt + 1u == counter && g_geneFlagsAdded != 0u)
                 {
                     uint32_t flags = 0;
@@ -762,6 +809,9 @@ namespace kamite
             if ((counter & 0x3FFu) == 0u)
                 for (auto it = g_handlerMoves.begin(); it != g_handlerMoves.end();)
                     it = counter - it->second.counter > 2u ? g_handlerMoves.erase(it) : std::next(it);
+            if ((counter & 0x3FFu) == 0u)
+                for (auto it = g_enemyFlags.begin(); it != g_enemyFlags.end();)
+                    it = counter - it->second.counter > 2u ? g_enemyFlags.erase(it) : std::next(it);
         }
 
         // moveMotion (0x157C18), the game's own 60 Hz code, at 60 (family 5b, Nov 1; case shockwave30: Shockwave's slow
