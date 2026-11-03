@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 3, 2026
 
+- 60 FPS: enemies push Gene aside again (since this morning's change his running attack could pass through a blocking Azel).
 - Test cases: the replay at the recorded frame rate also keeps the recorded random rolls, so a case replays the same fight on later builds.
 - 60 FPS: running attacks and enemy lunges go through their target as on the PS2 (Gene's sprint attacks through Azel, the Elite Robot Dude's knee and elbow lunges through Gene).
 - 60 FPS: Azel turns to face Gene after blocking, before his sweep counter, as on the PS2.

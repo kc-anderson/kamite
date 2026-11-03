@@ -1122,11 +1122,32 @@ namespace kamite
             const auto it = stale ? g_bodyMatrix.find(owner) : g_bodyMatrix.end();
             if (it == g_bodyMatrix.end() || it->second.counter + 1u != counter) // no tick seen (a load): as it is
                 return g_origChkHit(rdram, ctx, runtime);
+            // The position (+0xF0) points at the matrix's translation row (Gene: +0xF0 -> +0xB0): the swap moves him to
+            // the tick's position too, and the push lands there. Restore the matrix, then add what the push moved
+            // (Nov 3, T1's "Square lunge 2.0" on ac80751: restoring wiped Gene's push, so at 60 enemies never pushed
+            // Gene at all; his contact steps equalled his free running-attack steps, 0.381 / 0.381 m at motion frame 7,
+            // against 0.21 / 0.37 at 30, and his running attack went through a blocking Azel).
+            uint32_t pos = 0;
+            std::memcpy(&pos, &ram8(rdram, owner + 0xF0u), sizeof(pos));
+            const bool posInMatrix = pos >= owner + 0x80u && pos + 12u <= owner + 0xC0u;
             uint8_t now[64];
             std::memcpy(now, &ram8(rdram, owner + 0x80u), sizeof(now));
             std::memcpy(&ram8(rdram, owner + 0x80u), it->second.m, sizeof(now));
+            float before[3] = {}, after[3] = {};
+            if (posInMatrix)
+                std::memcpy(before, &ram8(rdram, pos), sizeof(before));
             g_origChkHit(rdram, ctx, runtime);
+            if (posInMatrix)
+                std::memcpy(after, &ram8(rdram, pos), sizeof(after));
             std::memcpy(&ram8(rdram, owner + 0x80u), now, sizeof(now));
+            if (posInMatrix)
+            {
+                float p[3];
+                std::memcpy(p, &ram8(rdram, pos), sizeof(p));
+                for (int i = 0; i < 3; ++i)
+                    p[i] += after[i] - before[i];
+                std::memcpy(&ram8(rdram, pos), p, sizeof(p));
+            }
         }
 
         void installFrame30State()
