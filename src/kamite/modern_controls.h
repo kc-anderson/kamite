@@ -2,13 +2,13 @@
 
 #include <cstdint>
 
-// Control Style (modern_controls.cpp): Classic, or Modern (a free camera on the right stick; the original controls
-// while L1 is held or toggled, and, with Auto, while the game's battle camera is on; double-tap L1 = the original
-// quick turn). The input side runs on the window thread (a pad filter), the camera side in the camera hooks
+// Control Style (modern_controls.cpp): Classic, or Modern (a free camera on the right stick; Select switches to the
+// original controls and back, the choice kept across rooms; with Auto a fight's battle camera switches to them; L1 is
+// always the game's quick turn). The input side runs on the window thread (a pad filter), the camera side in the camera hooks
 // (camera.cpp, game thread); they meet in the atomics behind these calls.
 namespace kamite::modern
 {
-    // [Game] ControlStyle, ModernAuto, ModernL1 (and the camera speeds), read at install; registers the pad filter
+    // [Game] ControlStyle, ModernAuto (and the camera speeds), read at install; registers the pad filter
     // and the F2 menu's Controls tab.
     void install();
 
@@ -35,7 +35,7 @@ namespace kamite::modern
 
     // [Game] ControlStyle=modern is on (whatever is in effect now).
     bool enabled();
-    // Modern is on and the original controls are in effect now (L1, Auto in a fight, or the game holding the camera)
-    // rather than the free camera. For the radar's glow (radar_glow.h). Any thread.
-    bool originalControlsNow();
+    // Modern is on and the free camera is in effect now (not the original controls by Select / Auto, and the game not
+    // holding the camera). For the radar's glow (radar_glow.h). Any thread.
+    bool freeCameraNow();
 }

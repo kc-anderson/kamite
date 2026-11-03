@@ -3,8 +3,9 @@
 #include <cstdint>
 
 // Which controls are in effect, shown on the radar (radar_glow.cpp): with [Game] ControlStyle=modern the radar's
-// floor gets a yellow glow along the inside of its rim while the original controls are in effect (L1 held or toggled,
-// Auto in a fight, the game holding the camera); none while the free camera is on. Classic players see the PS2 art.
+// floor gets a yellow glow along the inside of its rim while the free camera is in effect (K, Nov 3: the PS2 look
+// means the PS2 controls); none with the original controls (Select / Auto) or while the game holds the camera.
+// Classic players see the PS2 art.
 //
 // The radar's texture lives in the core block (core_usa.bin 0x11C830, 128x256 PSMT8, its CLUT at 0x124930). The glow
 // is a second version of it written over it in RAM, as the button prompts do. With a texture pack that replaces the

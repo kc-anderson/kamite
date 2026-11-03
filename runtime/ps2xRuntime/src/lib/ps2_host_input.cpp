@@ -2552,7 +2552,7 @@ namespace ps2_host_input
         const std::string sdl = "SDL-" + std::to_string(pad) + "/";
         // Player 1 also has the keyboard. The layout (2026-10-17, the kamite.ini PS2X_PAD1_* lines it replaces): D-pad
         // on the arrow keys (menus move with the D-pad), face buttons on I/L/K/J, left stick on WASD, Start = Return,
-        // Select = Backspace, L1/R1 = Q/E, L2/R2 = 1/3, L3/R3 = F/G; the right stick (evade) has no keys by default.
+        // Select = Backspace and the middle mouse button, L1/R1 = Q/E, L2/R2 = 1/3, L3/R3 = F/G; the right stick (evade) has no keys by default.
         const bool keyboard = pad == 0u;
         auto add = [&](const char *key, const char *keyboardBinding, const char *padElement)
         {
@@ -2569,6 +2569,8 @@ namespace ps2_host_input
         add("Cross", "Keyboard/K", "FaceSouth");
         add("Square", "Keyboard/J", "FaceWest");
         add("Select", "Keyboard/Backspace", "Back");
+        if (keyboard)
+            settings.emplace_back("Select", "Pointer-0/MiddleButton"); // Modern's camera switch on the mouse (K, Nov 3)
         add("Start", "Keyboard/Return", "Start");
         add("L1", "Keyboard/Q", "LeftShoulder");
         add("L2", "Keyboard/1", "+LeftTrigger");

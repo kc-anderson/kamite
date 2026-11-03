@@ -55,7 +55,6 @@ namespace kamite::launcher
         constexpr Choice kCameraDistances[] = {{"0%: Gene keeps his size", "0"}, {"50%: halfway out", "50"},
                                                {"100%: wider view looks zoomed out", "100"}};
         constexpr Choice kControlStyles[] = {{"Classic", "classic"}, {"Modern", "modern"}};
-        constexpr Choice kModernL1[] = {{"Hold", "hold"}, {"Toggle", "toggle"}};
         constexpr Choice kMenuButtons[] = {{"Western", "western"}, {"Japanese", "japanese"}, {"Classic", "classic"}};
         constexpr Choice kButtonPrompts[] = {{"Automatic (follows your controller)", "auto"}, {"Xbox", "xbox"},
                                              {"PlayStation (the game's own)", "playstation"}, {"Nintendo Switch", "nintendo"},
@@ -1537,20 +1536,17 @@ void main()
                                                         "screen, hold Square / X + d-pad to save one).");
                         iniCheckbox(state, "On##styles", "Game", "StyleSwitching", false);
                         settingLabel("Control style", "Classic: as on the PS2. Modern: the right stick turns the camera "
-                                                      "and Gene moves where you point; hold or toggle L1 for the "
-                                                      "original controls, double-tap L1 for the quick turn.",
+                                                      "and Gene moves where you point; Select switches to the "
+                                                      "original controls and back (the radar glows while the free "
+                                                      "camera is on).",
                                      "F2 > Controls changes it while playing.");
                         iniCombo(state, "##controlstyle", "Game", "ControlStyle", "classic",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kControlStyles, value); });
                         if (lower(state.ini.get("Game", "ControlStyle", "classic")) == "modern")
                         {
-                            subSetting("Modern: auto", "The original controls in fights: from the battle camera coming on "
-                                                       "until no enemy is near.");
+                            subSetting("Modern: auto", "A fight switches to the original controls when the battle camera "
+                                                       "comes on; Select switches back.");
                             iniCheckbox(state, "On##modernauto", "Game", "ModernAuto", true);
-                            subSetting("Modern: L1", "Hold L1 for the original controls, or press it to switch to them "
-                                                     "and back.");
-                            iniCombo(state, "##modernl1", "Game", "ModernL1", "hold",
-                                     [](const char *id, std::string &value) { return choiceCombo(id, kModernL1, value); });
                             subSetting("Modern: mouse camera", "The mouse turns the free camera. Click in the game to "
                                                                "capture the mouse, Esc frees it.",
                                        "F2 > Controls sets the sensitivity.");

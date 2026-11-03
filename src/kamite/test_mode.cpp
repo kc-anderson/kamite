@@ -103,7 +103,7 @@ namespace kamite::test_mode
         constexpr const char *kCaseSettings[] = {"KAMITE_ASPECT", "PS2X_WINDOW_SIZE", "KAMITE_FOV", "KAMITE_FIGHT_FOV",
                                                  "KAMITE_CAMERA_DISTANCE", "KAMITE_CAMERA_ZOOM_OUT", "KAMITE_CAMERA_TILT",
                                                  "KAMITE_STEADY_IDLE_CAMERA", "KAMITE_ENEMY_VIEW", "KAMITE_CONTROL_STYLE",
-                                                 "KAMITE_MODERN_AUTO", "KAMITE_MODERN_L1", "KAMITE_MENU_BUTTONS", "KAMITE_L3_DASH",
+                                                 "KAMITE_MODERN_AUTO", "KAMITE_MENU_BUTTONS", "KAMITE_L3_DASH",
                                                  "KAMITE_ROULETTE_TIMER", "KAMITE_ROULETTE_NO_ORBS", "KAMITE_STYLE_SWITCHING",
                                                  "KAMITE_SPRINT_TRAVERSAL", "KAMITE_CHARACTER", "KAMITE_LIFT_CHAIRS"};
 

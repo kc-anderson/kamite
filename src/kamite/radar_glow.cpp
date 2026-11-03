@@ -1,4 +1,4 @@
-// The radar's "original controls" glow. See radar_glow.h.
+// The radar's free-camera glow. See radar_glow.h.
 //
 // The radar texture (128x256, 8-bit): the disc (centre 53, 53 in texel units; its dark floor out to 0.765 of the
 // disc's radius, then the brown rim) in the top left, the blips on the right, the sweep rings below (the "rope" rings:
@@ -358,12 +358,13 @@ namespace kamite::radar_glow
                     build();
                 }
                 g_captured = true;
-                KM_INFO(Game, "radar glow: radar texture found; the glow shows the original controls while Modern is on");
+                KM_INFO(Game, "radar glow: radar texture found; the glow shows the free camera while Modern is on");
                 return;
             }
             if (!g_built)
                 return;
-            const bool glow = modern::originalControlsNow();
+            const bool glow = modern::freeCameraNow(); // K, Nov 3: the glow marks the free camera, not the original
+
             const std::vector<uint8_t> &wantData = glow ? g_glowData : g_origData, &wantClut = glow ? g_glowClut : g_origClut;
             if (std::memcmp(data, wantData.data(), kPayloadBytes) != 0 && known(data, g_origData, g_glowData))
                 std::memcpy(data, wantData.data(), kPayloadBytes);
