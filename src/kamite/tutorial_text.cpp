@@ -11,8 +11,8 @@
 // With Modern on, entry 0's offset is pointed (u32, wrapping) at our text in guest memory below the ELF (0xFE000,
 // past npc_poses' slots and before debug_tools' landing scratch; unused by the game); with Modern off it is put back.
 // A scanner thread finds the bank by entry 0's original text every 250 ms (the file comes and goes with rooms); the
-// game thread re-checks and points it each vblank. The new lines are drawn at 70% so all of them fit the box (four
-// lines; at 100% only two more lines than the original's fit).
+// game thread re-checks and points it each vblank. The new lines are drawn at 75%, each no wider than ~35 letters
+// (the block is centred on the original's place; wider lines ran over the stick sprite, K Nov 3).
 #include "kamite/tutorial_text.h"
 
 #include "kamite/log.h"
@@ -37,7 +37,10 @@ namespace kamite::tutorial_text
 
         constexpr uint16_t kSpace = 0x35u, kNewline = 0xA001u, kEnd = 0x8001u, kClose = 0xA301u, kScale = 0xB002u;
         constexpr uint16_t kSelectIcon = 13u;
-        constexpr uint16_t kTextScale = 70u, kIconScale = 150u;
+        // The popup centres the whole block on the original's place, so a line much wider than the original's
+        // (26 letters at 100%) pushes the block over the stick sprite on the left (K's screenshot, Nov 3): lines are
+        // kept to ~35 letters at 75%. Icons at 1.5x the text, as the other tutorials (150 / 100), or they sit high.
+        constexpr uint16_t kTextScale = 75u, kIconScale = 112u;
 
         uint8_t *g_ram = nullptr;
         std::atomic<uint32_t> g_bank{0}; // the bank header the scanner found (0 = none)
@@ -79,11 +82,11 @@ namespace kamite::tutorial_text
         std::vector<uint16_t> modernText(bool autoOn)
         {
             std::vector<uint16_t> out{kScale, kTextScale};
-            add(out, "Use the right stick to evade attacks\nwhile brawling.\n");
+            add(out, "Use the right analog stick to evade\nenemy attacks in brawling mode.\n");
             out.insert(out.end(), {kScale, kIconScale, kSelectIcon, kScale, kTextScale});
-            add(out, " Switch between brawl mode and free camera.");
+            add(out, " Switch between brawl mode\nand free camera.");
             if (autoOn)
-                add(out, "\nAUTO: Fighting starts brawl mode automatically.");
+                add(out, "\nAUTO: Fighting starts brawl mode\nautomatically.");
             out.insert(out.end(), {kClose, kEnd});
             return out;
         }
