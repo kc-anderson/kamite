@@ -6,7 +6,8 @@
 // Tutorial 1: "Use the right analog stick<NL>to evade enemy attacks!<A301><END>" beside the layout's stick sprite.
 // The text is 16-bit codes in the menu font: A..Z 0x40.., a..z 0x5A.., space 0x35, '.' 0x21, '!' 0x23, ':' 0x31,
 // ',' 0x7E, newline 0xA001, end 0x8001, A301 before the end; B002 n = the text scale in percent from there on (the
-// other tutorials draw their button icons at 150 and go back to 100); button icons are codes 0..13 (Select 13).
+// other tutorials draw their button icons at B002 0x96 = 150 and go back to 0x64 = 100); button icons are codes
+// 0..13 (Select 13).
 //
 // With Modern on, entry 0's offset is pointed (u32, wrapping) at our text in guest memory below the ELF (0xFE000,
 // past npc_poses' slots and before debug_tools' landing scratch; unused by the game); with Modern off it is put back.
@@ -40,7 +41,7 @@ namespace kamite::tutorial_text
         // The popup centres the whole block on the original's place, so a line much wider than the original's
         // (26 letters at 100%) pushes the block over the stick sprite on the left (K's screenshot, Nov 3): lines are
         // kept to ~35 letters at 75%. Icons at 1.5x the text, as the other tutorials (150 / 100), or they sit high.
-        constexpr uint16_t kTextScale = 75u, kIconScale = 112u;
+        constexpr uint16_t kTextScale = 75u, kIconScale = 112u, kGapScale = 30u;
 
         uint8_t *g_ram = nullptr;
         std::atomic<uint32_t> g_bank{0}; // the bank header the scanner found (0 = none)
@@ -78,15 +79,28 @@ namespace kamite::tutorial_text
             return out;
         }
 
-        // K's wording (Nov 3), the Auto line only with Auto on.
+        // A gap between blocks: a line holding one space at kGapScale. A line is as tall as its tallest glyph (every
+        // code below 0x1000 shares one height, the space included) plus the font's fixed line spacing, so a small
+        // space makes a short line (cMessDrawFont_measurePage / measureText; an empty line would add only the spacing).
+        void gap(std::vector<uint16_t> &out)
+        {
+            out.insert(out.end(), {kScale, kGapScale, kSpace, kNewline, kScale, kTextScale});
+        }
+
+        // K's wording (Nov 3), the Auto block only with Auto on.
         std::vector<uint16_t> modernText(bool autoOn)
         {
             std::vector<uint16_t> out{kScale, kTextScale};
             add(out, "Use the right analog stick to evade\nenemy attacks in brawling mode.\n");
+            gap(out);
             out.insert(out.end(), {kScale, kIconScale, kSelectIcon, kScale, kTextScale});
-            add(out, " Switch between brawl mode\nand free camera.");
+            add(out, "Switch between brawling mode\nand 3rd person free camera.");
             if (autoOn)
-                add(out, "\nAUTO: Fighting starts brawl mode\nautomatically.");
+            {
+                add(out, "\n");
+                gap(out);
+                add(out, "AUTO: Brawling mode starts when\nyou deal or take damage.");
+            }
             out.insert(out.end(), {kClose, kEnd});
             return out;
         }
