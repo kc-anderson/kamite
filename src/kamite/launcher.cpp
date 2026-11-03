@@ -1578,11 +1578,6 @@ void main()
                                                                    "game's standing idle.",
                                      "F2 > NPCs sets the poses.");
                         iniCheckbox(state, "On##npcposes", "Game", "NpcPoses", false);
-                        settingLabel("Sprint attack traversal", "Sprint attacks carry Gene over or through the "
-                                                                "railings marked for them: the diving attack and the "
-                                                                "flying kick jump over, the slide goes under.",
-                                     "F2 > Debug > Stage collision marks them.");
-                        iniCheckbox(state, "On##sprinttraversal", "Game", "SprintTraversal", false);
                         ImGui::EndTable();
                     }
                     ImGui::EndTabItem();
@@ -1623,7 +1618,7 @@ void main()
                 {
                     if (beginSettings("experimental"))
                     {
-                        settingLabel("See-through", "Walls and pillars between the camera and Gene dissolve in an oval "
+                        settingLabel("See Through", "Walls and pillars between the camera and Gene dissolve in an oval "
                                                     "round him, so he and the enemies about him stay in view. Walls next "
                                                     "to the camera, which the PS2 drops, are drawn too. Known: a banded "
                                                     "blur where hazy distance shows through (the depth of field reads "
@@ -1632,6 +1627,11 @@ void main()
                         iniCheckbox(state, "On##seethrough", "Video", "SeeThrough", true);
                         settingLabel("Wild Curry Funk", "Lets you pick up, carry, and throw chairs.");
                         iniCheckbox(state, "On##liftchairs", "Game", "LiftChairs", false);
+                        settingLabel("Busta-Chan Jive", "Sprint attacks carry Gene over or through the railings marked "
+                                                        "for them: the diving attack and the flying kick jump over, the "
+                                                        "slide goes under.",
+                                     "F2 > Debug > Stage collision marks them.");
+                        iniCheckbox(state, "On##sprinttraversal", "Game", "SprintTraversal", false);
                         ImGui::EndTable();
                     }
                     ImGui::EndTabItem();

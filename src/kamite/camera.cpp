@@ -984,7 +984,7 @@ namespace kamite
             ui->text_disabled("Their facing cones widen by as much as the picture reaches further round Gene, so the "
                               "ones you can see at the edges join in as they did at the PS2's edges.");
 
-            ui->separator_text("See-through");
+            ui->separator_text("See Through");
             int see = g_seeThrough.load() ? 1 : 0;
             if (ui->checkbox("Dissolve what stands between the camera and Gene##see", &see))
                 g_seeThrough = see != 0;

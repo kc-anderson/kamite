@@ -761,10 +761,10 @@ namespace kamite::hitbox_overlay
             groups = g_groupsShared;
         }
         ui->text_wrapped("Named groups. First tick = solid (untick lets everyone through until the room reloads). Jump / "
-                         "Slide = the sprint attacks that pass the group with \"Sprint attack traversal\" on: jump for "
+                         "Slide = the sprint attacks that pass the group with \"Busta-Chan Jive\" on: jump for "
                          "sprint + X / Y, slide for sprint + A (saved to sprint_traversal.txt at once).");
         if (!sprint_traversal::enabled())
-            ui->text_disabled("Sprint attack traversal is off in the launcher: the marks save but do nothing in play.");
+            ui->text_disabled("Busta-Chan Jive is off in the launcher: the marks save but do nothing in play.");
         if (g_saveFailed.load())
             ui->text_colored(0xFF4040FFu, "Could not write sprint_traversal.txt.");
         const bool all = g_collAllGroups.load();
@@ -817,7 +817,7 @@ namespace kamite::hitbox_overlay
         if (room < 0)
             return;
         const uint16_t r = static_cast<uint16_t>(room);
-        ui->text_wrapped("Windows (white): sprint + X / Y dive through them with \"Sprint attack traversal\" on. Stand facing "
+        ui->text_wrapped("Windows (white): sprint + X / Y dive through them with \"Busta-Chan Jive\" on. Stand facing "
                          "the window, within 3 m, and mark it; then size and place it with the sliders. A thick wall's far "
                          "side is found by itself (the second rectangle; 0 = none). Any number per wall.");
         if (ui->button("Mark window (the wall Gene faces)##markwin"))

@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## November 3, 2026
 
+- Wild Curry Funk: the chair sits in both of Gene's hands and moves with them; F2 sets how each kind of held item sits, while it is held.
+- Launcher: Sprint attack traversal is now Busta-Chan Jive, in Experimental; See-through is now See Through.
 - 60 FPS: the female enemies' slap grab keeps them at the right height, so the hand lands on Gene's head (it sometimes closed above it).
 - 60 FPS: enemies push Gene aside again (since this morning's change his running attack could pass through a blocking Azel).
 - Test cases: the replay at the recorded frame rate also keeps the recorded random rolls, so a case replays the same fight on later builds.

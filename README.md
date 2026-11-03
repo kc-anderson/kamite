@@ -40,7 +40,7 @@ game's own code rebuilt as a Windows program, with PCSX2's hardware renderer for
 
 - **Modern controls:** a free camera on the right stick or the mouse, camera-relative movement, the radar following
   the view.
-- **See-through walls** (experimental): walls between the camera and Gene dissolve round him; walls next to the camera
+- **See Through** (experimental): walls between the camera and Gene dissolve round him; walls next to the camera
   no longer vanish.
 - **Playing the whole game through** on the port: stages 4 to 8, the ending, the Coliseum and the extras.
 - **Characters:** Xavier in cutscenes, hair physics, fewer clipping animations; more characters the same way.

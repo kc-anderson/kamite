@@ -72,6 +72,7 @@
 #include <cmath>
 #include <atomic>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
 #include "runtime/ps2_save_state.h"
 
@@ -312,18 +313,10 @@ namespace kamite
             SET_GPR_U32(ctx, 16, kCrateId);
         }
 
-        // Held chair offset (metres, Gene's frame: x, y up, z) and turn (degrees about the chair's own x, y, z, round
-        // its middle); F2 > Gameplay sets them live.
-        constexpr float kChairHoldDefault[3] = {0.0f, 0.0f, 0.0f};
-        constexpr float kChairTurnDefault[3] = {0.0f, 0.0f, 0.0f};
-        // What the chair is attached to (F2): Gene's two hands (default), one hand, or the crate's carry motion.
-        enum ChairFollow : int { kFollowBothHands, kFollowLeftHand, kFollowRightHand, kFollowMotion };
-        std::atomic<int> g_chairFollow{kFollowBothHands};
+        // What a new carriable is attached to: Gene's two hands (default), one hand, or the crate's carry motion.
+        enum PropFollow : int { kFollowBothHands, kFollowLeftHand, kFollowRightHand, kFollowMotion };
         constexpr uint32_t kGeneLeftHand = 10u, kGeneRightHand = 16u; // each other's mirror (part +0x14C)
-        std::atomic<float> g_chairHold[3] = {kChairHoldDefault[0], kChairHoldDefault[1], kChairHoldDefault[2]};
-        std::atomic<float> g_chairTurn[3] = {kChairTurnDefault[0], kChairTurnDefault[1], kChairTurnDefault[2]};
-        // The chair's middle in part 0's frame (part 0 = the top of the backrest: 1.0 m up, 0.27 m back of the seat).
-        constexpr float kChairMiddle[3] = {0.0f, -0.5f, 0.27f};
+        uint8_t *g_ram = nullptr; // for the F2 panel (what Gene holds)
 
         using Mat3 = std::array<std::array<float, 3>, 3>;
         Mat3 mul(const Mat3 &a, const Mat3 &b)
@@ -399,11 +392,8 @@ namespace kamite
         }
 
         // The reference: case chair (fb14772), snapshot 240, Gene standing with the chair (carry idle E1F460), in the
-        // chair's root frame (Gene's frame). The carry motion had the chair at angles kRefAngles (deg) with its middle
-        // at kRefMiddle; each attachment's frame (rotation, origin) there is below. The sliders' zero is that pose,
-        // 0.3 m lower (K: it rode over his hands), and they read in Gene's frame at that moment.
-        constexpr float kRefAngles[3] = {-75.7558f, -6.0369f, -10.1902f};
-        constexpr float kRefMiddle[3] = {-0.40877f, 2.15203f - 0.3f, 0.41078f};
+        // held object's root frame (Gene's frame): each attachment's frame (rotation, origin) there. A prop's reference
+        // pose (angles, middle) is taken at the same moment; its sliders read in Gene's frame from that pose.
         struct HandRef
         {
             Mat3 rotation;
@@ -416,12 +406,60 @@ namespace kamite
         const HandRef kRefRight{{{{-0.12519f, 0.57068f, 0.81157f}, {0.89176f, -0.29380f, 0.34415f}, {0.43484f, 0.76682f, -0.47213f}}},
                                 {-0.0247f, 1.6274f, 0.4551f}};
 
+        // New carriables, one entry per actor id (K, Nov 3: values per item kind, set in F2 while it is held).
+        // middle: the point it turns round, in its part 0's frame; refAngles (deg) / refMiddle: its pose in the
+        // reference; follow / hold (m) / turn (deg): the defaults K picked.
+        struct PropKind
+        {
+            uint32_t id;
+            const char *name;
+            int follow;
+            float hold[3];
+            float turn[3];
+            float middle[3];
+            float refAngles[3];
+            float refMiddle[3];
+        };
+        const PropKind kProps[] = {
+            // Stage 1 chair (om04): part 0 = the top of its backrest (1.0 m up, 0.27 m back of the seat); the crate
+            // motion's pose at the reference, 0.3 m lower. K's values, Nov 3.
+            {kChairId, "Chair", kFollowBothHands, {0.07f, -0.07f, -0.16f}, {-2.0f, -2.0f, 11.0f}, {0.0f, -0.5f, 0.27f},
+             {-75.7558f, -6.0369f, -10.1902f}, {-0.40877f, 2.15203f - 0.3f, 0.41078f}},
+        };
+        constexpr int kPropCount = static_cast<int>(sizeof(kProps) / sizeof(kProps[0]));
+        struct PropLive
+        {
+            std::atomic<int> follow{0};
+            std::atomic<float> hold[3];
+            std::atomic<float> turn[3];
+        };
+        PropLive g_props[kPropCount];
+        void resetProp(int i)
+        {
+            g_props[i].follow.store(kProps[i].follow, std::memory_order_relaxed);
+            for (int k = 0; k < 3; ++k)
+            {
+                g_props[i].hold[k].store(kProps[i].hold[k], std::memory_order_relaxed);
+                g_props[i].turn[k].store(kProps[i].turn[k], std::memory_order_relaxed);
+            }
+        }
+        int propIndex(uint32_t id)
+        {
+            for (int i = 0; i < kPropCount; ++i)
+                if (kProps[i].id == id)
+                    return i;
+            return -1;
+        }
+
         // Before ori at,at,0xCCCD at 0x1C8248 (func_001C8020, the held phase; s0 = the object, s1 = its part 0).
         void liftChairsHold(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             const uint32_t obj = GPR_U32(ctx, 16), part = GPR_U32(ctx, 17);
-            if (!part || (ram32(rdram, obj + 0x2FCu) >> 16) != kChairId)
-                return;
+            const int pi = part ? propIndex(ram32(rdram, obj + 0x2FCu) >> 16) : -1;
+            if (pi < 0)
+                return; // the game's own carriables keep their carry motion
+            const PropKind &kind = kProps[pi];
+            PropLive &live = g_props[pi];
             // Part 0's pose: angles part +0x100 (x, y, z rad, matrix Rx Ry Rz, rebuilt after this point) and translation
             // +0xD0 -> part +0x30, in the chair's root frame (Gene's position *(+0xF0) and angles +0x100: world = local x
             // Root + pos). The crate's carry motion sets it; its sway doesn't follow Gene's hands (a big crate hides
@@ -437,13 +475,13 @@ namespace kamite
             vec(at, t);
             std::memcpy(&blend, rdram + ((obj + 0x624u) & 0x1FFFFFFu), sizeof(blend));
             constexpr float kDeg = 3.14159265f / 180.0f;
-            const Mat3 turn = turnMatrix(g_chairTurn[0].load(std::memory_order_relaxed) * kDeg,
-                                         g_chairTurn[1].load(std::memory_order_relaxed) * kDeg,
-                                         g_chairTurn[2].load(std::memory_order_relaxed) * kDeg);
+            const Mat3 turn = turnMatrix(live.turn[0].load(std::memory_order_relaxed) * kDeg,
+                                         live.turn[1].load(std::memory_order_relaxed) * kDeg,
+                                         live.turn[2].load(std::memory_order_relaxed) * kDeg);
             float offset[3];
             for (int k = 0; k < 3; ++k)
-                offset[k] = g_chairHold[k].load(std::memory_order_relaxed);
-            const int follow = g_chairFollow.load(std::memory_order_relaxed);
+                offset[k] = live.hold[k].load(std::memory_order_relaxed);
+            const int follow = live.follow.load(std::memory_order_relaxed);
             Mat3 r{};
             float middle[3];
             const uint32_t gene = ram32(rdram, obj + 0x644u);
@@ -501,10 +539,10 @@ namespace kamite
                         origin[k] = (lo[k] + ro[k]) * 0.5f;
                 }
                 const Mat3 d = mul(transpose(ref->rotation), a);
-                r = mul(mul(turn, turnMatrix(kRefAngles[0] * kDeg, kRefAngles[1] * kDeg, kRefAngles[2] * kDeg)), d);
+                r = mul(mul(turn, turnMatrix(kind.refAngles[0] * kDeg, kind.refAngles[1] * kDeg, kind.refAngles[2] * kDeg)), d);
                 float local[3];
                 for (int k = 0; k < 3; ++k)
-                    local[k] = kRefMiddle[k] - ref->origin[k] + offset[k];
+                    local[k] = kind.refMiddle[k] - ref->origin[k] + offset[k];
                 for (int k = 0; k < 3; ++k)
                 {
                     middle[k] = origin[k];
@@ -518,7 +556,7 @@ namespace kamite
             {
                 float placed = middle[k];
                 for (int j = 0; j < 3; ++j)
-                    placed -= kChairMiddle[j] * r[j][k];
+                    placed -= kind.middle[j] * r[j][k];
                 t[k] += (placed - t[k]) * blend;
                 e[k] += std::remainder(target[k] - e[k], 2.0f * 3.14159265f) * blend;
             }
@@ -527,47 +565,69 @@ namespace kamite
         }
 
 #ifdef KAMITE_HAS_GS_MENU
+        // The new carriable Gene holds now (Gene +0x6A0 / +0x698, held: +0x5B0 bit 2, its parent +0x644 = Gene), or -1.
+        int heldProp()
+        {
+            if (!g_ram)
+                return -1;
+            const uint32_t gene = ram32(g_ram, 0x747A94u); // GameWork +0x5F4 playerObj
+            if (!gene)
+                return -1;
+            for (uint32_t slot : {0x6A0u, 0x698u})
+            {
+                const uint32_t obj = ram32(g_ram, gene + slot);
+                if (obj && (ram32(g_ram, obj + 0x5B0u) & 0x4u) && ram32(g_ram, obj + 0x644u) == gene)
+                    return propIndex(ram32(g_ram, obj + 0x2FCu) >> 16);
+            }
+            return -1;
+        }
+
         void drawChairPanel(const Pcsx2GsUi *ui)
         {
             if (!envOn("KAMITE_LIFT_CHAIRS"))
                 return;
-            if (ui->version >= 4u && !ui->collapsing_header("Wild Curry Funk", 0))
+            if (ui->version >= 4u && !ui->collapsing_header("Held items (Wild Curry Funk)", 0))
                 return;
+            const int pi = heldProp();
+            if (pi < 0)
+            {
+                ui->text_disabled("Pick up a chair to set how it sits in Gene's hands. Each kind of item keeps its "
+                                  "own values.");
+                return;
+            }
+            PropLive &live = g_props[pi];
+            char line[96];
+            std::snprintf(line, sizeof(line), "Holding: %s", kProps[pi].name);
+            ui->text(line);
             {
                 const char *const follows[4] = {"Both hands", "Left hand", "Right hand", "Carry animation (as a crate)"};
-                int follow = g_chairFollow.load(std::memory_order_relaxed);
+                int follow = live.follow.load(std::memory_order_relaxed);
                 ui->set_next_width(340.0f);
-                if (ui->combo("Held by##chairfollow", &follow, follows, 4))
-                    g_chairFollow.store(follow, std::memory_order_relaxed);
+                if (ui->combo("Held by##propfollow", &follow, follows, 4))
+                    live.follow.store(follow, std::memory_order_relaxed);
             }
-            const char *names[3] = {"Held chair: sideways##chairx", "Held chair: up##chairy", "Held chair: forward##chairz"};
+            const char *names[3] = {"Sideways##propx", "Up##propy", "Forward##propz"};
             for (int i = 0; i < 3; ++i)
             {
-                float v = g_chairHold[i].load(std::memory_order_relaxed);
+                float v = live.hold[i].load(std::memory_order_relaxed);
                 ui->set_next_width(340.0f);
                 if (ui->slider_float(names[i], &v, -1.0f, 1.0f, "%.2f m"))
-                    g_chairHold[i].store(v, std::memory_order_relaxed);
+                    live.hold[i].store(v, std::memory_order_relaxed);
             }
-            const char *turns[3] = {"Held chair: tip forward / back##chairrx", "Held chair: spin##chairry",
-                                    "Held chair: roll##chairrz"};
+            const char *turns[3] = {"Tip forward / back##proprx", "Spin##propry", "Roll##proprz"};
             for (int i = 0; i < 3; ++i)
             {
-                float v = g_chairTurn[i].load(std::memory_order_relaxed);
+                float v = live.turn[i].load(std::memory_order_relaxed);
                 ui->set_next_width(340.0f);
                 if (ui->slider_float(turns[i], &v, -180.0f, 180.0f, "%.0f deg"))
-                    g_chairTurn[i].store(v, std::memory_order_relaxed);
+                    live.turn[i].store(v, std::memory_order_relaxed);
             }
-            if (ui->button("Reset##chairreset"))
-            {
-                for (int i = 0; i < 3; ++i)
-                {
-                    g_chairHold[i].store(kChairHoldDefault[i], std::memory_order_relaxed);
-                    g_chairTurn[i].store(kChairTurnDefault[i], std::memory_order_relaxed);
-                }
-            }
-            ui->text_disabled("Held by: what the chair is fixed to (it moves and turns with it). Move / turn: from "
-                              "the starting pose, in Gene's own directions while he stands (metres / degrees). "
-                              "Tell Claude the values that look right.");
+            if (ui->button("Reset to defaults##propreset"))
+                resetProp(pi);
+            ui->text_disabled("Held by: what the item is fixed to (it moves and turns with it). Move / turn: from its "
+                              "starting pose, in Gene's own directions while he stands (metres / degrees). The values "
+                              "last until the game closes; tell Claude the ones that look right to make them the "
+                              "defaults.");
         }
 #endif
 
@@ -582,8 +642,11 @@ namespace kamite
         }
     }
 
-    void installGameOptions(PS2Runtime &)
+    void installGameOptions(PS2Runtime &runtime)
     {
+        g_ram = runtime.memory().getRDRAM();
+        for (int i = 0; i < kPropCount; ++i)
+            resetProp(i);
         const bool unlockHard = envOn("KAMITE_UNLOCK_HARD");
         const bool muteMusic = envOn("KAMITE_MUTE_MUSIC");
         const bool skipIntro = envOn("KAMITE_SKIP_INTRO");
