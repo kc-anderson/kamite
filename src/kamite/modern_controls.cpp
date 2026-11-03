@@ -376,9 +376,9 @@ namespace kamite::modern
             // The Modern settings show only with Modern selected (K, Oct 27).
             if (style == 1)
             {
-                ui->text_wrapped("Select switches between the free camera and the original controls; the choice stays "
-                                 "across rooms. L1 is the game's quick turn.");
-                checkbox(ui, "Auto: a fight switches to the original controls (Select switches back)##auto", g_auto);
+                ui->text_wrapped("Select switches between the free camera and brawl mode (classic controls); the choice "
+                                 "stays across rooms. L1 is the game's quick turn.");
+                checkbox(ui, "Auto: fighting starts brawl mode (Select switches back)##auto", g_auto);
                 ui->separator_text("Free camera");
                 slider(ui, "Turn speed##yaw", g_yawSpeed, 40.0f, 400.0f, "%.0f deg/s");
                 slider(ui, "Up/down speed##pitch", g_pitchSpeed, 20.0f, 250.0f, "%.0f deg/s");
@@ -394,9 +394,9 @@ namespace kamite::modern
 
             ui->separator_text("Now");
             const char *now = !g_modern.load()    ? "Classic"
-                              : gameHasCamera()   ? "The game has the camera: original controls"
-                              : classicByChoice() ? (g_classicByAuto.load() ? "Original controls (Auto: a fight started)"
-                                                                            : "Original controls (Select)")
+                              : gameHasCamera()   ? "The game has the camera: brawl mode"
+                              : classicByChoice() ? (g_classicByAuto.load() ? "Brawl mode (Auto: a fight started)"
+                                                                            : "Brawl mode (Select)")
                                                   : "Free camera, camera-relative movement";
             ui->text(now);
 

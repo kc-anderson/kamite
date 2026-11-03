@@ -1535,17 +1535,17 @@ void main()
                                                         "between them in play with the d-pad (on the Techniques "
                                                         "screen, hold Square / X + d-pad to save one).");
                         iniCheckbox(state, "On##styles", "Game", "StyleSwitching", false);
-                        settingLabel("Control style", "Classic: as on the PS2. Modern: the right stick turns the camera "
-                                                      "and Gene moves where you point; Select switches to the "
-                                                      "original controls and back (the radar glows while the free "
-                                                      "camera is on).",
+                        settingLabel("Control style", "Classic: as on the PS2. Modern: the free camera: the right stick "
+                                                      "turns the camera and Gene moves where you point; Select "
+                                                      "switches to brawl mode (classic controls) and back (the radar "
+                                                      "glows while the free camera is on).",
                                      "F2 > Controls changes it while playing.");
                         iniCombo(state, "##controlstyle", "Game", "ControlStyle", "classic",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kControlStyles, value); });
                         if (lower(state.ini.get("Game", "ControlStyle", "classic")) == "modern")
                         {
-                            subSetting("Modern: auto", "A fight switches to the original controls when the battle camera "
-                                                       "comes on; Select switches back.");
+                            subSetting("Modern: auto", "Fighting starts brawl mode automatically; Select switches back "
+                                                       "to the free camera.");
                             iniCheckbox(state, "On##modernauto", "Game", "ModernAuto", true);
                             subSetting("Modern: mouse camera", "The mouse turns the free camera. Click in the game to "
                                                                "capture the mouse, Esc frees it.",
