@@ -1740,16 +1740,35 @@ namespace kamite::test_mode
             g_rollK = run.rollCount.next(run.frame, site, object);
             RollStat &stat = run.rollStats[site];
             ++stat.calls;
-            if (!run.useRolls) // the case's own rate: the exact same roll only
+            if (!run.useRolls) // the case's own rate: the same roll, else the nearest unused one up to two 30 FPS frames away
             {
-                const auto it = run.rolls.byKey.find(RollKey{run.frame * run.divider, site, object, g_rollK});
-                if (it == run.rolls.byKey.end())
+                // On the recording's build the exact roll is always there. A later build may make the same decision a
+                // vblank or a frame apart (Nov 3: T1's sweep case on 0ab4994, Azel's string roll 0x21FE04 one vblank
+                // earlier than the recording's, so it drew fresh and the fight forked): the window the other-rate replay
+                // uses, in the recording's own frames.
+                const uint32_t unit = run.divider; // vblanks per recorded frame
+                const int64_t t = static_cast<int64_t>(run.frame) * unit;
+                RollTrack::Slot *slot = nullptr;
+                const auto find = [&](int64_t vblank, bool exact) {
+                    if (vblank < 0)
+                        return false;
+                    const auto it = run.rolls.byKey.find(RollKey{static_cast<uint32_t>(vblank), site, object, g_rollK});
+                    if (it == run.rolls.byKey.end() || (!exact && it->second.used))
+                        return false;
+                    slot = &it->second;
+                    return true;
+                };
+                bool found = find(t, true);
+                const int span = unit == 1u ? 4 : 2; // 60 recordings: +-4 vblanks; 30: +-2 frames
+                for (int step = 1; !found && step <= span; ++step)
+                    found = find(t - step * static_cast<int64_t>(unit), false) || find(t + step * static_cast<int64_t>(unit), false);
+                if (!found)
                     return drawn;
-                it->second.used = true;
+                slot->used = true;
                 ++stat.forced;
-                if (it->second.value != drawn)
+                if (slot->value != drawn)
                     ++stat.differs;
-                return it->second.value;
+                return slot->value;
             }
             // Frame k's update sees k + 1 at either rate: a 30 FPS update seeing vblank t covers the 60 FPS updates
             // seeing t - 1 and t; a 60 FPS update seeing t lies in the 30 FPS update seeing t rounded up to even. That

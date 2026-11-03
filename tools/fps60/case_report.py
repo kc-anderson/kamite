@@ -534,7 +534,8 @@ def roll_report(path, sections, rec_div, secs30, secs60):
             # differ; on a later build a difference only says the game would have drawn another number there.
             print(f"         the {60 // rec_div} FPS replay took {own_forced} of its {own_calls} rolls from the recording, "
                   f"{own_differs} differing from the game's own draw"
-                  + ("  (same build: the random stream is not reproduced)" if own_differs else "") + ".")
+                  + ("  (on the recording's build: the random stream is not reproduced; on a later build: expected)"
+                     if own_differs else "") + ".")
     flagged = []
     for site in sorted(set(r30) | set(r60)):
         if 0x30AC40 <= int(site, 16) < 0x30B090:  # the main loop stirs the twister once a game frame: not a decision
