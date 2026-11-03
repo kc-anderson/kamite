@@ -35,6 +35,9 @@ namespace kamite::modern
 
     // [Game] ControlStyle=modern is on (whatever is in effect now).
     bool enabled();
+    // A hit between Gene and an enemy landed (either way; game thread, the damage steps): with Auto, brawl mode.
+    void noteContact();
+
     // Modern is on and the free camera is in effect now (not the original controls by Select / Auto, and the game not
     // holding the camera). For the radar's glow (radar_glow.h). Any thread.
     bool freeCameraNow();

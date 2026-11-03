@@ -44,6 +44,7 @@
 #include "kamite/hitbox_overlay.h"
 #include "kamite/game_layout.h"
 #include "kamite/npc_tools.h"
+#include "kamite/modern_controls.h"
 #include "kamite/log.h"
 #include "ps2_runtime_macros.h" // GPR_U32 / SET_GPR_U32
 #include "runtime/ps2_memory.h"
@@ -227,6 +228,7 @@ namespace kamite::debug_tools
         // km_dbg_pl_damage at 0x12C2A4 (Gene's damage step, after `sh v0,0x54A(s1)` / the clamp to 0); s1 = Gene.
         void playerDamageHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
+            modern::noteContact(); // Modern's Auto: a hit landed on Gene starts brawl mode
             const uint32_t obj = GPR_U32(ctx, 17);
             if (g_godMode.load(std::memory_order_relaxed) && inRam(obj, 0x600u) && getHp(rdram, obj) < 1)
                 setHp(rdram, obj, 1);
@@ -237,6 +239,7 @@ namespace kamite::debug_tools
             const uint32_t obj = GPR_U32(ctx, 17);
             if (!inRam(obj, 0x600u))
                 return;
+            modern::noteContact(); // Modern's Auto: a hit landed on an enemy starts brawl mode
             if (g_oneHitKills.load(std::memory_order_relaxed))
                 setHp(rdram, obj, 0);
             else if (g_enemiesNoDeath.load(std::memory_order_relaxed) && getHp(rdram, obj) < 1)

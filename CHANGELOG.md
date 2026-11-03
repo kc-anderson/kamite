@@ -4,7 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 3, 2026
 
-- Modern controls: Auto no longer switches to the original controls for hitting crates or throwing objects (it needs an enemy close by).
+- Modern controls: Auto starts brawl mode when a hit lands between Gene and an enemy (either way), not for crates or throws.
 - Modern controls: Select switches between the free camera and the original controls (kept across rooms; the radar glows while the free camera is on); Auto switches to the original controls when a fight starts and stays; L1 is always the quick turn; the hold option is gone.
 - Select is also on the middle mouse button by default (new controls files).
 - Wild Curry Funk: the chair sits in both of Gene's hands and moves with them; F2 sets how each kind of held item sits, while it is held.

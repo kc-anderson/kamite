@@ -4,8 +4,10 @@
 // the camera (he faces where he walks). Select (the one button the game leaves unused in play; only two casino
 // screens read it) switches between that and the original controls (tank movement, right stick = dodges, the camera
 // behind Gene) (K, Nov 3). The choice is kept across rooms, doors and loads; a launch starts in the free camera.
-// With Auto, a fight switches to the original controls when the game's battle camera comes on with a live enemy within
-// 6 m (the camera alone also comes on for crates and throws), and never back: Select returns to the free camera. L1 is always the game's own quick turn; in the free camera the camera swings back
+// With Auto, contact starts brawl mode: Gene's attack (or something he threw) hurting an enemy, or anything hurting
+// Gene (the two damage steps, debug_tools' hooks call noteContact). Not the battle camera: it also comes on for
+// crates and throws (K, Nov 3); not distance or enemy intent (K: free camera must still get you out of a fight).
+// Nothing switches back: Select returns to the free camera. L1 is always the game's own quick turn; in the free camera the camera swings back
 // behind Gene with him. A Select tap with Start held (Back+Start opens the Controls screen) does not switch. Whenever
 // the game takes the camera (a close-up for a grab or a special move, a cutscene, a menu: no player camera update for
 // a moment), everything is Classic for that moment and the choice comes back after it.
@@ -68,8 +70,6 @@ namespace kamite::modern
         constexpr float kPitchMin = -1.2f, kPitchMax = 0.9f; // extra pitch, radians (the floor is camera.cpp's: above the ground)
         constexpr int64_t kQuickTurnFollowMs = 650;            // the camera stays behind Gene this long after one
         constexpr float kTurnRate = 900.0f * (3.14159265f / 180.0f); // Gene turned toward the stick, radians a second
-        constexpr float kAutoRange = 6.0f; // Auto: a live enemy this close when the battle camera is on = a fight (not a crate)
-        constexpr uint32_t kEnemyList = 0x5864F0u + 0x500u;    // cEmManage D_005864F0: the first used slot
         constexpr uint32_t kPlayerPointer = game::GameWork::address(game::GameWork::kPlayerObj); // GameWork.playerObj (Getplayer)
 
         // Settings (F2 menu on the GS thread, read by the window and game threads).
@@ -84,7 +84,6 @@ namespace kamite::modern
 
         // Camera side -> input side.
         std::atomic<bool> g_battleCamera{false};
-        bool g_fightWas = false; // game thread: last update's battle camera with an enemy near
         std::atomic<bool> g_gameCamera{false};
         std::atomic<int64_t> g_lastCameraMs{0};
         std::atomic<bool> g_free{false};        // the free camera is on (not easing back to the original)
@@ -259,39 +258,6 @@ namespace kamite::modern
 
         bool validPointer(uint32_t pointer) { return pointer >= 0x100000u && pointer < 0x2000000u; }
 
-        // Metres from Gene to the nearest live enemy (cEmManage's list; enemies are kinds 0x200..0x27F, alive while
-        // +0x54A > 0 and +0x250 has no release bit).
-        float nearestEnemy(const uint8_t *rdram)
-        {
-            const uint32_t player = ram32(rdram, kPlayerPointer);
-            if (!validPointer(player) || !validPointer(ram32(rdram, player + 0xF0u)))
-                return 1e9f;
-            const uint32_t at = ram32(rdram, player + 0xF0u);
-            const float px = ramFloat(rdram, at), pz = ramFloat(rdram, at + 8u);
-            float best = 1e18f;
-            uint32_t slot = ram32(rdram, kEnemyList);
-            for (int guard = 0; guard < 64 && validPointer(slot); ++guard)
-            {
-                const uint32_t em = ram32(rdram, slot + 8u);
-                slot = ram32(rdram, slot + 4u);
-                if (!validPointer(em))
-                    continue;
-                uint16_t kind;
-                int16_t hp;
-                std::memcpy(&kind, rdram + em + 0x2FEu, sizeof(kind));
-                std::memcpy(&hp, rdram + em + 0x54Au, sizeof(hp));
-                const int32_t flags = static_cast<int32_t>(ram32(rdram, em + 0x250u));
-                if (kind < 0x200u || kind >= 0x280u || hp <= 0 || flags < 0)
-                    continue;
-                const uint32_t pos = ram32(rdram, em + 0xF0u);
-                if (!validPointer(pos))
-                    continue;
-                const float dx = ramFloat(rdram, pos) - px, dz = ramFloat(rdram, pos + 8u) - pz;
-                best = std::fmin(best, dx * dx + dz * dz);
-            }
-            return best < 1e17f ? std::sqrt(best) : 1e9f;
-        }
-
         // Gene stands or walks: major step 0, sub-step 0 / 10 (standing) or 1 / 2 (walking).
         bool geneMoves(const uint8_t *rdram, uint32_t player)
         {
@@ -395,7 +361,7 @@ namespace kamite::modern
             ui->separator_text("Now");
             const char *now = !g_modern.load()    ? "Classic"
                               : gameHasCamera()   ? "The game has the camera: brawl mode"
-                              : classicByChoice() ? (g_classicByAuto.load() ? "Brawl mode (Auto: a fight started)"
+                              : classicByChoice() ? (g_classicByAuto.load() ? "Brawl mode (Auto: a hit landed)"
                                                                             : "Brawl mode (Select)")
                                                   : "Free camera, camera-relative movement";
             ui->text(now);
@@ -473,17 +439,6 @@ namespace kamite::modern
     void noteCamera(const uint8_t *rdram, bool battle, bool gameCamera)
     {
         const int64_t now = nowMs();
-        // Auto: a fight starting (the battle camera on with a live enemy within kAutoRange; the camera alone also comes
-        // on for hitting a crate or throwing an object, K Nov 3) switches to the original controls; nothing switches
-        // back (Select does).
-        const bool fight = battle && nearestEnemy(rdram) <= kAutoRange;
-        if (fight && !g_fightWas && g_auto.load(std::memory_order_relaxed) && g_modern.load(std::memory_order_relaxed) &&
-            !g_classic.load(std::memory_order_relaxed))
-        {
-            g_classic = true;
-            g_classicByAuto = true;
-        }
-        g_fightWas = fight;
         g_battleCamera.store(battle, std::memory_order_relaxed);
         // The shop's jukebox: the game's camera stands still on the radio, as on the PS2 (jukebox.h). The roulette:
         // the game swings its camera round to the roulette angle while the wheel is up; Modern hands it back too.
@@ -633,6 +588,16 @@ namespace kamite::modern
     bool enabled()
     {
         return g_modern.load(std::memory_order_relaxed);
+    }
+
+    void noteContact()
+    {
+        if (g_auto.load(std::memory_order_relaxed) && g_modern.load(std::memory_order_relaxed) &&
+            !g_classic.load(std::memory_order_relaxed))
+        {
+            g_classic = true;
+            g_classicByAuto = true;
+        }
     }
 
     bool freeCameraNow()
