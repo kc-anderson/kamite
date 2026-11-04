@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## November 4, 2026
 
+- Wild Curry Funk: stage 1's bar stools and pub sign can be picked up and thrown too.
+- Wild Curry Funk: F2 sets the size of each kind of held item.
 - Tutorial 5 (the dash): the stick icon is in the text instead of the big stick picture; with L3 dash on, it names the L3 button too.
 - Modern controls: Tutorial 1's switch line shows the switch's button ("Press [R3] to switch between brawling and freecam.").
 - Tutorials 2 and 3: the heading moved into the title ("TUTORIAL 2: GODHAND ROULETTE REEL", "TUTORIAL 3: UNLEASH THE GODHAND").

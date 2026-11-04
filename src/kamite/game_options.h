@@ -12,7 +12,7 @@ namespace kamite
     //   RouletteNoOrbs (KAMITE_ROULETTE_NO_ORBS)  R1 opens the roulette with no orbs (moves stay greyed out; for the
     //                                     roulette camera).
     //   Dead Pan (always): the Japanese free roulette move, earned by a Kick Me Sign clear (or F2's every reel owned).
-    //   LiftChairs (KAMITE_LIFT_CHAIRS)  stage 1's chairs are built as crate-class objects: picked up, carried,
+    //   LiftChairs (KAMITE_LIFT_CHAIRS)  stage 1's chairs, bar stools and pub sign are built as crate-class objects: picked up, carried,
     //                                     thrown and smashed like the crates (launcher: Experimental, Wild Curry Funk).
     //   TensionPlacable (KAMITE_TENSION_PLACABLE)  R2 while the God Hand is unleashed ends it and keeps the tension
     //                                     left (launcher: Experimental, Tension is Placable).

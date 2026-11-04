@@ -1,10 +1,11 @@
 // Optional changes to the game ([Game] UnlockHard / SkipIntro / MuteMusic / RouletteNoOrbs / LiftChairs) and Dead Pan.
 // See game_options.h.
 //
-// LiftChairs: stage 1's chairs (om04, cOmBase, actor 0x304) have no carry or throw states; the crates in the same rooms
-// (om0a, cOmThrow, 0x30A) do. The object factory func_0030FE68(id a0, data id a1) switches on s0 = id to each class's
+// LiftChairs: stage 1's chairs (om04, cOmBase, actor 0x304), bar stools (om38) and pub sign (om36, both cOmScrfix) have
+// no carry or throw states; the crates in the same rooms (om0a, cOmThrow, 0x30A) do. All of them are one model: part 0
+// whole, parts 1..N the break pieces (hidden), mesh 0 hidden / mesh 1 shown, which the crate's setup sets up alike. The object factory func_0030FE68(id a0, data id a1) switches on s0 = id to each class's
 // alloc + constructor, then stores the id (+0x2FE / +0x300) and picks the data (texture, mesh group) by it. Under
-// "lift_chairs" 0x304 is read as 0x30A for the switch (before sq s1 at 0x30FE7C) and put back once the object exists
+// "lift_chairs" 0x304 / 0x336 / 0x338 is read as 0x30A for the switch (before sq s1 at 0x30FE7C) and put back once the object exists
 // (before daddu a0,s2 at 0x3125B4): a crate-class object with the chair's id, mesh (Fx_chrNN), texture and break
 // effect. claude/chair-notes.md.
 // Held, the crate class's carry (cOmThrow phase 0, func_001C8020) poses the object with its own carry motion (part
@@ -329,14 +330,17 @@ namespace kamite
     namespace
     {
         constexpr uint32_t kChairId = 0x304u, kCrateId = 0x30Au;
-        uint32_t g_chairSp = 0; // the factory call (its sp) that is building a chair as a crate
+        constexpr uint32_t kPubSignId = 0x336u, kBarStoolId = 0x338u; // r102 (stage 1), cOmScrfix
+        uint32_t g_liftSp = 0, g_liftId = 0; // the factory call (its sp) building a prop as a crate, and the prop's id
 
         // Before sq s1,0x30(sp) at 0x30FE7C (func_0030FE68, flag lift_chairs): s0 = the id the switch reads.
         void liftChairsSwitch(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
-            if (GPR_U32(ctx, 16) != kChairId)
+            const uint32_t id = GPR_U32(ctx, 16);
+            if (id != kChairId && id != kPubSignId && id != kBarStoolId)
                 return;
-            g_chairSp = GPR_U32(ctx, 29);
+            g_liftSp = GPR_U32(ctx, 29);
+            g_liftId = id;
             SET_GPR_U32(ctx, 16, kCrateId);
         }
 
@@ -435,7 +439,7 @@ namespace kamite
 
         // New carriables, one entry per actor id (K, Nov 3: values per item kind, set in F2 while it is held).
         // middle: the point it turns round, in its part 0's frame; refAngles (deg) / refMiddle: its pose in the
-        // reference; follow / hold (m) / turn (deg): the defaults K picked.
+        // reference; follow / hold (m) / turn (deg) / size: the defaults K picked.
         struct PropKind
         {
             uint32_t id;
@@ -443,6 +447,7 @@ namespace kamite
             int follow;
             float hold[3];
             float turn[3];
+            float size;
             float middle[3];
             float refAngles[3];
             float refMiddle[3];
@@ -450,7 +455,15 @@ namespace kamite
         const PropKind kProps[] = {
             // Stage 1 chair (om04): part 0 = the top of its backrest (1.0 m up, 0.27 m back of the seat); the crate
             // motion's pose at the reference, 0.3 m lower. K's values, Nov 3.
-            {kChairId, "Chair", kFollowBothHands, {0.07f, -0.07f, -0.16f}, {-2.0f, -2.0f, 11.0f}, {0.0f, -0.5f, 0.27f},
+            {kChairId, "Chair", kFollowBothHands, {0.07f, -0.07f, -0.16f}, {-2.0f, -2.0f, 11.0f}, 1.0f, {0.0f, -0.5f, 0.27f},
+             {-75.7558f, -6.0369f, -10.1902f}, {-0.40877f, 2.15203f - 0.3f, 0.41078f}},
+            // Bar stool (om38, r102 x4, r600): part 0 = (-0.17, 0.63, -0.01) of its root (the seat), pieces 0.2..0.63 m up;
+            // middle ~0.38 m up. Pub sign (om36, r102 x1): part 0 = (-0.38, 1.47, 0.08) (its top), ~0.8 m wide, pieces
+            // 0.5..1.33 m up; middle ~0.75 m up. Both start from the chair's reference pose (cases bar_stool / pub_sign,
+            // Nov 4) until K sets them.
+            {kBarStoolId, "Bar stool", kFollowBothHands, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, {0.174f, -0.246f, 0.014f},
+             {-75.7558f, -6.0369f, -10.1902f}, {-0.40877f, 2.15203f - 0.3f, 0.41078f}},
+            {kPubSignId, "Pub sign", kFollowBothHands, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, {0.381f, -0.72f, -0.083f},
              {-75.7558f, -6.0369f, -10.1902f}, {-0.40877f, 2.15203f - 0.3f, 0.41078f}},
         };
         constexpr int kPropCount = static_cast<int>(sizeof(kProps) / sizeof(kProps[0]));
@@ -459,11 +472,13 @@ namespace kamite
             std::atomic<int> follow{0};
             std::atomic<float> hold[3];
             std::atomic<float> turn[3];
+            std::atomic<float> size{1.0f};
         };
         PropLive g_props[kPropCount];
         void resetProp(int i)
         {
             g_props[i].follow.store(kProps[i].follow, std::memory_order_relaxed);
+            g_props[i].size.store(kProps[i].size, std::memory_order_relaxed);
             for (int k = 0; k < 3; ++k)
             {
                 g_props[i].hold[k].store(kProps[i].hold[k], std::memory_order_relaxed);
@@ -579,9 +594,19 @@ namespace kamite
             }
             const float target[3] = {std::atan2(r[1][2], r[2][2]), std::asin(std::clamp(-r[0][2], -1.0f, 1.0f)),
                                      std::atan2(r[0][1], r[0][0])};
+            // Size: the object's root scale (+0x110, used by cModel_calcParts' root matrix; nothing else writes it), eased
+            // in by the blend from whatever it is. It scales part 0's translation too, so the middle is placed at
+            // middle / size. It stays when the item is thrown (it flies and breaks at that size).
+            float size = 1.0f;
+            std::memcpy(&size, rdram + ((obj + 0x110u) & 0x1FFFFFFu), sizeof(size));
+            if (!(size > 0.1f && size < 10.0f))
+                size = 1.0f;
+            size += (live.size.load(std::memory_order_relaxed) - size) * blend;
+            const float sizes[3] = {size, size, size};
+            std::memcpy(rdram + ((obj + 0x110u) & 0x1FFFFFFu), sizes, sizeof(sizes));
             for (int k = 0; k < 3; ++k)
             {
-                float placed = middle[k];
+                float placed = middle[k] / size;
                 for (int j = 0; j < 3; ++j)
                     placed -= kind.middle[j] * r[j][k];
                 t[k] += (placed - t[k]) * blend;
@@ -618,8 +643,8 @@ namespace kamite
             const int pi = heldProp();
             if (pi < 0)
             {
-                ui->text_disabled("Pick up a chair to set how it sits in Gene's hands. Each kind of item keeps its "
-                                  "own values.");
+                ui->text_disabled("Pick up a chair, bar stool or pub sign to set how it sits in Gene's hands. Each "
+                                  "kind of item keeps its own values.");
                 return;
             }
             PropLive &live = g_props[pi];
@@ -649,22 +674,29 @@ namespace kamite
                 if (ui->slider_float(turns[i], &v, -180.0f, 180.0f, "%.0f deg"))
                     live.turn[i].store(v, std::memory_order_relaxed);
             }
+            {
+                float v = live.size.load(std::memory_order_relaxed);
+                ui->set_next_width(340.0f);
+                if (ui->slider_float("Size##propsize", &v, 0.5f, 2.0f, "%.2fx"))
+                    live.size.store(v, std::memory_order_relaxed);
+            }
             if (ui->button("Reset to defaults##propreset"))
                 resetProp(pi);
             ui->text_disabled("Held by: what the item is fixed to (it moves and turns with it). Move / turn: from its "
-                              "starting pose, in Gene's own directions while he stands (metres / degrees). The values "
+                              "starting pose, in Gene's own directions while he stands (metres / degrees). Size: how big it is "
+                              "while held and thrown. The values "
                               "last until the game closes; tell Claude the ones that look right to make them the "
                               "defaults.");
         }
 #endif
 
-        // Before daddu a0,s2,zero at 0x3125B4 (the object exists): the chair's id back for +0x2FE / +0x300 / the data.
+        // Before daddu a0,s2,zero at 0x3125B4 (the object exists): the prop's id back for +0x2FE / +0x300 / the data.
         void liftChairsId(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
-            if (g_chairSp && GPR_U32(ctx, 29) == g_chairSp && GPR_U32(ctx, 16) == kCrateId)
+            if (g_liftSp && GPR_U32(ctx, 29) == g_liftSp && GPR_U32(ctx, 16) == kCrateId)
             {
-                SET_GPR_U32(ctx, 16, kChairId);
-                g_chairSp = 0;
+                SET_GPR_U32(ctx, 16, g_liftId);
+                g_liftSp = 0;
             }
         }
 
