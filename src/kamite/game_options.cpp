@@ -45,6 +45,19 @@
 // (getGodItemNum at 0x125B44 / 0x125B58; a 1-orb reel was never checked: the entry needed an orb), so at 0x125B84,
 // where every reel's check ends, an empty first slot greys the entry (+8 = 1) too, except the free Dead Pan (0xB).
 //
+// TensionPlacable / OffTheCuff (launcher: Experimental, "Tension is Placable" / its sub-option "Off the Cuff"): the
+// tension gauge is cHeatSys at 0x5CB000 (+0 max 120, +4 the gauge, +8 the floor SubHeatGage stops at, +0xC the full
+// mark, +0x10 the mode byte: 1 while the God Hand is unleashed). Gene's action chooser func_00123938 starts the unleash
+// on an R2 press (GameWork +8 & 2 at 0x123AE0) when the mode is 0 and cHeatSys_GetHeatLv (0x2A9BC0: gauge >= full) says
+// so: phase 8 (func_00114120 sets the mode to 1 and Gene +0x15F4 |= 0x10 at its animation event). The meter running
+// out ends it at the top of the same chooser: cHeatSys_SetHeatMode(0), phase 9 (func_001142E0, the end pose; clears
+// 0x10), +0x54C = 3.0, return 1. Placable: an R2 press while unleashed (mode byte read at 0x123AF4, read as 0) goes on
+// to the GetHeatLv call, which says yes (wrapper, its call at 0x123B00 only), and the delay slot at 0x123B0C picks
+// phase 9 instead of 8 after the game's own SetHeatMode(0) and +0x54C = 3.0: the same end, with the gauge left as it
+// is (SetHeatMode(0) moves the floor to max(gauge - full, 0) = 0). Off the Cuff: the same GetHeatLv call also says
+// yes with any tension (gauge > 0); the unleash then drains what there is. Case 2026-11-04_11-50-15 (an unleash run
+// down: phase 8 at 1.2 s, the gauge 120 -> 0 at 12 a second, phase 9 at 12.3 s).
+//
 // Dead Pan (always on): the Japanese release's free roulette move (reel 0xB; TCRF "Dead Pan / Pan Drop"). The US build
 // keeps it but hides it outside Japanese: func_00125048 tests GameWork +0x56C (language, 0 = Japanese) at 0x1250A8,
 // 0x1251CC, 0x125264 and 0x125338 (the PCSX2 restore patch makes all four read 0). Here they read 0 once it is earned:
@@ -62,6 +75,7 @@
 // +0x414 -> +8 = the name packed in a u64). Driven from the frame hook (deadPanFrame), host calls as debug_tools does.
 #include "kamite/game_options.h"
 #include "kamite/frame_patches.h"
+#include "kamite/function_hooks.h"
 #include "kamite/log.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/ps2_game_menu.h"
@@ -96,6 +110,16 @@ namespace kamite
         {
             const char *value = std::getenv(name);
             return value && *value && *value != '0';
+        }
+
+        // A live switch (F2) also sets its variable, so a test case recorded after it keeps the setting.
+        void setenvFlag(const char *name, bool on)
+        {
+#ifdef _WIN32
+            _putenv_s(name, on ? "1" : "0");
+#else
+            setenv(name, on ? "1" : "0", 1);
+#endif
         }
 
         uint32_t ram32(const uint8_t *rdram, uint32_t address)
@@ -640,6 +664,72 @@ namespace kamite
                 g_chairSp = 0;
             }
         }
+
+        // ---- Tension is Placable / Off the Cuff (see the top of the file) ------------------------------------------
+        constexpr uint32_t kHeat = 0x5CB000u;          // cHeatSys
+        constexpr uint32_t kHeatSetMode = 0x2A9CC8u;   // cHeatSys_SetHeatMode(heat, mode)
+        constexpr uint32_t kHeatLv = 0x2A9BC0u;        // cHeatSys_GetHeatLv(heat)
+        constexpr uint32_t kHeatLvR2Return = 0x123B08u; // its call in Gene's R2 check
+        constexpr uint32_t kPlUnleashed = 0x10u;        // Gene +0x15F4
+        std::atomic<bool> g_tensionPlacable{false}, g_offTheCuff{false};
+        GuestFunction g_heatLv = nullptr;
+        bool g_placeEnd = false; // game thread: this R2 press ends the unleash
+
+        float ramFloat(const uint8_t *rdram, uint32_t address)
+        {
+            float value = 0.0f;
+            std::memcpy(&value, rdram + (address & 0x1FFFFFFu), sizeof(value));
+            return value;
+        }
+
+        void updateTensionFlag()
+        {
+            ps2xSetPatchFlag("tension", g_heatLv && g_tensionPlacable.load(std::memory_order_relaxed));
+        }
+
+        // Replaces lbu v1,0x10(a0) at 0x123AF4 (a0 = cHeatSys, s1 = Gene; R2 was just pressed).
+        void tensionR2Mode(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            uint32_t mode = rdram[(GPR_U32(ctx, 4) + 0x10u) & 0x1FFFFFFu];
+            g_placeEnd = mode != 0u && (ram32(rdram, GPR_U32(ctx, 17) + 0x15F4u) & kPlUnleashed) != 0u;
+            if (g_placeEnd)
+                mode = 0u;
+            SET_GPR_U32(ctx, 3, mode);
+        }
+
+        // Replaces addiu v0,zero,8 at 0x123B0C (the delay slot of bnez v0 after GetHeatLv; v0 = its answer).
+        void tensionR2Phase(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            uint32_t phase = 8u;
+            if (g_placeEnd && GPR_U32(ctx, 2) != 0u)
+            {
+                callGuest(rdram, ctx, runtime, kHeatSetMode, {kHeat, 0u});
+                const float guard = 3.0f;
+                std::memcpy(rdram + ((GPR_U32(ctx, 17) + 0x54Cu) & 0x1FFFFFFu), &guard, sizeof(guard));
+                phase = 9u;
+            }
+            g_placeEnd = false;
+            SET_GPR_U32(ctx, 2, phase);
+        }
+
+        // cHeatSys_GetHeatLv, wrapped: at Gene's R2 check, yes for a placable end, and with Off the Cuff for any tension.
+        void heatLvWrapped(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const uint32_t ra = GPR_U32(ctx, 31);
+            if (ra == kHeatLvR2Return && g_tensionPlacable.load(std::memory_order_relaxed))
+            {
+                const bool anyTension = g_offTheCuff.load(std::memory_order_relaxed) &&
+                                        ramFloat(rdram, GPR_U32(ctx, 4) + 4u) > 0.0f;
+                if (g_placeEnd || anyTension)
+                {
+                    SET_GPR_U32(ctx, 2, 1u);
+                    ctx->pc = ra;
+                    return;
+                }
+            }
+            g_heatLv(rdram, ctx, runtime);
+        }
+
     }
 
     void installGameOptions(PS2Runtime &runtime)
@@ -668,12 +758,25 @@ namespace kamite
         ps2xRegisterHostHook("km_dead_pan_a0", &deadPanLanguage<4>);
         ps2xSetPatchFlag("dead_pan", true);
         ps2xRegisterHostHook("km_mute_music_volume", &muteMusicVolume);
+        ps2xRegisterHostHook("km_tension_r2_mode", &tensionR2Mode);
+        ps2xRegisterHostHook("km_tension_r2_phase", &tensionR2Phase);
+        g_tensionPlacable.store(envOn("KAMITE_TENSION_PLACABLE"), std::memory_order_relaxed);
+        g_offTheCuff.store(envOn("KAMITE_OFF_THE_CUFF"), std::memory_order_relaxed);
+        if (!runtime.hasFunction(kHeatLv) || !(g_heatLv = runtime.lookupFunction(kHeatLv)) ||
+            !FunctionHooks::instance().replace(kHeatLv, "cHeatSys_GetHeatLv (Tension is Placable)", &heatLvWrapped,
+                                               ReplacementStatus::Native, "R2 ends the unleash / Off the Cuff"))
+        {
+            g_heatLv = nullptr;
+            KM_WARN(Game, "Tension is Placable: cHeatSys_GetHeatLv 0x2A9BC0 is not hookable; the option is off");
+        }
+        updateTensionFlag();
         ps2xSetPatchFlag("unlock_hard", unlockHard);
         ps2xSetPatchFlag("mute_music", muteMusic);
         KM_INFO(Game, "options: Hard " << (unlockHard ? "unlocked from the start" : "as saved") << "; music "
                                        << (muteMusic ? "muted" : "on") << (skipIntro ? "; boot straight to the main menu" : "")
                                        << (rouletteAnyOrbs ? "; roulette without orbs" : "")
-                                       << (liftChairs ? "; chairs liftable" : ""));
+                                       << (liftChairs ? "; chairs liftable" : "")
+                                       << (g_tensionPlacable ? (g_offTheCuff ? "; tension placable, off the cuff" : "; tension placable") : ""));
     }
 
     bool muteMusic()
@@ -685,5 +788,28 @@ namespace kamite
     {
         // The flag is read at every stream volume call, so the change lands at the next one (a room or track change).
         ps2xSetPatchFlag("mute_music", on);
+    }
+
+    bool tensionPlacable()
+    {
+        return g_tensionPlacable.load(std::memory_order_relaxed);
+    }
+
+    void setTensionPlacable(bool on)
+    {
+        g_tensionPlacable.store(on, std::memory_order_relaxed);
+        updateTensionFlag();
+        setenvFlag("KAMITE_TENSION_PLACABLE", on);
+    }
+
+    bool offTheCuff()
+    {
+        return g_offTheCuff.load(std::memory_order_relaxed);
+    }
+
+    void setOffTheCuff(bool on)
+    {
+        g_offTheCuff.store(on, std::memory_order_relaxed);
+        setenvFlag("KAMITE_OFF_THE_CUFF", on);
     }
 }

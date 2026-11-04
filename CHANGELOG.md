@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 4, 2026
 
+- Experimental: Tension is Placable, pressing R2 again ends the God Hand early and keeps the tension left; its sub-option Off the Cuff unleashes with any tension.
 - Tutorial 2 (the roulette): cycling names R1, the left stick and the d-pad; the execute line shows the one OK button of the Western / Japanese menu buttons (Classic keeps both buttons).
 - Steady idle camera: turning on the spot no longer makes the camera lag and jump (it held Gene's heading as well as his position).
 - 60 FPS: Gene turns on the spot (left stick, brawl mode) at the PS2's speed (it was twice as fast).

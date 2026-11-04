@@ -1629,6 +1629,15 @@ void main()
                                                         "slide goes under.",
                                      "F2 > Debug > Stage collision marks them.");
                         iniCheckbox(state, "On##sprinttraversal", "Game", "SprintTraversal", false);
+                        settingLabel("Tension is Placable", "Pressing R2 / RT again while the God Hand is unleashed ends "
+                                                            "it and keeps the tension left in the meter.");
+                        iniCheckbox(state, "On##tensionplacable", "Game", "TensionPlacable", false);
+                        if (state.ini.getBool("Game", "TensionPlacable", false))
+                        {
+                            settingLabel("Off the Cuff", "The God Hand unleashes with any tension in the meter, not "
+                                                         "only a full one.");
+                            iniCheckbox(state, "On##offthecuff", "Game", "OffTheCuff", false);
+                        }
                         ImGui::EndTable();
                     }
                     ImGui::EndTabItem();

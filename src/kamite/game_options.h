@@ -14,6 +14,9 @@ namespace kamite
     //   Dead Pan (always): the Japanese free roulette move, earned by a Kick Me Sign clear (or F2's every reel owned).
     //   LiftChairs (KAMITE_LIFT_CHAIRS)  stage 1's chairs are built as crate-class objects: picked up, carried,
     //                                     thrown and smashed like the crates (launcher: Experimental, Wild Curry Funk).
+    //   TensionPlacable (KAMITE_TENSION_PLACABLE)  R2 while the God Hand is unleashed ends it and keeps the tension
+    //                                     left (launcher: Experimental, Tension is Placable).
+    //   OffTheCuff (KAMITE_OFF_THE_CUFF)  with TensionPlacable: R2 unleashes with any tension, not only a full meter.
     //   MuteMusic  (KAMITE_MUTE_MUSIC)   the game's music streams (cSndBgmNode) play at volume 0; voices, sound
     //                                     effects and movies are unchanged.
     void installGameOptions(PS2Runtime &runtime);
@@ -25,4 +28,9 @@ namespace kamite
     // The F2 menu (any thread): the mute takes effect at the music's next volume change (a room or track change).
     bool muteMusic();
     void setMuteMusic(bool on);
+    // The F2 menu (any thread): Tension is Placable and Off the Cuff, live (the next R2 press).
+    bool tensionPlacable();
+    void setTensionPlacable(bool on);
+    bool offTheCuff();
+    void setOffTheCuff(bool on);
 }

@@ -158,6 +158,17 @@ namespace kamite::dev_menu
             ui->text_disabled("Takes effect at the music's next volume change (a room or a track change). Cutscene "
                               "streams keep playing: their voices are in the same stream.");
 
+            ui->separator_text("Experimental");
+            int placable = tensionPlacable() ? 1 : 0;
+            if (ui->checkbox("Tension is Placable: R2 again ends the God Hand, the tension left stays##placable", &placable))
+                setTensionPlacable(placable != 0);
+            if (placable)
+            {
+                int cuff = offTheCuff() ? 1 : 0;
+                if (ui->checkbox("Off the Cuff: unleash with any tension##offthecuff", &cuff))
+                    setOffTheCuff(cuff != 0);
+            }
+
             ui->separator_text("At start");
             launcherOnly(ui, "Style switching", envOn("KAMITE_STYLE_SWITCHING", false) ? "on" : "off");
             launcherOnly(ui, "Better shop & casino poses", envOn("KAMITE_NPC_POSES", false) ? "on" : "off");
@@ -173,6 +184,8 @@ namespace kamite::dev_menu
                     ini.setBool("Game", "L3Dash", l3Dash());
                     ini.set("Game", "RouletteTimer", rouletteTimerDouble() ? "double" : "normal");
                     ini.setBool("Sound", "MuteMusic", muteMusic());
+                    ini.setBool("Game", "TensionPlacable", tensionPlacable());
+                    ini.setBool("Game", "OffTheCuff", offTheCuff());
                     saveIni(ini, g_gameplayStatus);
                 }
             }
