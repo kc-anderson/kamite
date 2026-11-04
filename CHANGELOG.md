@@ -2,6 +2,10 @@
 
 Newest first, one line per change; the code comments say how.
 
+## November 4, 2026
+
+- 60 FPS: Gene's animation keeps its speed through the half frame after each move change (mash grabs no longer fall a frame behind the held enemy; run starts, evades and slow-motion moves no longer skip ahead).
+
 ## November 3, 2026
 
 - Modern controls: Tutorial 1 (the right stick) also explains the switch and, with Auto on, Auto.

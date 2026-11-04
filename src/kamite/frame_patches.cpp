@@ -16,8 +16,9 @@
 //   15765C nop (dodge sync)                       conditional patch: the add.s in the beql delay slot is not run
 //   108FF8 / 108FE8 (ours, stick dash)            conditional patches: the double-tap window 10 -> 20 frames and the
 //                                                  "dash requested" flag 2 -> 4 (counted in game frames)
-//   10FCE8.. / 120204.. (ours, mash meter)        conditional patches: the mash meter's per-level limits and decay
-//                                                  doubled (both copies; recomp/kamite.toml lists them)
+//   mash meter (ours, eleven pl00 states)         +0x15B0 / +0x15B8 count every other frame (countupSelf /
+//                                                  countdownLoad; recomp/kamite.toml "Button-mash meter"); the
+//                                                  doubled limits of 1f88879 are gone
 //   1147CC sw zero,0(at) (roulette time)          conditional patch: nop (the timer store is dropped; the pnach's
 //                                                  store to whatever $at holds is left out)
 //   29059C lui at,0x3F00 (enemy physics x0.5)     conditional patch
@@ -584,6 +585,10 @@ namespace kamite
             uint8_t move = 0, rot = 0, null = 0, requests = 0;
             float rotF12 = 1.0f, nullF12 = 1.0f;
             ActionRequest request[6];
+            bool stepped = false;   // handlerEnd saw the tick's handler return: motion / step / rate below
+            uint32_t motion = 0;    // +0x428 as the handler left it
+            float step = 1.0f;      // +0x444 (SetMotionStep)
+            float rate = 1.0f;      // +0x5A8
         };
         std::unordered_map<uint32_t, HandlerMoves> g_handlerMoves;
         uint32_t g_handlerStack[8] = {};
@@ -666,6 +671,18 @@ namespace kamite
             if (g_handlerDepth <= 0)
                 return;
             const uint32_t obj = g_handlerStack[--g_handlerDepth];
+            if (obj != 0u)
+            {
+                auto mv = g_handlerMoves.find(obj);
+                if (mv != g_handlerMoves.end() && mv->second.counter == gameFrames(rdram))
+                {
+                    HandlerMoves &m = mv->second;
+                    m.stepped = true;
+                    std::memcpy(&m.motion, &ram8(rdram, obj + 0x428u), sizeof(m.motion));
+                    std::memcpy(&m.step, &ram8(rdram, obj + 0x444u), sizeof(m.step));
+                    std::memcpy(&m.rate, &ram8(rdram, obj + 0x5A8u), sizeof(m.rate));
+                }
+            }
             if (obj != 0u && obj != g_geneFlagsObj)
             {
                 auto it = g_enemyFlags.find(obj);
@@ -759,6 +776,18 @@ namespace kamite
                 if (rec != g_handlerMoves.end() && rec->second.counter + 1u == counter)
                 {
                     const HandlerMoves m = rec->second;
+                    // Gene's motion step and rate as the tick's handler left them (Nov 4, case 2026-11-03_14-53-38,
+                    // the phase 59 mash): his update resets +0x5A8 and the step to 1.0 every frame before the
+                    // dispatcher (func_00123460 0x1236AC, heat level 0) and each handler sets its own again. The held
+                    // vblank skips the handler, so the repeated moveMotion ran at 1.0 and the second-half snap cut
+                    // the frame (0.35 + 0.5 -> 0): his mash loop restarted and stayed a 30 FPS frame behind the held
+                    // enemy's for the whole mash. Every rated state change did the same in a smaller way (the run's
+                    // start at 1.3 / 1.6, the evade 1.3, the slow-mo 0.029). Same motion only.
+                    if (CarryPress && m.stepped && m.motion == motion)
+                    {
+                        setRamF32(rdram, obj + 0x444u, m.step);
+                        setRamF32(rdram, obj + 0x5A8u, m.rate);
+                    }
                     for (int i = 0; i < m.move; ++i)
                         callGuest(rdram, ctx, runtime, 0x157C18u, obj, 0.0f);
                     for (int i = 0; i < m.rot; ++i)
