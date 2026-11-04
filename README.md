@@ -1,7 +1,7 @@
 <!-- Logo: drop the image at assets/kamite-logo.png and uncomment the next line. -->
 <!-- ![Kamite](assets/kamite-logo.png) -->
 
-# Kamite
+# God Hand: Rearmed (Project Kamite)
 
 **Kamite** is an unofficial native PC port of **God Hand** (PlayStation 2, 2006), built by static recompilation: the
 game's own code rebuilt as a Windows program, with PCSX2's hardware renderer for the graphics.
