@@ -350,6 +350,11 @@ address = "0x00123B0C"
 hook = "km_tension_r2_phase"
 replace = true
 flag = "tension"
+[[patches.hooks]] # func_00108AB0: the unleash's guard (+0x54C = 5.0) skipped for an Off the Cuff unleash from below full
+address = "0x00109398"
+hook = "km_tension_guard"
+replace = true
+flag = "tension"
 # Dead Pan (game_options.cpp): the roulette list builder func_00125048 reads the language (0 = Japanese) to hide reel
 # 0xB; read as 0 once a Kick Me Sign clear earned it (0x747A28 & 0x20000000) or with DBG_ALL_GOD_REEL.
 [[patches.hooks]]

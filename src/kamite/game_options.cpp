@@ -55,7 +55,10 @@
 // to the GetHeatLv call, which says yes (wrapper, its call at 0x123B00 only), and the delay slot at 0x123B0C picks
 // phase 9 instead of 8 after the game's own SetHeatMode(0) and +0x54C = 3.0: the same end, with the gauge left as it
 // is (SetHeatMode(0) moves the floor to max(gauge - full, 0) = 0). Off the Cuff: the same GetHeatLv call also says
-// yes with any tension (gauge > 0); the unleash then drains what there is. Case 2026-11-04_11-50-15 (an unleash run
+// yes with any tension (gauge > 0); the unleash then drains what there is. Unleashed, Gene's update func_00108AB0 holds
+// his guard +0x54C at 5.0 after his state handler whenever the mode byte is set (0x1093A4: the invulnerability); an
+// Off the Cuff unleash from below the full mark is marked in guest RAM (kPartialUnleash, so save states and cases keep
+// it) and that read (lbu at 0x109398) sees 0 for it: no invulnerability (K: only a full gauge's unleash gives it). Case 2026-11-04_11-50-15 (an unleash run
 // down: phase 8 at 1.2 s, the gauge 120 -> 0 at 12 a second, phase 9 at 12.3 s).
 //
 // Dead Pan (always on): the Japanese release's free roulette move (reel 0xB; TCRF "Dead Pan / Pan Drop"). The US build
@@ -673,6 +676,7 @@ namespace kamite
         constexpr uint32_t kPlUnleashed = 0x10u;        // Gene +0x15F4
         std::atomic<bool> g_tensionPlacable{false}, g_offTheCuff{false};
         GuestFunction g_heatLv = nullptr;
+        constexpr uint32_t kPartialUnleash = 0x000FFFF0u; // guest word below the ELF: 1 = this unleash began below full
         bool g_placeEnd = false; // game thread: this R2 press ends the unleash
 
         float ramFloat(const uint8_t *rdram, uint32_t address)
@@ -712,22 +716,38 @@ namespace kamite
             SET_GPR_U32(ctx, 2, phase);
         }
 
+        // Replaces lbu v1,0x10(v0) at 0x109398 (func_00108AB0, v0 = cHeatSys): an Off the Cuff unleash holds no guard.
+        void tensionGuard(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            uint32_t mode = rdram[(GPR_U32(ctx, 2) + 0x10u) & 0x1FFFFFFu];
+            if (mode != 0u && ram32(rdram, kPartialUnleash) != 0u)
+                mode = 0u;
+            SET_GPR_U32(ctx, 3, mode);
+        }
+
         // cHeatSys_GetHeatLv, wrapped: at Gene's R2 check, yes for a placable end, and with Off the Cuff for any tension.
         void heatLvWrapped(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const uint32_t ra = GPR_U32(ctx, 31);
-            if (ra == kHeatLvR2Return && g_tensionPlacable.load(std::memory_order_relaxed))
+            if (ra != kHeatLvR2Return || !g_tensionPlacable.load(std::memory_order_relaxed))
+                return g_heatLv(rdram, ctx, runtime);
+            if (g_placeEnd)
             {
-                const bool anyTension = g_offTheCuff.load(std::memory_order_relaxed) &&
-                                        ramFloat(rdram, GPR_U32(ctx, 4) + 4u) > 0.0f;
-                if (g_placeEnd || anyTension)
-                {
-                    SET_GPR_U32(ctx, 2, 1u);
-                    ctx->pc = ra;
-                    return;
-                }
+                SET_GPR_U32(ctx, 2, 1u);
+                ctx->pc = ra;
+                return;
             }
-            g_heatLv(rdram, ctx, runtime);
+            const float gauge = ramFloat(rdram, GPR_U32(ctx, 4) + 4u);
+            g_heatLv(rdram, ctx, runtime); // the game's answer (and its +0x14)
+            uint32_t partial = 0u;
+            if (GPR_U32(ctx, 2) == 0u && g_offTheCuff.load(std::memory_order_relaxed) && gauge > 0.0f)
+            {
+                SET_GPR_U32(ctx, 2, 1u);
+                partial = 1u;
+            }
+            if (GPR_U32(ctx, 2) != 0u) // R2 starts an unleash (phase 8)
+                std::memcpy(rdram + kPartialUnleash, &partial, sizeof(partial));
+            ctx->pc = ra;
         }
 
     }
@@ -760,6 +780,7 @@ namespace kamite
         ps2xRegisterHostHook("km_mute_music_volume", &muteMusicVolume);
         ps2xRegisterHostHook("km_tension_r2_mode", &tensionR2Mode);
         ps2xRegisterHostHook("km_tension_r2_phase", &tensionR2Phase);
+        ps2xRegisterHostHook("km_tension_guard", &tensionGuard);
         g_tensionPlacable.store(envOn("KAMITE_TENSION_PLACABLE"), std::memory_order_relaxed);
         g_offTheCuff.store(envOn("KAMITE_OFF_THE_CUFF"), std::memory_order_relaxed);
         if (!runtime.hasFunction(kHeatLv) || !(g_heatLv = runtime.lookupFunction(kHeatLv)) ||

@@ -12,8 +12,11 @@
 // With Modern on, entry 0's offset is pointed (u32, wrapping) at our text in guest memory below the ELF (0xFE000,
 // past npc_poses' slots and before debug_tools' landing scratch; unused by the game); with Modern off it is put back.
 // Entry 1 (Tutorial 2, the roulette) always points at ours (0xFE800): the cycle line names R1, the left stick and the
-// d-pad, the OK line follows the menu buttons (rouletteText). Entry 2 (Tutorial 3, the unleash) points at ours
-// (0xFF000) while Tension is Placable is on (unleashText).
+// d-pad, the OK line follows the menu buttons (rouletteText). Entry 2 (Tutorial 3, the unleash) always points at ours
+// (0xFF000; unleashText: its first line moved to the title, the R2-again line with Tension is Placable on). Titles
+// (K, Nov 4): entries 7 / 8 ("TUTORIAL 2" / "TUTORIAL 3") point at "TUTORIAL 2: GODHAND ROULETTE REEL" (0xFF800) /
+// "TUTORIAL 3: UNLEASH THE GODHAND" (0xFF900), the first lines of entries 1 / 2 on the disc, at kTitleScale so they
+// fit the box; the other titles are as on the disc (their popups have no heading line).
 // A scanner thread finds the bank by entry 0's original text every 250 ms (the file comes and goes with rooms); the
 // game thread re-checks and points it each vblank. The new lines are drawn at 75%, each no wider than ~35 letters
 // (the block is centred on the original's place; wider lines ran over the stick sprite, K Nov 3).
@@ -36,11 +39,18 @@ namespace kamite::tutorial_text
     namespace
     {
         constexpr uint32_t kRamBytes = 0x2000000u;
-        constexpr uint32_t kText = 0x000FE000u;     // our text (6 KB up to 0xFF800): entries 0, 1, 2
-                                                    // (debug_tools' landing scratch is at 0xFFF00)
+        constexpr uint32_t kText = 0x000FE000u;     // our text (6 KB up to 0xFF800): entries 0, 1, 2, then the
+                                                    // titles (0x100 each, up to 0xFFA00); debug_tools' landing
+                                                    // scratch is at 0xFFF00, game_options' 0xFFFF0
+        constexpr uint32_t kTitleText = 0x000FF800u, kTitleBytes = 0x100u;
         constexpr uint32_t kTextBytes = 0x800u;     // per entry
         constexpr uint32_t kEntryCount = 13u;
         constexpr uint32_t kEntry0Offset = 0x6Cu, kEntry1Offset = 0xD4u, kEntry2Offset = 0x1B4u; // entry n's u32 at header + 4 + 8n
+        constexpr uint32_t kEntry7Offset = 0x4C0u, kEntry8Offset = 0x4D8u; // "TUTORIAL 2" / "TUTORIAL 3"
+        // The longer titles at this scale: "TUTORIAL 3" spans ~405 px of K's 1441 px screenshot from x 175, the box's
+        // inside ends near 1400, the title letters are ~1.16x the popup text: "TUTORIAL 2: GODHAND ROULETTE REEL" is
+        // ~1385 px at 100%.
+        constexpr uint16_t kTitleScale = 85u;
 
         constexpr uint16_t kSpace = 0x35u, kNewline = 0xA001u, kEnd = 0x8001u, kClose = 0xA301u, kScale = 0xB002u;
         constexpr uint16_t kStickIcon = 11u, kSwitchIcon = 9u; // RS (the right stick), R3 (Modern's switch)
@@ -150,13 +160,13 @@ namespace kamite::tutorial_text
         // func_00145810) and the d-pad (frame_patches rouletteDpad, always on); its OK follows the menu buttons
         // (menu_buttons.h: Western cross, Japanese circle; Classic the game's own cross and circle, so that line stays). K's
         // wording (Nov 4): "Use [R1]/[LS]/ D-pad to cycle", "to execute technique" (Classic: both of the disc's OK buttons).
-        // '-' and '/' are the font's own (0x1F, 0x2D).
+        // '-' and '/' are the font's own (0x1F, 0x2D). The heading line is in the title (as "...ROULETTE REEL") since Nov 4.
         std::vector<uint16_t> rouletteText(menu_buttons::Style style)
         {
             constexpr uint16_t kBig = 0x96u, kNormal = 0x64u, kR1 = 5u, kLeftStick = 10u, kCross = 3u, kCircle = 0u;
             std::vector<uint16_t> out;
             const auto icon = [&](uint16_t code) { out.insert(out.end(), {kScale, kBig, code, kScale, kNormal}); };
-            add(out, "GODHAND ROULETTE WHEEL\nPress");
+            add(out, "Press");
             icon(kR1);
             add(out, "to open the wheel\nUse");
             icon(kR1);
@@ -177,23 +187,33 @@ namespace kamite::tutorial_text
             return out;
         }
 
-        // Tutorial 3 (entry 2, the unleash) with Tension is Placable on (K, Nov 4). The disc's: "UNLEASH THE GODHAND /
-        // Once your tension gauge is / full, press [R2] to unleash / the GODHAND." (R2 = icon 7 at 150%). Off the Cuff
-        // swaps the first two lines for "With any tension in your / gauge, press [R2] ..."; the new block "Press [R2]
-        // again to stop / and keep your tension." follows a gap at Tutorial 1's sizes (75% text, 112% icon), so the
-        // popup grows by about one line and a half instead of two full ones.
-        std::vector<uint16_t> unleashText(bool offTheCuff)
+        // Tutorial 3 (entry 2, the unleash; K, Nov 4). The disc's: "UNLEASH THE GODHAND / Once your tension gauge is /
+        // full, press [R2] to unleash / the GODHAND." (R2 = icon 7 at 150%). The first line is in the title now; Tension
+        // is Placable adds "Press [R2] again to stop."; Off the Cuff swaps the first lines for "With any tension in your
+        // / gauge, press [R2] ...". All at the disc's sizes.
+        std::vector<uint16_t> unleashText(bool placable, bool offTheCuff)
         {
             constexpr uint16_t kBig = 0x96u, kNormal = 0x64u, kR2 = 7u;
             std::vector<uint16_t> out;
-            add(out, offTheCuff ? "UNLEASH THE GODHAND\nWith any tension in your\ngauge, press"
-                                : "UNLEASH THE GODHAND\nOnce your tension gauge is\nfull, press");
-            out.insert(out.end(), {kScale, kBig, kR2, kScale, kNormal});
-            add(out, "to unleash\nthe GODHAND.\n");
-            gap(out);
-            add(out, "Press");
-            out.insert(out.end(), {kScale, kIconScale, kR2, kScale, kTextScale});
-            add(out, "again to stop\nand keep your tension.");
+            const auto r2 = [&] { out.insert(out.end(), {kScale, kBig, kR2, kScale, kNormal}); };
+            add(out, placable && offTheCuff ? "With any tension in your\ngauge, press" : "Once your tension gauge is\nfull, press");
+            r2();
+            add(out, "to unleash\nthe GODHAND.");
+            if (placable)
+            {
+                add(out, "\nPress");
+                r2();
+                add(out, "again to stop.");
+            }
+            out.insert(out.end(), {kClose, kEnd});
+            return out;
+        }
+
+        // A popup's title (entries 6-11), smaller to fit.
+        std::vector<uint16_t> titleText(const char *text)
+        {
+            std::vector<uint16_t> out{kScale, kTitleScale};
+            add(out, text);
             out.insert(out.end(), {kClose, kEnd});
             return out;
         }
@@ -248,11 +268,11 @@ namespace kamite::tutorial_text
 
         // One entry: our text at `at` while `wanted`, else the disc's offset back.
         void pointEntry(uint32_t header, int entry, uint32_t discOffset, uint32_t at, bool wanted, const std::vector<uint16_t> &text,
-                        const char *what)
+                        const char *what, uint32_t capacity = kTextBytes)
         {
             const uint32_t slot = header + 4u + 8u * static_cast<uint32_t>(entry);
             const uint32_t ours = at - header; // u32: wraps to reach below the bank
-            if (wanted && text.size() * 2u <= kTextBytes)
+            if (wanted && text.size() * 2u <= capacity)
             {
                 if (std::memcmp(g_ram + at, text.data(), text.size() * 2u) != 0)
                     std::memcpy(g_ram + at, text.data(), text.size() * 2u);
@@ -281,9 +301,12 @@ namespace kamite::tutorial_text
                        : style == menu_buttons::Style::Classic ? "Tutorial 2: the roulette's controls (Classic OK)"
                                                                : "Tutorial 2: the roulette's controls (Western OK)");
             const bool placable = tensionPlacable();
-            pointEntry(header, 2, kEntry2Offset, kText + 2u * kTextBytes, placable,
-                       placable ? unleashText(offTheCuff()) : std::vector<uint16_t>{},
-                       "Tutorial 3 explains Tension is Placable");
+            pointEntry(header, 2, kEntry2Offset, kText + 2u * kTextBytes, true, unleashText(placable, offTheCuff()),
+                       placable ? "Tutorial 3 (the title holds its heading; Tension is Placable)" : "Tutorial 3 (the title holds its heading)");
+            pointEntry(header, 7, kEntry7Offset, kTitleText, true, titleText("TUTORIAL 2: GODHAND ROULETTE REEL"),
+                       "Tutorial 2's title", kTitleBytes);
+            pointEntry(header, 8, kEntry8Offset, kTitleText + kTitleBytes, true, titleText("TUTORIAL 3: UNLEASH THE GODHAND"),
+                       "Tutorial 3's title", kTitleBytes);
         }
     }
 
