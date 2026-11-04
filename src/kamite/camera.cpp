@@ -733,8 +733,11 @@ namespace kamite
         // the player camera follows his position and rotation (cPlCamera_update 0x139FA8: the look point is his
         // position plus an offset turned by his rotation, eased toward), so the view rocked with him, and the stomps
         // start the camera's shake. While he is idle (mode 0, phase 0 or 10: IsStateByteIdle_10B5F0) the camera's
-        // update sees him where his idle started (his position and rotation put back after it), and the player camera
-        // shows no shake. Should he really move off (half a metre) or turn (20 degrees), that becomes the new place.
+        // update sees him where his idle started (his position put back after it), and the player camera shows no
+        // shake. Should he really move off (half a metre), that becomes the new place. His heading is never held: the
+        // idle motion doesn't turn him (+0x104 stays put through it), but turning on the spot does (the stick, 6
+        // degrees a frame), and a held heading let the camera lag and jump 20 degrees at a time (K, Nov 4: Gene looked
+        // to snap while turning; case spinning_broken).
         constexpr uint32_t kPlCameraUpdate = 0x139FA8u;
         constexpr uint32_t kCameraUpdate = 0x138740u;
         constexpr uint32_t kShakeChannels[] = {0x254u, 0x268u}; // cCamVib: amplitude, speed, decay, phase, frames left
@@ -743,7 +746,6 @@ namespace kamite
         std::atomic<bool> g_steadyIdle{false};
         bool g_holding = false;
         float g_heldPos[3] = {};
-        float g_heldRot[3] = {};
 
         uint32_t idlePlayer(const uint8_t *rdram)
         {
@@ -775,26 +777,17 @@ namespace kamite
                 g_plCameraUpdate(rdram, ctx, runtime);
                 return;
             }
-            float now[3], rot[3];
+            float now[3];
             std::memcpy(now, rdram + pos, sizeof(now));
-            std::memcpy(rot, rdram + player + game::GameObj::kRot, sizeof(rot));
             const float dx = now[0] - g_heldPos[0], dz = now[2] - g_heldPos[2];
-            float turn = rot[1] - g_heldRot[1];
-            while (turn > kPi)
-                turn -= 2.0f * kPi;
-            while (turn < -kPi)
-                turn += 2.0f * kPi;
-            if (!g_holding || dx * dx + dz * dz > 0.25f || std::fabs(turn) > 20.0f * kDegToRad)
+            if (!g_holding || dx * dx + dz * dz > 0.25f)
             {
                 std::memcpy(g_heldPos, now, sizeof(now));
-                std::memcpy(g_heldRot, rot, sizeof(rot));
                 g_holding = true;
             }
             std::memcpy(rdram + pos, g_heldPos, sizeof(g_heldPos));
-            std::memcpy(rdram + player + game::GameObj::kRot, g_heldRot, sizeof(g_heldRot));
             g_plCameraUpdate(rdram, ctx, runtime);
             std::memcpy(rdram + pos, now, sizeof(now));
-            std::memcpy(rdram + player + game::GameObj::kRot, rot, sizeof(rot));
         }
 
         // cCamera_update adds the camera's two shake channels to its angles as amplitude * sin(phase): for the player

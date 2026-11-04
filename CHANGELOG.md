@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 4, 2026
 
+- Steady idle camera: turning on the spot no longer makes the camera lag and jump (it held Gene's heading as well as his position).
 - 60 FPS: Gene turns on the spot (left stick, brawl mode) at the PS2's speed (it was twice as fast).
 - Modern controls: the radar glow goes off in brawl mode after loading a save state made in the free camera.
 - 60 FPS: being pummelled (Azel's grab) deals damage at the PS2's rate (it came twice as often), and Gene's reactions to each blow start on time.
