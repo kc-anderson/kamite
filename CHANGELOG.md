@@ -5,6 +5,7 @@ Newest first, one line per change; the code comments say how.
 ## November 4, 2026
 
 - Busta-Chan Jive: a window lets Gene through its own wall only; other walls near it (shop counters) still stop him.
+- Fixed Gene getting stuck inside thick walls when diving through a window.
 - Styles: a style saved after buying or winning a move in the same room survives a death.
 - F2 > Debug > Stage collision: Restore defaults puts every room's Busta-Chan Jive marks and windows back as shipped.
 - Fixed the action prompt ("A :Throw") losing its button icon after loading a save state taken with the style indicator shown.

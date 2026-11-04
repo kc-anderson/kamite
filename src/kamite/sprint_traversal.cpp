@@ -296,9 +296,10 @@ namespace kamite::sprint_traversal
         }
 
         // The wall check's hit path (0x1094C8): inside a marked window, the push-out is undone (Gene's own x / z).
-        // How far in front of the window's face (and past its far face) Gene counts as diving through: his wall radius
-        // (0.4 m, the f12 of the check) and a little. It was 1 m.
-        constexpr float kWindowMargin = 0.6f;
+        // How far in front of the window's face (and past its far face) Gene counts as diving through. 1 m: the shipped
+        // r0 windows are marked per face of a 1.7 m wall with no depth, so the two faces' boxes must meet inside the
+        // wall (0.6 m left a 0.5 m gap there and Gene stuck in it: K, Nov 4).
+        constexpr float kWindowMargin = 1.0f;
         void windowPass(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             const uint32_t gene = GPR_U32(ctx, 17); // s1
