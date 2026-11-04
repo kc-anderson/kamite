@@ -373,24 +373,55 @@ namespace kamite::sprint_traversal
         // for cModel_calcWorldParts (km_trav_lift, 0x1097D4, its jal's delay slot; after IK_InverseKinematics, which
         // reads the position: feet planting) and put back after it (km_trav_lift_end, 0x1097DC, the next jal's delay
         // slot). calcWorldParts rebuilds the root (func_147A48 from the position) and the parts' world matrices.
-        // Collision, the floor check and the game's state never see it. Lift = (window floor + sill) - Gene's floor -
-        // kDiveClears, full between the wall's faces and fading out over the box's margin; jump windows, jump moves.
+        // Collision, the floor check and the game's state never see it (his hurt spheres do: they come from the bones).
+        // Lift = (window floor + sill) - Gene's floor - what the move clears now, full between the wall's faces and
+        // fading out over the box's margin; jump windows, jump moves, windows on Gene's own floor only (case
+        // super_jump: the balcony's windows 3.35 m above the shop's lifted him to them).
+        // What the dive (sprint + X) clears follows its motion frame (+0x41C): his torso's bottom (hurt spheres, case
+        // flush_X) is 0.15 m at the take-off, 0.30 at frame 7, 0.74 at 10, 1.0 at 14..15. A run-up crosses the wall
+        // near that top (0.95, K's shop windows); a flush jump (sprinting against the wall) at frames 2..7, 0.7 m
+        // lower: the fixed 0.95 barely lifted it (K, Nov 4). The flying kick (sprint + Y) keeps 0.95 (K: flush fine).
+        // The lift moves at most 0.125 m a vblank toward its target, so a flush dive rises instead of jumping.
         constexpr float kDiveClears = 0.95f;
+        constexpr uint32_t kMotionFrame = 0x41Cu;
+        constexpr float kSameFloor = 0.6f;    // a window this far above or below Gene's floor is another floor's
+        constexpr float kLiftStep = 0.125f;   // metres a vblank
+        // The dive's torso bottom (m above the floor) by motion frame 0, 1, ... 14 (from 14 on: the top, 0.95 clears).
+        constexpr float kDiveBottom[] = {0.15f, 0.15f, 0.15f, 0.15f, 0.15f, 0.17f, 0.21f, 0.27f,
+                                         0.40f, 0.62f, 0.75f, 0.84f, 0.92f, 0.97f, 1.00f};
         uint32_t g_liftPos = 0u; // where the y was raised (0 = not raised)
         float g_liftWas = 0.0f;  // and what it was
+        float g_liftNow = 0.0f;  // the lift drawn (eased toward the target)
+
+        float diveClears(const uint8_t *rdram, uint32_t gene)
+        {
+            if (rd32(rdram, gene + kMotion) != kJumpMotions[0])
+                return kDiveClears; // the flying kick
+            const float frame = rdf(rdram, gene + kMotionFrame);
+            constexpr int last = static_cast<int>(sizeof(kDiveBottom) / sizeof(kDiveBottom[0])) - 1;
+            if (!(frame >= 0.0f) || frame >= static_cast<float>(last))
+                return kDiveClears;
+            const int i = static_cast<int>(frame);
+            const float t = frame - static_cast<float>(i);
+            const float bottom = kDiveBottom[i] + (kDiveBottom[i + 1] - kDiveBottom[i]) * t;
+            return bottom - (kDiveBottom[last] - kDiveClears); // the top clears 0.95, as the run-up shows
+        }
 
         void liftStart(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             g_liftPos = 0u;
             const uint32_t gene = GPR_U32(ctx, 17); // s1
-            if (!inRam(gene, 0x600u) || moveKind(rdram, gene) != kJump)
+            const bool jumping = inRam(gene, 0x600u) && moveKind(rdram, gene) == kJump;
+            const uint32_t pos = jumping ? rd32(rdram, gene + game::GameObj::kPos) : 0u;
+            if (!jumping || !inRam(pos, 12u))
+            {
+                g_liftNow = 0.0f;
                 return;
-            const uint32_t pos = rd32(rdram, gene + game::GameObj::kPos);
-            if (!inRam(pos, 12u))
-                return;
+            }
             const float px = rdf(rdram, pos), py = rdf(rdram, pos + 4u), pz = rdf(rdram, pos + 8u);
             const uint16_t room = rd16(rdram, game::GameWork::address(game::GameWork::kRoom));
-            float lift = 0.0f;
+            const float clears = diveClears(rdram, gene);
+            float target = 0.0f;
             {
                 std::lock_guard<std::mutex> lock(g_mutex);
                 for (const auto &[key, list] : g_windows)
@@ -399,7 +430,7 @@ namespace kamite::sprint_traversal
                         continue;
                     for (const Window &w : list)
                     {
-                        if (!(w.passes & kJump))
+                        if (!(w.passes & kJump) || std::fabs(w.y - py) > kSameFloor)
                             continue;
                         const float cx = w.x + w.dx * w.offset, cz = w.z + w.dz * w.offset;
                         const float along = (px - cx) * w.dx + (pz - cz) * w.dz;
@@ -410,15 +441,21 @@ namespace kamite::sprint_traversal
                             continue;
                         float t = 1.0f - out / kWindowMargin;
                         t = t * t * (3.0f - 2.0f * t); // eased in and out
-                        lift = std::max(lift, (w.y + w.sill - py - kDiveClears) * t);
+                        target = std::max(target, (w.y + w.sill - py - clears) * t);
                     }
                 }
             }
-            if (lift <= 0.0f)
+            const float vblanks = static_cast<float>(std::max<uint8_t>(1u, rdram[game::GameWork::address(game::GameWork::kVblankDivider)]));
+            const float step = kLiftStep * vblanks;
+            g_liftNow += std::clamp(target - g_liftNow, -step, step);
+            if (g_liftNow <= 0.0f)
+            {
+                g_liftNow = 0.0f;
                 return;
+            }
             g_liftPos = pos;
             g_liftWas = py;
-            wrf(rdram, pos + 4u, py + lift);
+            wrf(rdram, pos + 4u, py + g_liftNow);
         }
 
         void liftEnd(uint8_t *rdram, R5900Context *, PS2Runtime *)
