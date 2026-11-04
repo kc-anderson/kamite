@@ -12,12 +12,14 @@
 // With Modern on, entry 0's offset is pointed (u32, wrapping) at our text in guest memory below the ELF (0xFE000,
 // past npc_poses' slots and before debug_tools' landing scratch; unused by the game); with Modern off it is put back.
 // Entry 1 (Tutorial 2, the roulette) always points at ours (0xFE800): the cycle line names R1, the left stick and the
-// d-pad, the OK line follows the menu buttons (rouletteText).
+// d-pad, the OK line follows the menu buttons (rouletteText). Entry 2 (Tutorial 3, the unleash) points at ours
+// (0xFF000) while Tension is Placable is on (unleashText).
 // A scanner thread finds the bank by entry 0's original text every 250 ms (the file comes and goes with rooms); the
 // game thread re-checks and points it each vblank. The new lines are drawn at 75%, each no wider than ~35 letters
 // (the block is centred on the original's place; wider lines ran over the stick sprite, K Nov 3).
 #include "kamite/tutorial_text.h"
 
+#include "kamite/game_options.h"
 #include "kamite/log.h"
 #include "kamite/menu_buttons.h"
 #include "kamite/modern_controls.h"
@@ -34,10 +36,11 @@ namespace kamite::tutorial_text
     namespace
     {
         constexpr uint32_t kRamBytes = 0x2000000u;
-        constexpr uint32_t kText = 0x000FE000u;     // our text (4 KB up to 0xFF000): entry 0's, then entry 1's
+        constexpr uint32_t kText = 0x000FE000u;     // our text (6 KB up to 0xFF800): entries 0, 1, 2
+                                                    // (debug_tools' landing scratch is at 0xFFF00)
         constexpr uint32_t kTextBytes = 0x800u;     // per entry
         constexpr uint32_t kEntryCount = 13u;
-        constexpr uint32_t kEntry0Offset = 0x6Cu, kEntry1Offset = 0xD4u; // entry n's u32 at header + 4 + 8n
+        constexpr uint32_t kEntry0Offset = 0x6Cu, kEntry1Offset = 0xD4u, kEntry2Offset = 0x1B4u; // entry n's u32 at header + 4 + 8n
 
         constexpr uint16_t kSpace = 0x35u, kNewline = 0xA001u, kEnd = 0x8001u, kClose = 0xA301u, kScale = 0xB002u;
         constexpr uint16_t kStickIcon = 11u, kSwitchIcon = 9u; // RS (the right stick), R3 (Modern's switch)
@@ -174,6 +177,27 @@ namespace kamite::tutorial_text
             return out;
         }
 
+        // Tutorial 3 (entry 2, the unleash) with Tension is Placable on (K, Nov 4). The disc's: "UNLEASH THE GODHAND /
+        // Once your tension gauge is / full, press [R2] to unleash / the GODHAND." (R2 = icon 7 at 150%). Off the Cuff
+        // swaps the first two lines for "With any tension in your / gauge, press [R2] ..."; the new block "Press [R2]
+        // again to stop / and keep your tension." follows a gap at Tutorial 1's sizes (75% text, 112% icon), so the
+        // popup grows by about one line and a half instead of two full ones.
+        std::vector<uint16_t> unleashText(bool offTheCuff)
+        {
+            constexpr uint16_t kBig = 0x96u, kNormal = 0x64u, kR2 = 7u;
+            std::vector<uint16_t> out;
+            add(out, offTheCuff ? "UNLEASH THE GODHAND\nWith any tension in your\ngauge, press"
+                                : "UNLEASH THE GODHAND\nOnce your tension gauge is\nfull, press");
+            out.insert(out.end(), {kScale, kBig, kR2, kScale, kNormal});
+            add(out, "to unleash\nthe GODHAND.\n");
+            gap(out);
+            add(out, "Press");
+            out.insert(out.end(), {kScale, kIconScale, kR2, kScale, kTextScale});
+            add(out, "again to stop\nand keep your tension.");
+            out.insert(out.end(), {kClose, kEnd});
+            return out;
+        }
+
         uint32_t rd32(uint32_t address)
         {
             uint32_t value = 0;
@@ -256,6 +280,10 @@ namespace kamite::tutorial_text
                        style == menu_buttons::Style::Japanese  ? "Tutorial 2: the roulette's controls (Japanese OK)"
                        : style == menu_buttons::Style::Classic ? "Tutorial 2: the roulette's controls (Classic OK)"
                                                                : "Tutorial 2: the roulette's controls (Western OK)");
+            const bool placable = tensionPlacable();
+            pointEntry(header, 2, kEntry2Offset, kText + 2u * kTextBytes, placable,
+                       placable ? unleashText(offTheCuff()) : std::vector<uint16_t>{},
+                       "Tutorial 3 explains Tension is Placable");
         }
     }
 
