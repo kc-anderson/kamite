@@ -1102,6 +1102,26 @@ flag = "fps60"
 address = "0x001167A4"
 hook = "km_fps60_gene_rate_half"
 flag = "fps60"
+# Gene's stick turn in mode 0 phases 0-3 (standing, and the 1-3 states that share the code): heading +0x104 +=
+# (stick +0x608 - 0.526) x 0.2 (0.4), capped, a frame, with no rate: twice as fast at 60 (case spinning_broken, Nov 4:
+# 6 degrees a vblank). The step is in f1 at the heading's lwc1; halved there. Three more copies in func_001027D8 /
+# 00102938 / 00102A80 turn another object (s0) from the player's stick: not touched until a case shows them at 60.
+[[patches.hooks]]
+address = "0x0010C1A8"
+hook = "km_fps60_stick_turn_half"
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0010C4B0"
+hook = "km_fps60_stick_turn_half"
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0010C814"
+hook = "km_fps60_stick_turn_half"
+flag = "fps60"
+[[patches.hooks]]
+address = "0x0010CA9C"
+hook = "km_fps60_stick_turn_half"
+flag = "fps60"
 [[patches.hooks]] # post-hit guard +0x54C -= +0x5A8 x rate: Gene (any rate) and objects left at 1.0 (Door-kun...) halved at 60
 address = "0x001FD4F8"
 hook = "km_fps60_flash_guard_rate"

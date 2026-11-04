@@ -340,7 +340,10 @@ namespace kamite::radar_glow
             {
                 if (vblanks % 60u != 0u)
                     return;
-                const bool same = g_fromDisc ? (std::memcmp(data, g_origData.data(), kPayloadBytes) == 0 && std::memcmp(clut, g_origClut.data(), kClutBytes) == 0)
+                // From the disc: the radar as on the disc, or already glowing (K Nov 4: a save state made while the free
+                // camera was on holds the glow, and the radar was never taken over again, so the glow stayed on in brawl
+                // mode; as the prompt sheets, 3373e0d).
+                const bool same = g_fromDisc ? (known(data, g_origData, g_glowData) && known(clut, g_origClut, g_glowClut))
                                              : shaMatches(data, clut);
                 if (!same)
                 {

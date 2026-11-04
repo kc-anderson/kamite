@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## November 4, 2026
 
+- 60 FPS: Gene turns on the spot (left stick, brawl mode) at the PS2's speed (it was twice as fast).
+- Modern controls: the radar glow goes off in brawl mode after loading a save state made in the free camera.
 - 60 FPS: being pummelled (Azel's grab) deals damage at the PS2's rate (it came twice as often), and Gene's reactions to each blow start on time.
 - 60 FPS: enemies held in Gene's grabs and mash moves keep pace with his animation (they ran a frame ahead after each move change).
 - 60 FPS: Gene's animation keeps its speed through the half frame after each move change (mash grabs no longer fall a frame behind the held enemy; run starts, evades and slow-motion moves no longer skip ahead).

@@ -1750,6 +1750,12 @@ namespace kamite
         {
             ctx->f[0] *= 0.5f;
         }
+        // Gene's stick turn step (f1) at the heading's load in mode 0 phases 0-3 (kamite.toml): a fixed step a frame,
+        // halved at 60.
+        void stickTurnHalfF1(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            ctx->f[1] *= 0.5f;
+        }
         // An enemy's speed rate +0x5A8 read as a state ("slowed": below 1.0) rather than a step. Enemies on cEmManage's
         // rate are 0.5 at 60 (the 0x29059C patch), so every such test fired all the time: the devil (kind 0x220) only
         // taunted within 3 m (func_002705D8 0x2707F8, case 2026-10-30_19-36-08), func_0020CAC8 / 0020CD00 (the guard /
@@ -2068,6 +2074,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_countdown_pl15b8_s0", &countdownLoad<16, 0x15B8u>); // the same in func_0011FD10 (s0)
         ps2xRegisterHostHook("km_fps60_countup_self", &countupSelf);
         ps2xRegisterHostHook("km_fps60_gene_rate_half", &geneRateHalfF0);
+        ps2xRegisterHostHook("km_fps60_stick_turn_half", &stickTurnHalfF1);
         ps2xRegisterHostHook("km_fps60_em_rate_f1_s0", &enemyRate30<16, 1>);
         ps2xRegisterHostHook("km_fps60_em_rate_f1_s1", &enemyRate30<17, 1>);
         ps2xRegisterHostHook("km_fps60_em_rate_f0_s2", &enemyRate30<18, 0>);
