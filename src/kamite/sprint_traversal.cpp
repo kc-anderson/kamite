@@ -2,7 +2,7 @@
 //
 // The marks: sprint_traversal.txt, one line per room and group: `r100 Fx_2h00 jump slide` (jump = sprint + X / Y, slide
 // = sprint + A; `none` clears a shipped mark). Windows: one line each, `r100 H02_w00 window x y z dx dz offset sill
-// width height depth` (sprint_traversal.h has the fields; depth may be left out: 0); a wall's windows come all from one file (the user's, when it has
+// width height depth [jump] [slide]` (sprint_traversal.h has the fields; depth may be left out: 0; no word = jump only); a wall's windows come all from one file (the user's, when it has
 // any line for that wall; `r100 H02_w00 window none` drops the shipped ones). resources/sprint_traversal.txt ships with the port; the one next to the
 // exe holds the marks set in F2 > Debug > Stage collision and wins line by line. Groups are the stage collision's named
 // groups (cCollisionScroll D_005CAE50, hitbox_overlay.cpp has the layout and claude/sprint-traversal.md the findings).
@@ -111,7 +111,10 @@ namespace kamite::sprint_traversal
             char text[220];
             std::snprintf(text, sizeof(text), "%.3f %.3f %.3f %.4f %.4f %.3f %.3f %.3f %.3f %.3f", w.x, w.y, w.z, w.dx, w.dz,
                           w.offset, w.sill, w.width, w.height, w.depth);
-            return text;
+            std::string out = text;
+            if (w.passes != kJump) // the default (and every window before Nov 4) writes no words
+                out += w.passes == kSlide ? " slide" : w.passes == (kJump | kSlide) ? " jump slide" : " none";
+            return out;
         }
         bool sameWindows(const Windows &a, const Windows &b)
         {
@@ -169,8 +172,20 @@ namespace kamite::sprint_traversal
                     Window w;
                     if (words >> w.x >> w.y >> w.z >> w.dx >> w.dz >> w.offset >> w.sill >> w.width >> w.height)
                     {
-                        if (!(words >> w.depth))
-                            w.depth = 0.0f;
+                        // Then the depth (optional) and the moves that pass (optional: jump / slide / none).
+                        int passes = 0;
+                        bool named = false;
+                        while (words >> word)
+                        {
+                            if (word == "jump" || word == "slide" || word == "none")
+                            {
+                                named = true;
+                                passes |= word == "jump" ? kJump : word == "slide" ? kSlide : 0;
+                            }
+                            else
+                                w.depth = static_cast<float>(std::atof(word.c_str()));
+                        }
+                        w.passes = named ? passes : kJump;
                         const float len = std::sqrt(w.dx * w.dx + w.dz * w.dz);
                         if (len > 0.0f)
                         {
@@ -199,7 +214,7 @@ namespace kamite::sprint_traversal
                    "# Set in F2 > Debug > Stage collision. One line per room and group: jump = sprint + X / Y,\n"
                    "# slide = sprint + A, none = clears a mark resources/sprint_traversal.txt ships. These lines win\n"
                    "# over that file; a group marked as it ships (or unmarked and not shipped) has no line here.\n"
-                   "# Windows (sprint + X / Y dive through): `window x y z dx dz offset sill width height depth`, one each;\n"
+                   "# Windows: `window x y z dx dz offset sill width height depth [jump] [slide]` (no word = jump), one each;\n"
                    "# a wall listed here takes its windows from here only (`window none` = no windows on it).\n";
             for (const auto &[key, bits] : g_userMarks)
             {
@@ -303,7 +318,8 @@ namespace kamite::sprint_traversal
         void windowPass(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             const uint32_t gene = GPR_U32(ctx, 17); // s1
-            if (!inRam(gene, 0x600u) || moveKind(rdram, gene) != kJump)
+            const int kind = inRam(gene, 0x600u) ? moveKind(rdram, gene) : 0;
+            if (!kind)
                 return;
             const uint32_t pos = rd32(rdram, gene + game::GameObj::kPos);
             if (!inRam(pos, 12u))
@@ -324,6 +340,8 @@ namespace kamite::sprint_traversal
                 }
                 for (const Window &w : g_winCache)
                 {
+                    if (!(w.passes & kind))
+                        continue;
                     const float cx = w.x + w.dx * w.offset, cz = w.z + w.dz * w.offset;
                     const float along = (px - cx) * w.dx + (pz - cz) * w.dz;
                     const float across = (px - cx) * -w.dz + (pz - cz) * w.dx;

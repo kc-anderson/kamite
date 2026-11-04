@@ -36,6 +36,7 @@ namespace kamite::sprint_traversal
     {
         float x = 0.0f, y = 0.0f, z = 0.0f, dx = 1.0f, dz = 0.0f;
         float offset = 0.0f, sill = 0.4f, width = 1.2f, height = 1.4f, depth = 0.0f;
+        int passes = kJump; // which sprint attacks go through it: kJump (sprint + X / Y), kSlide (sprint + A), both
     };
     struct WindowRef
     {

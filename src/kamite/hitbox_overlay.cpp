@@ -817,9 +817,10 @@ namespace kamite::hitbox_overlay
         if (room < 0)
             return;
         const uint16_t r = static_cast<uint16_t>(room);
-        ui->text_wrapped("Windows (white): sprint + X / Y dive through them with \"Busta-Chan Jive\" on. Stand facing "
-                         "the window, within 3 m, and mark it; then size and place it with the sliders. A thick wall's far "
-                         "side is found by itself (the second rectangle; 0 = none). Any number per wall.");
+        ui->text_wrapped("Windows (white): openings Gene goes through with \"Busta-Chan Jive\" on: Jump for sprint + X / Y, "
+                         "Slide for sprint + A, per window. Stand facing the wall, within 3 m, and mark it; then size and "
+                         "place it with the sliders. A thick wall's far side is found by itself (the second rectangle; 0 = "
+                         "none). Any number per wall: mark again for another section (e.g. one to jump, one to slide).");
         if (ui->button("Mark window (the wall Gene faces)##markwin"))
         {
             g_markResult.store(0);
@@ -865,6 +866,17 @@ namespace kamite::hitbox_overlay
                 ui->set_next_width(220.0f);
                 changed |= ui->slider_float("Wall thickness (far side)##wdepth", &w.depth, -3.0f, 3.0f, "%.2f m") != 0;
                 dragging |= ui->is_item_active() != 0;
+                {
+                    int jump = (w.passes & sprint_traversal::kJump) ? 1 : 0, slide = (w.passes & sprint_traversal::kSlide) ? 1 : 0;
+                    const bool a = ui->checkbox("Jump (sprint + X / Y)##wjump", &jump) != 0;
+                    ui->same_line();
+                    const bool b = ui->checkbox("Slide (sprint + A)##wslide", &slide) != 0;
+                    if (a || b)
+                    {
+                        w.passes = (jump ? sprint_traversal::kJump : 0) | (slide ? sprint_traversal::kSlide : 0);
+                        changed = true;
+                    }
+                }
                 ui->separator();
                 ui->pop_id();
                 if (remove)

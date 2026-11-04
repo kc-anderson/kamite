@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 4, 2026
 
+- Busta-Chan Jive: each window can be set to pass the jump attacks, the slide, or both (F2 > Debug > Stage collision).
 - Modern controls: the left stick works normally in menus inside a room (the fight ring's sign-up); it no longer flips between directions.
 - Busta-Chan Jive: a window lets Gene through its own wall only; other walls near it (shop counters) still stop him.
 - Fixed Gene getting stuck inside thick walls when diving through a window.
