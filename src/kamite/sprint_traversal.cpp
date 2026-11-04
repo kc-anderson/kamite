@@ -296,6 +296,9 @@ namespace kamite::sprint_traversal
         }
 
         // The wall check's hit path (0x1094C8): inside a marked window, the push-out is undone (Gene's own x / z).
+        // How far in front of the window's face (and past its far face) Gene counts as diving through: his wall radius
+        // (0.4 m, the f12 of the check) and a little. It was 1 m.
+        constexpr float kWindowMargin = 0.6f;
         void windowPass(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             const uint32_t gene = GPR_U32(ctx, 17); // s1
@@ -306,7 +309,7 @@ namespace kamite::sprint_traversal
                 return;
             const float px = rdf(rdram, pos), pz = rdf(rdram, pos + 8u);
             const uint16_t room = rd16(rdram, game::GameWork::address(game::GameWork::kRoom));
-            bool inside = false;
+            const Window *inside = nullptr;
             {
                 std::lock_guard<std::mutex> lock(g_mutex);
                 if (room != g_winRoom || g_version != g_winVersion)
@@ -323,18 +326,26 @@ namespace kamite::sprint_traversal
                     const float cx = w.x + w.dx * w.offset, cz = w.z + w.dz * w.offset;
                     const float along = (px - cx) * w.dx + (pz - cz) * w.dz;
                     const float across = (px - cx) * -w.dz + (pz - cz) * w.dx;
-                    if (std::fabs(along) <= 0.5f * w.width && across >= std::min(0.0f, w.depth) - 1.0f &&
-                        across <= std::max(0.0f, w.depth) + 1.0f)
+                    if (std::fabs(along) <= 0.5f * w.width && across >= std::min(0.0f, w.depth) - kWindowMargin &&
+                        across <= std::max(0.0f, w.depth) + kWindowMargin)
                     {
-                        inside = true;
+                        inside = &w;
                         break;
                     }
                 }
             }
             if (!inside)
                 return;
-            ctx->f[0] = px;                              // the x about to be stored (loaded in the branch's delay slot)
-            wrf(rdram, GPR_U32(ctx, 29) + 0x28u, pz);    // the z it loads next
+            // Only the window's own wall lets go: of the push-out (pushed - now) the part along the wall's normal
+            // (-dz, dx) is undone, the rest kept, so other walls (a shop counter by the window) still hold. It used to
+            // undo the whole push (every wall within the window's box let go: K, Nov 4, behind the shop counter).
+            // The x about to be stored is f0 (loaded in the branch's delay slot), the z sp+0x28 (loaded next).
+            const uint32_t zAt = GPR_U32(ctx, 29) + 0x28u;
+            const float qx = ctx->f[0], qz = rdf(rdram, zAt);
+            const float nx = -inside->dz, nz = inside->dx;
+            const float k = (qx - px) * nx + (qz - pz) * nz;
+            ctx->f[0] = qx - k * nx;
+            wrf(rdram, zAt, qz - k * nz);
         }
 
         // After it, on every path.
