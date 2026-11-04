@@ -782,8 +782,10 @@ namespace kamite
                     // vblank skips the handler, so the repeated moveMotion ran at 1.0 and the second-half snap cut
                     // the frame (0.35 + 0.5 -> 0): his mash loop restarted and stayed a 30 FPS frame behind the held
                     // enemy's for the whole mash. Every rated state change did the same in a smaller way (the run's
-                    // start at 1.3 / 1.6, the evade 1.3, the slow-mo 0.029). Same motion only.
-                    if (CarryPress && m.stepped && m.motion == motion)
+                    // start at 1.3 / 1.6, the evade 1.3, the slow-mo 0.029). Same motion only. Enemies too (Nov 4,
+                    // same case after 5e99f09): cEmManage's update hands every enemy its step again before the hold,
+                    // so the held enemy's first frame in the mash loop ran at 1.0 instead of Gene's 0.7 and snapped.
+                    if (m.stepped && m.motion == motion)
                     {
                         setRamF32(rdram, obj + 0x444u, m.step);
                         setRamF32(rdram, obj + 0x5A8u, m.rate);
@@ -1813,6 +1815,27 @@ namespace kamite
                 return;
             setRamF32(rdram, GPR_U32(ctx, 16) + 0x548u, ctx->f[0]);
         }
+        // The grab reactions Gene's finishers and mash moves hold the enemy in (mode 1 phases 31 / 33 / 34 / 36 / 37 / 38 /
+        // 39: func_0025C1D0 .. func_0025E248) copy Gene's +0x5A8 into the enemy's every frame and pass it to
+        // SetMotionStep. Gene's rate is the 30 FPS value at 60; an enemy's +0x5A8 is half of it (cEmManage, family 2).
+        // SetMotion's hook (0x2A85CC, x2 for enemies) then gave the motion each of these states sets a double step on
+        // its first frame (Nov 4, mash case 2026-11-03_14-53-38: the held enemy 0.7 a vblank into the phase 59 loop, a
+        // 30 FPS frame ahead of Gene's from there). Replaces the swc1 f0,0x5A8(s0) in SetMotionStep's delay slot (f12
+        // already holds the 30 FPS value for the step): the enemy keeps half, as every other enemy.
+        void grabRateCopy(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            setRamF32(rdram, GPR_U32(ctx, 16) + 0x5A8u, ctx->f[0] * 0.5f);
+        }
+        // Gene held and pummelled (mode 1 phase 24, func_0011FD10 step 1: Azel's pummel, phase 90): each frame he reads
+        // the holder's seq level (+0x3AC & 3, the holder's blow span) and, while it is set, rolls a new reaction motion,
+        // sets it and steps it. The span lasts one 30 FPS frame at 30; at 60 Gene saw it on two vblanks, so every
+        // reaction was set twice and started a 30 FPS frame late (case "Azel pummel logic": mframe 0, 0, 0, 0.5 where 30
+        // shows 0, 1; all 11 reactions, Nov 4). The only pl00 read of another object's seq word. Replaces andi v0,v0,0x3
+        // at 0x11FF00: zero on second halves (the holder's word is read once per 30 FPS frame, on the tick).
+        void pummelHolderSeq(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            SET_GPR_U32(ctx, 2, skipFrame(rdram) ? 0u : (GPR_U32(ctx, 2) & 3u));
+        }
         template <int ObjReg, int FReg>
         void enemyRate30(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
@@ -2095,6 +2118,8 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_air_step_f0_s2", &airStep<0, 18>);
         ps2xRegisterHostHook("km_fps60_air_step_f2_s2", &airStep<2, 18>);
         ps2xRegisterHostHook("km_fps60_em_rate_f12_a0", &enemyRate30<4, 12>);
+        ps2xRegisterHostHook("km_fps60_grab_rate_copy", &grabRateCopy);
+        ps2xRegisterHostHook("km_fps60_pummel_holder_seq", &pummelHolderSeq);
         ps2xRegisterHostHook("km_fps60_think_a0_v0", &thinkFrame<4, 2>);
         ps2xRegisterHostHook("km_fps60_think_v1_a0", &thinkFrame<3, 4>);
         ps2xRegisterHostHook("km_fps60_think_v0_v1", &thinkFrame<2, 3>);

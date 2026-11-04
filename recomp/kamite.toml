@@ -4054,6 +4054,60 @@ address = "0x002A85CC"
 hook = "km_fps60_em_rate_f12_a0"
 flag = "fps60"
 
+# 60 FPS: the grab reactions (mode 1 phases 31 / 33 / 34 / 36 / 37 / 38 / 39) copy Gene's +0x5A8 into the held enemy's
+# every frame: the 30 FPS value, which SetMotion's x2 above doubled (frame_patches.cpp grabRateCopy). The store in
+# SetMotionStep's delay slot keeps half.
+[[patches.hooks]]
+address = "0x0025C200"
+hook = "km_fps60_grab_rate_copy"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0025C860"
+hook = "km_fps60_grab_rate_copy"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0025CCF0"
+hook = "km_fps60_grab_rate_copy"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0025D6A8"
+hook = "km_fps60_grab_rate_copy"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0025DBA0"
+hook = "km_fps60_grab_rate_copy"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0025DE8C"
+hook = "km_fps60_grab_rate_copy"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0025E278"
+hook = "km_fps60_grab_rate_copy"
+flag = "fps60"
+replace = true
+
+# 60 FPS: Gene pummelled (mode 1 phase 24, func_0011FD10 step 1). +0x56A counts 10 frames down every frame and at 0
+# hands him the holder's blow damage (func_0012C0F8 with the holder's +0x76C x 12): a plain per-frame countdown the
+# census missed, so at 60 the damage came twice as often (case "Azel pummel logic": 10 -> 1 in 10 vblanks). And the
+# holder's seq read that rolls each reaction motion: once per 30 FPS frame (frame_patches.cpp pummelHolderSeq).
+[[patches.hooks]] # +0x56A addiu v0,v0,-1
+address = "0x00120068"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # andi v0,v0,0x3 on the holder's +0x3AC
+address = "0x0011FF00"
+hook = "km_fps60_pummel_holder_seq"
+flag = "fps60"
+replace = true
+
 # 60 FPS: the launched enemy's flight (mode 1 phase 9, func_002557F8) integrates y and its fall speed without the speed
 # rate: half steps at 60 (frame_patches.cpp launchRise / launchFall).
 [[patches.hooks]]
