@@ -510,19 +510,22 @@ namespace kamite::prompt_hd
         return true;
     }
 
-    bool composeSticks(Set set, bool hideRight, hd_textures::Image &out)
+    bool composeSticks(Set set, bool hideLeft, bool hideRight, hd_textures::Image &out)
     {
         Canvas canvas(kStickSheetW * kScale, kStickSheetH * kScale);
-        int drawn = 0;
-        for (int side = 0; side < (hideRight ? 1 : 2); ++side)
+        int drawn = 0, wanted = 0;
+        for (int side = 0; side < 2; ++side)
         {
+            if (side == 0 ? hideLeft : hideRight)
+                continue;
+            ++wanted;
             const float x = static_cast<float>(side * kStickSheetH); // each stick's cell is 64x64
             drawn += drawCell(canvas, set, stickFile(set, side == 0, "#stick"), Rect{x, 0.0f, x + 64.0f, 64.0f},
                               Rect{x + kStickInset, kStickInset, x + 64.0f - kStickInset, 64.0f - kStickInset})
                          ? 1
                          : 0;
         }
-        if (drawn == 0)
+        if (drawn == 0 && wanted > 0)
             return false;
         toImage(canvas, out);
         return true;

@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## November 4, 2026
 
+- Tutorial 5 (the dash): the stick icon is in the text instead of the big stick picture; with L3 dash on, it names the L3 button too.
+- Modern controls: Tutorial 1's switch line shows the switch's button ("Press [R3] to switch between brawling and freecam.").
 - Tutorials 2 and 3: the heading moved into the title ("TUTORIAL 2: GODHAND ROULETTE REEL", "TUTORIAL 3: UNLEASH THE GODHAND").
 - Tension is Placable: Tutorial 3 says R2 again stops the God Hand; with Off the Cuff, that any tension is enough.
 - Off the Cuff: unleashing below a full gauge gives no invulnerability.

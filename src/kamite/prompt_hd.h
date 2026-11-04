@@ -54,10 +54,10 @@ namespace kamite::prompt_hd
     // The tutorials' stick sheet (128x64: the LEFT stick's 64x64 cell, then the RIGHT's; Tutorial 1 and the dash
     // tutorial draw them beside their text) at kScale x: the set's left and right sticks from the pack (the click
     // images' side view without the arrow, as the stick icons), each fitted into its cell kStickInset texels in from
-    // every side, nothing else (the disc's LEFT / RIGHT lettering goes). hideRight leaves the RIGHT cell empty (Modern:
-    // Tutorial 1 draws its stick icons in the text). False for the sets without stick art (PlayStation, keys) or when
-    // the pack's files are missing.
+    // every side, nothing else (the disc's LEFT / RIGHT lettering goes). hideLeft / hideRight leave a cell empty (the
+    // dash tutorial always, Modern's Tutorial 1: they draw their stick icons in the text). False for the sets without
+    // stick art (PlayStation, keys) or when the pack's files are missing.
     constexpr int kStickSheetW = 128, kStickSheetH = 64;
     constexpr float kStickInset = 4.0f;
-    bool composeSticks(Set set, bool hideRight, hd_textures::Image &out);
+    bool composeSticks(Set set, bool hideLeft, bool hideRight, hd_textures::Image &out);
 }

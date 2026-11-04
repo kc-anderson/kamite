@@ -17,11 +17,14 @@
 // (K, Nov 4): entries 7 / 8 ("TUTORIAL 2" / "TUTORIAL 3") point at "TUTORIAL 2: GODHAND ROULETTE REEL" (0xFF800) /
 // "TUTORIAL 3: UNLEASH THE GODHAND" (0xFF900), the first lines of entries 1 / 2 on the disc, at kTitleScale so they
 // fit the box; the other titles are as on the disc (their popups have no heading line).
+// Entry 4 (the dash, "TUTORIAL 5" in play) always points at ours (0xFFA00; dashText): the stick icon in the text in
+// place of the layout's LEFT stick picture, and the L3 icon with L3 dash on.
 // A scanner thread finds the bank by entry 0's original text every 250 ms (the file comes and goes with rooms); the
 // game thread re-checks and points it each vblank. The new lines are drawn at 75%, each no wider than ~35 letters
 // (the block is centred on the original's place; wider lines ran over the stick sprite, K Nov 3).
 #include "kamite/tutorial_text.h"
 
+#include "kamite/frame_patches.h"
 #include "kamite/game_options.h"
 #include "kamite/log.h"
 #include "kamite/menu_buttons.h"
@@ -40,13 +43,16 @@ namespace kamite::tutorial_text
     {
         constexpr uint32_t kRamBytes = 0x2000000u;
         constexpr uint32_t kText = 0x000FE000u;     // our text (6 KB up to 0xFF800): entries 0, 1, 2, then the
-                                                    // titles (0x100 each, up to 0xFFA00); debug_tools' landing
+                                                    // titles (0x100 each, up to 0xFFA00), the dash (entry 4, up to
+                                                    // 0xFFC00); debug_tools' landing
                                                     // scratch is at 0xFFF00, game_options' 0xFFFF0
         constexpr uint32_t kTitleText = 0x000FF800u, kTitleBytes = 0x100u;
         constexpr uint32_t kTextBytes = 0x800u;     // per entry
         constexpr uint32_t kEntryCount = 13u;
         constexpr uint32_t kEntry0Offset = 0x6Cu, kEntry1Offset = 0xD4u, kEntry2Offset = 0x1B4u; // entry n's u32 at header + 4 + 8n
         constexpr uint32_t kEntry7Offset = 0x4C0u, kEntry8Offset = 0x4D8u; // "TUTORIAL 2" / "TUTORIAL 3"
+        constexpr uint32_t kEntry4Offset = 0x2ECu;                          // the dash ("TUTORIAL 5" in play)
+        constexpr uint32_t kDashText = 0x000FFA00u, kDashBytes = 0x200u;
         // The longer titles at this scale: "TUTORIAL 3" spans ~405 px of K's 1441 px screenshot from x 175, the box's
         // inside ends near 1400, the title letters are ~1.16x the popup text: "TUTORIAL 2: GODHAND ROULETTE REEL" is
         // ~1385 px at 100%.
@@ -132,7 +138,8 @@ namespace kamite::tutorial_text
                 add(out, "\n");
         }
 
-        // K's wording (Nov 3), the Auto block only with Auto on. Each block: an icon (or none) and the text beside it,
+        // K's wording (Nov 3; the switch line "Press [R3] to switch between / brawling and freecam." Nov 4), the Auto
+        // block only with Auto on. Each block: an icon (or none) and the text beside it,
         // both lines starting where the text after the icon does. The stick icons are the prompt set's side views
         // (prompt_hd: RS without the click arrow, R3 with it); the layout's big stick picture is hidden with Modern
         // (button_prompts updateSticks). Lines up to ~36 letters: without the picture the centred block may be wider.
@@ -142,8 +149,11 @@ namespace kamite::tutorial_text
             iconLine(out, kStickIcon, "Use the right analog stick to evade");
             indentedLine(out, "enemy attacks while brawling.");
             gap(out);
-            iconLine(out, kSwitchIcon, "Press the right stick down to switch");
-            indentedLine(out, "between brawling and freecam.", !autoOn);
+            indent(out); // K (Nov 4): the switch's icon in the text, so a remapped switch reads right
+            add(out, "Press");
+            out.insert(out.end(), {kScale, kIconScale, kSwitchIcon, kScale, kTextScale});
+            add(out, "to switch between\n");
+            indentedLine(out, "brawling and freecam.", !autoOn);
             if (autoOn)
             {
                 gap(out);
@@ -205,6 +215,31 @@ namespace kamite::tutorial_text
                 r2();
                 add(out, "again to stop.");
             }
+            out.insert(out.end(), {kClose, kEnd});
+            return out;
+        }
+
+        // The dash tutorial (entry 4; K, Nov 4). The disc's: "Pressing the left analog stick / forward twice quickly will /
+        // cause you to DASH!" beside the layout's LEFT stick picture (that cell is now empty: button_prompts
+        // updateSticks). The stick icon (LS 10) goes in the text at the other tutorials' 150%; with L3 dash on, the L3
+        // icon (8: whatever L3 is bound to) as the other way.
+        std::vector<uint16_t> dashText(bool l3)
+        {
+            constexpr uint16_t kBig = 0x96u, kNormal = 0x64u, kLeftStick = 10u, kL3 = 8u;
+            std::vector<uint16_t> out;
+            const auto icon = [&](uint16_t code) { out.insert(out.end(), {kScale, kBig, code, kScale, kNormal}); };
+            add(out, "Pressing the");
+            icon(kLeftStick);
+            add(out, "left stick\nforward twice");
+            if (l3)
+            {
+                add(out, " or");
+                icon(kL3);
+                add(out, "will\n");
+            }
+            else
+                add(out, " quickly will\n");
+            add(out, "cause you to DASH!");
             out.insert(out.end(), {kClose, kEnd});
             return out;
         }
@@ -303,6 +338,8 @@ namespace kamite::tutorial_text
             const bool placable = tensionPlacable();
             pointEntry(header, 2, kEntry2Offset, kText + 2u * kTextBytes, true, unleashText(placable, offTheCuff()),
                        placable ? "Tutorial 3 (the title holds its heading; Tension is Placable)" : "Tutorial 3 (the title holds its heading)");
+            pointEntry(header, 4, kEntry4Offset, kDashText, true, dashText(l3Dash()),
+                       "Tutorial 5 (the dash) with its stick icon in the text", kDashBytes);
             pointEntry(header, 7, kEntry7Offset, kTitleText, true, titleText("TUTORIAL 2: GODHAND ROULETTE REEL"),
                        "Tutorial 2's title", kTitleBytes);
             pointEntry(header, 8, kEntry8Offset, kTitleText + kTitleBytes, true, titleText("TUTORIAL 3: UNLEASH THE GODHAND"),

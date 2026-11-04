@@ -13,6 +13,7 @@
 #include "ps2_host_input.h"
 #include "runtime/ps2_pnach.h"
 
+#include <cctype>
 #include <array>
 #include <algorithm>
 #include <filesystem>
@@ -558,8 +559,9 @@ namespace kamite::button_prompts
         // The tutorials' stick sheet: id/local/us/idtutorial_us.idd's third TIM2 (file 0x4FD0; 128x64 PSMT8, the LEFT and
         // RIGHT sticks Tutorial 1 and the dash tutorial draw beside their text). With a set that has stick art the GS gets
         // the pack's sticks for it (prompt_hd::composeSticks, K Nov 3: the same side view as the stick icons); PlayStation
-        // and keys keep the disc's (or the texture pack's) art. With Modern the RIGHT cell is empty whatever the set:
-        // Modern's Tutorial 1 draws both its stick icons in the text (tutorial_text.cpp), the big one would sit under it. The game uploads the TIM2 as stored, so the replacement name
+        // and keys keep the disc's (or the texture pack's, when it is a PNG) art. The LEFT cell is always empty: the dash
+        // tutorial draws its stick icon in the text (tutorial_text.cpp; K Nov 4); with Modern the RIGHT cell is too:
+        // Modern's Tutorial 1 draws both its stick icons in the text, the big one would sit under it. The game uploads the TIM2 as stored, so the replacement name
         // is the disc's (hd_textures::name8Linear; K's pack has 432ba500d8d45a46-6d99a9e671d37be4-000059d3) and the RAM
         // copy is left alone. The images live in cache/hd-sticks/<set>/, outside the folders PCSX2 lists when the GS
         // opens (an earlier session's set never applies), and each is handed over with texture_add.
@@ -611,45 +613,42 @@ namespace kamite::button_prompts
             if (!hd_textures::enabled() || !loadStickSheet())
                 return;
             const bool art = set != prompt_hd::Set::PlayStation && set != prompt_hd::Set::Keyboard;
-            const int want = art || modern ? static_cast<int>(set) * 2 + (modern ? 1 : 0) : -1;
+            const int want = static_cast<int>(set) * 2 + (modern ? 1 : 0);
             if (want == g_sticksShown)
                 return;
             namespace fs = std::filesystem;
             const fs::path dir = hd_textures::exeDirectory() / "cache" / "hd-sticks";
             std::error_code ec;
-            fs::path path;
-            if (art || modern)
+            const fs::path path = dir / ("look" + std::to_string(want)) / (g_stickSheet.name + ".png");
+            hd_textures::Image image;
+            if (!art)
             {
-                path = dir / ("look" + std::to_string(want)) / (g_stickSheet.name + ".png");
-                hd_textures::Image image;
-                if (!art)
-                {
-                    // The disc's art with the RIGHT cell cleared.
+                // The pack's art (a PNG; a DDS can't be read here) or the disc's, the LEFT cell (and with Modern the
+                // RIGHT one) cleared.
+                const fs::path pack = hd_textures::packFile(g_stickSheet.name);
+                std::string ext = pack.extension().string();
+                for (char &c : ext)
+                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                if (pack.empty() || ext != ".png" || !hd_textures::loadPng(pack, image) || image.width < 2 || image.height < 1)
                     image = g_stickSheet.disc;
-                    for (int y = 0; y < image.height; ++y)
-                        std::fill_n(&image.rgba[(static_cast<size_t>(y) * image.width + 64u) * 4u], 64u * 4u, uint8_t{0});
-                }
-                if (!fs::exists(path, ec) &&
-                    ((art && !prompt_hd::composeSticks(set, modern, image)) || (!fs::create_directories(path.parent_path(), ec) && ec) ||
-                     !hd_textures::savePng(path, image)))
-                    return;
-            }
-            else
-            {
-                path = hd_textures::packFile(g_stickSheet.name);
-                if (path.empty())
+                const int half = image.width / 2;
+                for (int y = 0; y < image.height; ++y)
                 {
-                    path = dir / "disc" / (g_stickSheet.name + ".png");
-                    if (!fs::exists(path, ec) && ((!fs::create_directories(path.parent_path(), ec) && ec) ||
-                                                  !hd_textures::savePng(path, g_stickSheet.disc)))
-                        return;
+                    uint8_t *row = &image.rgba[static_cast<size_t>(y) * image.width * 4u];
+                    std::fill_n(row, static_cast<size_t>(half) * 4u, uint8_t{0});
+                    if (modern)
+                        std::fill_n(row + static_cast<size_t>(half) * 4u, static_cast<size_t>(image.width - half) * 4u, uint8_t{0});
                 }
             }
+            if (!fs::exists(path, ec) &&
+                ((art && !prompt_hd::composeSticks(set, true, modern, image)) || (!fs::create_directories(path.parent_path(), ec) && ec) ||
+                 !hd_textures::savePng(path, image)))
+                return;
             const std::u8string native = path.u8string();
             GSPcsx2Backend::SetOption("texture_add", std::string(native.begin(), native.end()).c_str());
             g_sticksShown = want;
             KM_INFO(Game, "button prompts: the tutorials' sticks: " << (art ? prompt_hd::setName(set) : "the original art")
-                                                                    << (modern ? " (Modern: no RIGHT stick picture)" : ""));
+                                                                    << (modern ? ", no stick pictures (Modern)" : ", no LEFT stick picture"));
         }
 
         void builderLoop()
