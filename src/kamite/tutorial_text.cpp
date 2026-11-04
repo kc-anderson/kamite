@@ -11,12 +11,15 @@
 //
 // With Modern on, entry 0's offset is pointed (u32, wrapping) at our text in guest memory below the ELF (0xFE000,
 // past npc_poses' slots and before debug_tools' landing scratch; unused by the game); with Modern off it is put back.
+// Entry 1 (Tutorial 2, the roulette) always points at ours (0xFE800): the cycle line names R1, the left stick and the
+// d-pad, the OK line follows the menu buttons (rouletteText).
 // A scanner thread finds the bank by entry 0's original text every 250 ms (the file comes and goes with rooms); the
 // game thread re-checks and points it each vblank. The new lines are drawn at 75%, each no wider than ~35 letters
 // (the block is centred on the original's place; wider lines ran over the stick sprite, K Nov 3).
 #include "kamite/tutorial_text.h"
 
 #include "kamite/log.h"
+#include "kamite/menu_buttons.h"
 #include "kamite/modern_controls.h"
 #include "runtime/ps2_pnach.h"
 
@@ -31,10 +34,10 @@ namespace kamite::tutorial_text
     namespace
     {
         constexpr uint32_t kRamBytes = 0x2000000u;
-        constexpr uint32_t kText = 0x000FE000u;     // our text (4 KB up to 0xFF000)
-        constexpr uint32_t kTextBytes = 0x1000u;
+        constexpr uint32_t kText = 0x000FE000u;     // our text (4 KB up to 0xFF000): entry 0's, then entry 1's
+        constexpr uint32_t kTextBytes = 0x800u;     // per entry
         constexpr uint32_t kEntryCount = 13u;
-        constexpr uint32_t kEntry0Offset = 0x6Cu;
+        constexpr uint32_t kEntry0Offset = 0x6Cu, kEntry1Offset = 0xD4u; // entry n's u32 at header + 4 + 8n
 
         constexpr uint16_t kSpace = 0x35u, kNewline = 0xA001u, kEnd = 0x8001u, kClose = 0xA301u, kScale = 0xB002u;
         constexpr uint16_t kStickIcon = 11u, kSwitchIcon = 9u; // RS (the right stick), R3 (Modern's switch)
@@ -62,6 +65,8 @@ namespace kamite::tutorial_text
             case ':': return 0x31u;
             case ',': return 0x7Eu;
             case '\'': return 0x27u;
+            case '-': return 0x1Fu; // "One-Two Punch" in the game's text
+            case '/': return 0x2Du; // "reset/switch off the console"
             case '\n': return kNewline;
             default: return kSpace;
             }
@@ -136,6 +141,38 @@ namespace kamite::tutorial_text
             return out;
         }
 
+        // Tutorial 2 (entry 1, the roulette), every control style (K, Nov 4). The disc's: "GODHAND ROULETTE WHEEL / Press
+        // [R1] to open the wheel / Press [R1] to cycle choices / Press [cross][circle] to select technique" (icons at
+        // B002 0x96, text back at 0x64). The wheel steps on R1 and the left stick up / down (command bits 40 / 48 / 49,
+        // func_00145810) and the d-pad (frame_patches rouletteDpad, always on); its OK follows the menu buttons
+        // (menu_buttons.h: Western cross, Japanese circle; Classic the game's own cross and circle, so that line stays).
+        // '-' and '/' are the font's own (0x1F, 0x2D).
+        std::vector<uint16_t> rouletteText(menu_buttons::Style style)
+        {
+            constexpr uint16_t kBig = 0x96u, kNormal = 0x64u, kR1 = 5u, kLeftStick = 10u, kCross = 3u, kCircle = 0u;
+            std::vector<uint16_t> out;
+            const auto icon = [&](uint16_t code) { out.insert(out.end(), {kScale, kBig, code, kScale, kNormal}); };
+            add(out, "GODHAND ROULETTE WHEEL\nPress");
+            icon(kR1);
+            add(out, "to open the wheel\nUse");
+            icon(kR1);
+            add(out, "/");
+            icon(kLeftStick);
+            add(out, "/ D-pad to cycle choices\nPress");
+            if (style == menu_buttons::Style::Classic)
+            {
+                out.insert(out.end(), {kScale, kBig, kCross, kCircle, kScale, kNormal});
+                add(out, "to select technique ");
+            }
+            else
+            {
+                icon(style == menu_buttons::Style::Japanese ? kCircle : kCross);
+                add(out, "to select technique");
+            }
+            out.insert(out.end(), {kClose, kEnd});
+            return out;
+        }
+
         uint32_t rd32(uint32_t address)
         {
             uint32_t value = 0;
@@ -160,8 +197,6 @@ namespace kamite::tutorial_text
             for (;;)
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(250));
-                if (!modern::enabled())
-                    continue;
                 if (isBank(g_bank.load(std::memory_order_relaxed)))
                     continue; // still there
                 const uint8_t *begin = g_ram + 0x100000u, *end = g_ram + kRamBytes;
@@ -186,6 +221,26 @@ namespace kamite::tutorial_text
             }
         }
 
+        // One entry: our text at `at` while `wanted`, else the disc's offset back.
+        void pointEntry(uint32_t header, int entry, uint32_t discOffset, uint32_t at, bool wanted, const std::vector<uint16_t> &text,
+                        const char *what)
+        {
+            const uint32_t slot = header + 4u + 8u * static_cast<uint32_t>(entry);
+            const uint32_t ours = at - header; // u32: wraps to reach below the bank
+            if (wanted && text.size() * 2u <= kTextBytes)
+            {
+                if (std::memcmp(g_ram + at, text.data(), text.size() * 2u) != 0)
+                    std::memcpy(g_ram + at, text.data(), text.size() * 2u);
+                if (rd32(slot) != ours)
+                {
+                    wr32(slot, ours);
+                    KM_INFO(Game, "tutorial text: " << what << " (bank at 0x" << std::hex << header << std::dec << ")");
+                }
+            }
+            else if (rd32(slot) == ours)
+                wr32(slot, discOffset);
+        }
+
         // EE thread, every vblank.
         void onVblank()
         {
@@ -193,21 +248,13 @@ namespace kamite::tutorial_text
             if (!header || !isBank(header))
                 return;
             const bool modern = modern::enabled();
-            const uint32_t ours = kText - header; // u32: wraps to reach below the bank
-            if (modern)
-            {
-                const std::vector<uint16_t> text = modernText(modern::autoEnabled());
-                if (text.size() * 2u <= kTextBytes && std::memcmp(g_ram + kText, text.data(), text.size() * 2u) != 0)
-                    std::memcpy(g_ram + kText, text.data(), text.size() * 2u);
-                if (rd32(header + 4u) != ours)
-                {
-                    wr32(header + 4u, ours);
-                    KM_INFO(Game, "tutorial text: Tutorial 1 explains Modern's Select" << (modern::autoEnabled() ? " and Auto" : "")
-                                                                                      << " (bank at 0x" << std::hex << header << std::dec << ")");
-                }
-            }
-            else if (rd32(header + 4u) == ours)
-                wr32(header + 4u, kEntry0Offset);
+            pointEntry(header, 0, kEntry0Offset, kText, modern, modern ? modernText(modern::autoEnabled()) : std::vector<uint16_t>{},
+                       "Tutorial 1 explains Modern's switch");
+            const menu_buttons::Style style = menu_buttons::style();
+            pointEntry(header, 1, kEntry1Offset, kText + kTextBytes, true, rouletteText(style),
+                       style == menu_buttons::Style::Japanese  ? "Tutorial 2: the roulette's controls (Japanese OK)"
+                       : style == menu_buttons::Style::Classic ? "Tutorial 2: the roulette's controls (Classic OK)"
+                                                               : "Tutorial 2: the roulette's controls (Western OK)");
         }
     }
 

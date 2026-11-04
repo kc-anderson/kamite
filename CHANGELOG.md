@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 4, 2026
 
+- Tutorial 2 (the roulette): cycling names R1, the left stick and the d-pad; the select line shows the one OK button of the Western / Japanese menu buttons (Classic keeps both).
 - Steady idle camera: turning on the spot no longer makes the camera lag and jump (it held Gene's heading as well as his position).
 - 60 FPS: Gene turns on the spot (left stick, brawl mode) at the PS2's speed (it was twice as fast).
 - Modern controls: the radar glow goes off in brawl mode after loading a save state made in the free camera.

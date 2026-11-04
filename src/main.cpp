@@ -1009,7 +1009,7 @@ int main(int argc, char *argv[])
         kamite::button_prompts::install(runtime); // the button prompts show the bound keys (KAMITE_PROMPTS=0: PS2 art)
         kamite::menu_buttons::install(runtime.memory().getRDRAM()); // [Game] MenuButtons: the menus' confirm/cancel buttons
         kamite::radar_glow::install(runtime.memory().getRDRAM()); // Modern: the radar glows while the free camera is on
-        kamite::tutorial_text::install(runtime.memory().getRDRAM()); // Modern: Tutorial 1 explains Select and Auto
+        kamite::tutorial_text::install(runtime.memory().getRDRAM()); // Tutorial 1 (Modern's switch and Auto), Tutorial 2 (the roulette's buttons)
         kamite::hotkeys::install(exeDir / "kamite.ini"); // [Hotkeys]: the port's shortcut keys
         kamite::dev_menu::install(exeDir / "kamite.ini"); // F2: the dev menu's tab order, Display and Gameplay
         kamite::style_presets::install(runtime); // style presets: d-pad swaps in play, the Techniques screen's list and Y + d-pad
