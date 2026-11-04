@@ -367,6 +367,67 @@ namespace kamite::sprint_traversal
             wrf(rdram, zAt, qz - k * nz);
         }
 
+        // Lifting Gene's drawn body over a high sill (K, Nov 4: the shop windows' 0.95 m look right; taller sills clip).
+        // The dive's height is all in the motion: his position stays on the floor (case jumping_shop_windows: y 0.249
+        // through sprint + X / Y). So the lift is drawn only: in his update (func_00108AB0) his position's y is raised
+        // for cModel_calcWorldParts (km_trav_lift, 0x1097D4, its jal's delay slot; after IK_InverseKinematics, which
+        // reads the position: feet planting) and put back after it (km_trav_lift_end, 0x1097DC, the next jal's delay
+        // slot). calcWorldParts rebuilds the root (func_147A48 from the position) and the parts' world matrices.
+        // Collision, the floor check and the game's state never see it. Lift = (window floor + sill) - Gene's floor -
+        // kDiveClears, full between the wall's faces and fading out over the box's margin; jump windows, jump moves.
+        constexpr float kDiveClears = 0.95f;
+        uint32_t g_liftPos = 0u; // where the y was raised (0 = not raised)
+        float g_liftWas = 0.0f;  // and what it was
+
+        void liftStart(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            g_liftPos = 0u;
+            const uint32_t gene = GPR_U32(ctx, 17); // s1
+            if (!inRam(gene, 0x600u) || moveKind(rdram, gene) != kJump)
+                return;
+            const uint32_t pos = rd32(rdram, gene + game::GameObj::kPos);
+            if (!inRam(pos, 12u))
+                return;
+            const float px = rdf(rdram, pos), py = rdf(rdram, pos + 4u), pz = rdf(rdram, pos + 8u);
+            const uint16_t room = rd16(rdram, game::GameWork::address(game::GameWork::kRoom));
+            float lift = 0.0f;
+            {
+                std::lock_guard<std::mutex> lock(g_mutex);
+                for (const auto &[key, list] : g_windows)
+                {
+                    if (key.first != room)
+                        continue;
+                    for (const Window &w : list)
+                    {
+                        if (!(w.passes & kJump))
+                            continue;
+                        const float cx = w.x + w.dx * w.offset, cz = w.z + w.dz * w.offset;
+                        const float along = (px - cx) * w.dx + (pz - cz) * w.dz;
+                        const float across = (px - cx) * -w.dz + (pz - cz) * w.dx;
+                        const float near = std::min(0.0f, w.depth), far = std::max(0.0f, w.depth);
+                        const float out = across < near ? near - across : across > far ? across - far : 0.0f;
+                        if (std::fabs(along) > 0.5f * w.width || out > kWindowMargin)
+                            continue;
+                        float t = 1.0f - out / kWindowMargin;
+                        t = t * t * (3.0f - 2.0f * t); // eased in and out
+                        lift = std::max(lift, (w.y + w.sill - py - kDiveClears) * t);
+                    }
+                }
+            }
+            if (lift <= 0.0f)
+                return;
+            g_liftPos = pos;
+            g_liftWas = py;
+            wrf(rdram, pos + 4u, py + lift);
+        }
+
+        void liftEnd(uint8_t *rdram, R5900Context *, PS2Runtime *)
+        {
+            if (g_liftPos)
+                wrf(rdram, g_liftPos + 4u, g_liftWas);
+            g_liftPos = 0u;
+        }
+
         // After it, on every path.
         void switchOn(uint8_t *rdram, R5900Context *, PS2Runtime *)
         {
@@ -408,6 +469,8 @@ namespace kamite::sprint_traversal
         ps2xRegisterHostHook("km_trav_off", &switchOff);
         ps2xRegisterHostHook("km_trav_on", &switchOn);
         ps2xRegisterHostHook("km_trav_window", &windowPass);
+        ps2xRegisterHostHook("km_trav_lift", &liftStart);
+        ps2xRegisterHostHook("km_trav_lift_end", &liftEnd);
         ps2xSetPatchFlag("sprint_traversal", g_enabled);
         KM_INFO(Game, "sprint attack traversal: " << (g_enabled ? "on" : "off") << ", " << g_marks.size() << " groups marked, "
                                                    << [] { size_t n = 0; for (const auto &w : g_windows) n += w.second.size(); return n; }()

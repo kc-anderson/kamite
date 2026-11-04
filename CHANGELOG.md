@@ -4,6 +4,9 @@ Newest first, one line per change; the code comments say how.
 
 ## November 4, 2026
 
+- Busta-Chan Jive: Gene's dive is drawn lifted over windows with a sill higher than 0.95 m.
+- Busta-Chan Jive: three balcony windows in stage 1 (r102) ship with the port.
+- F2 > Debug > Stage collision: each window folds out on its own and shows magenta while unfolded.
 - Busta-Chan Jive: each window can be set to pass the jump attacks, the slide, or both (F2 > Debug > Stage collision).
 - Modern controls: the left stick works normally in menus inside a room (the fight ring's sign-up); it no longer flips between directions.
 - Busta-Chan Jive: a window lets Gene through its own wall only; other walls near it (shop counters) still stop him.

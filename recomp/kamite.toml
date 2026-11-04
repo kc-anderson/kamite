@@ -2092,6 +2092,19 @@ address = "0x001094C8"
 hook = "km_trav_window"
 flag = "sprint_traversal"
 
+# Windows: Gene's drawn body lifted over a high sill (sprint_traversal.cpp liftStart): his position's y raised for
+# cModel_calcWorldParts only (jal 0x1097D0, hooked in its delay slot; after IK, which reads the position) and put back
+# in the delay slot of the next jal (func_123160 at 0x1097D8).
+[[patches.hooks]]
+address = "0x001097D4"
+hook = "km_trav_lift"
+flag = "sprint_traversal"
+
+[[patches.hooks]]
+address = "0x001097DC"
+hook = "km_trav_lift_end"
+flag = "sprint_traversal"
+
 # 60 FPS: the common enemy code's frame countdowns (cEm00 states and the common update, 0x208000..0x290000; census
 # Oct 30, claude/fps60-notes.md family 1): the enemy's step timers +0x5F0 / +0x5F4 / +0x5F8 / +0x5FC, +0x568 / +0x56A /
 # +0x56E and the AI waits in func_00208BE0. Seen in case af12321_fight: the light flinch (+0x5F4 = 10) lasted 0.183 s at 60.

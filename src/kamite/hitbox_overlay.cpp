@@ -94,7 +94,7 @@ namespace kamite::hitbox_overlay
         constexpr uint32_t kPolyQuad = 1u, kPolyOff = 2u;
         constexpr size_t kMaxLines = 30000u;
         constexpr uint32_t kWall = 0xFF2090FFu, kFloor = 0xFF40D040u, kNamed = 0xFFFFD040u, kOff = 0x70A0A0A0u,
-                           kHighlight = 0xFFFF40FFu, kWindowColor = 0xFFFFFFFFu;
+                           kHighlight = 0xFFFF40FFu;
         constexpr float kMarkReach = 3.0f;  // Mark window: the wall must be this close ahead of Gene
         constexpr float kMarkHeight = 1.0f; // ... at this height above his feet
 
@@ -109,6 +109,7 @@ namespace kamite::hitbox_overlay
         std::atomic<bool> g_collAllGroups{false};
         std::atomic<float> g_collRadius{8.0f};
         std::atomic<int> g_collHighlight{-1};
+        std::atomic<uint64_t> g_openWindows{0}; // F2: the windows unfolded in the list (bit = index), drawn highlighted
         std::atomic<bool> g_collDump{false};
         std::atomic<bool> g_saveFailed{false};
         std::atomic<bool> g_markWindow{false}; // GS thread -> game thread: mark the wall ahead of Gene as a window
@@ -621,10 +622,14 @@ namespace kamite::hitbox_overlay
                                        std::memory_order_relaxed);
                 }
             }
-            // The room's windows (white): the opening's rectangle and its diagonals.
+            // The room's windows (white; the ones unfolded in F2 in the highlight colour, magenta): the opening's rectangle and its diagonals.
+            const uint64_t open = g_openWindows.load(std::memory_order_relaxed);
+            int windowIndex = -1;
             for (const auto &ref : sprint_traversal::windows(static_cast<uint16_t>(room)))
             {
+                ++windowIndex;
                 const auto &w = ref.window;
+                const uint32_t kWindowColor = windowIndex < 64 && ((open >> windowIndex) & 1u) ? kHighlight : 0xFFFFFFFFu;
                 const float cx = w.x + w.dx * w.offset, cz = w.z + w.dz * w.offset, half = 0.5f * w.width;
                 const float y0 = w.y + w.sill, y1 = w.y + w.sill + w.height;
                 const Vec3 a0{cx - w.dx * half, y0, cz - w.dz * half}, b0{cx + w.dx * half, y0, cz + w.dz * half};
@@ -820,7 +825,8 @@ namespace kamite::hitbox_overlay
         ui->text_wrapped("Windows (white): openings Gene goes through with \"Busta-Chan Jive\" on: Jump for sprint + X / Y, "
                          "Slide for sprint + A, per window. Stand facing the wall, within 3 m, and mark it; then size and "
                          "place it with the sliders. A thick wall's far side is found by itself (the second rectangle; 0 = "
-                         "none). Any number per wall: mark again for another section (e.g. one to jump, one to slide).");
+                         "none). Any number per wall: mark again for another section (e.g. one to jump, one to slide). "
+                         "Unfold a window to edit it; unfolded windows show magenta.");
         if (ui->button("Mark window (the wall Gene faces)##markwin"))
         {
             g_markResult.store(0);
@@ -834,7 +840,8 @@ namespace kamite::hitbox_overlay
                                         : "");
         const auto list = sprint_traversal::windows(r);
         bool dragging = false;
-        if (ui->begin_child("##collwindows", 0.0f, list.empty() ? 30.0f : 230.0f))
+        uint64_t openNow = 0;
+        if (ui->begin_child("##collwindows", 0.0f, list.empty() ? 30.0f : 380.0f))
         {
             if (list.empty())
                 ui->text_disabled("No windows in this room.");
@@ -843,10 +850,21 @@ namespace kamite::hitbox_overlay
                 const auto &ref = list[i];
                 sprint_traversal::Window w = ref.window;
                 ui->push_id(1000 + static_cast<int>(i));
-                char label[96];
-                std::snprintf(label, sizeof(label), "%s, window %d", ref.group.c_str(), ref.index + 1);
-                ui->text(label);
-                ui->same_line();
+                char label[128];
+                const int p = w.passes;
+                std::snprintf(label, sizeof(label), "%s, window %d (%s)##winhead", ref.group.c_str(), ref.index + 1,
+                              p == (sprint_traversal::kJump | sprint_traversal::kSlide) ? "jump, slide"
+                              : p == sprint_traversal::kSlide                         ? "slide"
+                              : p == sprint_traversal::kJump                          ? "jump"
+                                                                                      : "off");
+                // Folded by default; an unfolded window is drawn in the highlight colour in the room.
+                if (ui->version >= 4u && !ui->collapsing_header(label, 0))
+                {
+                    ui->pop_id();
+                    continue;
+                }
+                if (i < 64)
+                    openNow |= uint64_t{1} << i;
                 const bool remove = ui->small_button("Delete##delwin") != 0;
                 bool changed = false;
                 ui->set_next_width(220.0f);
@@ -890,6 +908,7 @@ namespace kamite::hitbox_overlay
             }
         }
         ui->end_child();
+        g_openWindows.store(openNow, std::memory_order_relaxed);
         if (!dragging && !sprint_traversal::flushWindows())
             g_saveFailed.store(true);
         // Testers' slips (T2 deleted the shop's windows, Nov 4): every room's marks and windows back to the port's.
