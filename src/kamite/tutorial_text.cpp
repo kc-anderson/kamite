@@ -146,7 +146,7 @@ namespace kamite::tutorial_text
         // B002 0x96, text back at 0x64). The wheel steps on R1 and the left stick up / down (command bits 40 / 48 / 49,
         // func_00145810) and the d-pad (frame_patches rouletteDpad, always on); its OK follows the menu buttons
         // (menu_buttons.h: Western cross, Japanese circle; Classic the game's own cross and circle, so that line stays). K's
-        // wording (Nov 4): "Use [R1]/[LS]/ D-pad to cycle", "to execute technique" (Classic keeps the disc's line).
+        // wording (Nov 4): "Use [R1]/[LS]/ D-pad to cycle", "to execute technique" (Classic: both of the disc's OK buttons).
         // '-' and '/' are the font's own (0x1F, 0x2D).
         std::vector<uint16_t> rouletteText(menu_buttons::Style style)
         {
@@ -163,7 +163,7 @@ namespace kamite::tutorial_text
             if (style == menu_buttons::Style::Classic)
             {
                 out.insert(out.end(), {kScale, kBig, kCross, kCircle, kScale, kNormal});
-                add(out, "to select technique ");
+                add(out, "to execute technique");
             }
             else
             {
