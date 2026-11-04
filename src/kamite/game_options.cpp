@@ -465,8 +465,8 @@ namespace kamite
             {kBarStoolId, "Bar stool", kFollowBothHands, {0.01f, -0.16f, -0.23f}, {7.0f, 0.0f, 29.0f}, 1.04f, {0.174f, -0.246f, 0.014f},
              {-75.7558f, -6.0369f, -10.1902f}, {-0.40877f, 2.15203f - 0.3f, 0.41078f}},
             // Fancy chair (om08, r101 x2; case chair_fancy, Nov 4): part 0 = (-0.17, 0.43, 0.09) of its root (the seat),
-            // pieces 0.16..0.9 m up; middle ~0.5 m up. Starts from the stage 1 chair's values until K sets them.
-            {kFancyChairId, "Fancy chair", kFollowBothHands, {0.07f, -0.07f, -0.16f}, {-2.0f, -2.0f, 11.0f}, 1.0f,
+            // pieces 0.16..0.9 m up; middle ~0.5 m up. K's values, Nov 4.
+            {kFancyChairId, "Fancy chair", kFollowBothHands, {0.0f, 0.01f, -0.16f}, {-13.0f, -13.0f, 3.0f}, 0.93f,
              {0.169f, 0.07f, -0.13f}, {-75.7558f, -6.0369f, -10.1902f}, {-0.40877f, 2.15203f - 0.3f, 0.41078f}},
             {kPubSignId, "Pub sign", kFollowBothHands, {-0.19f, 0.06f, 0.0f}, {-37.0f, -3.0f, 12.0f}, 0.88f, {0.381f, -0.72f, -0.083f},
              {-75.7558f, -6.0369f, -10.1902f}, {-0.40877f, 2.15203f - 0.3f, 0.41078f}},

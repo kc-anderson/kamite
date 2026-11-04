@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## November 4, 2026
 
+- Wild Curry Funk: K's hold values are the defaults for the fancy chair.
+- Busta-Chan Jive: railings and ledges in Elvis' mansion (r101) to jump over or slide through ship with the port.
 - Wild Curry Funk: the fancy chairs in stage 1 can be picked up and thrown too.
 - Busta-Chan Jive: five more windows in stage 1 (r102) ship with the port.
 - Busta-Chan Jive: the dive is lifted over high sills from a standing start against the wall too, and rises smoothly.
