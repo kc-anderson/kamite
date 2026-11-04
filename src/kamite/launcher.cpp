@@ -1634,8 +1634,9 @@ void main()
                         iniCheckbox(state, "On##tensionplacable", "Game", "TensionPlacable", false);
                         if (state.ini.getBool("Game", "TensionPlacable", false))
                         {
-                            settingLabel("Off the Cuff", "The God Hand unleashes with any tension in the meter, not "
-                                                         "only a full one.");
+                            subSetting("Off the Cuff", "The God Hand unleashes with any tension in the meter, not "
+                                                       "only a full one.\nOnly unleashing the God Hand with a full meter "
+                                                       "makes Gene invulnerable.");
                             iniCheckbox(state, "On##offthecuff", "Game", "OffTheCuff", false);
                         }
                         ImGui::EndTable();

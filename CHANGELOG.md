@@ -7,6 +7,7 @@ Newest first, one line per change; the code comments say how.
 - Tutorials 2 and 3: the heading moved into the title ("TUTORIAL 2: GODHAND ROULETTE REEL", "TUTORIAL 3: UNLEASH THE GODHAND").
 - Tension is Placable: Tutorial 3 says R2 again stops the God Hand; with Off the Cuff, that any tension is enough.
 - Off the Cuff: unleashing below a full gauge gives no invulnerability.
+- Launcher: Off the Cuff is a sub-option under Tension is Placable, and says only a full meter makes Gene invulnerable.
 - Experimental: Tension is Placable, pressing R2 again ends the God Hand early and keeps the tension left; its sub-option Off the Cuff unleashes with any tension.
 - Tutorial 2 (the roulette): cycling names R1, the left stick and the d-pad; the execute line shows the one OK button of the Western / Japanese menu buttons (Classic keeps both buttons).
 - Steady idle camera: turning on the spot no longer makes the camera lag and jump (it held Gene's heading as well as his position).
