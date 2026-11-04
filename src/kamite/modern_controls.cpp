@@ -99,6 +99,13 @@ namespace kamite::modern
         std::atomic<bool> g_classicByAuto{false}; // ... set by Auto (for the F2 status line)
         std::atomic<float> g_stickX{0.0f}, g_stickY{0.0f};
         std::atomic<bool> g_moving{false};      // the left stick asks for a direction (Modern movement)
+        // The game has Gene's controls off (0x747A78: 0x02000000 KeyStop, 0x80000000 / 0x40000000 player off): menus
+        // in the room (the fight ring's sign-up, T2's case Nov 4: KeyStop from the talk on), talks, events. The left
+        // stick then goes to the game as it is: turned to the camera it read as other directions as Gene turned.
+        // (A case's pad section is recorded after this filter: T2's shows the turned stick sweeping down -> left -> up
+        // for one push up, so its replay keeps the old behaviour; only live play shows the fix.)
+        std::atomic<bool> g_controlsOff{false};
+        constexpr uint32_t kControlWord = 0x747A78u, kControlsOffBits = 0xC2000000u;
         std::atomic<float> g_moveYaw{0.0f};     // that direction (world yaw)
         std::atomic<uint32_t> g_recenter{0};    // bumped by each quick turn
         std::atomic<float> g_pitchFloor{-1.2f}; // the lowest extra pitch that keeps the camera above the ground
@@ -205,6 +212,11 @@ namespace kamite::modern
             state.rightX = 0x80u;
             state.rightY = 0x80u;
 
+            if (g_controlsOff.load(std::memory_order_relaxed))
+            {
+                g_moving = false; // nor is Gene turned toward it
+                return;
+            }
             // The left stick, relative to the camera: the direction it asks for, as the stick the original controls
             // would need for it (relative to where Gene faces).
             const float lx = (static_cast<float>(state.leftX) - 128.0f) / 127.0f;
@@ -449,6 +461,7 @@ namespace kamite::modern
         // The shop's jukebox: the game's camera stands still on the radio, as on the PS2 (jukebox.h). The roulette:
         // the game swings its camera round to the roulette angle while the wheel is up; Modern hands it back too.
         g_gameCamera.store(gameCamera || jukebox::open(rdram) || rouletteUp(), std::memory_order_relaxed);
+        g_controlsOff.store((ram32(rdram, kControlWord) & kControlsOffBits) != 0u, std::memory_order_relaxed);
         g_lastCameraMs.store(now, std::memory_order_relaxed);
     }
 

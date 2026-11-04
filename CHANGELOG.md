@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 4, 2026
 
+- Modern controls: the left stick works normally in menus inside a room (the fight ring's sign-up); it no longer flips between directions.
 - Busta-Chan Jive: a window lets Gene through its own wall only; other walls near it (shop counters) still stop him.
 - Fixed Gene getting stuck inside thick walls when diving through a window.
 - Styles: a style saved after buying or winning a move in the same room survives a death.
