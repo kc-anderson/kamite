@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## November 4, 2026
 
+- Fixed the action prompt ("A :Throw") losing its button icon after loading a save state taken with the style indicator shown.
+- Wild Curry Funk: K's hold values are the defaults for the bar stool and the pub sign.
 - Wild Curry Funk: stage 1's bar stools and pub sign can be picked up and thrown too.
 - Wild Curry Funk: F2 sets the size of each kind of held item.
 - Tutorial 5 (the dash): the stick icon is in the text instead of the big stick picture; with L3 dash on, it names the L3 button too.

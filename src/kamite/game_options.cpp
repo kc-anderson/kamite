@@ -459,11 +459,11 @@ namespace kamite
              {-75.7558f, -6.0369f, -10.1902f}, {-0.40877f, 2.15203f - 0.3f, 0.41078f}},
             // Bar stool (om38, r102 x4, r600): part 0 = (-0.17, 0.63, -0.01) of its root (the seat), pieces 0.2..0.63 m up;
             // middle ~0.38 m up. Pub sign (om36, r102 x1): part 0 = (-0.38, 1.47, 0.08) (its top), ~0.8 m wide, pieces
-            // 0.5..1.33 m up; middle ~0.75 m up. Both start from the chair's reference pose (cases bar_stool / pub_sign,
-            // Nov 4) until K sets them.
-            {kBarStoolId, "Bar stool", kFollowBothHands, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, {0.174f, -0.246f, 0.014f},
+            // 0.5..1.33 m up; middle ~0.75 m up. Both from the chair's reference pose (cases bar_stool / pub_sign);
+            // K's values, Nov 4.
+            {kBarStoolId, "Bar stool", kFollowBothHands, {0.01f, -0.16f, -0.23f}, {7.0f, 0.0f, 29.0f}, 1.04f, {0.174f, -0.246f, 0.014f},
              {-75.7558f, -6.0369f, -10.1902f}, {-0.40877f, 2.15203f - 0.3f, 0.41078f}},
-            {kPubSignId, "Pub sign", kFollowBothHands, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 1.0f, {0.381f, -0.72f, -0.083f},
+            {kPubSignId, "Pub sign", kFollowBothHands, {-0.19f, 0.06f, 0.0f}, {-37.0f, -3.0f, 12.0f}, 0.88f, {0.381f, -0.72f, -0.083f},
              {-75.7558f, -6.0369f, -10.1902f}, {-0.40877f, 2.15203f - 0.3f, 0.41078f}},
         };
         constexpr int kPropCount = static_cast<int>(sizeof(kProps) / sizeof(kProps[0]));

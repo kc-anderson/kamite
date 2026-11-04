@@ -860,6 +860,20 @@ namespace kamite::style_presets
             was.sclY = rdFloat(entry + ent::kDrawSclY);
             was.align = g_ram[(entry + ent::kAlign) & 0x1FFFFFFu];
         }
+        // Scale and alignment from the entry's source record (ent +0x1C; cIDBase_initEntry: scale +0x28 / +0x2C,
+        // alignment +0x54 = 1, left), whatever the entry holds: a save state taken while the indicator showed carries
+        // its values (centred), and the prompt came back centred on x 16 with its button icon off the screen's left
+        // edge (K's F6, Nov 4).
+        void restoreFromSource(uint32_t entry)
+        {
+            const uint32_t src = rd32(entry + 0x1Cu);
+            if (!validPointer(src, 0x60u))
+                return;
+            wrFloat(entry + ent::kDrawSclX, rdFloat(src + 0x28u));
+            wrFloat(entry + ent::kDrawSclY, rdFloat(src + 0x2Cu));
+            g_ram[(entry + ent::kAlign) & 0x1FFFFFFu] = g_ram[(src + 0x54u) & 0x1FFFFFFu];
+        }
+
         // The game's prompt is in them: its scale and alignment back; the text's no-draw is the game's (clear), the
         // shadow's as it was.
         void releaseHudEntries()
@@ -877,6 +891,7 @@ namespace kamite::style_presets
                 wrFloat(was.entry + ent::kDrawSclX, was.sclX);
                 wrFloat(was.entry + ent::kDrawSclY, was.sclY);
                 g_ram[(was.entry + ent::kAlign) & 0x1FFFFFFu] = was.align;
+                restoreFromSource(was.entry);
                 was.entry = 0u;
             }
             g_hudShown = false;
@@ -891,6 +906,8 @@ namespace kamite::style_presets
             if (state == 2)
             {
                 releaseHudEntries();
+                restoreFromSource(text);
+                restoreFromSource(shadow);
                 return;
             }
             claimHudEntry(0, text);
