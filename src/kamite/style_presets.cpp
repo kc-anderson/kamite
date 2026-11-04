@@ -187,6 +187,7 @@ namespace kamite::style_presets
         // with a magic and a checksum so a cleared record or one from another tool reads as "no styles".
         // The checkpoint slot (*(u32 *)0x3C264C, a whole copy of the record taken at every room change and put back on
         // Continue) gets every change too, so a Continue does not take the styles back to the last checkpoint.
+        // (writeStore: also after a move was gained since the checkpoint.)
         constexpr uint32_t kStoreOffset = 0xC00u;
         constexpr uint32_t kCheckpointPointer = 0x3C264Cu;
         constexpr uint32_t kStoreMagic = 0x54534D4Bu; // "KMST"
@@ -319,11 +320,22 @@ namespace kamite::style_presets
             store.checksum = checksumOf(store);
             std::memcpy(g_ram + data + kStoreOffset, &store, sizeof(Store));
             // The checkpoint slot: the same record (its save pointer is the live one's copy), refreshed at every room
-            // change. Only when it holds this game's record (the same skills), so a stale slot from the title is left.
+            // change and put back on Continue. Only when it holds this game's record: every move it owns is owned now
+            // (moves are only ever gained), so a stale slot from the title is left. It was "the same skills": a move
+            // bought or won since the room change left the styles out of the slot and a death took them back to the
+            // room's start (T2, Nov 4). After such a Continue the styles keep the new move; a load leaves it out while
+            // the save does not own it (as for any unowned move), the rest of the style stays.
             const uint32_t checkpoint = rd32(kCheckpointPointer);
-            if (validPointer(checkpoint, kSaveSize) && checkpoint != data &&
-                std::memcmp(g_ram + checkpoint + kSkills, g_ram + data + kSkills, 0x80u) == 0)
-                std::memcpy(g_ram + checkpoint + kStoreOffset, &store, sizeof(Store));
+            if (validPointer(checkpoint, kSaveSize) && checkpoint != data)
+            {
+                const int8_t *was = reinterpret_cast<const int8_t *>(g_ram + checkpoint + kSkills);
+                const int8_t *now = reinterpret_cast<const int8_t *>(g_ram + data + kSkills);
+                bool sameGame = true;
+                for (int id = 0; id < 0x80 && sameGame; ++id)
+                    sameGame = was[id] < 0 || now[id] >= 0;
+                if (sameGame)
+                    std::memcpy(g_ram + checkpoint + kStoreOffset, &store, sizeof(Store));
+            }
         }
 
         // A move the save can equip: owned (skill[id] >= 0), or any move while F2 > Debug "Every technique owned"

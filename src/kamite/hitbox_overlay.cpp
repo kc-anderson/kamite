@@ -880,6 +880,18 @@ namespace kamite::hitbox_overlay
         ui->end_child();
         if (!dragging && !sprint_traversal::flushWindows())
             g_saveFailed.store(true);
+        // Testers' slips (T2 deleted the shop's windows, Nov 4): every room's marks and windows back to the port's.
+        // Two clicks, so a stray one does nothing.
+        static bool armed = false;
+        if (ui->button(armed ? "Click again to restore (every room)##restoretrav" : "Restore defaults##restoretrav"))
+        {
+            if (armed && !sprint_traversal::restoreShipped())
+                g_saveFailed.store(true);
+            armed = !armed;
+        }
+        ui->same_line();
+        ui->text_disabled(armed ? "Your own jump / slide marks and windows in every room will be lost."
+                                : "Every room's jump / slide marks and windows as the port ships them.");
 #else
         (void)ui;
 #endif

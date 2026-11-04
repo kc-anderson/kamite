@@ -49,4 +49,7 @@ namespace kamite::sprint_traversal
     void setWindow(uint16_t room, const std::string &group, int index, const Window &window);
     bool removeWindow(uint16_t room, const std::string &group, int index);
     bool flushWindows(); // saves pending changes (call when no slider is being dragged); false = could not write
+    // Every room back to the marks and windows the port ships (resources/sprint_traversal.txt): the user's file keeps
+    // only its header. false = could not write.
+    bool restoreShipped();
 }

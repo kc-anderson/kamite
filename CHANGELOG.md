@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## November 4, 2026
 
+- Styles: a style saved after buying or winning a move in the same room survives a death.
+- F2 > Debug > Stage collision: Restore defaults puts every room's Busta-Chan Jive marks and windows back as shipped.
 - Fixed the action prompt ("A :Throw") losing its button icon after loading a save state taken with the style indicator shown.
 - Wild Curry Funk: K's hold values are the defaults for the bar stool and the pub sign.
 - Wild Curry Funk: stage 1's bar stools and pub sign can be picked up and thrown too.

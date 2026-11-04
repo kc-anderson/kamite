@@ -459,6 +459,18 @@ namespace kamite::sprint_traversal
         return save();
     }
 
+    bool restoreShipped()
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        g_userMarks.clear();
+        g_userWindows.clear();
+        g_marks = g_shippedMarks;
+        mergeWindows();
+        g_windowsDirty = false;
+        ++g_version;
+        return save();
+    }
+
     bool flushWindows()
     {
         std::lock_guard<std::mutex> lock(g_mutex);
