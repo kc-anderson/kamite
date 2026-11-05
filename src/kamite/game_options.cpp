@@ -90,7 +90,9 @@
 // The stun: +0x5B4 (s32), added by func_0028ED28 on hits while the enemy isn't stunned, decaying 30 every 90 frames
 // (func_0028ED78); at 200 func_0026F120 (every enemy, from the hit reactions) zeroes it and sets +0x17CC = 150.0,
 // which counts down by the speed rate (+0x5A8) in the update func_00208BE0 (0x209110): the stun. Shown: +0x5B4 / 200
-// (capped), and +0x17CC / 150 while stunned. Display only.
+// (capped), and +0x17CC / 150 while stunned. While stunned the lag entry (magenta) is drawn full width behind the
+// draining fill; after the stun it shrinks to the left (0.08 of the width a call, like the game's own lag, per draw)
+// and the background shows again (K, Nov 5). Display only.
 //
 // Dead Pan (always on): the Japanese release's free roulette move (reel 0xB; TCRF "Dead Pan / Pan Drop"). The US build
 // keeps it but hides it outside Japanese: func_00125048 tests GameWork +0x56C (language, 0 = Japanese) at 0x1250A8,
@@ -118,6 +120,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <unordered_map>
 #include <atomic>
 #include <cstdlib>
 #include <cstdio>
@@ -826,7 +829,11 @@ namespace kamite
 
         bool inGuest(uint32_t address) { return address >= 0x100000u && address < 0x1FF0000u; }
 
-        template <int EnemyReg>
+        constexpr float kSwayLagStep = 0.08f;         // the magenta's shrink after a stun, of the width a draw
+        std::unordered_map<uint32_t, float> g_swayLag; // game thread: enemy -> the magenta's width (0..1)
+
+        // EnemyReg: the register holding the enemy; LagId: the bar's damage lag entry (2, or 3 in the flash layout).
+        template <int EnemyReg, int LagId>
         void swayBar(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const uint32_t enemy = GPR_U32(ctx, EnemyReg);
@@ -839,8 +846,14 @@ namespace kamite
             if (!inGuest(ent) || count == 0u || count > 16u)
                 return;
             float stun = ramF(rdram, enemy + 0x17CCu) / kStunTime;
-            if (stun <= 0.0f)
+            float &lag = g_swayLag[enemy];
+            if (stun > 0.0f)
+                lag = 1.0f;
+            else
+            {
                 stun = static_cast<float>(static_cast<int32_t>(ram32(rdram, enemy + 0x5B4u))) / kStunFull;
+                lag = std::max(0.0f, lag - kSwayLagStep);
+            }
             stun = std::clamp(stun, 0.0f, 1.0f);
 
             struct Saved
@@ -859,7 +872,7 @@ namespace kamite
                 if ((k.flags & kEntActive) == 0u || (k.flags & kEntNoDraw) != 0u)
                     continue;
                 const int8_t id = static_cast<int8_t>(rdram[e + 0x2Au]);
-                if (id >= 2) // the damage lag (and the flash): not on the stun bar
+                if (id >= 2 && (id != LagId || lag <= 0.0f)) // the flash, and the lag unless a stun is on or ending
                 {
                     put32(rdram, e + 0x2Cu, k.flags | kEntNoDraw);
                     continue;
@@ -867,7 +880,12 @@ namespace kamite
                 // Half height, 6 units under the health bar's bottom (224 = the panel's centre line).
                 putF(rdram, e + 0x54u, 224.0f + (k.y - 224.0f) * 0.5f + 6.0f);
                 putF(rdram, e + 0x5Cu, k.sclY * 0.5f);
-                if (id == 1)
+                if (id == LagId) // magenta behind the fill: full while stunned, then shrinking to the left
+                {
+                    const float base = ramF(rdram, e + 0x40u);
+                    putF(rdram, e + 0x58u, (base > 0.001f ? k.sclX / base : 1.0f) * lag);
+                }
+                else if (id == 1)
                 {
                     const float base = ramF(rdram, e + 0x40u); // the game's HP ratio; draw scale = base x the parents'
                     const float parents = base > 0.001f ? k.sclX / base : 1.0f;
@@ -963,8 +981,8 @@ namespace kamite
         ps2xRegisterHostHook("km_ball_buster_damage", &ballBusterDamage);
         ps2xRegisterHostHook("km_ball_buster_motion", &ballBusterMotion);
         ps2xSetPatchFlag("ball_buster_women", envOn("KAMITE_BALL_BUSTER_WOMEN"));
-        ps2xRegisterHostHook("km_sway_bar_s3", &swayBar<19>);
-        ps2xRegisterHostHook("km_sway_bar_s2", &swayBar<18>);
+        ps2xRegisterHostHook("km_sway_bar_s3", &swayBar<19, 2>);
+        ps2xRegisterHostHook("km_sway_bar_s2", &swayBar<18, 3>);
         ps2xSetPatchFlag("sway_bar", envOn("KAMITE_SWAY_BAR"));
         g_tensionPlacable.store(envOn("KAMITE_TENSION_PLACABLE"), std::memory_order_relaxed);
         g_offTheCuff.store(envOn("KAMITE_OFF_THE_CUFF"), std::memory_order_relaxed);

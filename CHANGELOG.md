@@ -4,7 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 5, 2026
 
-- Sway Bar (Experimental): a stun gauge under each enemy's health bar.
+- Sway Bar (Experimental): a stun gauge under each enemy's health bar, magenta while the enemy is stunned.
 - Cunt Punter (Experimental): Ball Buster stuns female enemies the way it does men.
 
 ## November 4, 2026
