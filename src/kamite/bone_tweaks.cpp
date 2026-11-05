@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 namespace kamite::bone_tweaks
 {
@@ -226,11 +227,79 @@ namespace kamite::bone_tweaks
                             g_strands[1].q, g_saved[1]);
         }
 
+        // ---- Money: the women's chest bone scaled (see the header) ---------------------------------------------------
+        constexpr int kChestBone = 29, kChestParent = 2;
+        std::atomic<float> g_money{1.0f};
+        std::atomic<float> g_moneyDroop{30.0f}; // degrees the bust tips down per +100% (F2)
+        std::vector<Saved> g_moneySaved; // game thread: the bones scaled since the frame started
+
+        void placeMoney(uint8_t *rdram, uint32_t model)
+        {
+            const float scale = g_money.load(std::memory_order_relaxed);
+            if (std::fabs(scale - 1.0f) < 0.001f || !inRam(model, 0x2E4u))
+                return;
+            const int n = rdram[(model + kPartNum) & 0x01FFFFFFu];
+            if (n <= kChestBone || n > 64)
+                return;
+            uint32_t part = rd32(rdram, model + kPartsFirst), parent = 0u, chest = 0u;
+            for (int i = 0; i <= kChestBone; ++i)
+            {
+                if (!inRam(part, 0x160u))
+                    return;
+                if (i == kChestParent)
+                    parent = part;
+                if (i == kChestBone)
+                    chest = part;
+                part = rd32(rdram, part + kPartNext);
+            }
+            // The women's skeleton: bone 29 hangs off the upper spine (2), at chest height and in front of it (bind
+            // (0, 0.115, 0.05) on the em00 women). Men and Gene keep 29 on the head (4) as a spare.
+            if (rd32(rdram, chest + 0x148u) != parent)
+                return;
+            float bind[3];
+            std::memcpy(bind, rdram + ((chest + 0xE0u) & 0x01FFFFFFu), 12);
+            if (bind[1] < 0.03f || bind[1] > 0.25f || bind[2] < 0.0f || bind[2] > 0.15f || std::fabs(bind[0]) > 0.03f)
+                return;
+            for (const Saved &s : g_moneySaved)
+                if (s.address == chest) // packed twice in a frame: scaled once
+                    return;
+            Saved s;
+            s.address = chest;
+            Bone b = readBone(rdram, chest);
+            s.original = b.m;
+            // The game's jiggle turns the bone round its own x only (against the spine bone, rest ~0): angle =
+            // atan2(row y . parent z, row y . parent y). Rebuilt as rotX(angle x scale + droop) in the parent's frame,
+            // the rows scaled: the bounce grows with the size and a bigger bust hangs lower (+angle tips its forward
+            // axis down).
+            const Bone p = readBone(rdram, parent);
+            auto row = [](const Bone &m, int r) { return Vec{m.m[r * 4], m.m[r * 4 + 1], m.m[r * 4 + 2]}; };
+            const Vec px = unit(row(p, 0)), py = unit(row(p, 1)), pz = unit(row(p, 2));
+            const Vec by = row(b, 1);
+            const float jiggle = std::atan2(dot(by, pz), dot(by, py));
+            constexpr float kRad = 3.14159265f / 180.0f;
+            const float angle = jiggle * scale + (scale - 1.0f) * g_moneyDroop.load(std::memory_order_relaxed) * kRad;
+            const float c = std::cos(angle), sn = std::sin(angle);
+            const Vec rows[3] = {mulf(px, scale), mulf(add(mulf(py, c), mulf(pz, sn)), scale),
+                                 mulf(sub(mulf(pz, c), mulf(py, sn)), scale)};
+            for (int r = 0; r < 3; ++r)
+                for (int col = 0; col < 3; ++col)
+                    b.m[r * 4 + col] = rows[r][col];
+            writeBone(rdram, chest, b);
+            s.mirrored = b.m;
+            g_moneySaved.push_back(s);
+            g_applied = true;
+        }
+
         void onGetMeshPtr(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             if (GPR_U32(ctx, 31) != kTransCallSite)
                 return;
             const uint32_t model = GPR_U32(ctx, 4);
+            if (model != rd32(rdram, GameWork::address(GameWork::kPlayerObj)))
+            {
+                placeMoney(rdram, model);
+                return;
+            }
             if (model != rd32(rdram, GameWork::address(GameWork::kPlayerObj)))
                 return;
             if (characters::hair().back.bone < 0 && characters::hair().side.bone < 0)
@@ -250,6 +319,12 @@ namespace kamite::bone_tweaks
             return;
         FunctionHooks::instance().observeEntry(kGetMeshPtr, "bone_tweaks_pack", &onGetMeshPtr);
         const characters::Hair &h = characters::hair();
+        if (const char *money = std::getenv("KAMITE_MONEY"); money && *money) // percent
+        {
+            setMoney(static_cast<float>(std::atof(money)) / 100.0f);
+            if (std::fabs(g_money.load() - 1.0f) >= 0.001f)
+                KM_INFO(Game, "Money: " << g_money.load() * 100.0f << "%");
+        }
         g_tune[0].store(h.stiffness);
         g_tune[1].store(h.damping);
         g_tune[2].store(h.gravity);
@@ -273,7 +348,21 @@ namespace kamite::bone_tweaks
                 std::memcpy(rdram + ((s.address + kPartMtx) & 0x01FFFFFFu), s.original.data(), 64);
             s.address = 0;
         }
+        for (const Saved &s : g_moneySaved)
+        {
+            if (!inRam(s.address, 0x160u))
+                continue;
+            Bone now = readBone(rdram, s.address);
+            if (std::memcmp(now.m.data(), s.mirrored.data(), 64) == 0)
+                std::memcpy(rdram + ((s.address + kPartMtx) & 0x01FFFFFFu), s.original.data(), 64);
+        }
+        g_moneySaved.clear();
     }
+
+    float money() { return g_money.load(std::memory_order_relaxed); }
+    void setMoney(float scale) { g_money.store(std::clamp(scale, 0.8f, 1.5f), std::memory_order_relaxed); }
+    float moneyDroop() { return g_moneyDroop.load(std::memory_order_relaxed); }
+    void setMoneyDroop(float degrees) { g_moneyDroop.store(std::clamp(degrees, 0.0f, 90.0f), std::memory_order_relaxed); }
 
     bool hasHair() { return characters::hair().back.bone >= 0 || characters::hair().side.bone >= 0; }
     float tuning(Tune which)

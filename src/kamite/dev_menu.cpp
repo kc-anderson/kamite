@@ -15,6 +15,7 @@
 #include "kamite/dev_menu.h"
 #include "kamite/frame_patches.h"
 #include "kamite/game_options.h"
+#include "kamite/bone_tweaks.h"
 #include "kamite/hud_layout.h"
 #include "kamite/ini_file.h"
 #include "kamite/log.h"
@@ -28,6 +29,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 #include <string>
 
 namespace kamite::dev_menu
@@ -174,6 +176,14 @@ namespace kamite::dev_menu
             int sway = swayBar() ? 1 : 0;
             if (ui->checkbox("Sway Bar: a stun gauge under the enemies' health bars##swaybar", &sway))
                 setSwayBar(sway != 0);
+            float money = bone_tweaks::money() * 100.0f;
+            ui->set_next_width(340.0f);
+            if (ui->slider_float("Money: the female NPCs' and enemies' bust##money", &money, 80.0f, 150.0f, "%.0f%%"))
+                bone_tweaks::setMoney(money / 100.0f);
+            float droop = bone_tweaks::moneyDroop();
+            ui->set_next_width(340.0f);
+            if (ui->slider_float("Money droop: degrees down per +100%##moneydroop", &droop, 0.0f, 90.0f, "%.0f"))
+                bone_tweaks::setMoneyDroop(droop);
 
             ui->separator_text("At start");
             launcherOnly(ui, "Style switching", envOn("KAMITE_STYLE_SWITCHING", false) ? "on" : "off");
@@ -194,6 +204,7 @@ namespace kamite::dev_menu
                     ini.setBool("Game", "OffTheCuff", offTheCuff());
                     ini.setBool("Game", "BallBusterWomen", ballBusterWomen());
                     ini.setBool("Game", "SwayBar", swayBar());
+                    ini.set("Game", "Money", std::to_string(static_cast<int>(std::lround(bone_tweaks::money() * 100.0f))));
                     saveIni(ini, g_gameplayStatus);
                 }
             }
