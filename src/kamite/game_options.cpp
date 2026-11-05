@@ -111,7 +111,9 @@
 // broken), so the builder is run on its own (callGuest) and its list caught at setCommandList: only the greyed flags
 // go into the wheel. Gene's turn to the new target is eased (0.35 of the way a 30 FPS frame), and he plays the
 // roulette's entry motion and bark again (K, Nov 5: he re-centres himself; no menu sound), with the camera bones the
-// motion animates held where they had settled (the camera turns with Gene, no second fly-in).
+// motion animates held where they had settled (the camera turns with Gene, no second fly-in). The roulette's time is
+// that motion (it ends the roulette when done): the replay runs at full speed and its frame is put back to where the
+// time had got to (moving on at the game's rate meanwhile), so the hovered move fires when the dial runs out (K).
 //
 // Dead Pan (always on): the Japanese release's free roulette move (reel 0xB; TCRF "Dead Pan / Pan Drop"). The US build
 // keeps it but hides it outside Japanese: func_00125048 tests GameWork +0x56C (language, 0 = Japanese) at 0x1250A8,
@@ -1241,6 +1243,11 @@ namespace kamite
         static bool s_flicked = false;
         static uint16_t s_dpadWas = 0;
         static int s_ease = 0;
+        static struct
+        {
+            bool active = false;
+            float time = 0.0f; // the motion frame the roulette's time is at (kept moving at the game's rate)
+        } s_catch;
         const uint32_t gene = ram32(rdram, 0x7474A0u + 0x5F4u);
         const bool roulette = inGuest(gene) && rdram[gene + 0x2F4u] == 0u && rdram[gene + 0x2F5u] == 0x2Bu;
         // Ball Buster's plate follows the target while the wheel is up. The pick's flash (the plate flying off as the
@@ -1266,7 +1273,23 @@ namespace kamite
         {
             s_flicked = false;
             s_ease = 0;
+            s_catch.active = false;
             return;
+        }
+        // A replayed entry motion runs its frames at full speed (1 a 30 FPS frame) on top of the game's slow step,
+        // while the roulette's time keeps moving at the game's rate (+0x5A8 a frame, what moveMotion adds); once the
+        // replay reaches it, the motion's frame is set to it, so the roulette ends (and fires) when it would have.
+        if (s_catch.active)
+        {
+            s_catch.time += ramF(rdram, gene + 0x5A8u);
+            const float frame = ramF(rdram, gene + 0x41Cu) + (ps2xPatchFlag("fps60") ? 0.5f : 1.0f);
+            if (frame >= s_catch.time)
+            {
+                putF(rdram, gene + 0x41Cu, s_catch.time);
+                s_catch.active = false;
+            }
+            else
+                putF(rdram, gene + 0x41Cu, frame);
         }
         const bool fps60 = ps2xPatchFlag("fps60");
         const uint32_t current = ram32(rdram, gene + 0x640u);
@@ -1393,8 +1416,23 @@ namespace kamite
         const uint32_t pack = ram32(rdram, gene + 0x304u), newPos = ram32(rdram, list[next].em + 0xF0u);
         if (inGuest(pack) && inGuest(newPos))
         {
-            const float dx = ramF(rdram, newPos) - gx, dz = ramF(rdram, newPos + 8u) - gz;
-            const uint32_t motion = dx * dx + dz * dz > 64.0f ? 0x228u : 0x220u;
+            // The roulette's time is this motion: it plays its opening (~15 frames) at full speed, then creeps toward
+            // its end at the slowed rate (+0x5A8); step 1 ends the roulette when moveMotion says it is done
+            // (0x114954), which fires the hovered move. The same motion (near or far, as it is playing) is started
+            // again and its frame put back where the time had got to once the replay catches up (s_catch below).
+            const uint32_t current = ram32(rdram, gene + 0x428u);
+            const uint32_t far = pack + ram32(rdram, pack + 0x228u);
+            uint32_t motion = 0x220u;
+            if (current == far)
+                motion = 0x228u;
+            else if (current != pack + ram32(rdram, pack + 0x220u))
+            {
+                const float dx = ramF(rdram, newPos) - gx, dz = ramF(rdram, newPos + 8u) - gz;
+                motion = dx * dx + dz * dz > 64.0f ? 0x228u : 0x220u;
+            }
+            if (!s_catch.active)
+                s_catch.time = ramF(rdram, gene + 0x41Cu); // where the roulette's time had got to
+            s_catch.active = true;
             if (!g_cameraHold.active)
                 holdCameraBones(rdram); // the settled camera, before the motion moves its bones again
             const float f12 = ctx->f[12];
