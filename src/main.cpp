@@ -402,6 +402,7 @@ namespace
         {"game", "tensionplacable", "KAMITE_TENSION_PLACABLE"},
         {"game", "offthecuff", "KAMITE_OFF_THE_CUFF"},
         {"game", "ballbusterwomen", "KAMITE_BALL_BUSTER_WOMEN"},
+        {"game", "swaybar", "KAMITE_SWAY_BAR"},
         {"sound", "mutemusic", "KAMITE_MUTE_MUSIC"},
         {"mods", "character", "KAMITE_CHARACTER"},
         {"run", "headless", "KAMITE_HEADLESS"},

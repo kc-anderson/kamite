@@ -171,6 +171,9 @@ namespace kamite::dev_menu
             int punter = ballBusterWomen() ? 1 : 0;
             if (ui->checkbox("Cunt Punter: Ball Buster works on women##ballbusterwomen", &punter))
                 setBallBusterWomen(punter != 0);
+            int sway = swayBar() ? 1 : 0;
+            if (ui->checkbox("Sway Bar: a stun gauge under the enemies' health bars##swaybar", &sway))
+                setSwayBar(sway != 0);
 
             ui->separator_text("At start");
             launcherOnly(ui, "Style switching", envOn("KAMITE_STYLE_SWITCHING", false) ? "on" : "off");
@@ -190,6 +193,7 @@ namespace kamite::dev_menu
                     ini.setBool("Game", "TensionPlacable", tensionPlacable());
                     ini.setBool("Game", "OffTheCuff", offTheCuff());
                     ini.setBool("Game", "BallBusterWomen", ballBusterWomen());
+                    ini.setBool("Game", "SwayBar", swayBar());
                     saveIni(ini, g_gameplayStatus);
                 }
             }

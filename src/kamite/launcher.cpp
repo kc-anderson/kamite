@@ -1641,6 +1641,9 @@ void main()
                         }
                         settingLabel("Cunt Punter", "Ball Buster works on female enemies too, the same as on men.");
                         iniCheckbox(state, "On##ballbusterwomen", "Game", "BallBusterWomen", false);
+                        settingLabel("Sway Bar", "A stun gauge under each enemy's health bar: it fills as you hit them and "
+                                                 "drains while they are stunned.");
+                        iniCheckbox(state, "On##swaybar", "Game", "SwayBar", false);
                         ImGui::EndTable();
                     }
                     ImGui::EndTabItem();

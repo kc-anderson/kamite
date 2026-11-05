@@ -19,6 +19,7 @@ namespace kamite
     //   OffTheCuff (KAMITE_OFF_THE_CUFF)  with TensionPlacable: R2 unleashes with any tension, not only a full meter.
     //   BallBusterWomen (KAMITE_BALL_BUSTER_WOMEN)  Ball Buster stuns female enemies as it does men (launcher:
     //                                     Experimental, Cunt Punter).
+    //   SwayBar (KAMITE_SWAY_BAR)        a stun gauge under each enemy's health bar (launcher: Experimental, Sway Bar).
     //   MuteMusic  (KAMITE_MUTE_MUSIC)   the game's music streams (cSndBgmNode) play at volume 0; voices, sound
     //                                     effects and movies are unchanged.
     void installGameOptions(PS2Runtime &runtime);
@@ -38,4 +39,7 @@ namespace kamite
     // The F2 menu (any thread): Cunt Punter, live (the next Ball Buster hit).
     bool ballBusterWomen();
     void setBallBusterWomen(bool on);
+    // The F2 menu (any thread): Sway Bar, live.
+    bool swayBar();
+    void setSwayBar(bool on);
 }

@@ -77,6 +77,21 @@
 // (sltiu at 0x20A9F0 and 0x25A4D0) and take the men's way. Every other enemy number (Mr. Silver's own shrug
 // included) is left as it was.
 //
+// SwayBar (launcher: Experimental, "Sway Bar"): a stun gauge under each enemy's health bar. The health bar is the
+// enemy's own cIDBase layout at +0x660, drawn by func_0028F108 (or func_0028F5B0 when +0x614 is set: a flash entry
+// more) from the enemy's draw (func_0028EDD0) as a 3D panel above the head: cIDBase_move, then cIDBase_trans. Its
+// entries (kind 3, panels; texture bank 1 no. 6, 64x32): the root (id 0, not drawn), a tick (id -1, 2x10 at the left
+// end), the health fill (id 1, 64x6, scale x = HP / max), the damage lag (id 2: +0x630 easing down to the fill; id 2-3
+// in the flash layout) and the background (id -1, 65x8, translucent black). cIDBase_transPanel (0x2AB360) places a
+// panel with flag byte +0x89 = 3 from its left (x) and bottom (y) edge: x = 256 - drawX - w, y = 224 - drawY .. + h
+// (local units, x the layout's f40 in the world; y up). After the game's trans (hooks at 0x28F580 / 0x28FADC) the
+// entries' draw values are set for a second bar - half height, 6 units under the first - the lag entries hidden,
+// the fill's width = the stun value and yellow; trans is called again (callGuest), then everything is put back.
+// The stun: +0x5B4 (s32), added by func_0028ED28 on hits while the enemy isn't stunned, decaying 30 every 90 frames
+// (func_0028ED78); at 200 func_0026F120 (every enemy, from the hit reactions) zeroes it and sets +0x17CC = 150.0,
+// which counts down by the speed rate (+0x5A8) in the update func_00208BE0 (0x209110): the stun. Shown: +0x5B4 / 200
+// (capped), and +0x17CC / 150 while stunned. Display only.
+//
 // Dead Pan (always on): the Japanese release's free roulette move (reel 0xB; TCRF "Dead Pan / Pan Drop"). The US build
 // keeps it but hides it outside Japanese: func_00125048 tests GameWork +0x56C (language, 0 = Japanese) at 0x1250A8,
 // 0x1251CC, 0x125264 and 0x125338 (the PCSX2 restore patch makes all four read 0). Here they read 0 once it is earned:
@@ -802,6 +817,79 @@ namespace kamite
             ctx->pc = ra;
         }
 
+        // ---- Sway Bar: the stun gauge under the enemies' health bars (see the top of the file) ---------------------
+        constexpr uint32_t kIdBaseTrans = 0x2AAC28u; // cIDBase_trans(layout)
+        constexpr float kStunFull = 200.0f;           // func_0026F120's threshold
+        constexpr float kStunTime = 150.0f;           // its +0x17CC
+        constexpr uint32_t kSwayYellow = 0x0000C0FFu; // r 0xFF, g 0xC0, b 0 (x the fill's blue-white gradient: gold to yellow)
+        constexpr uint32_t kEntActive = 0x80000000u, kEntNoDraw = 0x08000000u;
+
+        bool inGuest(uint32_t address) { return address >= 0x100000u && address < 0x1FF0000u; }
+
+        template <int EnemyReg>
+        void swayBar(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const uint32_t enemy = GPR_U32(ctx, EnemyReg);
+            if (!inGuest(enemy))
+                return;
+            const uint32_t layout = ram32(rdram, enemy + 0x660u);
+            if (!inGuest(layout) || rdram[layout + 0x19u] != 0u) // cIDBase hide
+                return;
+            const uint32_t ent = ram32(rdram, layout + 0x4u), count = ram32(rdram, layout + 0xCu);
+            if (!inGuest(ent) || count == 0u || count > 16u)
+                return;
+            float stun = ramF(rdram, enemy + 0x17CCu) / kStunTime;
+            if (stun <= 0.0f)
+                stun = static_cast<float>(static_cast<int32_t>(ram32(rdram, enemy + 0x5B4u))) / kStunFull;
+            stun = std::clamp(stun, 0.0f, 1.0f);
+
+            struct Saved
+            {
+                uint32_t flags, colour;
+                float y, sclX, sclY;
+            };
+            std::array<Saved, 16> saved{};
+            bool fill = false;
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                const uint32_t e = ent + i * 0xACu;
+                Saved &k = saved[i];
+                k = {ram32(rdram, e + 0x2Cu), ram32(rdram, e + 0x64u), ramF(rdram, e + 0x54u), ramF(rdram, e + 0x58u),
+                     ramF(rdram, e + 0x5Cu)};
+                if ((k.flags & kEntActive) == 0u || (k.flags & kEntNoDraw) != 0u)
+                    continue;
+                const int8_t id = static_cast<int8_t>(rdram[e + 0x2Au]);
+                if (id >= 2) // the damage lag (and the flash): not on the stun bar
+                {
+                    put32(rdram, e + 0x2Cu, k.flags | kEntNoDraw);
+                    continue;
+                }
+                // Half height, 6 units under the health bar's bottom (224 = the panel's centre line).
+                putF(rdram, e + 0x54u, 224.0f + (k.y - 224.0f) * 0.5f + 6.0f);
+                putF(rdram, e + 0x5Cu, k.sclY * 0.5f);
+                if (id == 1)
+                {
+                    const float base = ramF(rdram, e + 0x40u); // the game's HP ratio; draw scale = base x the parents'
+                    const float parents = base > 0.001f ? k.sclX / base : 1.0f;
+                    putF(rdram, e + 0x58u, parents * stun);
+                    put32(rdram, e + 0x64u, (k.colour & 0xFF000000u) | kSwayYellow);
+                    fill = true;
+                }
+            }
+            if (fill)
+                callGuest(rdram, ctx, runtime, kIdBaseTrans, {layout});
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                const uint32_t e = ent + i * 0xACu;
+                const Saved &k = saved[i];
+                put32(rdram, e + 0x2Cu, k.flags);
+                put32(rdram, e + 0x64u, k.colour);
+                putF(rdram, e + 0x54u, k.y);
+                putF(rdram, e + 0x58u, k.sclX);
+                putF(rdram, e + 0x5Cu, k.sclY);
+            }
+        }
+
         // ---- Cunt Punter: Ball Buster on women (see the top of the file) -------------------------------------------
         bool ballBusterWoman(uint32_t emNo)
         {
@@ -875,6 +963,9 @@ namespace kamite
         ps2xRegisterHostHook("km_ball_buster_damage", &ballBusterDamage);
         ps2xRegisterHostHook("km_ball_buster_motion", &ballBusterMotion);
         ps2xSetPatchFlag("ball_buster_women", envOn("KAMITE_BALL_BUSTER_WOMEN"));
+        ps2xRegisterHostHook("km_sway_bar_s3", &swayBar<19>);
+        ps2xRegisterHostHook("km_sway_bar_s2", &swayBar<18>);
+        ps2xSetPatchFlag("sway_bar", envOn("KAMITE_SWAY_BAR"));
         g_tensionPlacable.store(envOn("KAMITE_TENSION_PLACABLE"), std::memory_order_relaxed);
         g_offTheCuff.store(envOn("KAMITE_OFF_THE_CUFF"), std::memory_order_relaxed);
         if (!runtime.hasFunction(kHeatLv) || !(g_heatLv = runtime.lookupFunction(kHeatLv)) ||
@@ -892,7 +983,8 @@ namespace kamite
                                        << (rouletteAnyOrbs ? "; roulette without orbs" : "")
                                        << (liftChairs ? "; chairs liftable" : "")
                                        << (g_tensionPlacable ? (g_offTheCuff ? "; tension placable, off the cuff" : "; tension placable") : "")
-                                       << (ps2xPatchFlag("ball_buster_women") ? "; ball buster on women" : ""));
+                                       << (ps2xPatchFlag("ball_buster_women") ? "; ball buster on women" : "")
+                                       << (ps2xPatchFlag("sway_bar") ? "; sway bar" : ""));
     }
 
     bool muteMusic()
@@ -939,5 +1031,16 @@ namespace kamite
         // Read at each Ball Buster hit, so the change lands at the next one.
         ps2xSetPatchFlag("ball_buster_women", on);
         setenvFlag("KAMITE_BALL_BUSTER_WOMEN", on);
+    }
+
+    bool swayBar()
+    {
+        return ps2xPatchFlag("sway_bar");
+    }
+
+    void setSwayBar(bool on)
+    {
+        ps2xSetPatchFlag("sway_bar", on);
+        setenvFlag("KAMITE_SWAY_BAR", on);
     }
 }
