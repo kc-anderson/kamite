@@ -1501,7 +1501,7 @@ namespace kamite
         {
             if (!g_cameraHold.active)
                 holdCameraBones(rdram);
-            g_replay.bark = !g_replay.active; // one bark per replay: rapid switching restarts the motion only
+            g_replay.bark = true; // a bark on every switch (K)
             g_replay.active = true;
             g_replay.gene = gene;
             g_replay.clock = 0.0f;
