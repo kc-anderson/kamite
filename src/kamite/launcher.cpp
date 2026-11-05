@@ -52,6 +52,8 @@ namespace kamite::launcher
         constexpr Choice kWindowModes[] = {{"Window", "window"}, {"Fullscreen (borderless)", "fullscreen"}, {"Maximized window", "maximized"}};
         constexpr Choice kFovs[] = {{"100%: as on the PS2", "100"}, {"110%", "110"}, {"120%", "120"}, {"130%", "130"},
                                     {"140%", "140"}, {"150%", "150"}};
+        constexpr Choice kMoney[] = {{"100%: as in the game", "100"}, {"75%", "75"}, {"125%", "125"}, {"150%", "150"},
+                                     {"175%", "175"}, {"200%", "200"}};
         constexpr Choice kCameraDistances[] = {{"0%: Gene keeps his size", "0"}, {"50%: halfway out", "50"},
                                                {"100%: wider view looks zoomed out", "100"}};
         constexpr Choice kControlStyles[] = {{"Classic", "classic"}, {"Modern", "modern"}};
@@ -1644,6 +1646,9 @@ void main()
                         settingLabel("Sway Bar", "A stun gauge under each enemy's health bar: it fills as you hit them and "
                                                  "drains while they are stunned.");
                         iniCheckbox(state, "On##swaybar", "Game", "SwayBar", false);
+                        settingLabel("Money", "Bust size of the female NPCs and enemies.", "F2 tunes it live.");
+                        iniCombo(state, "##money", "Game", "Money", "100",
+                                 [](const char *id, std::string &value) { return choiceCombo(id, kMoney, value); });
                         ImGui::EndTable();
                     }
                     ImGui::EndTabItem();
