@@ -75,10 +75,7 @@
 // follow-up reads (func_00208BE0 0x209EC8). Men and women share the motion pack (+0x304 = the same em00 pack in
 // cases ball_buster_on_man / _on_woman), so under "ball_buster_women" both switches read out of range for the women
 // (sltiu at 0x20A9F0 and 0x25A4D0) and take the men's way. Every other enemy number (Mr. Silver's own shrug
-// included) is left as it was. The move's name: while it's on and Gene's target (+0x640, the enemy the roulette list
-// builder func_00125048 measures its ranges to) is a woman, outside the sub-screens and events, message 0x30D8
-// ("BALL BUSTER", entry 216 of the core bank *(*(0x3C23A4) + 0xC)) points at "CUNT PUNTER" at guest 0xFFC00; the
-// disc's offset back otherwise (ballBusterNameFrame, from the frame hook).
+// included) is left as it was.
 //
 // SwayBar (launcher: Experimental, "Sway Bar"): a stun gauge under each enemy's health bar. The health bar is the
 // enemy's own cIDBase layout at +0x660, drawn by func_0028F108 (or func_0028F5B0 when +0x614 is set: a flash entry
@@ -105,7 +102,11 @@
 // = the angle round the camera (eye *(0x5CAFF0) +0x210, look +0x200; yaw = atan2(dx, dz), screen right = yaw - 90
 // degrees as Modern's stick has it). Candidates: cEmManage's list, numbers 0x200-0x2FF, HP > 0, +0x617 clear, within
 // 12 of Gene and in front of the camera. The stick is the game's pad byte (0x5E8144), so cases replay it; Modern
-// hands the camera and the stick to the game while the wheel is up.
+// hands the camera and the stick to the game while the wheel is up. D-pad left / right do the same. Rebuilding the list
+// mid-wheel (+0x165C = 0) re-ran cActionButton_setCommandList, which restarts the wheel (K: stuck on screen, timer
+// broken), so the builder is run on its own (callGuest) and its list caught at setCommandList: only the greyed flags
+// go into the wheel. Gene's turn to the new target is eased (0.35 of the way a 30 FPS frame) with the menus' cursor
+// sound (0x15F).
 //
 // Dead Pan (always on): the Japanese release's free roulette move (reel 0xB; TCRF "Dead Pan / Pan Drop"). The US build
 // keeps it but hides it outside Japanese: func_00125048 tests GameWork +0x56C (language, 0 = Japanese) at 0x1250A8,
@@ -922,6 +923,46 @@ namespace kamite
             }
         }
 
+        // ---- Cycle Roulette Target: the wheel's greying for a new target (see the top of the file) ----------------
+        constexpr uint32_t kListBuilder = 0x125048u;     // func_00125048(gene): the roulette's move list
+        constexpr uint32_t kSetCommandList = 0x1F7900u;  // cActionButton_setCommandList(mgr, 0xD, matrix, list, count)
+        constexpr uint32_t kSeCallPlain = 0x2CB8A0u;     // the menus' sound call (style_presets' cursor sound)
+        GuestFunction g_setCommandList = nullptr;
+        bool g_regrey = false; // game thread: the list builder is being run again for its greying only
+
+        void setCommandListWrapped(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (!g_regrey)
+                return g_setCommandList(rdram, ctx, runtime);
+            // The wheel (*(0x3BD6E8) + 0xEA0, BlendSetup_load's copy): reel ids at +0x36C (u16, count +0x3B2), greyed
+            // flags at +0x3FA; the action button's own table at 0x5686A0. A command: +4 reel id (u16), +8 greyed.
+            const uint32_t list = GPR_U32(ctx, 7), count = GPR_U32(ctx, 8);
+            const uint32_t game = ram32(rdram, 0x3BD6E8u);
+            if (inGuest(game) && inGuest(list) && count <= 36u)
+            {
+                const uint32_t wheel = game + 0xEA0u;
+                uint16_t n = 0;
+                std::memcpy(&n, rdram + wheel + 0x3B2u, 2);
+                for (uint32_t i = 0; i < n && i < 36u; ++i)
+                {
+                    uint16_t id = 0;
+                    std::memcpy(&id, rdram + wheel + 0x36Cu + 2u * i, 2);
+                    for (uint32_t j = 0; j < count; ++j)
+                    {
+                        uint16_t listId = 0;
+                        std::memcpy(&listId, rdram + list + 12u * j + 4u, 2);
+                        if (listId != id)
+                            continue;
+                        rdram[wheel + 0x3FAu + i] = rdram[list + 12u * j + 8u];
+                        rdram[0x5686A0u + i] = rdram[list + 12u * j + 8u];
+                        break;
+                    }
+                }
+            }
+            SET_GPR_U32(ctx, 2, 0u);
+            ctx->pc = GPR_U32(ctx, 31);
+        }
+
         // ---- Cunt Punter: Ball Buster on women (see the top of the file) -------------------------------------------
         bool ballBusterWoman(uint32_t emNo)
         {
@@ -999,6 +1040,10 @@ namespace kamite
         ps2xRegisterHostHook("km_sway_bar_s2", &swayBar<18, 3>);
         ps2xSetPatchFlag("sway_bar", envOn("KAMITE_SWAY_BAR"));
         ps2xSetPatchFlag("roulette_cycle", envOn("KAMITE_ROULETTE_CYCLE"));
+        if (!runtime.hasFunction(kSetCommandList) || !(g_setCommandList = runtime.lookupFunction(kSetCommandList)) ||
+            !FunctionHooks::instance().replace(kSetCommandList, "cActionButton_setCommandList (Cycle Roulette Target)",
+                                               &setCommandListWrapped, ReplacementStatus::Native, "the wheel's greying for a new target"))
+            g_setCommandList = nullptr;
         g_tensionPlacable.store(envOn("KAMITE_TENSION_PLACABLE"), std::memory_order_relaxed);
         g_offTheCuff.store(envOn("KAMITE_OFF_THE_CUFF"), std::memory_order_relaxed);
         if (!runtime.hasFunction(kHeatLv) || !(g_heatLv = runtime.lookupFunction(kHeatLv)) ||
@@ -1077,78 +1122,78 @@ namespace kamite
         setenvFlag("KAMITE_SWAY_BAR", on);
     }
 
-    void ballBusterNameFrame(uint8_t *rdram)
-    {
-        constexpr uint32_t kBankHolder = 0x3C23A4u, kMessage = 0x30D8u, kText = 0x000FFC00u;
-        constexpr uint32_t kSubScrOrEvent = 0x08000000u | 0x20000000u; // STA SUBSCR, EVENT
-        static uint32_t s_bank = 0u, s_original = 0u;
-        const uint32_t holder = ram32(rdram, kBankHolder);
-        if (!inGuest(holder))
-            return;
-        const uint32_t bank = ram32(rdram, holder + 0xCu);
-        if (!inGuest(bank) || ram32(rdram, bank) <= kMessage - 0x3000u)
-            return;
-        const uint32_t word = bank + (kMessage - 0x3000u) * 8u + 4u;
-        const uint32_t ours = kText - bank, now = ram32(rdram, word);
-        if (bank != s_bank || (now != ours && now != s_original))
-        {
-            s_bank = bank;
-            s_original = now == ours ? 0u : now;
-        }
-        if (s_original == 0u) // ours already (a save state made while it showed): the disc's entry follows 0x30D7's
-        {
-            uint32_t at = bank + ram32(rdram, word - 8u);
-            for (int i = 0; i < 64 && inGuest(at) && (ram32(rdram, at) & 0xFFFFu) != 0x8001u; ++i)
-                at += 2u;
-            s_original = ((at + 2u + 3u) & ~3u) - bank;
-        }
-        bool woman = false;
-        if (ps2xPatchFlag("ball_buster_women") && (ram32(rdram, 0x747A84u) & kSubScrOrEvent) == 0u)
-        {
-            const uint32_t gene = ram32(rdram, 0x7474A0u + 0x5F4u);
-            const uint32_t target = inGuest(gene) ? ram32(rdram, gene + 0x640u) : 0u;
-            woman = inGuest(target) && ballBusterWoman(ram32(rdram, target + 0x564u));
-        }
-        if (woman)
-        {
-            // The disc's entry: B602 0002 (palette colour 2), the name, B301 (restore), 8001 (end).
-            static const uint16_t kName[] = {0xB602, 0x0002, 0x42, 0x54, 0x4D, 0x53, 0x35, 0x4F, 0x54, 0x4D, 0x53,
-                                             0x44, 0x51, 0xB301, 0x8001};
-            std::memcpy(rdram + kText, kName, sizeof(kName));
-            if (now != ours)
-                put32(rdram, word, ours);
-        }
-        else if (now == ours && s_original != 0u)
-            put32(rdram, word, s_original);
-    }
-
-    void rouletteTargetFrame(uint8_t *rdram)
+    void rouletteTargetFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         static bool s_flicked = false;
+        static uint16_t s_dpadWas = 0;
+        static int s_ease = 0;
         if (!ps2xPatchFlag("roulette_cycle"))
             return;
         const uint32_t gene = ram32(rdram, 0x7474A0u + 0x5F4u);
         if (!inGuest(gene) || rdram[gene + 0x2F4u] != 0u || rdram[gene + 0x2F5u] != 0x2Bu || rdram[gene + 0x2F6u] != 1u)
         {
             s_flicked = false;
+            s_ease = 0;
             return;
         }
-        const uint8_t rx = rdram[0x5E8144u]; // the right stick's x, player 1 (the left stick's at 0x5E8146)
-        const int dir = rx >= 0xC0u ? 1 : rx <= 0x40u ? -1 : 0;
-        if (dir == 0 || (rx > 0x60u && rx < 0xA0u))
-            s_flicked = false;
-        if (dir == 0 || s_flicked)
+        const bool fps60 = ps2xPatchFlag("fps60");
+        const uint32_t current = ram32(rdram, gene + 0x640u);
+        const uint32_t genePos = ram32(rdram, gene + 0xF0u);
+        if (!inGuest(genePos))
             return;
-        s_flicked = true;
+        const float gx = ramF(rdram, genePos), gz = ramF(rdram, genePos + 8u);
+
+        // The turn to a new target: eased (most of the way at once, settling in), on top of the game's own 11 degrees
+        // a frame (func_00124E68 from roulette step 1).
+        if (s_ease > 0 && inGuest(current) && inGuest(ram32(rdram, current + 0xF0u)))
+        {
+            --s_ease;
+            const uint32_t pos = ram32(rdram, current + 0xF0u);
+            const float want = std::atan2(ramF(rdram, pos) - gx, ramF(rdram, pos + 8u) - gz);
+            float heading = ramF(rdram, gene + 0x104u);
+            float d = want - heading;
+            while (d > 3.14159265f)
+                d -= 6.2831853f;
+            while (d < -3.14159265f)
+                d += 6.2831853f;
+            if (std::fabs(d) < 0.005f)
+                s_ease = 0;
+            heading += d * (fps60 ? 0.194f : 0.35f); // 0.35 a 30 FPS frame
+            while (heading > 3.14159265f)
+                heading -= 6.2831853f;
+            while (heading < -3.14159265f)
+                heading += 6.2831853f;
+            putF(rdram, gene + 0x104u, heading);
+        }
+
+        // The input: a right-stick flick (the game's pad byte, 0x5E8144; the left stick's x is at 0x5E8146) or a
+        // d-pad left / right press (0x5E8242: 0x80 left, 0x20 right; up / down step the wheel).
+        const uint8_t rx = rdram[0x5E8144u];
+        int dir = 0;
+        if (rx > 0x60u && rx < 0xA0u)
+            s_flicked = false;
+        else if (!s_flicked && (rx >= 0xC0u || rx <= 0x40u))
+        {
+            s_flicked = true;
+            dir = rx >= 0xC0u ? 1 : -1;
+        }
+        uint16_t dpad = 0;
+        std::memcpy(&dpad, rdram + 0x5E8242u, 2);
+        dpad &= 0xA0u;
+        const uint16_t pressed = static_cast<uint16_t>(dpad & ~s_dpadWas);
+        s_dpadWas = dpad;
+        if (dir == 0 && pressed == 0x20u)
+            dir = 1;
+        else if (dir == 0 && pressed == 0x80u)
+            dir = -1;
+        if (dir == 0)
+            return;
+
         const uint32_t camera = ram32(rdram, 0x5CAFF0u);
         if (!inGuest(camera))
             return;
         const float ex = ramF(rdram, camera + 0x210u), ez = ramF(rdram, camera + 0x218u);
         const float camYaw = std::atan2(ramF(rdram, camera + 0x200u) - ex, ramF(rdram, camera + 0x208u) - ez);
-        const uint32_t genePos = ram32(rdram, gene + 0xF0u);
-        if (!inGuest(genePos))
-            return;
-        const float gx = ramF(rdram, genePos), gz = ramF(rdram, genePos + 8u);
         struct Candidate
         {
             uint32_t em;
@@ -1184,7 +1229,6 @@ namespace kamite
         if (list.size() < 2u)
             return;
         std::sort(list.begin(), list.end(), [](const Candidate &a, const Candidate &b) { return a.side < b.side; });
-        const uint32_t current = ram32(rdram, gene + 0x640u);
         int at = -1;
         for (size_t i = 0; i < list.size(); ++i)
             if (list[i].em == current)
@@ -1203,7 +1247,16 @@ namespace kamite
         if (list[next].em == current)
             return;
         put32(rdram, gene + 0x640u, list[next].em);
-        put32(rdram, gene + 0x165Cu, 0u); // the move list (and its greying by range) is built again
+        // The wheel's greying for the new target: the game's own list builder run again, its list caught at
+        // cActionButton_setCommandList (setCommandListWrapped) and only the greyed flags copied into the wheel.
+        if (g_setCommandList)
+        {
+            g_regrey = true;
+            callGuest(rdram, ctx, runtime, kListBuilder, {gene});
+            g_regrey = false;
+        }
+        callGuest(rdram, ctx, runtime, kSeCallPlain, {0x5FEE00u, 0u, 0x15Fu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0u, 0u}); // the menus' cursor sound
+        s_ease = fps60 ? 40 : 20;
     }
 
     bool rouletteTargetCycle()

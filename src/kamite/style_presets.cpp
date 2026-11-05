@@ -428,6 +428,8 @@ namespace kamite::style_presets
                 return false;
             if ((rd32(player + 0x250u) & 0x8000u) != 0u || g_ram[player + 0x2F4u] != 0u)
                 return false;
+            if (g_ram[player + 0x2F5u] == 0x2Bu)
+                return false; // the roulette: the d-pad steps the wheel and (Cycle Roulette Target) its target
             const uint32_t game = rd32(0x3BD6E8u);
             if (validPointer(game, 0x2000u) && g_ram[game + 0x1AD8u] != 0u)
                 return false; // a tutorial pop-up

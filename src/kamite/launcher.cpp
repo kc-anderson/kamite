@@ -1557,8 +1557,9 @@ void main()
                                                        "twice as long (the dial runs half as fast), at 30 and 60 FPS.");
                         iniCombo(state, "##roulette", "Game", "RouletteTimer", "normal",
                                  [](const char *id, std::string &value) { return choiceCombo(id, kRouletteTimers, value); });
-                        settingLabel("Cycle Roulette Target", "While the roulette wheel is up, flick the right stick left "
-                                                              "or right to aim it at the next enemy that way.");
+                        settingLabel("Cycle Roulette Target", "While the roulette wheel is up, flick the right stick or "
+                                                              "press the d-pad left or right to aim it at the next enemy "
+                                                              "that way.");
                         iniCheckbox(state, "On##roulettecycle", "Game", "RouletteTargetCycle", false);
                         settingLabel("Roulette without orbs", "R1 opens the roulette even with no orbs left. Nothing "
                                                               "can be picked without orbs, but the roulette camera "
