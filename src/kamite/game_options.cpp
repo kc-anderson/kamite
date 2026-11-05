@@ -998,7 +998,9 @@ namespace kamite
         // Instead func_00158328 (the motion's pose at +0x430, from moveMotion) is run a second time for Gene at the
         // replay's own clock; its root motion outputs (+0x310, +0x340, +0x370) keep the real clock's values. The
         // opening's sounds (cSnd_SeCall from Motion_seq_ctr: the bark) are caught as the game plays them and fired
-        // again at their frames.
+        // again when the target changes (K: the bark with the camera's turn, not at the opening's end). Both run inside
+// Gene's own moveMotion with the scheduler held (beginHostCall): a thread switch unwinding the first pose call
+// returned into the second with the clock swapped and the registers set for it (K, Nov 5: a hang on rapid switching).
         constexpr uint32_t kMotionPose = 0x158328u;                    // func_00158328(obj)
         constexpr uint32_t kSeCall = 0x2CBA48u;                        // cSnd_SeCall(snd, bank, id, obj, t0..t3)
         constexpr uint32_t kSeqCtr = 0x2C7FD0u, kSeqCtrEnd = 0x2C8AD8u; // Motion_seq_ctr: a motion's events
@@ -1009,7 +1011,7 @@ namespace kamite
             bool active = false;
             uint32_t gene = 0u;
             float clock = 0.0f; // the drawn frame
-            float fired = -1.0f; // sounds up to here played
+            bool bark = false;  // the opening's sounds to play at Gene's next pose
         } g_replay;
         struct OpeningSound
         {
@@ -1023,7 +1025,23 @@ namespace kamite
             const uint32_t obj = GPR_U32(ctx, 4), ra = GPR_U32(ctx, 31);
             if (!g_replay.active || obj != g_replay.gene || !inGuest(obj))
                 return g_motionPose(rdram, ctx, runtime);
+            EeScheduler &scheduler = runtime->eeScheduler();
+            scheduler.beginHostCall(); // both calls run to their end (a thread switch can't unwind between them)
             g_motionPose(rdram, ctx, runtime); // the real clock's pose and root motion
+            if (g_replay.bark)
+            {
+                g_replay.bark = false;
+                if (GuestFunction se = runtime->lookupFunction(kSeCall))
+                    for (const OpeningSound &sound : g_openingSounds)
+                    {
+                        const R5900Context saved = *ctx;
+                        for (int i = 0; i < 8; ++i)
+                            SET_GPR_U32(ctx, 4 + i, sound.args[i]);
+                        ctx->pc = kSeCall;
+                        se(rdram, ctx, runtime);
+                        *ctx = saved;
+                    }
+            }
             uint8_t root[3][16];
             for (uint32_t i = 0; i < 3u; ++i)
                 std::memcpy(root[i], rdram + obj + 0x310u + 0x30u * i, 16);
@@ -1036,6 +1054,7 @@ namespace kamite
             putF(rdram, obj + 0x430u, real);
             for (uint32_t i = 0; i < 3u; ++i)
                 std::memcpy(rdram + obj + 0x310u + 0x30u * i, root[i], 16);
+            scheduler.endHostCall();
             ctx->pc = ra;
         }
 
@@ -1343,7 +1362,7 @@ namespace kamite
             return;
         }
         // Gene's replayed opening (drawn only, motionPoseWrapped): its clock at the game's motion rate (+0x574, halved
-        // at 60), its sounds fired as it passes them, until it meets the real clock.
+        // at 60) until it meets the real clock.
         const float clock = ramF(rdram, gene + 0x430u);
         if (g_replay.active)
         {
@@ -1351,12 +1370,6 @@ namespace kamite
                 g_replay.active = false;
             else
             {
-                for (const OpeningSound &sound : g_openingSounds)
-                    if (sound.at > g_replay.fired && sound.at <= g_replay.clock)
-                        callGuest(rdram, ctx, runtime, kSeCall,
-                                  {sound.args[0], sound.args[1], sound.args[2], sound.args[3], sound.args[4], sound.args[5],
-                                   sound.args[6], sound.args[7]});
-                g_replay.fired = g_replay.clock;
                 const float rate = ramF(rdram, 0x7474A0u + 0x574u) * (rdram[0x7474A0u + 0x569u] == 1u ? 0.5f : 1.0f);
                 g_replay.clock += rate > 0.0f ? rate : 1.0f;
                 if (g_replay.clock >= clock)
@@ -1488,10 +1501,10 @@ namespace kamite
         {
             if (!g_cameraHold.active)
                 holdCameraBones(rdram);
+            g_replay.bark = !g_replay.active; // one bark per replay: rapid switching restarts the motion only
             g_replay.active = true;
             g_replay.gene = gene;
             g_replay.clock = 0.0f;
-            g_replay.fired = -1.0f;
         }
         s_ease = fps60 ? 40 : 20;
     }
