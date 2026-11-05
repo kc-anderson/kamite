@@ -36,6 +36,9 @@ namespace kamite
     void setTensionPlacable(bool on);
     bool offTheCuff();
     void setOffTheCuff(bool on);
+    // Game thread, once a game frame: Ball Buster's name reads "CUNT PUNTER" while Cunt Punter is on and Gene's target
+    // is a woman.
+    void ballBusterNameFrame(uint8_t *rdram);
     // The F2 menu (any thread): Cunt Punter, live (the next Ball Buster hit).
     bool ballBusterWomen();
     void setBallBusterWomen(bool on);

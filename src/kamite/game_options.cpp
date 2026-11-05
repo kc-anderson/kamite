@@ -75,7 +75,10 @@
 // follow-up reads (func_00208BE0 0x209EC8). Men and women share the motion pack (+0x304 = the same em00 pack in
 // cases ball_buster_on_man / _on_woman), so under "ball_buster_women" both switches read out of range for the women
 // (sltiu at 0x20A9F0 and 0x25A4D0) and take the men's way. Every other enemy number (Mr. Silver's own shrug
-// included) is left as it was.
+// included) is left as it was. The move's name: while it's on and Gene's target (+0x640, the enemy the roulette list
+// builder func_00125048 measures its ranges to) is a woman, outside the sub-screens and events, message 0x30D8
+// ("BALL BUSTER", entry 216 of the core bank *(*(0x3C23A4) + 0xC)) points at "CUNT PUNTER" at guest 0xFFC00; the
+// disc's offset back otherwise (ballBusterNameFrame, from the frame hook).
 //
 // SwayBar (launcher: Experimental, "Sway Bar"): a stun gauge under each enemy's health bar. The health bar is the
 // enemy's own cIDBase layout at +0x660, drawn by func_0028F108 (or func_0028F5B0 when +0x614 is set: a flash entry
@@ -1060,5 +1063,50 @@ namespace kamite
     {
         ps2xSetPatchFlag("sway_bar", on);
         setenvFlag("KAMITE_SWAY_BAR", on);
+    }
+
+    void ballBusterNameFrame(uint8_t *rdram)
+    {
+        constexpr uint32_t kBankHolder = 0x3C23A4u, kMessage = 0x30D8u, kText = 0x000FFC00u;
+        constexpr uint32_t kSubScrOrEvent = 0x08000000u | 0x20000000u; // STA SUBSCR, EVENT
+        static uint32_t s_bank = 0u, s_original = 0u;
+        const uint32_t holder = ram32(rdram, kBankHolder);
+        if (!inGuest(holder))
+            return;
+        const uint32_t bank = ram32(rdram, holder + 0xCu);
+        if (!inGuest(bank) || ram32(rdram, bank) <= kMessage - 0x3000u)
+            return;
+        const uint32_t word = bank + (kMessage - 0x3000u) * 8u + 4u;
+        const uint32_t ours = kText - bank, now = ram32(rdram, word);
+        if (bank != s_bank || (now != ours && now != s_original))
+        {
+            s_bank = bank;
+            s_original = now == ours ? 0u : now;
+        }
+        if (s_original == 0u) // ours already (a save state made while it showed): the disc's entry follows 0x30D7's
+        {
+            uint32_t at = bank + ram32(rdram, word - 8u);
+            for (int i = 0; i < 64 && inGuest(at) && (ram32(rdram, at) & 0xFFFFu) != 0x8001u; ++i)
+                at += 2u;
+            s_original = ((at + 2u + 3u) & ~3u) - bank;
+        }
+        bool woman = false;
+        if (ps2xPatchFlag("ball_buster_women") && (ram32(rdram, 0x747A84u) & kSubScrOrEvent) == 0u)
+        {
+            const uint32_t gene = ram32(rdram, 0x7474A0u + 0x5F4u);
+            const uint32_t target = inGuest(gene) ? ram32(rdram, gene + 0x640u) : 0u;
+            woman = inGuest(target) && ballBusterWoman(ram32(rdram, target + 0x564u));
+        }
+        if (woman)
+        {
+            // The disc's entry: B602 0002 (palette colour 2), the name, B301 (restore), 8001 (end).
+            static const uint16_t kName[] = {0xB602, 0x0002, 0x42, 0x54, 0x4D, 0x53, 0x35, 0x4F, 0x54, 0x4D, 0x53,
+                                             0x44, 0x51, 0xB301, 0x8001};
+            std::memcpy(rdram + kText, kName, sizeof(kName));
+            if (now != ours)
+                put32(rdram, word, ours);
+        }
+        else if (now == ours && s_original != 0u)
+            put32(rdram, word, s_original);
     }
 }
