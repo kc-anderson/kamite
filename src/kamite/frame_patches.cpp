@@ -531,6 +531,7 @@ namespace kamite
             const R5900Context saved = *ctx;
             SET_GPR_U32(ctx, 4, a0);
             ctx->f[12] = f12;
+            ctx->pc = address; // a hooked function finds its hook by the pc (game_options.cpp callGuest)
             runtime->eeScheduler().beginHostCall();
             fn(rdram, ctx, runtime);
             runtime->eeScheduler().endHostCall();
@@ -639,6 +640,7 @@ namespace kamite
             const R5900Context saved = *ctx;
             for (int i = 0; i < 7; ++i)
                 SET_GPR_U32(ctx, 4 + i, r.args[i]);
+            ctx->pc = r.fn; // a hooked function finds its hook by the pc (game_options.cpp callGuest)
             runtime->eeScheduler().beginHostCall();
             fn(rdram, ctx, runtime);
             runtime->eeScheduler().endHostCall();

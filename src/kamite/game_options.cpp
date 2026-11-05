@@ -309,6 +309,10 @@ namespace kamite
             }
             if (stack)
                 SET_GPR_U32(ctx, 29, stack);
+            // The pc too: a function behind a FunctionHooks trampoline (an observed or replaced one, e.g. the motion start
+            // npc_poses watches) finds its hook by the pc; a stale one stopped the game thread ("trampoline entered with
+            // unknown pc", K, Nov 5: Cycle Roulette Target's replayed motion).
+            ctx->pc = address;
             runtime->eeScheduler().beginHostCall();
             fn(rdram, ctx, runtime);
             runtime->eeScheduler().endHostCall();

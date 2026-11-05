@@ -1030,6 +1030,7 @@ namespace kamite::style_presets
             const uint32_t args[] = {0x5FEE00u, 0u, 0x15Fu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0u, 0u};
             for (int i = 0; i < 7; ++i)
                 SET_GPR_U32(ctx, 4 + i, args[i]);
+            ctx->pc = kSeCall; // a hooked function finds its hook by the pc (game_options.cpp callGuest)
             runtime->eeScheduler().beginHostCall();
             fn(rdram, ctx, runtime);
             runtime->eeScheduler().endHostCall();
