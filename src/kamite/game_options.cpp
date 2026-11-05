@@ -110,7 +110,8 @@
 // mid-wheel (+0x165C = 0) re-ran cActionButton_setCommandList, which restarts the wheel (K: stuck on screen, timer
 // broken), so the builder is run on its own (callGuest) and its list caught at setCommandList: only the greyed flags
 // go into the wheel. Gene's turn to the new target is eased (0.35 of the way a 30 FPS frame), and he plays the
-// roulette's entry motion and bark again (K, Nov 5: he re-centres himself; no menu sound).
+// roulette's entry motion and bark again (K, Nov 5: he re-centres himself; no menu sound), with the camera bones the
+// motion animates held where they had settled (the camera turns with Gene, no second fly-in).
 //
 // Dead Pan (always on): the Japanese release's free roulette move (reel 0xB; TCRF "Dead Pan / Pan Drop"). The US build
 // keeps it but hides it outside Japanese: func_00125048 tests GameWork +0x56C (language, 0 = Japanese) at 0x1250A8,
@@ -938,6 +939,57 @@ namespace kamite
         constexpr uint32_t kStartMotion = 0x2A8578u;     // func_002A8578(obj, motion, events, mode, f12 frame, ...)
         constexpr uint32_t kSeCall = 0x2CBA48u;          // cSnd_SeCall_2CBA48(snd, bank, id, obj, 0, 0, 0, 0)
         GuestFunction g_setCommandList = nullptr;
+
+        // The roulette camera is the parts camera (0x463970, set by func_00124EC0 / cPartsCamera_SetParts): its update
+        // func_001399A0 puts the eye and the look at Gene's matrix (+0x80) x two camera bones' translations (+0x30;
+        // the parts at +0x364 / +0x368), with the first bone's +0x104 as the field of view and the second's as the
+        // roll. The entry motion animates those bones (the fly-in), so a replayed motion flew the camera in again (K,
+        // Nov 5). After a target change the bones' settled values are held at each camera update until the roulette
+        // ends: the camera turns with Gene's eased turn instead.
+        constexpr uint32_t kPartsCamera = 0x463970u, kPartsCameraUpdate = 0x1399A0u;
+        struct CameraHold
+        {
+            bool active = false;
+            uint32_t parts[2] = {};
+            float values[2][4] = {}; // +0x30 x y z, +0x104
+        } g_cameraHold;
+
+        void holdCameraBones(uint8_t *rdram)
+        {
+            g_cameraHold.active = false;
+            for (int i = 0; i < 2; ++i)
+            {
+                const uint32_t part = ram32(rdram, kPartsCamera + 0x364u + 4u * static_cast<uint32_t>(i));
+                if (!inGuest(part))
+                    return;
+                g_cameraHold.parts[i] = part;
+                for (int k = 0; k < 3; ++k)
+                    g_cameraHold.values[i][k] = ramF(rdram, part + 0x30u + 4u * static_cast<uint32_t>(k));
+                g_cameraHold.values[i][3] = ramF(rdram, part + 0x104u);
+            }
+            g_cameraHold.active = true;
+        }
+
+        void onPartsCameraUpdate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            if (!g_cameraHold.active || GPR_U32(ctx, 4) != kPartsCamera)
+                return;
+            for (int i = 0; i < 2; ++i)
+            {
+                const uint32_t part = g_cameraHold.parts[i];
+                if (ram32(rdram, kPartsCamera + 0x364u + 4u * static_cast<uint32_t>(i)) != part)
+                {
+                    g_cameraHold.active = false; // the game set another camera up
+                    return;
+                }
+            }
+            for (int i = 0; i < 2; ++i)
+            {
+                for (int k = 0; k < 3; ++k)
+                    putF(rdram, g_cameraHold.parts[i] + 0x30u + 4u * static_cast<uint32_t>(k), g_cameraHold.values[i][k]);
+                putF(rdram, g_cameraHold.parts[i] + 0x104u, g_cameraHold.values[i][3]);
+            }
+        }
         bool ballBusterWoman(uint32_t emNo);
 
         // Ball Buster's plate on the wheel (reel id 7; the command's +0 is its 128x64 8-bit TIM2): K's CUNT PUNTER
@@ -1104,6 +1156,8 @@ namespace kamite
             !FunctionHooks::instance().replace(kSetCommandList, "cActionButton_setCommandList (Cycle Roulette Target)",
                                                &setCommandListWrapped, ReplacementStatus::Native, "the wheel's greying for a new target"))
             g_setCommandList = nullptr;
+        FunctionHooks::instance().observeEntry(kPartsCameraUpdate, "parts camera update (Cycle Roulette Target)",
+                                               &onPartsCameraUpdate);
         g_tensionPlacable.store(envOn("KAMITE_TENSION_PLACABLE"), std::memory_order_relaxed);
         g_offTheCuff.store(envOn("KAMITE_OFF_THE_CUFF"), std::memory_order_relaxed);
         if (!runtime.hasFunction(kHeatLv) || !(g_heatLv = runtime.lookupFunction(kHeatLv)) ||
@@ -1204,6 +1258,8 @@ namespace kamite
         const bool subScreen = (ram32(rdram, 0x747A84u) & 0x08000000u) != 0u;
         if (g_plate != 0u)
             setPlate(rdram, g_plate, s_punter && (roulette || (s_hold > 0 && !subScreen)));
+        if (!roulette)
+            g_cameraHold.active = false;
         if (!ps2xPatchFlag("roulette_cycle"))
             return;
         if (!roulette || rdram[gene + 0x2F6u] != 1u)
@@ -1339,6 +1395,8 @@ namespace kamite
         {
             const float dx = ramF(rdram, newPos) - gx, dz = ramF(rdram, newPos + 8u) - gz;
             const uint32_t motion = dx * dx + dz * dz > 64.0f ? 0x228u : 0x220u;
+            if (!g_cameraHold.active)
+                holdCameraBones(rdram); // the settled camera, before the motion moves its bones again
             const float f12 = ctx->f[12];
             ctx->f[12] = 0.0f;
             callGuest(rdram, ctx, runtime, kStartMotion,
