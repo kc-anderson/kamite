@@ -1292,8 +1292,12 @@ namespace kamite::test_mode
             if (padBit != 0u && (pressed & padBit) != 0u && (rec.prevPressed & padBit) == 0u)
                 rec.toggle = true;
             rec.prevPressed = pressed;
-            if (rec.phase == Recorder::Phase::Saving && !rec.polling && ps2x::savestate::saveCount() != rec.savesBefore)
-                rec.polling = true; // the first poll after the state: the replay's first poll after the load
+            // The first poll after the state: the replay's first poll after the load. The frame handler may already
+            // have moved on to Recording when that poll comes (it also watches the save count), so either phase starts
+            // it: a case recorded with no polls at all stalled its replay at "Replaying ..." (K, Nov 5).
+            if ((rec.phase == Recorder::Phase::Saving || rec.phase == Recorder::Phase::Recording) && !rec.polling &&
+                ps2x::savestate::saveCount() != rec.savesBefore)
+                rec.polling = true;
             if (!rec.polling)
                 return;
             ++rec.readsThisFrame;
