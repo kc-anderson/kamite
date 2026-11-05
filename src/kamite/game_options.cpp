@@ -1185,8 +1185,21 @@ namespace kamite
         static int s_ease = 0;
         const uint32_t gene = ram32(rdram, 0x7474A0u + 0x5F4u);
         const bool roulette = inGuest(gene) && rdram[gene + 0x2F4u] == 0u && rdram[gene + 0x2F5u] == 0x2Bu;
-        if (g_plate != 0u) // Ball Buster's plate follows the target while the wheel is up, the disc's after
-            setPlate(rdram, g_plate, roulette && punterWanted(rdram, gene));
+        // Ball Buster's plate follows the target while the wheel is up. The pick's flash (the plate flying off as the
+        // move starts) plays after Gene has left the roulette state, so the last choice is held 3 s past it (K, Nov 5:
+        // the flash showed BALL BUSTER), unless a sub-screen opens; the disc's pixels after.
+        static bool s_punter = false;
+        static int s_hold = 0;
+        if (roulette)
+        {
+            s_punter = punterWanted(rdram, gene);
+            s_hold = ps2xPatchFlag("fps60") ? 180 : 90;
+        }
+        else if (s_hold > 0)
+            --s_hold;
+        const bool subScreen = (ram32(rdram, 0x747A84u) & 0x08000000u) != 0u;
+        if (g_plate != 0u)
+            setPlate(rdram, g_plate, s_punter && (roulette || (s_hold > 0 && !subScreen)));
         if (!ps2xPatchFlag("roulette_cycle"))
             return;
         if (!roulette || rdram[gene + 0x2F6u] != 1u)
