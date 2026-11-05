@@ -5,6 +5,10 @@
 #include "kamite/log.h"
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
+#if defined(KAMITE_HAS_GS_MENU)
+#include "runtime/ps2_game_menu.h"
+#include "pcsx2gs_api.h"
+#endif
 
 #include <array>
 #include <atomic>
@@ -230,7 +234,7 @@ namespace kamite::bone_tweaks
         // ---- Money: the women's chest bone scaled (see the header) ---------------------------------------------------
         constexpr int kChestBone = 29, kChestParent = 2;
         std::atomic<float> g_money{1.0f};
-        std::atomic<float> g_moneyDroop{30.0f}; // degrees the bust tips down per +100% (F2)
+        constexpr float kMoneyDroop = 30.0f; // degrees the bust tips down per +100% (K: 15 at 150% looks right)
         std::vector<Saved> g_moneySaved; // game thread: the bones scaled since the frame started
 
         void placeMoney(uint8_t *rdram, uint32_t model)
@@ -277,7 +281,7 @@ namespace kamite::bone_tweaks
             const Vec by = row(b, 1);
             const float jiggle = std::atan2(dot(by, pz), dot(by, py));
             constexpr float kRad = 3.14159265f / 180.0f;
-            const float angle = jiggle * scale + (scale - 1.0f) * g_moneyDroop.load(std::memory_order_relaxed) * kRad;
+            const float angle = jiggle * scale + (scale - 1.0f) * kMoneyDroop * kRad;
             const float c = std::cos(angle), sn = std::sin(angle);
             const Vec rows[3] = {mulf(px, scale), mulf(add(mulf(py, c), mulf(pz, sn)), scale),
                                  mulf(sub(mulf(pz, c), mulf(py, sn)), scale)};
@@ -313,8 +317,26 @@ namespace kamite::bone_tweaks
         }
     }
 
+#if defined(KAMITE_HAS_GS_MENU)
+    namespace
+    {
+        // The bottom of F2's NPCs tab (installed after npc_poses): Money, just the slider (K: an easter egg).
+        void drawMoneyPanel(const Pcsx2GsUi *ui)
+        {
+            ui->separator_text("Money");
+            float money = g_money.load(std::memory_order_relaxed) * 100.0f;
+            ui->set_next_width(340.0f);
+            if (ui->slider_float("##money", &money, 80.0f, 150.0f, "%.0f%%"))
+                setMoney(money / 100.0f);
+        }
+    }
+#endif
+
     void install(PS2Runtime &runtime)
     {
+#if defined(KAMITE_HAS_GS_MENU)
+        ps2x::menu::addPanel("NPCs", &drawMoneyPanel);
+#endif
         if (!runtime.hasFunction(kGetMeshPtr))
             return;
         FunctionHooks::instance().observeEntry(kGetMeshPtr, "bone_tweaks_pack", &onGetMeshPtr);
@@ -361,8 +383,6 @@ namespace kamite::bone_tweaks
 
     float money() { return g_money.load(std::memory_order_relaxed); }
     void setMoney(float scale) { g_money.store(std::clamp(scale, 0.8f, 1.5f), std::memory_order_relaxed); }
-    float moneyDroop() { return g_moneyDroop.load(std::memory_order_relaxed); }
-    void setMoneyDroop(float degrees) { g_moneyDroop.store(std::clamp(degrees, 0.0f, 90.0f), std::memory_order_relaxed); }
 
     bool hasHair() { return characters::hair().back.bone >= 0 || characters::hair().side.bone >= 0; }
     float tuning(Tune which)
