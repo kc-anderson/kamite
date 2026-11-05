@@ -13,6 +13,7 @@ namespace kamite
     // The game (USA), SLUS-21503. Values read from the disc image with port_prep/game-shell/_probe/iso_probe.py.
     inline constexpr const char *kSerial = "SLUS-21503";
     inline constexpr const char *kGameTitle = "Kamite";
+    inline constexpr const char *kWindowTitle = "God Hand"; // the window once the game runs (the launcher's reads Kamite)
     inline constexpr const char *kBootElfPath = "SLUS_215.03";
     inline constexpr const char *kBootElfSha256 = "1742f95bef65bdb2aa57b7a77df4ac7619a092e9646e1ea325bc32ec8a64f3cd";
     // SYSTEM.CNF is "BOOT2 = cdrom0:\SLUS_215.03;1\r\nVER = 1.00\r\nVMODE = NTSC\r\n" (57 bytes).

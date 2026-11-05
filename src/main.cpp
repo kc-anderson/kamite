@@ -976,7 +976,7 @@ int main(int argc, char *argv[])
         kamite::installWidescreen(); // the picture's shape: before the window is made
         kamite::installNearGeometry(); // VU1 hooks: before the first microcode upload
         ps2_host_display::setStartFullscreen(!headless && envFlag("KAMITE_START_FULLSCREEN", false));
-        if (!runtime.initialize(kamite::kGameTitle))
+        if (!runtime.initialize(kamite::kWindowTitle))
         {
             KM_ERROR(Boot, "runtime initialization failed");
             std::fflush(stdout);
