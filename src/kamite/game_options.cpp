@@ -109,8 +109,8 @@
 // hands the camera and the stick to the game while the wheel is up. D-pad left / right do the same. Rebuilding the list
 // mid-wheel (+0x165C = 0) re-ran cActionButton_setCommandList, which restarts the wheel (K: stuck on screen, timer
 // broken), so the builder is run on its own (callGuest) and its list caught at setCommandList: only the greyed flags
-// go into the wheel. Gene's turn to the new target is eased (0.35 of the way a 30 FPS frame) with the menus' cursor
-// sound (0x15F).
+// go into the wheel. Gene's turn to the new target is eased (0.35 of the way a 30 FPS frame), and he plays the
+// roulette's entry motion and bark again (K, Nov 5: he re-centres himself; no menu sound).
 //
 // Dead Pan (always on): the Japanese release's free roulette move (reel 0xB; TCRF "Dead Pan / Pan Drop"). The US build
 // keeps it but hides it outside Japanese: func_00125048 tests GameWork +0x56C (language, 0 = Japanese) at 0x1250A8,
@@ -931,7 +931,8 @@ namespace kamite
         // ---- Cycle Roulette Target: the wheel's greying for a new target (see the top of the file) ----------------
         constexpr uint32_t kListBuilder = 0x125048u;     // func_00125048(gene): the roulette's move list
         constexpr uint32_t kSetCommandList = 0x1F7900u;  // cActionButton_setCommandList(mgr, 0xD, matrix, list, count)
-        constexpr uint32_t kSeCallPlain = 0x2CB8A0u;     // the menus' sound call (style_presets' cursor sound)
+        constexpr uint32_t kStartMotion = 0x2A8578u;     // func_002A8578(obj, motion, events, mode, f12 frame, ...)
+        constexpr uint32_t kSeCall = 0x2CBA48u;          // cSnd_SeCall_2CBA48(snd, bank, id, obj, 0, 0, 0, 0)
         GuestFunction g_setCommandList = nullptr;
         bool ballBusterWoman(uint32_t emNo);
 
@@ -1313,7 +1314,21 @@ namespace kamite
             callGuest(rdram, ctx, runtime, kListBuilder, {gene});
             g_regrey = false;
         }
-        callGuest(rdram, ctx, runtime, kSeCallPlain, {0x5FEE00u, 0u, 0x15Fu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0u, 0u}); // the menus' cursor sound
+        // Gene goes into the roulette again for the new target: roulette step 0's motion start (func_00114608
+        // 0x114710: func_002A8578(gene, pack +0x220 / +0x224, or +0x228 / +0x22C when the target is past 8 m, 3, f12 = 0))
+        // and step 1's bark (0x1147F4: cSnd_SeCall(0x5FEE00, 0, 4, gene)); the camera, timer and list are left alone.
+        const uint32_t pack = ram32(rdram, gene + 0x304u), newPos = ram32(rdram, list[next].em + 0xF0u);
+        if (inGuest(pack) && inGuest(newPos))
+        {
+            const float dx = ramF(rdram, newPos) - gx, dz = ramF(rdram, newPos + 8u) - gz;
+            const uint32_t motion = dx * dx + dz * dz > 64.0f ? 0x228u : 0x220u;
+            const float f12 = ctx->f[12];
+            ctx->f[12] = 0.0f;
+            callGuest(rdram, ctx, runtime, kStartMotion,
+                      {gene, pack + ram32(rdram, pack + motion), pack + ram32(rdram, pack + motion + 4u), 3u, 0u, 0u});
+            ctx->f[12] = f12;
+        }
+        callGuest(rdram, ctx, runtime, kSeCall, {0x5FEE00u, 0u, 4u, gene, 0u, 0u, 0u, 0u});
         s_ease = fps60 ? 40 : 20;
     }
 
