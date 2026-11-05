@@ -107,7 +107,7 @@ namespace kamite::test_mode
                                                  "KAMITE_ROULETTE_TIMER", "KAMITE_ROULETTE_NO_ORBS", "KAMITE_STYLE_SWITCHING",
                                                  "KAMITE_SPRINT_TRAVERSAL", "KAMITE_CHARACTER", "KAMITE_LIFT_CHAIRS",
                                                  "KAMITE_TENSION_PLACABLE", "KAMITE_OFF_THE_CUFF",
-                                                 "KAMITE_BALL_BUSTER_WOMEN"};
+                                                 "KAMITE_BALL_BUSTER_WOMEN", "KAMITE_ROULETTE_CYCLE"};
 
         fs::path g_exeDir;
 

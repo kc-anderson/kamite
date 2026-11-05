@@ -97,6 +97,16 @@
 // draining fill; after the stun it shrinks to the left (0.08 of the width a call, like the game's own lag, per draw)
 // and the background shows again (K, Nov 5). Display only.
 //
+// RouletteTargetCycle (launcher: Gameplay, "Cycle Roulette Target"): while the roulette wheel runs (Gene mode 0
+// phase 0x2B step 1, func_00114608), a right-stick flick left / right moves Gene's target (+0x640) to the next enemy
+// on that side of the screen, wrapping round at the edge. Roulette step 0 picks the target (func_00124540 mode 3);
+// step 1 keeps it (+0x648 = 20, func_0012CC70 links it each frame) and builds the move list once, greying moves by
+// their range to it (func_00125048 while +0x165C is 0): +0x165C = 0 rebuilds the list for the new target. Screen side
+// = the angle round the camera (eye *(0x5CAFF0) +0x210, look +0x200; yaw = atan2(dx, dz), screen right = yaw - 90
+// degrees as Modern's stick has it). Candidates: cEmManage's list, numbers 0x200-0x2FF, HP > 0, +0x617 clear, within
+// 12 of Gene and in front of the camera. The stick is the game's pad byte (0x5E8144), so cases replay it; Modern
+// hands the camera and the stick to the game while the wheel is up.
+//
 // Dead Pan (always on): the Japanese release's free roulette move (reel 0xB; TCRF "Dead Pan / Pan Drop"). The US build
 // keeps it but hides it outside Japanese: func_00125048 tests GameWork +0x56C (language, 0 = Japanese) at 0x1250A8,
 // 0x1251CC, 0x125264 and 0x125338 (the PCSX2 restore patch makes all four read 0). Here they read 0 once it is earned:
@@ -123,6 +133,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <vector>
 #include <unordered_map>
 #include <atomic>
 #include <cstdlib>
@@ -987,6 +998,7 @@ namespace kamite
         ps2xRegisterHostHook("km_sway_bar_s3", &swayBar<19, 2>);
         ps2xRegisterHostHook("km_sway_bar_s2", &swayBar<18, 3>);
         ps2xSetPatchFlag("sway_bar", envOn("KAMITE_SWAY_BAR"));
+        ps2xSetPatchFlag("roulette_cycle", envOn("KAMITE_ROULETTE_CYCLE"));
         g_tensionPlacable.store(envOn("KAMITE_TENSION_PLACABLE"), std::memory_order_relaxed);
         g_offTheCuff.store(envOn("KAMITE_OFF_THE_CUFF"), std::memory_order_relaxed);
         if (!runtime.hasFunction(kHeatLv) || !(g_heatLv = runtime.lookupFunction(kHeatLv)) ||
@@ -1108,5 +1120,100 @@ namespace kamite
         }
         else if (now == ours && s_original != 0u)
             put32(rdram, word, s_original);
+    }
+
+    void rouletteTargetFrame(uint8_t *rdram)
+    {
+        static bool s_flicked = false;
+        if (!ps2xPatchFlag("roulette_cycle"))
+            return;
+        const uint32_t gene = ram32(rdram, 0x7474A0u + 0x5F4u);
+        if (!inGuest(gene) || rdram[gene + 0x2F4u] != 0u || rdram[gene + 0x2F5u] != 0x2Bu || rdram[gene + 0x2F6u] != 1u)
+        {
+            s_flicked = false;
+            return;
+        }
+        const uint8_t rx = rdram[0x5E8144u]; // the right stick's x, player 1 (the left stick's at 0x5E8146)
+        const int dir = rx >= 0xC0u ? 1 : rx <= 0x40u ? -1 : 0;
+        if (dir == 0 || (rx > 0x60u && rx < 0xA0u))
+            s_flicked = false;
+        if (dir == 0 || s_flicked)
+            return;
+        s_flicked = true;
+        const uint32_t camera = ram32(rdram, 0x5CAFF0u);
+        if (!inGuest(camera))
+            return;
+        const float ex = ramF(rdram, camera + 0x210u), ez = ramF(rdram, camera + 0x218u);
+        const float camYaw = std::atan2(ramF(rdram, camera + 0x200u) - ex, ramF(rdram, camera + 0x208u) - ez);
+        const uint32_t genePos = ram32(rdram, gene + 0xF0u);
+        if (!inGuest(genePos))
+            return;
+        const float gx = ramF(rdram, genePos), gz = ramF(rdram, genePos + 8u);
+        struct Candidate
+        {
+            uint32_t em;
+            float side; // screen x as an angle, right positive
+        };
+        std::vector<Candidate> list;
+        uint32_t slot = ram32(rdram, 0x5864F0u + 0x500u);
+        for (int guard = 0; guard < 64 && inGuest(slot); ++guard)
+        {
+            const uint32_t em = ram32(rdram, slot + 8u);
+            slot = ram32(rdram, slot + 4u);
+            if (!inGuest(em))
+                continue;
+            uint16_t kind = 0;
+            int16_t hp = 0;
+            std::memcpy(&kind, rdram + em + 0x2FEu, 2);
+            std::memcpy(&hp, rdram + em + 0x54Au, 2);
+            const uint32_t pos = ram32(rdram, em + 0xF0u);
+            if (kind < 0x200u || kind >= 0x300u || hp <= 0 || rdram[em + 0x617u] != 0u || !inGuest(pos))
+                continue;
+            const float x = ramF(rdram, pos), z = ramF(rdram, pos + 8u);
+            if ((x - gx) * (x - gx) + (z - gz) * (z - gz) > 12.0f * 12.0f)
+                continue;
+            float rel = std::atan2(x - ex, z - ez) - camYaw;
+            while (rel > 3.14159265f)
+                rel -= 6.2831853f;
+            while (rel < -3.14159265f)
+                rel += 6.2831853f;
+            if (std::fabs(rel) > 1.5707963f)
+                continue;
+            list.push_back({em, -rel});
+        }
+        if (list.size() < 2u)
+            return;
+        std::sort(list.begin(), list.end(), [](const Candidate &a, const Candidate &b) { return a.side < b.side; });
+        const uint32_t current = ram32(rdram, gene + 0x640u);
+        int at = -1;
+        for (size_t i = 0; i < list.size(); ++i)
+            if (list[i].em == current)
+                at = static_cast<int>(i);
+        const int n = static_cast<int>(list.size());
+        int next;
+        if (at < 0) // the target is off the list (behind the camera, too far): start from the screen's middle
+        {
+            next = 0;
+            for (int i = 0; i < n; ++i)
+                if (std::fabs(list[i].side) < std::fabs(list[next].side))
+                    next = i;
+        }
+        else
+            next = (at + dir + n) % n; // past the last on that side: round to the other side's first
+        if (list[next].em == current)
+            return;
+        put32(rdram, gene + 0x640u, list[next].em);
+        put32(rdram, gene + 0x165Cu, 0u); // the move list (and its greying by range) is built again
+    }
+
+    bool rouletteTargetCycle()
+    {
+        return ps2xPatchFlag("roulette_cycle");
+    }
+
+    void setRouletteTargetCycle(bool on)
+    {
+        ps2xSetPatchFlag("roulette_cycle", on);
+        setenvFlag("KAMITE_ROULETTE_CYCLE", on);
     }
 }

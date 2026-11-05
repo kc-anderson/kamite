@@ -1295,6 +1295,7 @@ namespace kamite
             forgetClothAfterLoad(rdram);
             deadPanFrame(rdram, ctx, runtime);
             ballBusterNameFrame(rdram);
+            rouletteTargetFrame(rdram);
             if (const int request = g_fps60Request.exchange(-1); request >= 0)
             {
                 g_fps60User = request != 0;

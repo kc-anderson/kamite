@@ -39,6 +39,10 @@ namespace kamite
     // Game thread, once a game frame: Ball Buster's name reads "CUNT PUNTER" while Cunt Punter is on and Gene's target
     // is a woman.
     void ballBusterNameFrame(uint8_t *rdram);
+    // Game thread, once a game frame: Cycle Roulette Target (the right stick moves the roulette's target).
+    void rouletteTargetFrame(uint8_t *rdram);
+    bool rouletteTargetCycle();
+    void setRouletteTargetCycle(bool on);
     // The F2 menu (any thread): Cunt Punter, live (the next Ball Buster hit).
     bool ballBusterWomen();
     void setBallBusterWomen(bool on);

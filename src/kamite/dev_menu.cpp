@@ -152,6 +152,9 @@ namespace kamite::dev_menu
             ui->set_next_width(340.0f);
             if (ui->combo("Roulette timer##roulette", &timer, kTimer, 2))
                 setRouletteTimerDouble(timer == 1);
+            int cycle = rouletteTargetCycle() ? 1 : 0;
+            if (ui->checkbox("Cycle Roulette Target: the right stick moves the wheel's target##roulettecycle", &cycle))
+                setRouletteTargetCycle(cycle != 0);
 
             ui->separator_text("Sound");
             int mute = muteMusic() ? 1 : 0;
@@ -191,6 +194,7 @@ namespace kamite::dev_menu
                     ini.setBool("Game", "Fps60", sixty != 0);
                     ini.setBool("Game", "L3Dash", l3Dash());
                     ini.set("Game", "RouletteTimer", rouletteTimerDouble() ? "double" : "normal");
+                    ini.setBool("Game", "RouletteTargetCycle", rouletteTargetCycle());
                     ini.setBool("Sound", "MuteMusic", muteMusic());
                     ini.setBool("Game", "TensionPlacable", tensionPlacable());
                     ini.setBool("Game", "OffTheCuff", offTheCuff());
