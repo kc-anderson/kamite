@@ -27,10 +27,6 @@ namespace kamite::bone_tweaks
     bool hasHair();
     float tuning(Tune which);
     void setTuning(Tune which, float value);
-    // Money (launcher: Experimental; KAMITE_MONEY, percent): the women's chest bone (29, on the upper spine in the
-    // female skeleton; every model packed but the player's) scaled round itself at draw time; 1 = off. Any thread.
-    float money();
-    void setMoney(float scale);
     // The player's visible hand meshes (RH_xx / LH_xx node names), for the F2 Debug tab: which hand shape the game
     // shows (the fist / open hand / grab meshes it swaps).
     std::string handNodes(const uint8_t *rdram);
