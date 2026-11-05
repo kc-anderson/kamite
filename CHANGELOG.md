@@ -2,6 +2,10 @@
 
 Newest first, one line per change; the code comments say how.
 
+## November 5, 2026
+
+- Cunt Punter (Experimental): Ball Buster stuns female enemies the way it does men.
+
 ## November 4, 2026
 
 - Wild Curry Funk: K's hold values are the defaults for the fancy chair.

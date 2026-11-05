@@ -401,6 +401,7 @@ namespace
         {"game", "liftchairs", "KAMITE_LIFT_CHAIRS"},
         {"game", "tensionplacable", "KAMITE_TENSION_PLACABLE"},
         {"game", "offthecuff", "KAMITE_OFF_THE_CUFF"},
+        {"game", "ballbusterwomen", "KAMITE_BALL_BUSTER_WOMEN"},
         {"sound", "mutemusic", "KAMITE_MUTE_MUSIC"},
         {"mods", "character", "KAMITE_CHARACTER"},
         {"run", "headless", "KAMITE_HEADLESS"},

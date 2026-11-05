@@ -62,6 +62,21 @@
 // it) and that read (lbu at 0x109398) sees 0 for it: no invulnerability (K: only a full gauge's unleash gives it). Case 2026-11-04_11-50-15 (an unleash run
 // down: phase 8 at 1.2 s, the gauge 120 -> 0 at 12 a second, phase 9 at 12.3 s).
 //
+// BallBusterWomen (launcher: Experimental, "Cunt Punter"): Ball Buster (roulette) works on female enemies as on men.
+// Its hit is damage type 0x22 (the damage record *(enemy +0x698) +0x46; 50 damage at +0x4C). The enemy damage handler
+// func_0020A178 switches on the enemy number (+0x564) for that type at 0x20A9EC (table 0x430D00, from 0x215): the
+// women (0x215, 0x21A-0x21E, 0x225, 0x22C-0x22F, 0x248, 0x249, 0x24C-0x24E, 0x252, 0x25A) go to 0x20AA14, which puts
+// the HP back (+0x17AC, saved before the damage), sets the guard +0x54C to 5.0 and +0x17C8 to 124; everyone else to
+// 0x20AA58. Both then take mode 1 phase 21 (func_0025A3E8), which picks the motion by enemy number again (table
+// 0x443390 at 0x25A4C8): the same women get the shrug (motion pack +0x13B0) with +0x2F7 = 1, which skips the hit
+// sounds and the vulnerable flag (+0x16D0 |= 0x40000 while the motion plays) and ends in the taunt (mode 0 phase
+// 107); the men get +0x638 (the long ball-busted motion), the flag and func_002705D8 at its end. The flag is what
+// turns the face blue (func_00268788 0x268990: the face meshes +0x178C.. tinted (0.6, 0.6, 1.0)) and what Gene's
+// follow-up reads (func_00208BE0 0x209EC8). Men and women share the motion pack (+0x304 = the same em00 pack in
+// cases ball_buster_on_man / _on_woman), so under "ball_buster_women" both switches read out of range for the women
+// (sltiu at 0x20A9F0 and 0x25A4D0) and take the men's way. Every other enemy number (Mr. Silver's own shrug
+// included) is left as it was.
+//
 // Dead Pan (always on): the Japanese release's free roulette move (reel 0xB; TCRF "Dead Pan / Pan Drop"). The US build
 // keeps it but hides it outside Japanese: func_00125048 tests GameWork +0x56C (language, 0 = Japanese) at 0x1250A8,
 // 0x1251CC, 0x125264 and 0x125338 (the PCSX2 restore patch makes all four read 0). Here they read 0 once it is earned:
@@ -787,6 +802,45 @@ namespace kamite
             ctx->pc = ra;
         }
 
+        // ---- Cunt Punter: Ball Buster on women (see the top of the file) -------------------------------------------
+        bool ballBusterWoman(uint32_t emNo)
+        {
+            switch (emNo)
+            {
+            case 0x215: case 0x21A: case 0x21B: case 0x21C: case 0x21D: case 0x21E: case 0x225: case 0x22C: case 0x22D:
+            case 0x22E: case 0x22F: case 0x248: case 0x249: case 0x24C: case 0x24D: case 0x24E: case 0x252: case 0x25A:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        // Replaces sltiu v0,v1,0x46 at 0x20A9F0 (func_0020A178, damage type 0x22; v1 = enemy number - 0x215, s1 = the
+        // enemy): 0 for a woman, so her HP is not put back.
+        void ballBusterDamage(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t index = GPR_U32(ctx, 3);
+            bool inTable = index < 0x46u;
+            if (inTable && ballBusterWoman(ram32(rdram, GPR_U32(ctx, 17) + 0x564u)))
+                inTable = false;
+            SET_GPR_U32(ctx, 2, inTable ? 1u : 0u);
+        }
+
+        // Replaces sltiu v1,a0,0x7A at 0x25A4D0 (func_0025A3E8 step 0; a0 = enemy number - 0x205, s1 = the enemy): 0
+        // for a woman whose motion pack has the men's motion, so she plays it.
+        void ballBusterMotion(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t enemy = GPR_U32(ctx, 17);
+            bool inTable = GPR_U32(ctx, 4) < 0x7Au;
+            if (inTable && ballBusterWoman(ram32(rdram, enemy + 0x564u)))
+            {
+                const uint32_t pack = ram32(rdram, enemy + 0x304u);
+                if (pack != 0u && ram32(rdram, pack + 0x638u) != 0u && ram32(rdram, pack + 0x63Cu) != 0u)
+                    inTable = false;
+            }
+            SET_GPR_U32(ctx, 3, inTable ? 1u : 0u);
+        }
+
     }
 
     void installGameOptions(PS2Runtime &runtime)
@@ -818,6 +872,9 @@ namespace kamite
         ps2xRegisterHostHook("km_tension_r2_mode", &tensionR2Mode);
         ps2xRegisterHostHook("km_tension_r2_phase", &tensionR2Phase);
         ps2xRegisterHostHook("km_tension_guard", &tensionGuard);
+        ps2xRegisterHostHook("km_ball_buster_damage", &ballBusterDamage);
+        ps2xRegisterHostHook("km_ball_buster_motion", &ballBusterMotion);
+        ps2xSetPatchFlag("ball_buster_women", envOn("KAMITE_BALL_BUSTER_WOMEN"));
         g_tensionPlacable.store(envOn("KAMITE_TENSION_PLACABLE"), std::memory_order_relaxed);
         g_offTheCuff.store(envOn("KAMITE_OFF_THE_CUFF"), std::memory_order_relaxed);
         if (!runtime.hasFunction(kHeatLv) || !(g_heatLv = runtime.lookupFunction(kHeatLv)) ||
@@ -834,7 +891,8 @@ namespace kamite
                                        << (muteMusic ? "muted" : "on") << (skipIntro ? "; boot straight to the main menu" : "")
                                        << (rouletteAnyOrbs ? "; roulette without orbs" : "")
                                        << (liftChairs ? "; chairs liftable" : "")
-                                       << (g_tensionPlacable ? (g_offTheCuff ? "; tension placable, off the cuff" : "; tension placable") : ""));
+                                       << (g_tensionPlacable ? (g_offTheCuff ? "; tension placable, off the cuff" : "; tension placable") : "")
+                                       << (ps2xPatchFlag("ball_buster_women") ? "; ball buster on women" : ""));
     }
 
     bool muteMusic()
@@ -869,5 +927,17 @@ namespace kamite
     {
         g_offTheCuff.store(on, std::memory_order_relaxed);
         setenvFlag("KAMITE_OFF_THE_CUFF", on);
+    }
+
+    bool ballBusterWomen()
+    {
+        return ps2xPatchFlag("ball_buster_women");
+    }
+
+    void setBallBusterWomen(bool on)
+    {
+        // Read at each Ball Buster hit, so the change lands at the next one.
+        ps2xSetPatchFlag("ball_buster_women", on);
+        setenvFlag("KAMITE_BALL_BUSTER_WOMEN", on);
     }
 }

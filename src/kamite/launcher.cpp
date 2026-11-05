@@ -1639,6 +1639,8 @@ void main()
                                                        "makes Gene invulnerable.");
                             iniCheckbox(state, "On##offthecuff", "Game", "OffTheCuff", false);
                         }
+                        settingLabel("Cunt Punter", "Ball Buster works on female enemies too, the same as on men.");
+                        iniCheckbox(state, "On##ballbusterwomen", "Game", "BallBusterWomen", false);
                         ImGui::EndTable();
                     }
                     ImGui::EndTabItem();

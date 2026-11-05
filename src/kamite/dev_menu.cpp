@@ -168,6 +168,9 @@ namespace kamite::dev_menu
                 if (ui->checkbox("Off the Cuff: unleash with any tension##offthecuff", &cuff))
                     setOffTheCuff(cuff != 0);
             }
+            int punter = ballBusterWomen() ? 1 : 0;
+            if (ui->checkbox("Cunt Punter: Ball Buster works on women##ballbusterwomen", &punter))
+                setBallBusterWomen(punter != 0);
 
             ui->separator_text("At start");
             launcherOnly(ui, "Style switching", envOn("KAMITE_STYLE_SWITCHING", false) ? "on" : "off");
@@ -186,6 +189,7 @@ namespace kamite::dev_menu
                     ini.setBool("Sound", "MuteMusic", muteMusic());
                     ini.setBool("Game", "TensionPlacable", tensionPlacable());
                     ini.setBool("Game", "OffTheCuff", offTheCuff());
+                    ini.setBool("Game", "BallBusterWomen", ballBusterWomen());
                     saveIni(ini, g_gameplayStatus);
                 }
             }

@@ -106,7 +106,8 @@ namespace kamite::test_mode
                                                  "KAMITE_MODERN_AUTO", "KAMITE_MENU_BUTTONS", "KAMITE_L3_DASH",
                                                  "KAMITE_ROULETTE_TIMER", "KAMITE_ROULETTE_NO_ORBS", "KAMITE_STYLE_SWITCHING",
                                                  "KAMITE_SPRINT_TRAVERSAL", "KAMITE_CHARACTER", "KAMITE_LIFT_CHAIRS",
-                                                 "KAMITE_TENSION_PLACABLE", "KAMITE_OFF_THE_CUFF"};
+                                                 "KAMITE_TENSION_PLACABLE", "KAMITE_OFF_THE_CUFF",
+                                                 "KAMITE_BALL_BUSTER_WOMEN"};
 
         fs::path g_exeDir;
 

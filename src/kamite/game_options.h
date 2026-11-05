@@ -17,6 +17,8 @@ namespace kamite
     //   TensionPlacable (KAMITE_TENSION_PLACABLE)  R2 while the God Hand is unleashed ends it and keeps the tension
     //                                     left (launcher: Experimental, Tension is Placable).
     //   OffTheCuff (KAMITE_OFF_THE_CUFF)  with TensionPlacable: R2 unleashes with any tension, not only a full meter.
+    //   BallBusterWomen (KAMITE_BALL_BUSTER_WOMEN)  Ball Buster stuns female enemies as it does men (launcher:
+    //                                     Experimental, Cunt Punter).
     //   MuteMusic  (KAMITE_MUTE_MUSIC)   the game's music streams (cSndBgmNode) play at volume 0; voices, sound
     //                                     effects and movies are unchanged.
     void installGameOptions(PS2Runtime &runtime);
@@ -33,4 +35,7 @@ namespace kamite
     void setTensionPlacable(bool on);
     bool offTheCuff();
     void setOffTheCuff(bool on);
+    // The F2 menu (any thread): Cunt Punter, live (the next Ball Buster hit).
+    bool ballBusterWomen();
+    void setBallBusterWomen(bool on);
 }
