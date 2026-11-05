@@ -7,7 +7,7 @@ Newest first, one line per change; the code comments say how.
 - Cycle Roulette Target: the right stick or d-pad left / right moves the roulette's target to the next enemy that way.
 - Money (F2 > NPCs): a bust size slider for the female NPCs and enemies.
 - Sway Bar (Experimental): a stun gauge under each enemy's health bar, magenta while the enemy is stunned.
-- Cunt Punter (Experimental): Ball Buster stuns female enemies the way it does men.
+- Cunt Punter (Experimental): Ball Buster stuns female enemies the way it does men, and reads CUNT PUNTER on the roulette while one is targeted.
 
 ## November 4, 2026
 

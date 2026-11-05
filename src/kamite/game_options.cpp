@@ -75,7 +75,11 @@
 // follow-up reads (func_00208BE0 0x209EC8). Men and women share the motion pack (+0x304 = the same em00 pack in
 // cases ball_buster_on_man / _on_woman), so under "ball_buster_women" both switches read out of range for the women
 // (sltiu at 0x20A9F0 and 0x25A4D0) and take the men's way. Every other enemy number (Mr. Silver's own shrug
-// included) is left as it was.
+// included) is left as it was. The name on the wheel is a picture (each command's +0: a 128x64 8-bit TIM2, top half
+// normal, bottom half the selected glow): Ball Buster's (reel id 7) has K's CUNT PUNTER painted into its pixels
+// (punter_plate.inc, the same palette) while the option is on, Gene is in the roulette and his target is a woman;
+// set at cActionButton_setCommandList (before the wheel draws) and each frame after (target changes), the disc's
+// pixels back otherwise. Only a plate holding one of the two known pictures is touched.
 //
 // SwayBar (launcher: Experimental, "Sway Bar"): a stun gauge under each enemy's health bar. The health bar is the
 // enemy's own cIDBase layout at +0x660, drawn by func_0028F108 (or func_0028F5B0 when +0x614 is set: a flash entry
@@ -124,6 +128,7 @@
 // head is the mesh HD_00 (pl00.dat's scr; looked up like cModel_getMeshPtr 0x14B730: obj +0x25C list, +0x404 next,
 // +0x414 -> +8 = the name packed in a u64). Driven from the frame hook (deadPanFrame), host calls as debug_tools does.
 #include "kamite/game_options.h"
+#include "kamite/punter_plate.inc"
 #include "kamite/frame_patches.h"
 #include "kamite/function_hooks.h"
 #include "kamite/log.h"
@@ -928,12 +933,62 @@ namespace kamite
         constexpr uint32_t kSetCommandList = 0x1F7900u;  // cActionButton_setCommandList(mgr, 0xD, matrix, list, count)
         constexpr uint32_t kSeCallPlain = 0x2CB8A0u;     // the menus' sound call (style_presets' cursor sound)
         GuestFunction g_setCommandList = nullptr;
+        bool ballBusterWoman(uint32_t emNo);
+
+        // Ball Buster's plate on the wheel (reel id 7; the command's +0 is its 128x64 8-bit TIM2): K's CUNT PUNTER
+        // painted in while Cunt Punter is on and the roulette's target is a woman, the disc's back otherwise. Only a
+        // plate holding one of the two known pictures is touched.
+        constexpr uint16_t kBallBusterReel = 7u;
+        uint32_t g_plate = 0u; // the last Ball Buster plate seen
+
+        void setPlate(uint8_t *rdram, uint32_t tim, bool punter)
+        {
+            if (!inGuest(tim) || std::memcmp(rdram + tim, "TIM2", 4) != 0 || ram32(rdram, tim + 0x18u) != 0x2000u)
+                return;
+            uint16_t header = 0, w = 0, h = 0;
+            std::memcpy(&header, rdram + tim + 0x1Cu, 2);
+            std::memcpy(&w, rdram + tim + 0x24u, 2);
+            std::memcpy(&h, rdram + tim + 0x26u, 2);
+            if (w != 128u || h != 64u || header < 0x30u || header > 0x100u)
+                return;
+            uint8_t *data = rdram + tim + 0x10u + header;
+            const unsigned char *want = punter ? plates::kCuntPunter : plates::kBallBuster;
+            const unsigned char *other = punter ? plates::kBallBuster : plates::kCuntPunter;
+            if (std::memcmp(data, want, 0x2000) == 0 || std::memcmp(data, other, 0x2000) != 0)
+                return;
+            std::memcpy(data, want, 0x2000);
+        }
+
+        bool punterWanted(const uint8_t *rdram, uint32_t gene)
+        {
+            if (!ps2xPatchFlag("ball_buster_women") || !inGuest(gene))
+                return false;
+            const uint32_t target = ram32(rdram, gene + 0x640u);
+            return inGuest(target) && ballBusterWoman(ram32(rdram, target + 0x564u));
+        }
         bool g_regrey = false; // game thread: the list builder is being run again for its greying only
 
         void setCommandListWrapped(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             if (!g_regrey)
+            {
+                // The roulette's list (kind 0xD): Ball Buster's plate set for the target before the wheel draws it.
+                if (GPR_U32(ctx, 5) == 0xDu && inGuest(GPR_U32(ctx, 7)))
+                {
+                    const uint32_t list = GPR_U32(ctx, 7), count = GPR_U32(ctx, 8);
+                    for (uint32_t j = 0; j < count && j < 36u; ++j)
+                    {
+                        uint16_t id = 0;
+                        std::memcpy(&id, rdram + list + 12u * j + 4u, 2);
+                        if (id == kBallBusterReel)
+                        {
+                            g_plate = ram32(rdram, list + 12u * j);
+                            setPlate(rdram, g_plate, punterWanted(rdram, ram32(rdram, 0x7474A0u + 0x5F4u)));
+                        }
+                    }
+                }
                 return g_setCommandList(rdram, ctx, runtime);
+            }
             // The wheel (*(0x3BD6E8) + 0xEA0, BlendSetup_load's copy): reel ids at +0x36C (u16, count +0x3B2), greyed
             // flags at +0x3FA; the action button's own table at 0x5686A0. A command: +4 reel id (u16), +8 greyed.
             const uint32_t list = GPR_U32(ctx, 7), count = GPR_U32(ctx, 8);
@@ -1127,10 +1182,13 @@ namespace kamite
         static bool s_flicked = false;
         static uint16_t s_dpadWas = 0;
         static int s_ease = 0;
+        const uint32_t gene = ram32(rdram, 0x7474A0u + 0x5F4u);
+        const bool roulette = inGuest(gene) && rdram[gene + 0x2F4u] == 0u && rdram[gene + 0x2F5u] == 0x2Bu;
+        if (g_plate != 0u) // Ball Buster's plate follows the target while the wheel is up, the disc's after
+            setPlate(rdram, g_plate, roulette && punterWanted(rdram, gene));
         if (!ps2xPatchFlag("roulette_cycle"))
             return;
-        const uint32_t gene = ram32(rdram, 0x7474A0u + 0x5F4u);
-        if (!inGuest(gene) || rdram[gene + 0x2F4u] != 0u || rdram[gene + 0x2F5u] != 0x2Bu || rdram[gene + 0x2F6u] != 1u)
+        if (!roulette || rdram[gene + 0x2F6u] != 1u)
         {
             s_flicked = false;
             s_ease = 0;
