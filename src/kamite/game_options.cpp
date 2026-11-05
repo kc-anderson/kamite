@@ -110,8 +110,9 @@
 // mid-wheel (+0x165C = 0) re-ran cActionButton_setCommandList, which restarts the wheel (K: stuck on screen, timer
 // broken), so the builder is run on its own (callGuest) and its list caught at setCommandList: only the greyed flags
 // go into the wheel. Gene's turn to the new target is eased (0.35 of the way a 30 FPS frame), and he plays the
-// roulette's entry motion again, its bark included (K, Nov 5: he re-centres himself; no menu sound), with the camera bones the
-// motion animates held where they had settled (the camera turns with Gene, no second fly-in).
+// roulette's opening again (K, Nov 5: he re-centres himself): the entry motion's clock +0x430 is wound back and handed
+// back to the roulette's time once it catches up (restarting the motion restarted the roulette's time: the pick came
+// late), with the camera bones held where they had settled (the camera turns with Gene, no second fly-in).
 //
 // Dead Pan (always on): the Japanese release's free roulette move (reel 0xB; TCRF "Dead Pan / Pan Drop"). The US build
 // keeps it but hides it outside Japanese: func_00125048 tests GameWork +0x56C (language, 0 = Japanese) at 0x1250A8,
@@ -936,7 +937,6 @@ namespace kamite
         // ---- Cycle Roulette Target: the wheel's greying for a new target (see the top of the file) ----------------
         constexpr uint32_t kListBuilder = 0x125048u;     // func_00125048(gene): the roulette's move list
         constexpr uint32_t kSetCommandList = 0x1F7900u;  // cActionButton_setCommandList(mgr, 0xD, matrix, list, count)
-        constexpr uint32_t kStartMotion = 0x2A8578u;     // func_002A8578(obj, motion, events, mode, f12 frame, ...)
         GuestFunction g_setCommandList = nullptr;
 
         // The roulette camera is the parts camera (0x463970, set by func_00124EC0 / cPartsCamera_SetParts): its update
@@ -1066,6 +1066,7 @@ namespace kamite
                             continue;
                         rdram[wheel + 0x3FAu + i] = rdram[list + 12u * j + 8u];
                         rdram[0x5686A0u + i] = rdram[list + 12u * j + 8u];
+                        KM_INFO(Game, "roulette target: reel " << id << " greyed " << int(rdram[list + 12u * j + 8u]));
                         break;
                     }
                 }
@@ -1240,6 +1241,12 @@ namespace kamite
         static bool s_flicked = false;
         static uint16_t s_dpadWas = 0;
         static int s_ease = 0;
+        static struct
+        {
+            bool active = false;
+            float time = 0.0f;    // the roulette's clock: where the entry motion's +0x430 would be
+            float written = 0.0f; // what we last wrote there
+        } s_rewind;
         const uint32_t gene = ram32(rdram, 0x7474A0u + 0x5F4u);
         const bool roulette = inGuest(gene) && rdram[gene + 0x2F4u] == 0u && rdram[gene + 0x2F5u] == 0x2Bu;
         // Ball Buster's plate follows the target while the wheel is up. The pick's flash (the plate flying off as the
@@ -1265,7 +1272,24 @@ namespace kamite
         {
             s_flicked = false;
             s_ease = 0;
+            s_rewind.active = false;
             return;
+        }
+        if (s_rewind.active)
+        {
+            const float now = ramF(rdram, gene + 0x430u);
+            s_rewind.time += now - s_rewind.written; // the game's own step since our write: the roulette's time goes on
+            const float next = now + (ps2xPatchFlag("fps60") ? 0.5f : 1.0f);
+            if (next >= s_rewind.time)
+            {
+                putF(rdram, gene + 0x430u, s_rewind.time);
+                s_rewind.active = false;
+            }
+            else
+            {
+                putF(rdram, gene + 0x430u, next);
+                s_rewind.written = next;
+            }
         }
         const bool fps60 = ps2xPatchFlag("fps60");
         const uint32_t current = ram32(rdram, gene + 0x640u);
@@ -1386,23 +1410,22 @@ namespace kamite
             callGuest(rdram, ctx, runtime, kListBuilder, {gene});
             g_regrey = false;
         }
-        // Gene goes into the roulette again for the new target: roulette step 0's motion start (func_00114608
-        // 0x114710: func_002A8578(gene, pack +0x220 / +0x224, or +0x228 / +0x22C when the target is past 8 m, 3, f12 = 0))
-        // (Gene's bark comes with the motion's own events. Sound 4 at 0x1147F4 is the roulette's wind loop, whose handle
-        // +0x161C the game stops at the end: a second one played on after the roulette, K.)
-        const uint32_t pack = ram32(rdram, gene + 0x304u), newPos = ram32(rdram, list[next].em + 0xF0u);
-        if (inGuest(pack) && inGuest(newPos))
-        {
-            const float dx = ramF(rdram, newPos) - gx, dz = ramF(rdram, newPos + 8u) - gz;
-            const uint32_t motion = dx * dx + dz * dz > 64.0f ? 0x228u : 0x220u;
-            if (!g_cameraHold.active)
-                holdCameraBones(rdram); // the settled camera, before the motion moves its bones again
-            const float f12 = ctx->f[12];
-            ctx->f[12] = 0.0f;
-            callGuest(rdram, ctx, runtime, kStartMotion,
-                      {gene, pack + ram32(rdram, pack + motion), pack + ram32(rdram, pack + motion + 4u), 3u, 0u, 0u});
-            ctx->f[12] = f12;
-        }
+        // Gene plays the roulette's opening again (he re-centres himself): the entry motion's own clock (+0x430, what
+        // moveMotion advances and ends the motion by) is wound back to 0 and run at full speed; the roulette's time is
+        // that clock (step 1 ends the roulette when the motion is done, 0x114954), so it keeps counting at the game's
+        // own rate meanwhile and the clock is handed back to it once the replay reaches it (s_rewind above). Nothing
+        // is restarted: the motion, its sequence, the camera (bones held), the timer and the list are the game's.
+        if (!g_cameraHold.active)
+            holdCameraBones(rdram); // the settled camera, before the clock moves its bones again
+        if (!s_rewind.active)
+            s_rewind.time = ramF(rdram, gene + 0x430u);
+        s_rewind.active = true;
+        putF(rdram, gene + 0x430u, 0.0f);
+        s_rewind.written = 0.0f;
+        KM_INFO(Game, "roulette target: 0x" << std::hex << list[next].em << " (number 0x" << ram32(rdram, list[next].em + 0x564u)
+                                            << std::dec << ", " << std::sqrt(std::pow(ramF(rdram, ram32(rdram, list[next].em + 0xF0u)) - gx, 2.0f) +
+                                                                      std::pow(ramF(rdram, ram32(rdram, list[next].em + 0xF0u) + 8u) - gz, 2.0f))
+                                            << " m), roulette clock " << s_rewind.time);
         s_ease = fps60 ? 40 : 20;
     }
 
