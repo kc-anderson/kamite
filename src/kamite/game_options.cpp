@@ -110,9 +110,9 @@
 // mid-wheel (+0x165C = 0) re-ran cActionButton_setCommandList, which restarts the wheel (K: stuck on screen, timer
 // broken), so the builder is run on its own (callGuest) and its list caught at setCommandList: only the greyed flags
 // go into the wheel. Gene's turn to the new target is eased (0.35 of the way a 30 FPS frame), and he plays the
-// roulette's opening again (K, Nov 5: he re-centres himself): the entry motion's clock +0x430 is wound back and handed
-// back to the roulette's time once it catches up (restarting the motion restarted the roulette's time: the pick came
-// late), with the camera bones held where they had settled (the camera turns with Gene, no second fly-in).
+// roulette's opening again (K, Nov 5: he re-centres himself), drawn only: the entry motion's clock +0x430 is the
+// roulette's time and stays the game's (motionPoseWrapped), the opening's sounds are fired again, and the camera bones
+// are held where they had settled (the camera turns with Gene, no second fly-in).
 //
 // Dead Pan (always on): the Japanese release's free roulette move (reel 0xB; TCRF "Dead Pan / Pan Drop"). The US build
 // keeps it but hides it outside Japanese: func_00125048 tests GameWork +0x56C (language, 0 = Japanese) at 0x1250A8,
@@ -989,6 +989,73 @@ namespace kamite
                 putF(rdram, g_cameraHold.parts[i] + 0x104u, g_cameraHold.values[i][3]);
             }
         }
+
+        // Gene's replayed opening (K, Nov 5: he re-centres himself on a new target) is drawn only: the roulette's
+        // time, the world's slow-down and the pick all run off the entry motion's clock +0x430 and its events (the
+        // hold, seq +0x3AC & 0x100: step 1 slows the world and counts the timer +0x15B0 only while it is set; the
+        // timer at 0 picks, func_001267F8; the motion's end closes the roulette, 0x114954). Winding the clock back
+        // cleared the hold (enemies at full speed, the timer stopped) and put the motion out of step with the timer.
+        // Instead func_00158328 (the motion's pose at +0x430, from moveMotion) is run a second time for Gene at the
+        // replay's own clock; its root motion outputs (+0x310, +0x340, +0x370) keep the real clock's values. The
+        // opening's sounds (cSnd_SeCall from Motion_seq_ctr: the bark) are caught as the game plays them and fired
+        // again at their frames.
+        constexpr uint32_t kMotionPose = 0x158328u;                    // func_00158328(obj)
+        constexpr uint32_t kSeCall = 0x2CBA48u;                        // cSnd_SeCall(snd, bank, id, obj, t0..t3)
+        constexpr uint32_t kSeqCtr = 0x2C7FD0u, kSeqCtrEnd = 0x2C8AD8u; // Motion_seq_ctr: a motion's events
+        constexpr float kRouletteHold = 15.0f;                         // the entry motion's hold starts here
+        GuestFunction g_motionPose = nullptr;
+        struct OpeningReplay
+        {
+            bool active = false;
+            uint32_t gene = 0u;
+            float clock = 0.0f; // the drawn frame
+            float fired = -1.0f; // sounds up to here played
+        } g_replay;
+        struct OpeningSound
+        {
+            float at;
+            uint32_t args[8];
+        };
+        std::vector<OpeningSound> g_openingSounds; // this roulette's opening (cleared outside the roulette)
+
+        void motionPoseWrapped(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const uint32_t obj = GPR_U32(ctx, 4), ra = GPR_U32(ctx, 31);
+            if (!g_replay.active || obj != g_replay.gene || !inGuest(obj))
+                return g_motionPose(rdram, ctx, runtime);
+            g_motionPose(rdram, ctx, runtime); // the real clock's pose and root motion
+            uint8_t root[3][16];
+            for (uint32_t i = 0; i < 3u; ++i)
+                std::memcpy(root[i], rdram + obj + 0x310u + 0x30u * i, 16);
+            const float real = ramF(rdram, obj + 0x430u);
+            putF(rdram, obj + 0x430u, std::min(g_replay.clock, real));
+            SET_GPR_U32(ctx, 4, obj);
+            SET_GPR_U32(ctx, 31, ra);
+            ctx->pc = kMotionPose;
+            g_motionPose(rdram, ctx, runtime); // the drawn pose
+            putF(rdram, obj + 0x430u, real);
+            for (uint32_t i = 0; i < 3u; ++i)
+                std::memcpy(rdram + obj + 0x310u + 0x30u * i, root[i], 16);
+            ctx->pc = ra;
+        }
+
+        void onSeCall(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t ra = GPR_U32(ctx, 31);
+            if (ra < kSeqCtr || ra >= kSeqCtrEnd || !ps2xPatchFlag("roulette_cycle") || g_openingSounds.size() >= 8u)
+                return;
+            const uint32_t gene = ram32(rdram, 0x7474A0u + 0x5F4u);
+            if (!inGuest(gene) || GPR_U32(ctx, 7) != gene || rdram[gene + 0x2F4u] != 0u || rdram[gene + 0x2F5u] != 0x2Bu)
+                return;
+            const float at = ramF(rdram, gene + 0x430u);
+            if (at >= kRouletteHold)
+                return;
+            OpeningSound sound{at, {}};
+            for (int i = 0; i < 8; ++i)
+                sound.args[i] = GPR_U32(ctx, 4 + i);
+            g_openingSounds.push_back(sound);
+        }
+
         bool ballBusterWoman(uint32_t emNo);
 
         // Ball Buster's plate on the wheel (reel id 7; the command's +0 is its 128x64 8-bit TIM2): K's CUNT PUNTER
@@ -1067,7 +1134,6 @@ namespace kamite
                             continue;
                         rdram[wheel + 0x3FAu + i] = rdram[list + 12u * j + 8u];
                         rdram[0x5686A0u + i] = rdram[list + 12u * j + 8u];
-                        KM_INFO(Game, "roulette target: reel " << id << " greyed " << int(rdram[list + 12u * j + 8u]));
                         break;
                     }
                 }
@@ -1159,6 +1225,11 @@ namespace kamite
             g_setCommandList = nullptr;
         FunctionHooks::instance().observeEntry(kPartsCameraUpdate, "parts camera update (Cycle Roulette Target)",
                                                &onPartsCameraUpdate);
+        if (!runtime.hasFunction(kMotionPose) || !(g_motionPose = runtime.lookupFunction(kMotionPose)) ||
+            !FunctionHooks::instance().replace(kMotionPose, "motion pose (Cycle Roulette Target)", &motionPoseWrapped,
+                                               ReplacementStatus::Native, "Gene's replayed roulette opening, drawn only"))
+            g_motionPose = nullptr;
+        FunctionHooks::instance().observeEntry(kSeCall, "cSnd_SeCall (Cycle Roulette Target)", &onSeCall);
         g_tensionPlacable.store(envOn("KAMITE_TENSION_PLACABLE"), std::memory_order_relaxed);
         g_offTheCuff.store(envOn("KAMITE_OFF_THE_CUFF"), std::memory_order_relaxed);
         if (!runtime.hasFunction(kHeatLv) || !(g_heatLv = runtime.lookupFunction(kHeatLv)) ||
@@ -1242,14 +1313,6 @@ namespace kamite
         static bool s_flicked = false;
         static uint16_t s_dpadWas = 0;
         static int s_ease = 0;
-        static struct
-        {
-            bool active = false;
-            float time = 0.0f;  // the entry motion's clock (+0x430) when it was wound back
-            float rate = 0.0f;  // its step a call while it holds (measured before)
-            float last = -1.0f; // last call's clock, for the rate
-            int calls = 0;      // calls since it was wound back
-        } s_rewind;
         const uint32_t gene = ram32(rdram, 0x7474A0u + 0x5F4u);
         const bool roulette = inGuest(gene) && rdram[gene + 0x2F4u] == 0u && rdram[gene + 0x2F5u] == 0x2Bu;
         // Ball Buster's plate follows the target while the wheel is up. The pick's flash (the plate flying off as the
@@ -1268,41 +1331,37 @@ namespace kamite
         if (g_plate != 0u)
             setPlate(rdram, g_plate, s_punter && (roulette || (s_hold > 0 && !subScreen)));
         if (!roulette)
+        {
             g_cameraHold.active = false;
-        if (!ps2xPatchFlag("roulette_cycle"))
-            return;
-        if (!roulette || rdram[gene + 0x2F6u] != 1u)
+            g_openingSounds.clear();
+        }
+        if (!ps2xPatchFlag("roulette_cycle") || !roulette || rdram[gene + 0x2F6u] != 1u)
         {
             s_flicked = false;
             s_ease = 0;
-            s_rewind.active = false;
-            s_rewind.last = -1.0f;
+            g_replay.active = false;
             return;
         }
-        // The entry motion's clock (+0x430) is the roulette's time: the opening runs at full speed to frame 15, where
-        // the motion's event (seq 0x100) has step 1 slow it to the hold rate (0.015 a 30 FPS frame with the double
-        // timer) until the motion ends and the roulette with it (0x114954). Wound back on a target change, the game
-        // replays the opening itself at full speed (the seq bits clear, so step 1 stops slowing it); back at the hold,
-        // the clock is set to where the hold would have got to meanwhile (calls x the measured hold rate).
+        // Gene's replayed opening (drawn only, motionPoseWrapped): its clock at the game's motion rate (+0x574, halved
+        // at 60), its sounds fired as it passes them, until it meets the real clock.
         const float clock = ramF(rdram, gene + 0x430u);
-        constexpr float kHold = 15.0f;
-        if (s_rewind.active)
+        if (g_replay.active)
         {
-            ++s_rewind.calls;
-            if (clock >= kHold)
+            if (g_replay.gene != gene)
+                g_replay.active = false;
+            else
             {
-                const float back = s_rewind.time + static_cast<float>(s_rewind.calls) * s_rewind.rate;
-                putF(rdram, gene + 0x430u, back);
-                s_rewind.active = false;
-                s_rewind.last = back;
+                for (const OpeningSound &sound : g_openingSounds)
+                    if (sound.at > g_replay.fired && sound.at <= g_replay.clock)
+                        callGuest(rdram, ctx, runtime, kSeCall,
+                                  {sound.args[0], sound.args[1], sound.args[2], sound.args[3], sound.args[4], sound.args[5],
+                                   sound.args[6], sound.args[7]});
+                g_replay.fired = g_replay.clock;
+                const float rate = ramF(rdram, 0x7474A0u + 0x574u) * (rdram[0x7474A0u + 0x569u] == 1u ? 0.5f : 1.0f);
+                g_replay.clock += rate > 0.0f ? rate : 1.0f;
+                if (g_replay.clock >= clock)
+                    g_replay.active = false;
             }
-        }
-        else
-        {
-            const float step = clock - s_rewind.last;
-            if (s_rewind.last >= kHold && clock >= kHold && step > 0.0f && step < 0.1f)
-                s_rewind.rate = step;
-            s_rewind.last = clock;
         }
         const bool fps60 = ps2xPatchFlag("fps60");
         const uint32_t current = ram32(rdram, gene + 0x640u);
@@ -1423,24 +1482,17 @@ namespace kamite
             callGuest(rdram, ctx, runtime, kListBuilder, {gene});
             g_regrey = false;
         }
-        // Gene plays the roulette's opening again (he re-centres himself): the entry motion's clock is wound back to 0
-        // and the game replays it (s_rewind above hands the roulette's time back at the hold). Only from the hold: in
-        // the opening he is still turning in anyway. Nothing is restarted: the motion, its sequence, the camera (bones
-        // held), the timer and the list stay the game's.
-        if (!s_rewind.active && clock >= kHold && s_rewind.rate > 0.0f)
+        // Gene plays the roulette's opening again, drawn only (above). From the hold: in the opening he is still turning
+        // in anyway. The camera bones are held where they settled (the replayed pose would fly the camera in again).
+        if (g_motionPose && clock >= kRouletteHold)
         {
             if (!g_cameraHold.active)
-                holdCameraBones(rdram); // the settled camera, before the clock moves its bones again
-            s_rewind.time = clock;
-            s_rewind.calls = 0;
-            s_rewind.active = true;
+                holdCameraBones(rdram);
+            g_replay.active = true;
+            g_replay.gene = gene;
+            g_replay.clock = 0.0f;
+            g_replay.fired = -1.0f;
         }
-        if (s_rewind.active)
-            putF(rdram, gene + 0x430u, 0.0f);
-        KM_INFO(Game, "roulette target: 0x" << std::hex << list[next].em << " (number 0x" << ram32(rdram, list[next].em + 0x564u)
-                                            << std::dec << ", " << std::sqrt(std::pow(ramF(rdram, ram32(rdram, list[next].em + 0xF0u)) - gx, 2.0f) +
-                                                                      std::pow(ramF(rdram, ram32(rdram, list[next].em + 0xF0u) + 8u) - gz, 2.0f))
-                                            << " m), roulette clock " << s_rewind.time);
         s_ease = fps60 ? 40 : 20;
     }
 
