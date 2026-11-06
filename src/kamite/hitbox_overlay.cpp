@@ -617,6 +617,9 @@ namespace kamite::hitbox_overlay
                         w.depth = (far.t - markT) * (rayDir.x * -w.dz + rayDir.z * w.dx);
                         break;
                     }
+                    // New windows are one-way, from the side Gene faces them (K, Nov 6).
+                    w.twoWay = false;
+                    w.side = sprint_traversal::windowSide(w, rayDir.x, rayDir.z);
                     const std::string name = markGroup >= 0 ? groups[markGroup].name : "-";
                     g_markResult.store(sprint_traversal::addWindow(static_cast<uint16_t>(room), name, w) ? 1 : 3,
                                        std::memory_order_relaxed);
@@ -634,7 +637,7 @@ namespace kamite::hitbox_overlay
                 const float y0 = w.y + w.sill, y1 = w.y + w.sill + w.height;
                 const Vec3 a0{cx - w.dx * half, y0, cz - w.dz * half}, b0{cx + w.dx * half, y0, cz + w.dz * half};
                 const Vec3 a1{a0.x, y1, a0.z}, b1{b0.x, y1, b0.z};
-                if (g_colors.size() + 10u > kMaxLines)
+                if (g_colors.size() + 13u > kMaxLines)
                     break;
                 line(a0, b0, kWindowColor);
                 line(b0, b1, kWindowColor);
@@ -649,6 +652,16 @@ namespace kamite::hitbox_overlay
                     line(b0 + off, b1 + off, kWindowColor);
                     line(b1 + off, a1 + off, kWindowColor);
                     line(a1 + off, a0 + off, kWindowColor);
+                }
+                if (!w.twoWay) // one-way: an arrow through the opening's middle, the way Gene may go
+                {
+                    const float ym = 0.5f * (y0 + y1), len = 0.6f, nx = -w.dz * w.side, nz = w.dx * w.side;
+                    const Vec3 from{cx - nx * len, ym, cz - nz * len}, to{cx + nx * len, ym, cz + nz * len};
+                    const Vec3 l{to.x - nx * 0.25f - w.dx * 0.2f, ym, to.z - nz * 0.25f - w.dz * 0.2f};
+                    const Vec3 r{to.x - nx * 0.25f + w.dx * 0.2f, ym, to.z - nz * 0.25f + w.dz * 0.2f};
+                    line(from, to, kWindowColor);
+                    line(to, l, kWindowColor);
+                    line(to, r, kWindowColor);
                 }
             }
             for (uint32_t i = 0; i < s.groupCount; ++i)
@@ -826,7 +839,8 @@ namespace kamite::hitbox_overlay
                          "Slide for sprint + A, per window. Stand facing the wall, within 3 m, and mark it; then size and "
                          "place it with the sliders. A thick wall's far side is found by itself (the second rectangle; 0 = "
                          "none). Any number per wall: mark again for another section (e.g. one to jump, one to slide). "
-                         "Unfold a window to edit it; unfolded windows show magenta.");
+                         "Unfold a window to edit it; unfolded windows show magenta. New windows are one-way (the arrow: the way Gene "
+                         "faced when marking it); tick Two-way to allow both.");
         if (ui->button("Mark window (the wall Gene faces)##markwin"))
         {
             g_markResult.store(0);
@@ -852,11 +866,12 @@ namespace kamite::hitbox_overlay
                 ui->push_id(1000 + static_cast<int>(i));
                 char label[128];
                 const int p = w.passes;
-                std::snprintf(label, sizeof(label), "%s, window %d (%s)##winhead", ref.group.c_str(), ref.index + 1,
+                std::snprintf(label, sizeof(label), "%s, window %d (%s%s)##winhead", ref.group.c_str(), ref.index + 1,
                               p == (sprint_traversal::kJump | sprint_traversal::kSlide) ? "jump, slide"
                               : p == sprint_traversal::kSlide                         ? "slide"
                               : p == sprint_traversal::kJump                          ? "jump"
-                                                                                      : "off");
+                                                                                      : "off",
+                              w.twoWay ? "" : ", one-way");
                 // Folded by default; an unfolded window is drawn in the highlight colour in the room.
                 if (ui->version >= 4u && !ui->collapsing_header(label, 0))
                 {
@@ -893,6 +908,22 @@ namespace kamite::hitbox_overlay
                     {
                         w.passes = (jump ? sprint_traversal::kJump : 0) | (slide ? sprint_traversal::kSlide : 0);
                         changed = true;
+                    }
+                    // One-way: through only from the side it was marked from (the arrow); Flip turns it round.
+                    int twoWay = w.twoWay ? 1 : 0;
+                    if (ui->checkbox("Two-way##wtwo", &twoWay))
+                    {
+                        w.twoWay = twoWay != 0;
+                        changed = true;
+                    }
+                    if (!w.twoWay)
+                    {
+                        ui->same_line();
+                        if (ui->small_button("Flip side##wflip"))
+                        {
+                            w.side = -w.side;
+                            changed = true;
+                        }
                     }
                 }
                 ui->separator();

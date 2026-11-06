@@ -114,6 +114,8 @@ namespace kamite::sprint_traversal
             std::string out = text;
             if (w.passes != kJump) // the default (and every window before Nov 4) writes no words
                 out += w.passes == kSlide ? " slide" : w.passes == (kJump | kSlide) ? " jump slide" : " none";
+            if (!w.twoWay) // two-way (every window before Nov 6) writes no word
+                out += w.side > 0 ? " oneway" : " oneway_back";
             return out;
         }
         bool sameWindows(const Windows &a, const Windows &b)
@@ -177,7 +179,12 @@ namespace kamite::sprint_traversal
                         bool named = false;
                         while (words >> word)
                         {
-                            if (word == "jump" || word == "slide" || word == "none")
+                            if (word == "oneway" || word == "oneway_back")
+                            {
+                                w.twoWay = false;
+                                w.side = word == "oneway" ? 1 : -1;
+                            }
+                            else if (word == "jump" || word == "slide" || word == "none")
                             {
                                 named = true;
                                 passes |= word == "jump" ? kJump : word == "slide" ? kSlide : 0;
@@ -186,6 +193,8 @@ namespace kamite::sprint_traversal
                                 w.depth = static_cast<float>(std::atof(word.c_str()));
                         }
                         w.passes = named ? passes : kJump;
+                        if (w.twoWay && w.depth != 0.0f) // the side it was marked from, should it be made one-way
+                            w.side = w.depth > 0.0f ? 1 : -1;
                         const float len = std::sqrt(w.dx * w.dx + w.dz * w.dz);
                         if (len > 0.0f)
                         {
@@ -316,6 +325,14 @@ namespace kamite::sprint_traversal
         // wall (0.6 m left a 0.5 m gap there and Gene stuck in it: K, Nov 4).
         constexpr float kWindowMargin = 1.0f;
         constexpr float kWindowFloor = 0.6f; // a window this far above or below Gene's floor is another floor's
+        // A one-way window lets Gene through only facing its way (his heading, the root's y angle).
+        bool facesThrough(const Window &w, const uint8_t *rdram, uint32_t gene)
+        {
+            if (w.twoWay)
+                return true;
+            const float heading = rdf(rdram, gene + game::GameObj::kRot + 4u);
+            return windowSide(w, std::sin(heading), std::cos(heading)) == w.side;
+        }
         void windowPass(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             const uint32_t gene = GPR_U32(ctx, 17); // s1
@@ -344,7 +361,7 @@ namespace kamite::sprint_traversal
                     // Only from the window's own floor: Gene's position stays on his floor through the dive, so one
                     // well below (or above) is at another floor's wall (K, Nov 6: r404's platform windows let him
                     // through the wall from the ground under them).
-                    if (!(w.passes & kind) || std::fabs(w.y - py) > kWindowFloor)
+                    if (!(w.passes & kind) || std::fabs(w.y - py) > kWindowFloor || !facesThrough(w, rdram, gene))
                         continue;
                     const float cx = w.x + w.dx * w.offset, cz = w.z + w.dz * w.offset;
                     const float along = (px - cx) * w.dx + (pz - cz) * w.dz;
@@ -433,7 +450,7 @@ namespace kamite::sprint_traversal
                         continue;
                     for (const Window &w : list)
                     {
-                        if (!(w.passes & kJump) || std::fabs(w.y - py) > kWindowFloor)
+                        if (!(w.passes & kJump) || std::fabs(w.y - py) > kWindowFloor || !facesThrough(w, rdram, gene))
                             continue;
                         const float cx = w.x + w.dx * w.offset, cz = w.z + w.dz * w.offset;
                         const float along = (px - cx) * w.dx + (pz - cz) * w.dz;

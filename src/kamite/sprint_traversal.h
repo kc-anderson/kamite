@@ -37,7 +37,13 @@ namespace kamite::sprint_traversal
         float x = 0.0f, y = 0.0f, z = 0.0f, dx = 1.0f, dz = 0.0f;
         float offset = 0.0f, sill = 0.4f, width = 1.2f, height = 1.4f, depth = 0.0f;
         int passes = kJump; // which sprint attacks go through it: kJump (sprint + X / Y), kSlide (sprint + A), both
+        // One-way (K, Nov 6: new windows are, windows before that stay two-way): Gene passes only heading the way he
+        // faced when it was marked, side = +1 along (-dz, dx), -1 against it.
+        bool twoWay = true;
+        int side = 1;
     };
+    // The side a window marked by Gene heading (fx, fz) lets him through from.
+    inline int windowSide(const Window &w, float fx, float fz) { return fx * -w.dz + fz * w.dx >= 0.0f ? 1 : -1; }
     struct WindowRef
     {
         std::string group;
