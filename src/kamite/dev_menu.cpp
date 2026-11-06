@@ -200,7 +200,6 @@ namespace kamite::dev_menu
                     ini.setBool("Game", "OffTheCuff", offTheCuff());
                     ini.setBool("Game", "BallBusterWomen", ballBusterWomen());
                     ini.setBool("Game", "SwayBar", swayBar());
-                    ini.set("Game", "Cash", std::to_string(static_cast<int>(std::lround(bone_tweaks::cash() * 100.0f))));
                     ini.set("Game", "Money", std::to_string(static_cast<int>(std::lround(bone_tweaks::money() * 100.0f))));
                     saveIni(ini, g_gameplayStatus);
                 }

@@ -69,7 +69,6 @@ set(KAMITE_HOST_SOURCES
     kamite/test_mode.cpp
     kamite/message_guard.cpp
     kamite/bone_tweaks.cpp
-    kamite/cash_skin.cpp
     kamite/pc_sampler.cpp
     kamite/function_hooks.cpp
     kamite/game_disc.cpp

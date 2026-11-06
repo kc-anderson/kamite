@@ -1,12 +1,9 @@
 #include "kamite/bone_tweaks.h"
-#include "kamite/cash_skin.h"
 #include "kamite/character_mods.h"
-#include "kamite/disc_files.h"
 #include "kamite/function_hooks.h"
 #include "kamite/game_layout.h"
 #include "kamite/log.h"
 #include "ps2_runtime.h"
-#include "runtime/ps2_cd_image.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/ps2_game_menu.h"
 #if __has_include("pcsx2gs_api.h")
@@ -30,8 +27,7 @@ namespace kamite::bone_tweaks
         using namespace kamite::game;
 
         constexpr uint32_t kGetMeshPtr = 0x0014B6F8u;    // cModel_getMeshPtr(model, index)
-        constexpr uint32_t kTransCallSite = 0x0014A4C0u;  // the return address of its first call in cModel_Trans
-        constexpr uint32_t kScreenCallSite = 0x0014A97Cu; // and in cModel_Trans_screen
+        constexpr uint32_t kTransCallSite = 0x0014A4C0u; // the return address of its first call in cModel_Trans
         constexpr uint32_t kPartsFirst = 0x144u, kPartNext = 0x144u, kPartMtx = 0x80u, kPartNum = 0x2B4u;
         constexpr uint32_t kMeshHead = 0x25Cu, kNodeNext = 0x404u, kNodeFlags = 0x380u, kNodeInfo = 0x414u, kInfoName = 0x8u;
         struct Saved
@@ -240,7 +236,7 @@ namespace kamite::bone_tweaks
         constexpr int kChestBone = 29, kChestParent = 2;
         std::atomic<float> g_money{1.0f};
         constexpr float kMoneyDroop = 30.0f; // degrees the bust tips down per +100% (K: 15 at 150% looks right)
-        std::vector<Saved> g_drawSaved; // game thread: the women's bones changed since the frame started (Money, Cash)
+        std::vector<Saved> g_moneySaved; // game thread: the bones scaled since the frame started
 
         void placeMoney(uint8_t *rdram, uint32_t model)
         {
@@ -269,7 +265,7 @@ namespace kamite::bone_tweaks
             std::memcpy(bind, rdram + ((chest + 0xE0u) & 0x01FFFFFFu), 12);
             if (bind[1] < 0.03f || bind[1] > 0.25f || bind[2] < 0.0f || bind[2] > 0.15f || std::fabs(bind[0]) > 0.03f)
                 return;
-            for (const Saved &s : g_drawSaved)
+            for (const Saved &s : g_moneySaved)
                 if (s.address == chest) // packed twice in a frame: scaled once
                     return;
             Saved s;
@@ -295,130 +291,20 @@ namespace kamite::bone_tweaks
                     b.m[r * 4 + col] = rows[r][col];
             writeBone(rdram, chest, b);
             s.mirrored = b.m;
-            g_drawSaved.push_back(s);
-            g_applied = true;
-        }
-
-        // ---- Cash: the women's seat on the spare bones 27 / 28 (cash_skin.h) ---------------------------------------
-        std::atomic<float> g_cash{1.0f};
-        std::atomic<float> g_cashDown{0.3f}, g_cashSag{0.3f}; // F2 tuning until K picks values: growth share going down, sag
-        bool g_cashSkinned = false; // the women's models were re-skinned at boot (else 27 / 28 are left alone)
-
-        // The women's models on the disc (every model whose skeleton passes cash_skin's test; scanned from the em files):
-        // file, the model's scr block in it, its size. Each is checked again before it is changed.
-        struct CashModel
-        {
-            const char *file;
-            uint32_t offset, size;
-        };
-        constexpr CashModel kCashModels[] = {
-#include "kamite/cash_models.inc"
-        };
-
-        void reskinWomen()
-        {
-            if (!disc_files::open())
-            {
-                KM_WARN(Game, "Cash: no file archive on the disc image; the slider does nothing");
-                return;
-            }
-            std::vector<PS2DiscOverlay::Patch> patches;
-            size_t vertices = 0;
-            for (const CashModel &m : kCashModels)
-            {
-                const auto file = disc_files::find(m.file);
-                std::vector<uint8_t> block;
-                if (!file || !disc_files::readRange(*file, m.offset, m.size, block))
-                    continue;
-                size_t lo = 0, hi = 0;
-                const size_t moved = cash_skin::reskin(block.data(), block.size(), lo, hi);
-                if (moved == 0 || lo >= hi)
-                    continue;
-                vertices += moved;
-                patches.emplace_back(file->imageOffset + m.offset + lo, std::vector<uint8_t>(block.begin() + lo, block.begin() + hi));
-            }
-            if (patches.empty())
-            {
-                KM_WARN(Game, "Cash: none of the women's models matched; the slider does nothing");
-                return;
-            }
-            KM_INFO(Game, "Cash: " << patches.size() << " women's models re-skinned (" << vertices << " seat vertices)");
-            PS2DiscOverlay::add(std::move(patches));
-            g_cashSkinned = true;
-        }
-
-        // Each cheek bone = the pelvis times a growth about the cheek's pivot (cash_skin.h), in the pelvis' bind frame:
-        // per +100%, x spreads 0.25 round the pivot; z goes back by the depth (z + y / 2 below the pivot: lower and
-        // further back moves most); y goes down by the height below the pivot (the down share) plus the sag times the
-        // depth. At 100% the bone is the pelvis itself, so every re-skinned vertex lands where the game puts it.
-        void placeCash(uint8_t *rdram, uint32_t model)
-        {
-            if (!g_cashSkinned || !inRam(model, 0x2E4u))
-                return;
-            const int n = rdram[(model + kPartNum) & 0x01FFFFFFu];
-            if (n < 30 || n > 64)
-                return;
-            uint32_t parts[64];
-            uint32_t part = rd32(rdram, model + kPartsFirst);
-            for (int i = 0; i < n; ++i)
-            {
-                if (!inRam(part, 0x160u))
-                    return;
-                parts[i] = part;
-                part = rd32(rdram, part + kPartNext);
-            }
-            using namespace cash_skin;
-            auto parentOf = [&](int i) { return rd32(rdram, parts[i] + 0x148u); };
-            if (parentOf(29) != parts[2] || parentOf(kPelvis) != parts[0] || parentOf(kThighA) != parts[kPelvis] ||
-                parentOf(kThighB) != parts[kPelvis])
-                return;
-            for (const Saved &s : g_drawSaved)
-                if (s.address == parts[kCheekA]) // packed twice in a frame: placed once
-                    return;
-            Vec bind[64];
-            bindPositions(rdram, parts, n, bind);
-            const float hipX = bind[kThighA][0] - bind[kPelvis][0], h = std::fabs(hipX) / kHipRef;
-            if (h < 0.5f || h > 3.0f)
-                return;
-            const float grow = g_cash.load(std::memory_order_relaxed) - 1.0f;
-            const float down = g_cashDown.load(std::memory_order_relaxed), sag = g_cashSag.load(std::memory_order_relaxed);
-            const float back = 1.2f * (1.0f - down), drop = 1.2f * down;
-            const Mat q{1.0f + grow * 0.25f, 0.0f, 0.0f,
-                        0.0f, 1.0f + grow * (drop + 0.5f * sag), grow * sag,
-                        0.0f, grow * 0.5f * back, 1.0f + grow * back};
-            const Bone pelvis = readBone(rdram, parts[kPelvis]);
-            const Mat rp = pelvis.rot();
-            for (const int cheek : {kCheekA, kCheekB})
-            {
-                const float side = (cheek == kCheekA) == (hipX < 0.0f) ? -1.0f : 1.0f;
-                const Vec pivot{side * kPivotX * h, kPivotY * h, kPivotZ * h};
-                Saved s;
-                s.address = parts[cheek];
-                Bone b = readBone(rdram, parts[cheek]);
-                s.original = b.m;
-                const Vec d = sub(bind[cheek], bind[kPelvis]);
-                b.set(mul(rp, q), add(applyRot(rp, add(applyRot(q, sub(d, pivot)), pivot)), pelvis.pos()));
-                writeBone(rdram, parts[cheek], b);
-                s.mirrored = b.m;
-                g_drawSaved.push_back(s);
-            }
+            g_moneySaved.push_back(s);
             g_applied = true;
         }
 
         void onGetMeshPtr(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
-            const uint32_t ra = GPR_U32(ctx, 31);
-            if (ra != kTransCallSite && ra != kScreenCallSite)
+            if (GPR_U32(ctx, 31) != kTransCallSite)
                 return;
             const uint32_t model = GPR_U32(ctx, 4);
             if (model != rd32(rdram, GameWork::address(GameWork::kPlayerObj)))
             {
-                placeCash(rdram, model);
                 placeMoney(rdram, model);
                 return;
             }
-            if (ra != kTransCallSite)
-                return;
             if (model != rd32(rdram, GameWork::address(GameWork::kPlayerObj)))
                 return;
             if (characters::hair().back.bone < 0 && characters::hair().side.bone < 0)
@@ -435,22 +321,9 @@ namespace kamite::bone_tweaks
 #if defined(KAMITE_HAS_GS_MENU)
     namespace
     {
-        // The bottom of F2's NPCs tab (installed after npc_poses): Cash, then Money, just the sliders (K: easter eggs).
-        // Cash's two shape sliders are temporary, until K picks the values.
+        // The bottom of F2's NPCs tab (installed after npc_poses): Money, just the slider (K: an easter egg).
         void drawMoneyPanel(const Pcsx2GsUi *ui)
         {
-            ui->separator_text("Cash");
-            float cash = g_cash.load(std::memory_order_relaxed) * 100.0f;
-            ui->set_next_width(340.0f);
-            if (ui->slider_float("##cash", &cash, 100.0f, 150.0f, "%.0f%%"))
-                setCash(cash / 100.0f);
-            float down = g_cashDown.load(std::memory_order_relaxed) * 100.0f, sag = g_cashSag.load(std::memory_order_relaxed) * 100.0f;
-            ui->set_next_width(340.0f);
-            if (ui->slider_float("Back / down (temporary)", &down, 0.0f, 100.0f, "%.0f%% down"))
-                g_cashDown.store(down / 100.0f, std::memory_order_relaxed);
-            ui->set_next_width(340.0f);
-            if (ui->slider_float("Sag (temporary)", &sag, 0.0f, 100.0f, "%.0f%%"))
-                g_cashSag.store(sag / 100.0f, std::memory_order_relaxed);
             ui->separator_text("Money");
             float money = g_money.load(std::memory_order_relaxed) * 100.0f;
             ui->set_next_width(340.0f);
@@ -469,13 +342,6 @@ namespace kamite::bone_tweaks
             return;
         FunctionHooks::instance().observeEntry(kGetMeshPtr, "bone_tweaks_pack", &onGetMeshPtr);
         const characters::Hair &h = characters::hair();
-        reskinWomen(); // before the game runs: a disc overlay
-        if (const char *cash = std::getenv("KAMITE_CASH"); cash && *cash) // percent
-        {
-            setCash(static_cast<float>(std::atof(cash)) / 100.0f);
-            if (g_cash.load() > 1.001f)
-                KM_INFO(Game, "Cash: " << g_cash.load() * 100.0f << "%");
-        }
         if (const char *money = std::getenv("KAMITE_MONEY"); money && *money) // percent
         {
             setMoney(static_cast<float>(std::atof(money)) / 100.0f);
@@ -505,7 +371,7 @@ namespace kamite::bone_tweaks
                 std::memcpy(rdram + ((s.address + kPartMtx) & 0x01FFFFFFu), s.original.data(), 64);
             s.address = 0;
         }
-        for (const Saved &s : g_drawSaved)
+        for (const Saved &s : g_moneySaved)
         {
             if (!inRam(s.address, 0x160u))
                 continue;
@@ -513,13 +379,11 @@ namespace kamite::bone_tweaks
             if (std::memcmp(now.m.data(), s.mirrored.data(), 64) == 0)
                 std::memcpy(rdram + ((s.address + kPartMtx) & 0x01FFFFFFu), s.original.data(), 64);
         }
-        g_drawSaved.clear();
+        g_moneySaved.clear();
     }
 
     float money() { return g_money.load(std::memory_order_relaxed); }
     void setMoney(float scale) { g_money.store(std::clamp(scale, 0.8f, 1.5f), std::memory_order_relaxed); }
-    float cash() { return g_cash.load(std::memory_order_relaxed); }
-    void setCash(float scale) { g_cash.store(std::clamp(scale, 1.0f, 1.5f), std::memory_order_relaxed); }
 
     bool hasHair() { return characters::hair().back.bone >= 0 || characters::hair().side.bone >= 0; }
     float tuning(Tune which)
