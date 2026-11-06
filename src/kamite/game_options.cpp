@@ -1,11 +1,12 @@
 // Optional changes to the game ([Game] UnlockHard / SkipIntro / MuteMusic / RouletteNoOrbs / LiftChairs) and Dead Pan.
 // See game_options.h.
 //
-// LiftChairs: stage 1's chairs (om04 and om08, cOmBase, actors 0x304 / 0x308), bar stools (om38) and pub sign (om36, both cOmScrfix) have
+// LiftChairs: stage 1's chairs (om04 and om08, cOmBase, actors 0x304 / 0x308), bar stools (om38) and pub sign (om36, both cOmScrfix) and
+// stage 3's park chairs (ol14, cOl14 -> cOmScrfix, actor 0x414: OMS records with +0x2E bit 0x80 make 0x400 | type) have
 // no carry or throw states; the crates in the same rooms (om0a, cOmThrow, 0x30A) do. All of them are one model: part 0
 // whole, parts 1..N the break pieces (hidden), mesh 0 hidden / mesh 1 shown, which the crate's setup sets up alike. The object factory func_0030FE68(id a0, data id a1) switches on s0 = id to each class's
 // alloc + constructor, then stores the id (+0x2FE / +0x300) and picks the data (texture, mesh group) by it. Under
-// "lift_chairs" 0x304 / 0x308 / 0x336 / 0x338 is read as 0x30A for the switch (before sq s1 at 0x30FE7C) and put back once the object exists
+// "lift_chairs" 0x304 / 0x308 / 0x336 / 0x338 / 0x414 is read as 0x30A for the switch (before sq s1 at 0x30FE7C) and put back once the object exists
 // (before daddu a0,s2 at 0x3125B4): a crate-class object with the chair's id, mesh (Fx_chrNN), texture and break
 // effect. claude/chair-notes.md.
 // Held, the crate class's carry (cOmThrow phase 0, func_001C8020) poses the object with its own carry motion (part
@@ -391,13 +392,14 @@ namespace kamite
         constexpr uint32_t kChairId = 0x304u, kCrateId = 0x30Au;
         constexpr uint32_t kPubSignId = 0x336u, kBarStoolId = 0x338u; // r102 (stage 1), cOmScrfix
         constexpr uint32_t kFancyChairId = 0x308u;                     // r101 x2 (stage 1), cOm08 -> cOmBase
+        constexpr uint32_t kParkChairId = 0x414u;                      // r300 x4 (stage 3), cOl14 -> cOmScrfix
         uint32_t g_liftSp = 0, g_liftId = 0; // the factory call (its sp) building a prop as a crate, and the prop's id
 
         // Before sq s1,0x30(sp) at 0x30FE7C (func_0030FE68, flag lift_chairs): s0 = the id the switch reads.
         void liftChairsSwitch(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
             const uint32_t id = GPR_U32(ctx, 16);
-            if (id != kChairId && id != kPubSignId && id != kBarStoolId && id != kFancyChairId)
+            if (id != kChairId && id != kPubSignId && id != kBarStoolId && id != kFancyChairId && id != kParkChairId)
                 return;
             g_liftSp = GPR_U32(ctx, 29);
             g_liftId = id;
@@ -527,6 +529,10 @@ namespace kamite
             // pieces 0.16..0.9 m up; middle ~0.5 m up. K's values, Nov 4.
             {kFancyChairId, "Fancy chair", kFollowBothHands, {0.0f, 0.01f, -0.16f}, {-13.0f, -13.0f, 3.0f}, 0.93f,
              {0.169f, 0.07f, -0.13f}, {-75.7558f, -6.0369f, -10.1902f}, {-0.40877f, 2.15203f - 0.3f, 0.41078f}},
+            // Stage 3 park chair (ol14, r300 x4 by the tables; case park_chair, Nov 6): the stage 1 chair's model (part 0
+            // = (0, 1.0, -0.27), pieces 0.23..0.82 m up), so it starts from that chair's values. K tunes.
+            {kParkChairId, "Park chair", kFollowBothHands, {0.07f, -0.07f, -0.16f}, {-2.0f, -2.0f, 11.0f}, 1.0f, {0.0f, -0.5f, 0.27f},
+             {-75.7558f, -6.0369f, -10.1902f}, {-0.40877f, 2.15203f - 0.3f, 0.41078f}},
             {kPubSignId, "Pub sign", kFollowBothHands, {-0.19f, 0.06f, 0.0f}, {-37.0f, -3.0f, 12.0f}, 0.88f, {0.381f, -0.72f, -0.083f},
              {-75.7558f, -6.0369f, -10.1902f}, {-0.40877f, 2.15203f - 0.3f, 0.41078f}},
         };

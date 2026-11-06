@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 6, 2026
 
+- Wild Curry Funk: stage 3's park chairs can be picked up and thrown too.
 - 60 FPS: the whip ladies' whips (and other enemy weapons and thrown objects with their own animation) animated at half speed, so the whip folded back slowly.
 - 60 FPS: Gene's projectile moves flew twice as fast and far.
 - 60 FPS: some enemy projectiles (fire and the like) could keep going instead of burning out.
