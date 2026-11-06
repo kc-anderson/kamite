@@ -131,6 +131,10 @@ namespace kamite::test_mode
         }
 
         fs::path g_exeDir;
+        struct ExtraRegion // KAMITE_CASE_EXTRA (extraRegions)
+        {
+            uint32_t address = 0, size = 0;
+        };
 
         // ---- guest memory ----------------------------------------------------------------------------------------
         bool inRam(uint32_t address, uint32_t size)
@@ -850,6 +854,8 @@ namespace kamite::test_mode
             size_t hostNext = 0;      // the first entry not yet played
             std::FILE *ram = nullptr; // play: <csv stem>.ram.bin, the RAM dump (writeRamFrame)
             std::FILE *snap = nullptr; // play: <csv stem>.snap.bin, the whole RAM once a second (writeSnapshot)
+            std::FILE *extra = nullptr; // play: <csv stem>.extra.bin with KAMITE_CASE_EXTRA (writeExtraFrame)
+            std::vector<ExtraRegion> extraRegions;
             std::vector<uint32_t> snapPrev;
             ReadTrack reads;          // play: the case's read track (empty: the polls alone feed the game)
             size_t readNext = 0;      // the first entry not yet reached
@@ -924,6 +930,38 @@ namespace kamite::test_mode
             std::fwrite(buffer.data(), 1u, buffer.size(), out);
         }
 
+        // KAMITE_CASE_EXTRA=<addr>:<len>[,<addr>:<len>...] (hex; dev diagnostic, off by default): those RAM ranges every
+        // replay frame into <case>.<rate>.extra.bin ("KEXT", u32 region count, (u32 addr, u32 len) each, then per frame
+        // u32 frame + the ranges). For one-off checks of objects the case log doesn't hold (Nov 6: a whip's chain).
+        std::vector<ExtraRegion> extraRegions()
+        {
+            std::vector<ExtraRegion> out;
+            const char *text = std::getenv("KAMITE_CASE_EXTRA");
+            if (!text)
+                return out;
+            std::istringstream in(text);
+            std::string item;
+            while (std::getline(in, item, ','))
+            {
+                const size_t colon = item.find(':');
+                if (colon == std::string::npos)
+                    continue;
+                ExtraRegion r{static_cast<uint32_t>(std::strtoul(item.substr(0, colon).c_str(), nullptr, 16)),
+                              static_cast<uint32_t>(std::strtoul(item.substr(colon + 1).c_str(), nullptr, 16))};
+                if (r.address >= 0x100000u && r.size > 0u && r.address + r.size <= 0x2000000u)
+                    out.push_back(r);
+            }
+            return out;
+        }
+        void writeExtraFrame(std::FILE *out, const uint8_t *rdram, uint32_t frame, const std::vector<ExtraRegion> &regions)
+        {
+            if (!out)
+                return;
+            std::fwrite(&frame, 4u, 1u, out);
+            for (const ExtraRegion &r : regions)
+                std::fwrite(rdram + r.address, 1u, r.size, out);
+        }
+
         // The whole of EE RAM once a second of game time (dev-only; tools/fps60/ram_snapshots.py), as the words that
         // changed since the last snapshot (the first: every non-zero word): "KSNP" then per snapshot u32 frame, u32
         // count, count x (u32 word index, u32 value). For a value that lives in no object the per-frame dump covers
@@ -994,6 +1032,11 @@ namespace kamite::test_mode
                 std::fclose(run.snap);
                 run.snap = nullptr;
             }
+            if (run.extra)
+            {
+                std::fclose(run.extra);
+                run.extra = nullptr;
+            }
             if (!ok)
                 run.failed = true;
             KM_INFO(Game, "test: " << (ok ? "done" : "failed") << " after " << run.frame << " frames; stopping the run");
@@ -1062,8 +1105,6 @@ namespace kamite::test_mode
                     fs::remove(run.stateIsTemp, ec);
                 }
                 // Loaded: this is test frame 0.
-                if (!run.record)
-                    npc_tools::setTarget(run.target, run.targetCantDie); // before its first update, as in the recording
                 run.divider = fps60() ? 1u : 2u;
                 run.runFrames = run.vblanks / run.divider;
                 run.frame = 0;
@@ -1084,6 +1125,14 @@ namespace kamite::test_mode
                     const std::string stem = run.csv.string().substr(0, run.csv.string().size() - 4);
                     run.ram = openOut(stem + ".ram.bin");
                     run.snap = openOut(stem + ".snap.bin");
+                    run.extraRegions = extraRegions();
+                    if (!run.extraRegions.empty() && (run.extra = openOut(stem + ".extra.bin")) != nullptr)
+                    {
+                        const uint32_t head[2] = {0x5458454Bu, static_cast<uint32_t>(run.extraRegions.size())}; // "KEXT"
+                        std::fwrite(head, 4u, 2u, run.extra);
+                        for (const ExtraRegion &r : run.extraRegions)
+                            std::fwrite(&r, 4u, 2u, run.extra);
+                    }
                 }
                 run.phase = Run::Phase::Running;
                 KM_INFO(Game, "test: running " << run.runFrames << " frames at " << (run.divider == 1u ? 60 : 30) << " FPS"
@@ -1097,6 +1146,7 @@ namespace kamite::test_mode
                 const uint8_t *sample = run.sampleUsed >= 0 ? run.rec.samples.data() + static_cast<size_t>(run.sampleUsed) * kSample : nullptr;
                 logFrame(run.log, rdram, run.frame, run.divider, run.readsLastFrame, run.sampleUsed, sample);
                 writeRamFrame(run.ram, rdram, run.frame);
+                writeExtraFrame(run.extra, rdram, run.frame, run.extraRegions);
                 if ((run.frame * run.divider) % 60u == 0u)
                     writeSnapshot(run, rdram);
                 if (++run.frame >= run.runFrames)
@@ -1693,6 +1743,13 @@ namespace kamite::test_mode
                 g_run.phase = Run::Phase::Done;
                 return;
             }
+            // The locked target goes on as the state loads, before the game's first update after it: the frame hook
+            // that sees the load runs one update later (row 0 = the state + one update), too late for that update's
+            // idle chooser (Nov 6: T1's Elvis case still walked off at update 0 with the lock set there).
+            ps2x::savestate::onLoaded([] {
+                if (!g_run.record && g_run.phase == Run::Phase::Loading)
+                    npc_tools::setTarget(g_run.target, g_run.targetCantDie);
+            });
             KM_INFO(Game, "test: replaying " << path.string() << ": " << g_run.rec.polls() << " polls recorded at "
                                             << (g_run.rec.divider == 1u ? 60 : 30) << " FPS, log " << g_run.csv.string());
         }
