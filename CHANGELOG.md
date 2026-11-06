@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 6, 2026
 
+- 60 FPS: homing projectiles (Elvis' ring of fire and the other homing bullets) and twelve enemy turns turned at half speed.
 - Test cases carry F2 > NPCs' locked target into their replays (an older case can be given it in a small .fix file next to it).
 - Test cases: a gameplay option missing from a case replays with its default, not the replaying machine's setting.
 - F2 > NPCs: the locked target turns toward Gene at the same speed at 30 and 60 FPS.

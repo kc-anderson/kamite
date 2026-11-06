@@ -1111,14 +1111,17 @@ namespace kamite
         // divider is 1: func_0030AC40 0x30AF14). 182 callers pass f12 = the enemy's speed rate x a turn step, and the
         // rate is 0.5 at 60 too (0x29059C), so those turns ran at a quarter speed (66sec case, Oct 31: the grab lunge,
         // phase 75 step 1, turned 0.065 a vblank against 0.26 a 30 FPS frame and went 0.1 m wide). Replaces the
-        // mul.s f13,f12,f0 at 0x2A74B0: x2 for those callers (ra - 8) on an object in cEmManage's list.
+        // mul.s f13,f12,f0 at 0x2A74B0: x2 for those callers (ra - 8) on an object in cEmManage's list. Nov 6 (T1: Elvis'
+        // ring of fire homed poorly at 60): + 12 enemy sites the census window missed, and the objects that pass
+        // GetSpeedRate x a step (the homing bullets cOmbe: they turned at a quarter, half per 30 FPS frame).
 #include "kamite/fps60_turn_sites.inc"
         void tgtTurnRate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             float step = ctx->f[12] * ctx->f[0];
             const uint32_t site = GPR_U32(ctx, 31) - 8u;
-            if (std::binary_search(std::begin(kTgtTurnRateSites), std::end(kTgtTurnRateSites), site) &&
-                inEnemyList(rdram, GPR_U32(ctx, 16)))
+            if ((std::binary_search(std::begin(kTgtTurnRateSites), std::end(kTgtTurnRateSites), site) &&
+                 inEnemyList(rdram, GPR_U32(ctx, 16))) ||
+                std::binary_search(std::begin(kTgtTurnObjectSites), std::end(kTgtTurnObjectSites), site))
                 step *= 2.0f;
             ctx->f[13] = step;
         }
