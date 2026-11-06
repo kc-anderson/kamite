@@ -530,8 +530,8 @@ namespace kamite
             {kFancyChairId, "Fancy chair", kFollowBothHands, {0.0f, 0.01f, -0.16f}, {-13.0f, -13.0f, 3.0f}, 0.93f,
              {0.169f, 0.07f, -0.13f}, {-75.7558f, -6.0369f, -10.1902f}, {-0.40877f, 2.15203f - 0.3f, 0.41078f}},
             // Stage 3 park chair (ol14, r300 x4 by the tables; case park_chair, Nov 6): the stage 1 chair's model (part 0
-            // = (0, 1.0, -0.27), pieces 0.23..0.82 m up), so it starts from that chair's values. K tunes.
-            {kParkChairId, "Park chair", kFollowBothHands, {0.07f, -0.07f, -0.16f}, {-2.0f, -2.0f, 11.0f}, 1.0f, {0.0f, -0.5f, 0.27f},
+            // = (0, 1.0, -0.27), pieces 0.23..0.82 m up). K's values, Nov 6.
+            {kParkChairId, "Park chair", kFollowBothHands, {0.07f, 0.04f, -0.41f}, {-22.0f, -3.0f, 9.0f}, 1.0f, {0.0f, -0.5f, 0.27f},
              {-75.7558f, -6.0369f, -10.1902f}, {-0.40877f, 2.15203f - 0.3f, 0.41078f}},
             {kPubSignId, "Pub sign", kFollowBothHands, {-0.19f, 0.06f, 0.0f}, {-37.0f, -3.0f, 12.0f}, 0.88f, {0.381f, -0.72f, -0.083f},
              {-75.7558f, -6.0369f, -10.1902f}, {-0.40877f, 2.15203f - 0.3f, 0.41078f}},

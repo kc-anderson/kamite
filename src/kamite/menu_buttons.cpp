@@ -21,6 +21,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace kamite::menu_buttons
 {
@@ -177,21 +178,35 @@ namespace kamite::menu_buttons
         // raises the option count to n + 1, 0x2B3B40; [A602 0] before them starts at 0, left / right clamped,
         // 0x2B3EC8). The disc labels "Of course!!" 3 and "Leave me alone!" 0, but its handler fights on 0
         // (func_0028E858 0x28E918): the arrow sat on "Leave" while A accepted, and 1 / 2 were blank slots (K, Nov 2).
-        // Labelled 0 and 1 here.
+        // Labelled 0 and 1 here. Stage 4's "Use the switch?" (message 0x3006, read by r404's switches: 0 = use it) has
+        // the same [A804 3] Yes [A804 0] No labels: the arrow sat on "No" while A used the switch (K, Nov 6).
         void applyCoreFixes()
         {
             const uint32_t core = rd32(kCorePointer);
             if (core < 0x100000u || core >= kRamBytes - 0x100000u || (core & 0xFu) != 0u)
                 return;
-            constexpr uint32_t kChallenge = 0x577A6u; // core_usa.bin offset of "[A804 3] Of course!! [A804 0]"
-            static const uint16_t kOriginal[18] = {0xA804u, 0x0003u, 0xFFFFu, 0xFFFFu, 0x004Eu, 0x005Fu, 0x0035u, 0x005Cu, 0x0068u,
-                                                   0x006Eu, 0x006Bu, 0x006Cu, 0x005Eu, 0x0023u, 0x0023u, 0x0010u, 0xA804u, 0x0000u};
-            uint8_t *guest = g_ram + core + kChallenge;
-            if (std::memcmp(guest, kOriginal, sizeof(kOriginal)) != 0)
-                return; // fixed already, or not the US disc's text
-            const uint16_t first = 0u, second = 1u;
-            std::memcpy(guest + 2u, &first, 2u);
-            std::memcpy(guest + 17u * 2u, &second, 2u);
+            struct Choice
+            {
+                uint32_t offset;             // core_usa.bin offset of the first option's [A804 n]
+                std::vector<uint16_t> text;  // from it up to the second option's [A804 n]
+            };
+            static const Choice kChoices[] = {
+                // "[A804 3] Of course!! [A804 0]"
+                {0x577A6u, {0xA804u, 0x0003u, 0xFFFFu, 0xFFFFu, 0x004Eu, 0x005Fu, 0x0035u, 0x005Cu, 0x0068u, 0x006Eu, 0x006Bu, 0x006Cu,
+                            0x005Eu, 0x0023u, 0x0023u, 0x0010u, 0xA804u, 0x0000u}},
+                // "[A804 3] Yes [A804 0]" of "Use the switch?"
+                {0x57864u, {0xA804u, 0x0003u, 0xFFFFu, 0xFFFFu, 0x0058u, 0x005Eu, 0x006Cu, 0x0010u, 0xA804u, 0x0000u}},
+            };
+            for (const Choice &choice : kChoices)
+            {
+                uint8_t *guest = g_ram + core + choice.offset;
+                const size_t bytes = choice.text.size() * 2u;
+                if (std::memcmp(guest, choice.text.data(), bytes) != 0)
+                    continue; // fixed already, or not the US disc's text
+                const uint16_t first = 0u, second = 1u;
+                std::memcpy(guest + 2u, &first, 2u);
+                std::memcpy(guest + bytes - 2u, &second, 2u);
+            }
         }
 
         // Menu-file strings: the scanner thread lists where each rewrite's original text is, the EE thread rewrites.

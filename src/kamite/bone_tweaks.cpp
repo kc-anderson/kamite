@@ -327,7 +327,7 @@ namespace kamite::bone_tweaks
             ui->separator_text("Money");
             float money = g_money.load(std::memory_order_relaxed) * 100.0f;
             ui->set_next_width(340.0f);
-            if (ui->slider_float("##money", &money, 80.0f, 150.0f, "%.0f%%"))
+            if (ui->slider_float("##money", &money, 85.0f, 130.0f, "%.0f%%"))
                 setMoney(money / 100.0f);
         }
     }
@@ -383,7 +383,7 @@ namespace kamite::bone_tweaks
     }
 
     float money() { return g_money.load(std::memory_order_relaxed); }
-    void setMoney(float scale) { g_money.store(std::clamp(scale, 0.8f, 1.5f), std::memory_order_relaxed); }
+    void setMoney(float scale) { g_money.store(std::clamp(scale, 0.85f, 1.3f), std::memory_order_relaxed); }
 
     bool hasHair() { return characters::hair().back.bone >= 0 || characters::hair().side.bone >= 0; }
     float tuning(Tune which)

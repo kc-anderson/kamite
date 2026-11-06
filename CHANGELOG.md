@@ -4,6 +4,9 @@ Newest first, one line per change; the code comments say how.
 
 ## November 6, 2026
 
+- Stage 4's "Use the switch?" arrow points at the option that is selected (it showed No while Yes was chosen).
+- Money ranges 85% to 130%.
+- Wild Curry Funk: K's hold values are the defaults for the park chair.
 - Wild Curry Funk: stage 3's park chairs can be picked up and thrown too.
 - 60 FPS: the whip ladies' whips (and other enemy weapons and thrown objects with their own animation) animated at half speed, so the whip folded back slowly.
 - 60 FPS: Gene's projectile moves flew twice as fast and far.
