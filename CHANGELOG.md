@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## November 6, 2026
 
+- Wild Curry Funk: stage 5's fruit signs can be picked up and thrown.
+- K's new casino NPC poses ship.
 - Busta-Chan Jive: K's stage 3 ledges and stage 4 windows ship; windows can be up to 12 m wide.
 - Stage 4's "Use the switch?" arrow points at the option that is selected (it showed No while Yes was chosen).
 - Money ranges 85% to 130%.
