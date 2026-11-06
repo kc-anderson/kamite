@@ -11,6 +11,14 @@ r101 r102_10t jump slide
 r101 tesuri1 jump
 r101 tesuri2 jump
 r101 tesuri3 jump
+r200 act_ak jump slide
+r200 ak11 jump
+r200 ak19 jump
+r200 ak20 jump
+r200 ak22 jump
+r200 ak25 jump
+r200 ak65 jump
+r200 ak83 jump
 r0 WAL_62 window -43.303 0.249 -60.417 0.2105 -0.9775 0.279 0.949 2.799 1.149
  0.000
 r0 WAL_62 window -44.707 0.249 -55.170 0.3004 -0.9537 -0.299 0.949 2.799 1.149
