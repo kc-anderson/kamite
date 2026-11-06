@@ -276,11 +276,11 @@ namespace kamite
         // below his feet + 0.3 m (was his middle: sills and ledges stayed whole).
         constexpr uint32_t kPlayerPointer = game::GameWork::address(game::GameWork::kPlayerObj); // GameWork.playerObj
         std::atomic<bool> g_seeThrough{true};
-        std::atomic<float> g_seeWidth{1.6f};     // metres, half-width
-        std::atomic<float> g_seeHeight{2.2f};    // metres, half-height
-        std::atomic<float> g_seeMargin{0.5f};    // metres in front of Gene
+        std::atomic<float> g_seeWidth{2.3f};     // metres, half-width (the most: the oval fits what is hidden)
+        std::atomic<float> g_seeHeight{2.8f};    // metres, half-height (the most)
+        std::atomic<float> g_seeMargin{0.7f};    // metres in front of Gene
         std::atomic<float> g_seeStrength{100.0f}; // percent
-        std::atomic<float> g_seeSoftness{40.0f};  // percent of the radius
+        std::atomic<float> g_seeSoftness{33.0f};  // percent of the radius
         bool g_seeSent = false;                   // game thread: an oval went to the renderer last frame
         std::atomic<float> g_seeReadout[4] = {};  // centre x, y, radii x, y (GS pixels), for the menu
 
@@ -342,7 +342,7 @@ namespace kamite
         }
 
         // ---- See-through trigger (K, Nov 6): only while the stage's walls block the camera's view ---------------------
-        // Sight lines from the eye to five points on Gene (head, chest, hips, both feet) and two on each living enemy
+        // Sight lines from the eye to three points on Gene (head, chest, hips) and two on each living enemy
         // inside the oval on screen are tested against the room's collision polygons (cCollisionScroll 0x5CAE50, as
         // hitbox_overlay reads it: +4 groups, +0xC vertices (0xC stride), +0x14 polygons (0x14: +0..+6 u16 vertex ids,
         // +0x10 flags bit 0 quad, bit 1 off); header +0x28 u16 polygon count). Any blocked line turns the oval on: it
@@ -352,6 +352,7 @@ namespace kamite
         constexpr uint32_t kCollScroll = 0x5CAE50u, kEmListHead = 0x5864F0u + 0x500u;
         constexpr float kSeeFadeIn = 0.15f, kSeeHold = 0.3f, kSeeFadeOut = 0.3f, kSeeShort = 0.25f;
         float g_seeLevel = 0.0f;       // 0..1, game thread
+        float g_seeFit[4] = {};        // the oval sent: centre x, y, radii x, y (GS pixels), game thread
         int64_t g_seeBlockedMs = -100000, g_seeLevelMs = 0;
 
         struct Segment
@@ -391,9 +392,12 @@ namespace kamite
             const float t = (e2[0] * qv[0] + e2[1] * qv[1] + e2[2] * qv[2]) * inv;
             return t > 0.0f && t < 1.0f;
         }
-        // Does any of the segments cross a collision polygon that is on?
-        bool sightBlocked(const uint8_t *rdram, const Segment *segs, int count)
+        // Which of the segments cross a collision polygon that is on (hit[i]); true if any.
+        bool sightBlocked(const uint8_t *rdram, const Segment *segs, int count, bool *hit)
         {
+            for (int i = 0; i < count; ++i)
+                hit[i] = false;
+            int left = count;
             const uint32_t header = rdWord(rdram, kCollScroll);
             const uint32_t verts = rdWord(rdram, kCollScroll + 0x0Cu), polys = rdWord(rdram, kCollScroll + 0x14u);
             if (count <= 0 || !inGuestRam(header, 0x30u) || !inGuestRam(verts, 0x0Cu))
@@ -436,10 +440,15 @@ namespace kamite
                 if (!ok || plo[0] > hi[0] || phi[0] < lo[0] || plo[1] > hi[1] || phi[1] < lo[1] || plo[2] > hi[2] || phi[2] < lo[2])
                     continue;
                 for (int i = 0; i < count; ++i)
-                    if (segmentHitsTriangle(segs[i], v[0], v[1], v[2]) || (corners == 4 && segmentHitsTriangle(segs[i], v[0], v[2], v[3])))
-                        return true;
+                    if (!hit[i] && (segmentHitsTriangle(segs[i], v[0], v[1], v[2]) ||
+                                    (corners == 4 && segmentHitsTriangle(segs[i], v[0], v[2], v[3]))))
+                    {
+                        hit[i] = true;
+                        if (--left == 0)
+                            return true;
+                    }
             }
-            return false;
+            return left != count;
         }
 
         void seeThroughOff()
@@ -600,9 +609,17 @@ namespace kamite
                 seeThroughOff();
                 return;
             }
-            // The trigger: sight lines from the eye to Gene and to the enemies inside the oval.
-            Segment segs[5 + 2 * 16];
-            int count = 0;
+            // The trigger: sight lines from the eye to Gene (head, chest, hips: not his feet, which a low railing or
+            // step in front of him hides while he is plainly in view: K, Nov 6) and to the enemies inside the oval
+            // (middle, head). A target counts as hidden when any of its lines is blocked.
+            struct Target
+            {
+                float base[3]; // feet
+                int first, count;
+            };
+            Segment segs[3 + 2 * 16];
+            Target targets[1 + 16];
+            int count = 0, targetCount = 0;
             const auto aim = [&](const float *point) {
                 Segment &sg = segs[count];
                 float d[3] = {point[0] - eye[0], point[1] - eye[1], point[2] - eye[2]};
@@ -618,16 +635,21 @@ namespace kamite
                 ++count;
             };
             const float feet = centre[1] - 0.95f;
-            const float genePoints[5][3] = {{centre[0], feet + 1.7f, centre[2]},
-                                            {centre[0], feet + 1.3f, centre[2]},
-                                            {centre[0], feet + 0.95f, centre[2]},
-                                            {centre[0] + side[0] * 0.2f, feet + 0.15f, centre[2] + side[2] * 0.2f},
-                                            {centre[0] - side[0] * 0.2f, feet + 0.15f, centre[2] - side[2] * 0.2f}};
-            for (const auto &pt : genePoints)
-                aim(pt);
+            {
+                Target &t = targets[targetCount++];
+                t = {{centre[0], feet, centre[2]}, count, 0};
+                const float genePoints[3][3] = {{centre[0], feet + 1.7f, centre[2]},
+                                                {centre[0], feet + 1.3f, centre[2]},
+                                                {centre[0], feet + 0.95f, centre[2]}};
+                for (const auto &pt : genePoints)
+                    aim(pt);
+                t.count = count - t.first;
+            }
             {
                 uint32_t slot = rdWord(rdram, kEmListHead);
-                for (int guard = 0; guard < 64 && inGuestRam(slot, 16u) && count + 2 <= static_cast<int>(sizeof(segs) / sizeof(segs[0])); ++guard)
+                for (int guard = 0; guard < 64 && inGuestRam(slot, 16u) && targetCount < 17 &&
+                                    count + 2 <= static_cast<int>(sizeof(segs) / sizeof(segs[0]));
+                     ++guard)
                 {
                     const uint32_t em = rdWord(rdram, slot + 8u);
                     slot = rdWord(rdram, slot + 4u);
@@ -649,31 +671,74 @@ namespace kamite
                     const float ox = (ce.x / ce.w - cx) / rx, oy = (ce.y / ce.w - cy) / ry;
                     if (ox * ox + oy * oy > 1.0f)
                         continue; // outside the oval: not what it would uncover
+                    Target &t = targets[targetCount++];
+                    t = {{base[0], base[1], base[2]}, count, 0};
                     aim(mid);
                     aim(top);
+                    t.count = count - t.first;
                 }
             }
+            bool hit[sizeof(segs) / sizeof(segs[0])] = {};
             const int64_t now = steadyMs();
-            if (sightBlocked(rdram, segs, count))
+            const bool blocked = sightBlocked(rdram, segs, count, hit);
+            // The oval fits what is hidden (K, Nov 6: one fixed oval dissolved a wall beside Gene while only a railing
+            // hid his feet): the screen box round each hidden target (0.5 m to either side, feet to 1.9 m up, 0.3 m
+            // spare all round), an ellipse through its corners, centred on it, never bigger than the oval set in F2
+            // (width / height = the most). Eased toward it (~0.1 s), and kept as it was while the oval fades out.
+            if (blocked)
+            {
                 g_seeBlockedMs = now;
+                float lo[2] = {1e30f, 1e30f}, hi[2] = {-1e30f, -1e30f};
+                for (int ti = 0; ti < targetCount; ++ti)
+                {
+                    const Target &t = targets[ti];
+                    bool hidden = false;
+                    for (int k = t.first; k < t.first + t.count; ++k)
+                        hidden = hidden || hit[k];
+                    if (!hidden)
+                        continue;
+                    for (int corner = 0; corner < 4; ++corner)
+                    {
+                        const float across = (corner & 1) ? 0.8f : -0.8f, up = (corner & 2) ? 2.2f : -0.3f;
+                        const float pt[3] = {t.base[0] + side[0] * across, t.base[1] + up, t.base[2] + side[2] * across};
+                        const Clip cc = project(m, pt);
+                        if (!(cc.w > 0.05f))
+                            continue;
+                        lo[0] = std::fmin(lo[0], cc.x / cc.w);
+                        lo[1] = std::fmin(lo[1], cc.y / cc.w);
+                        hi[0] = std::fmax(hi[0], cc.x / cc.w);
+                        hi[1] = std::fmax(hi[1], cc.y / cc.w);
+                    }
+                }
+                if (hi[0] > lo[0] && hi[1] > lo[1])
+                {
+                    const float want[4] = {0.5f * (lo[0] + hi[0]), 0.5f * (lo[1] + hi[1]),
+                                           std::fmin(rx, 0.70710678f * (hi[0] - lo[0])), std::fmin(ry, 0.70710678f * (hi[1] - lo[1]))};
+                    const float dtFit = std::fmin(0.25f, std::fmax(0.0f, static_cast<float>(now - g_seeLevelMs) / 1000.0f));
+                    const float k = g_seeLevel <= 0.0f ? 1.0f : 1.0f - std::exp(-dtFit / 0.1f);
+                    for (int i = 0; i < 4; ++i)
+                        g_seeFit[i] += (want[i] - g_seeFit[i]) * k;
+                }
+            }
             const float dt = std::fmin(0.25f, std::fmax(0.0f, static_cast<float>(now - g_seeLevelMs) / 1000.0f));
             g_seeLevelMs = now;
             if (static_cast<float>(now - g_seeBlockedMs) / 1000.0f <= kSeeHold)
                 g_seeLevel = std::fmin(1.0f, g_seeLevel + dt / kSeeFadeIn);
             else
                 g_seeLevel = std::fmax(0.0f, g_seeLevel - dt / kSeeFadeOut);
-            if (g_seeLevel <= 0.0f)
+            if (g_seeLevel <= 0.0f || !(g_seeFit[2] > 1.0f) || !(g_seeFit[3] > 1.0f))
             {
                 seeThroughOff();
                 return;
             }
+            const float ox = g_seeFit[0], oy = g_seeFit[1], orx = g_seeFit[2], ory = g_seeFit[3];
             const float start = distance - margin;
             const float ramp = std::fmin(0.3f, std::fmax(start - 0.15f, 0.05f));
             // The ground that stays (up / down-facing surfaces, the shader's last value): below Gene's feet + 0.3 m
             // (K, Nov 6; was his middle, which kept window sills and ledges sticking out of the walls whole).
             const float groundBelow = feet + 0.3f;
             char text[640];
-            int length = std::snprintf(text, sizeof(text), "%.2f %.2f %.2f %.2f %.4f %.4f %.3f %.3f %.5f %.5f %.5f %.5f", cx, cy, rx, ry,
+            int length = std::snprintf(text, sizeof(text), "%.2f %.2f %.2f %.2f %.4f %.4f %.3f %.3f %.5f %.5f %.5f %.5f", ox, oy, orx, ory,
                                        start, ramp, g_seeStrength.load(std::memory_order_relaxed) / 100.0f * g_seeLevel,
                                        g_seeSoftness.load(std::memory_order_relaxed) / 100.0f, eye[0], eye[1], eye[2], groundBelow);
             for (int i = 0; i < 16 && length > 0 && length < static_cast<int>(sizeof(text)); ++i)
@@ -681,10 +746,10 @@ namespace kamite
             if (!g_seeSent)
                 KM_TRACE(Game, "see-through on: " << text);
             g_seeSent = GSPcsx2Backend::SetOption("see_through", text);
-            g_seeReadout[0].store(cx - 2048.0f, std::memory_order_relaxed);
-            g_seeReadout[1].store(cy - 2048.0f, std::memory_order_relaxed);
-            g_seeReadout[2].store(rx, std::memory_order_relaxed);
-            g_seeReadout[3].store(ry, std::memory_order_relaxed);
+            g_seeReadout[0].store(ox - 2048.0f, std::memory_order_relaxed);
+            g_seeReadout[1].store(oy - 2048.0f, std::memory_order_relaxed);
+            g_seeReadout[2].store(orx, std::memory_order_relaxed);
+            g_seeReadout[3].store(ory, std::memory_order_relaxed);
         }
 
         // ---- Enemies' cones ---------------------------------------------------------------------------------------
@@ -1026,11 +1091,11 @@ namespace kamite
         void loadExtras(const IniFile &ini)
         {
             g_seeThrough = ini.getBool("Video", "SeeThrough", true);
-            g_seeWidth = iniValue(ini, "Video", "SeeThroughWidth", 1.6f, 0.3f, 6.0f);
-            g_seeHeight = iniValue(ini, "Video", "SeeThroughHeight", 2.2f, 0.3f, 6.0f);
-            g_seeMargin = iniValue(ini, "Video", "SeeThroughMargin", 0.5f, 0.1f, 5.0f);
+            g_seeWidth = iniValue(ini, "Video", "SeeThroughWidth", 2.3f, 0.3f, 6.0f);
+            g_seeHeight = iniValue(ini, "Video", "SeeThroughHeight", 2.8f, 0.3f, 6.0f);
+            g_seeMargin = iniValue(ini, "Video", "SeeThroughMargin", 0.7f, 0.1f, 5.0f);
             g_seeStrength = iniValue(ini, "Video", "SeeThroughStrength", 100.0f, 0.0f, 100.0f);
-            g_seeSoftness = iniValue(ini, "Video", "SeeThroughSoftness", 40.0f, 2.0f, 100.0f);
+            g_seeSoftness = iniValue(ini, "Video", "SeeThroughSoftness", 33.0f, 2.0f, 100.0f);
         }
 
         void saveToIni()
@@ -1155,8 +1220,8 @@ namespace kamite
             if (ui->checkbox("Dissolve what stands between the camera and Gene##see", &see))
                 g_seeThrough = see != 0;
             ui->begin_disabled(see == 0);
-            slider(ui, "Oval half-width##seew", g_seeWidth, 0.3f, 4.0f, "%.2f m");
-            slider(ui, "Oval half-height##seeh", g_seeHeight, 0.3f, 4.0f, "%.2f m");
+            slider(ui, "Oval half-width (largest)##seew", g_seeWidth, 0.3f, 4.0f, "%.2f m");
+            slider(ui, "Oval half-height (largest)##seeh", g_seeHeight, 0.3f, 4.0f, "%.2f m");
             slider(ui, "Starts this far in front of Gene##seem", g_seeMargin, 0.1f, 3.0f, "%.2f m");
             slider(ui, "Strength##sees", g_seeStrength, 0.0f, 100.0f, "%.0f%%");
             slider(ui, "Soft edge##seesoft", g_seeSoftness, 2.0f, 100.0f, "%.0f%%");
