@@ -276,7 +276,9 @@ namespace kamite::npc_tools
                     f(em);
             }
         }
-        // A quarter of the way round to Gene a frame (the locked target keeps facing him).
+        // A quarter of the way round to Gene a 30 FPS frame (the locked target keeps facing him): at 60 the idle runs
+        // every vblank, so each step closes 1 - sqrt(0.75) of the gap (two make the 30 FPS quarter; test cases compare
+        // the two rates with the lock on).
         void faceGene(uint8_t *rdram, uint32_t em)
         {
             float e[3], g[3];
@@ -284,7 +286,8 @@ namespace kamite::npc_tools
                 return;
             const float want = std::atan2(g[0] - e[0], g[2] - e[2]), have = rdf(rdram, em + kObjHeading);
             const float d = std::remainder(want - have, 6.2831853f);
-            wrf(rdram, em + kObjHeading, have + 0.25f * d);
+            const bool fps60 = rd8(rdram, GameWork::address(GameWork::kVblankDivider)) == 1u;
+            wrf(rdram, em + kObjHeading, have + (fps60 ? 0.1339746f : 0.25f) * d);
         }
 
         // Stands still: AI off (every enemy) or the locked target.
@@ -442,6 +445,23 @@ namespace kamite::npc_tools
     void setAiOff(bool on) { g_aiOff = on; }
 
     bool cantDie(uint32_t enemy) { return enemy != 0u && enemy == g_target && g_cantDie.load(std::memory_order_relaxed); }
+
+    // Game thread (the test case recorder / replay, from the frame hook after npc_tools::onFrame).
+    uint32_t target() { return g_target; }
+    bool targetCantDie() { return g_cantDie.load(); }
+    void setTarget(uint32_t enemy, bool cantDie)
+    {
+        g_cantDie = cantDie;
+        g_target = 0;
+        g_targetAttacked = false;
+        if (g_runtime && enemy != 0u)
+        {
+            const uint8_t *rdram = g_runtime->memory().getRDRAM();
+            if (alive(rdram, enemy))
+                g_target = enemy;
+            g_room = rd16(rdram, GameWork::address(GameWork::kRoom)); // a room change clears the lock: this is the room
+        }
+    }
 
     void install(PS2Runtime &runtime)
     {

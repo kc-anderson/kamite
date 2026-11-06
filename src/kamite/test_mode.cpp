@@ -108,6 +108,27 @@ namespace kamite::test_mode
                                                  "KAMITE_SPRINT_TRAVERSAL", "KAMITE_CHARACTER", "KAMITE_LIFT_CHAIRS",
                                                  "KAMITE_TENSION_PLACABLE", "KAMITE_OFF_THE_CUFF",
                                                  "KAMITE_BALL_BUSTER_WOMEN", "KAMITE_ROULETTE_CYCLE"};
+        // The game's own value of the gameplay settings above when nothing sets them (kamite.ini's defaults). A case
+        // without one (the recorder's kamite.ini had no such line, or the option is newer than the case) ran with this
+        // value, so its replay does too instead of taking the replaying machine's (Nov 6: T1's Elvis case replayed
+        // with K's Busta-Chan Jive, chairs, Tension is Placable and Cunt Punter on). Camera and window keys: not forced.
+        struct CaseDefault
+        {
+            const char *name, *value;
+        };
+        constexpr CaseDefault kCaseDefaults[] = {
+            {"KAMITE_ENEMY_VIEW", "1"},          {"KAMITE_CONTROL_STYLE", "classic"}, {"KAMITE_MODERN_AUTO", "1"},
+            {"KAMITE_MENU_BUTTONS", "western"},  {"KAMITE_L3_DASH", "0"},             {"KAMITE_ROULETTE_TIMER", "normal"},
+            {"KAMITE_ROULETTE_NO_ORBS", "0"},    {"KAMITE_STYLE_SWITCHING", "0"},     {"KAMITE_SPRINT_TRAVERSAL", "0"},
+            {"KAMITE_CHARACTER", "gene"},        {"KAMITE_LIFT_CHAIRS", "0"},         {"KAMITE_TENSION_PLACABLE", "0"},
+            {"KAMITE_OFF_THE_CUFF", "0"},        {"KAMITE_BALL_BUSTER_WOMEN", "0"},   {"KAMITE_ROULETTE_CYCLE", "0"}};
+        const char *caseDefault(const std::string &name)
+        {
+            for (const CaseDefault &d : kCaseDefaults)
+                if (name == d.name)
+                    return d.value;
+            return nullptr;
+        }
 
         fs::path g_exeDir;
 
@@ -847,6 +868,8 @@ namespace kamite::test_mode
             int64_t sampleUsed = -1;  // the last poll's sample (play: injected; record: kept)
             bool polling = false;     // the state has loaded: polls count from here
             uint32_t polls = 0;
+            uint32_t target = 0;      // F2 > NPCs' locked target in the recording (0 = none), locked again after the load
+            bool targetCantDie = false;
         };
         Run g_run;
 
@@ -1039,6 +1062,8 @@ namespace kamite::test_mode
                     fs::remove(run.stateIsTemp, ec);
                 }
                 // Loaded: this is test frame 0.
+                if (!run.record)
+                    npc_tools::setTarget(run.target, run.targetCantDie); // before its first update, as in the recording
                 run.divider = fps60() ? 1u : 2u;
                 run.runFrames = run.vblanks / run.divider;
                 run.frame = 0;
@@ -1225,6 +1250,10 @@ namespace kamite::test_mode
             {
                 debug_tools::applyCheatState(cheats);
                 npc_tools::setAiOff(cheats.find("aioff=1") != std::string::npos);
+                // The locked target (an enemy's address in the state): locked when the state has loaded (runFrame).
+                if (const size_t at = cheats.find("target="); at != std::string::npos)
+                    run.target = static_cast<uint32_t>(std::strtoul(cheats.c_str() + at + 7, nullptr, 16));
+                run.targetCantDie = cheats.find("cantdie=1") != std::string::npos;
                 KM_INFO(Game, "case replay: switches " << cheats);
             }
             if (const char *fps = std::getenv("KAMITE_REPLAY_FPS60"); fps && *fps)
@@ -1338,6 +1367,11 @@ namespace kamite::test_mode
             rec.polling = false;
             rec.readsThisFrame = 0;
             rec.cheats = debug_tools::cheatState() + (npc_tools::aiOff() ? " aioff=1" : " aioff=0");
+            {
+                char text[48];
+                std::snprintf(text, sizeof(text), " target=%X cantdie=%d", npc_tools::target(), npc_tools::targetCantDie() ? 1 : 0);
+                rec.cheats += text;
+            }
             rec.savesBefore = ps2x::savestate::saveCount();
             rec.saveRequested = std::chrono::steady_clock::now();
             ps2x::savestate::requestSave(rec.stateFile);
@@ -1384,8 +1418,13 @@ namespace kamite::test_mode
             // The settings that change what the game does (the camera's reach, the enemies' view, the controls): the replay
             // runs with the recorder's (applyCaseSettings), not the replaying machine's kamite.ini.
             for (const char *name : kCaseSettings)
-                if (const char *value = std::getenv(name))
+            {
+                const char *value = std::getenv(name);
+                if (!value)
+                    value = caseDefault(name); // unset = the game's default: written out, so the case says what ran
+                if (value)
                     c.meta += std::string("env.") + name + "=" + value + "\n";
+            }
             c.meta += "cheats=" + rec.cheats + "\n"; // God mode etc.: the replay sets the same (readCaseForReplay)
             // The build that recorded it (kamite.exe's size and time): a replay with another build may differ from the
             // live log where a fix changed the game, and the report says so.
@@ -1596,6 +1635,7 @@ namespace kamite::test_mode
         const size_t size = std::strtoul(head.c_str() + at + marker.size(), nullptr, 10);
         std::istringstream in(head.substr(eol + 1, size));
         std::string line;
+        std::vector<std::string> seen;
         while (std::getline(in, line))
         {
             if (line.rfind("env.", 0) != 0)
@@ -1612,6 +1652,18 @@ namespace kamite::test_mode
             setenv(name.c_str(), setting.c_str(), 1);
 #endif
             notes.push_back("case: " + name + "=" + setting + " (the recorder's)");
+            seen.push_back(name);
+        }
+        for (const CaseDefault &d : kCaseDefaults)
+        {
+            if (std::find(seen.begin(), seen.end(), d.name) != seen.end())
+                continue;
+#if defined(_WIN32)
+            _putenv_s(d.name, d.value);
+#else
+            setenv(d.name, d.value, 1);
+#endif
+            notes.push_back(std::string("case: ") + d.name + "=" + d.value + " (not in the case: the game's default)");
         }
         return notes;
     }

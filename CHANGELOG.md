@@ -4,6 +4,10 @@ Newest first, one line per change; the code comments say how.
 
 ## November 6, 2026
 
+- Test cases carry F2 > NPCs' locked target into their replays.
+- Test cases: a gameplay option missing from a case replays with its default, not the replaying machine's setting.
+- F2 > NPCs: the locked target turns toward Gene at the same speed at 30 and 60 FPS.
+- Replay-Cases.cmd: the game runs in the script's own window; a replay that fails is retried and runs again next time.
 - Busta-Chan Jive: rooms r201, r204, r205 and r206 ship with K's railing and window marks.
 - Money: the slider shows in F2 > NPCs again (it was left out of the build).
 - Busta-Chan Jive: room r200 ships with K's railing marks.

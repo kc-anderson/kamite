@@ -18,4 +18,10 @@ namespace kamite::npc_tools
     // F2 > NPCs "AI off" (a test case records it and its replay sets it).
     bool aiOff();
     void setAiOff(bool on);
+    // The Target enemy fold-out's locked enemy (0 = none) and its "Can't die": a test case records them (T1's Elvis case,
+    // Nov 6: a locked target stands still and attacks only when it decides to; replayed without the lock, Elvis walked
+    // off on the first frame) and its replay locks the same enemy once the state has loaded.
+    uint32_t target();
+    bool targetCantDie();
+    void setTarget(uint32_t enemy, bool cantDie);
 }
