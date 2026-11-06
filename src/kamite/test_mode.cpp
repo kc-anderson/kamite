@@ -1216,6 +1216,13 @@ namespace kamite::test_mode
             CaseFile c;
             if (!unpackCase(data, c, error))
                 return false;
+            // <case>.fix (optional, a few lines): meta lines that correct a case recorded before the recorder kept that
+            // detail (T1's Elvis case: cheats with the locked target). They come first, so they win over the case's own.
+            if (std::string fix; readFile(path.string() + ".fix", fix) && !fix.empty())
+            {
+                c.meta = fix + (fix.back() == '\n' ? "" : "\n") + c.meta;
+                KM_INFO(Game, "test: " << path.filename().string() << ".fix applied");
+            }
             if (!parseRecording(c.pad, run.rec, error))
                 return false;
             if (!c.host.empty() && !parseHost(c.host, run.host))

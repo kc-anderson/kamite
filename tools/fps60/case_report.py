@@ -51,6 +51,14 @@ def read_case(path):
         size = int(size)
         sections[name] = data[at:at + size]
         at += size + 1
+    # <case>.fix: meta lines correcting an older case (test_mode.cpp readCaseForReplay); they win over the case's own.
+    try:
+        with open(str(path) + ".fix", "rb") as f:
+            fix = f.read()
+        if fix:
+            sections["meta"] = fix.rstrip(b"\r\n") + b"\n" + sections.get("meta", b"")
+    except OSError:
+        pass
     return sections
 
 
@@ -71,7 +79,7 @@ def meta_dict(text):
     for line in text.splitlines():
         if "=" in line:
             k, v = line.split("=", 1)
-            out[k.strip()] = v.strip()
+            out.setdefault(k.strip(), v.strip())  # the first wins, as in test_mode.cpp metaValue (a .fix comes first)
     return out
 
 
