@@ -4,7 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 6, 2026
 
-- Busta-Chan Jive: stage 2's first area ships with K's railing marks.
+- Busta-Chan Jive: room r200 ships with K's railing marks.
 
 ## November 5, 2026
 
