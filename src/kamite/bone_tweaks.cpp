@@ -5,9 +5,10 @@
 #include "kamite/log.h"
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
-#if defined(KAMITE_HAS_GS_MENU)
 #include "runtime/ps2_game_menu.h"
+#if __has_include("pcsx2gs_api.h")
 #include "pcsx2gs_api.h"
+#define KAMITE_HAS_GS_MENU 1 // set per file, as in npc_poses.cpp: without it the Money panel is compiled out
 #endif
 
 #include <array>

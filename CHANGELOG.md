@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 6, 2026
 
+- Money: the slider shows in F2 > NPCs again (it was left out of the build).
 - Busta-Chan Jive: room r200 ships with K's railing marks.
 
 ## November 5, 2026
