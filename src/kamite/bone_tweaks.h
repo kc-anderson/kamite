@@ -32,6 +32,11 @@ namespace kamite::bone_tweaks
     // by the droop; 1 = off. Any thread.
     float money();
     void setMoney(float scale);    // 0.8 .. 1.5
+    // Cash (F2 > NPCs, above Money; KAMITE_CASH / [Game] Cash, percent): the women's seat, re-skinned at boot onto the
+    // spare bones 27 / 28 (one per cheek, cash_skin.h) and grown back and down from the top of the hip at draw time;
+    // 1 = the game's own shape. Any thread.
+    float cash();
+    void setCash(float scale);     // 1.0 .. 1.5
     // The player's visible hand meshes (RH_xx / LH_xx node names), for the F2 Debug tab: which hand shape the game
     // shows (the fist / open hand / grab meshes it swaps).
     std::string handNodes(const uint8_t *rdram);

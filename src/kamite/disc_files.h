@@ -34,6 +34,8 @@ namespace kamite::disc_files
     // The file's bytes as on the disc (patches already set are applied, as for every read of the image; a file after
     // an insertion is read where it now sits). imageOffset stays the original offset, which is what patches use.
     bool read(const File &file, std::vector<uint8_t> &out);
+    // [offset, offset + size) of the file only (false when it runs past the file's end).
+    bool readRange(const File &file, uint32_t offset, uint32_t size, std::vector<uint8_t> &out);
     // The archive: its byte offset in the image, its file count, and its attribute table (offset from the archive
     // start, size; 0, 0 when it has none).
     uint64_t archiveBase();

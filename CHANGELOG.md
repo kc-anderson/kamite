@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 6, 2026
 
+- Cash (F2 > NPCs, above Money): a seat size slider for the female NPCs and enemies (shape sliders temporary).
 - Money: the slider shows in F2 > NPCs again (it was left out of the build).
 - Busta-Chan Jive: room r200 ships with K's railing marks.
 

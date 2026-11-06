@@ -404,6 +404,7 @@ namespace
         {"game", "offthecuff", "KAMITE_OFF_THE_CUFF"},
         {"game", "ballbusterwomen", "KAMITE_BALL_BUSTER_WOMEN"},
         {"game", "swaybar", "KAMITE_SWAY_BAR"},
+        {"game", "cash", "KAMITE_CASH"},
         {"game", "money", "KAMITE_MONEY"},
         {"sound", "mutemusic", "KAMITE_MUTE_MUSIC"},
         {"mods", "character", "KAMITE_CHARACTER"},
