@@ -1619,8 +1619,8 @@ void main()
                 {
                     if (beginSettings("experimental"))
                     {
-                        settingLabel("See Through", "Walls and pillars between the camera and Gene dissolve in an oval "
-                                                    "round him, so he and the enemies about him stay in view. Walls next "
+                        settingLabel("See Through", "When walls or pillars block the view of Gene or the enemies about "
+                                                    "him, they dissolve in an oval round him, so the fight stays in view. Walls next "
                                                     "to the camera, which the PS2 drops, are drawn too. Known: a banded "
                                                     "blur where hazy distance shows through (the depth of field reads "
                                                     "the dissolve).",

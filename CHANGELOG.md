@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 6, 2026
 
+- See Through: walls dissolve only while they block the view of Gene or the enemies near him; ledges and sills sticking out of walls dissolve with them.
 - Busta-Chan Jive: new windows are one-way (from the side they were marked from); a Two-way box and Flip side per window.
 - Busta-Chan Jive: a window only lets Gene through from its own floor (no more passing walls from the ground under a platform's windows); K's stage 5 marks and windows ship.
 - Wild Curry Funk: stage 5's fruit signs can be picked up and thrown.

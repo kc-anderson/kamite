@@ -271,7 +271,9 @@ namespace kamite
         // a wall less than ~1.8 m in front of him stayed (mostly) whole, and the floor before his feet dissolved in
         // stripes of dither as its depth changed down the screen.
         // Only while the player camera's own logic runs (gameplay: not in cutscenes); the DLL turns the oval off by
-        // itself when no frame brings one.
+        // itself when no frame brings one. Nov 6 (K): on only while a sight line to Gene or an enemy in the oval is
+        // blocked by the stage's collision (sightBlocked, faded in and out), and the ground that stays is what lies
+        // below his feet + 0.3 m (was his middle: sills and ledges stayed whole).
         constexpr uint32_t kPlayerPointer = game::GameWork::address(game::GameWork::kPlayerObj); // GameWork.playerObj
         std::atomic<bool> g_seeThrough{true};
         std::atomic<float> g_seeWidth{1.6f};     // metres, half-width
@@ -337,6 +339,107 @@ namespace kamite
             c.z = m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14];
             c.w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
             return c;
+        }
+
+        // ---- See-through trigger (K, Nov 6): only while the stage's walls block the camera's view ---------------------
+        // Sight lines from the eye to five points on Gene (head, chest, hips, both feet) and two on each living enemy
+        // inside the oval on screen are tested against the room's collision polygons (cCollisionScroll 0x5CAE50, as
+        // hitbox_overlay reads it: +4 groups, +0xC vertices (0xC stride), +0x14 polygons (0x14: +0..+6 u16 vertex ids,
+        // +0x10 flags bit 0 quad, bit 1 off); header +0x28 u16 polygon count). Any blocked line turns the oval on: it
+        // fades in over 0.15 s, stays 0.3 s after the last block and fades out over 0.3 s (steady clock, so the same at
+        // 30 and 60). Each line stops 0.25 m short of its point (a wall Gene leans on is not in the way). Collision only:
+        // a visible piece with no collision behind it doesn't turn the oval on alone (it still dissolves once on).
+        constexpr uint32_t kCollScroll = 0x5CAE50u, kEmListHead = 0x5864F0u + 0x500u;
+        constexpr float kSeeFadeIn = 0.15f, kSeeHold = 0.3f, kSeeFadeOut = 0.3f, kSeeShort = 0.25f;
+        float g_seeLevel = 0.0f;       // 0..1, game thread
+        int64_t g_seeBlockedMs = -100000, g_seeLevelMs = 0;
+
+        struct Segment
+        {
+            float a[3], d[3]; // from a, a + d
+        };
+        bool inGuestRam(uint32_t a, uint32_t bytes) { return a >= 0x100000u && a < PS2_RAM_SIZE && bytes <= PS2_RAM_SIZE - a; }
+        uint32_t rdWord(const uint8_t *rdram, uint32_t a)
+        {
+            uint32_t v = 0;
+            std::memcpy(&v, rdram + (a & (PS2_RAM_SIZE - 1u)), 4);
+            return v & 0x1FFFFFFFu;
+        }
+        uint16_t rdHalf(const uint8_t *rdram, uint32_t a)
+        {
+            uint16_t v = 0;
+            std::memcpy(&v, rdram + (a & (PS2_RAM_SIZE - 1u)), 2);
+            return v;
+        }
+        // Moller-Trumbore on the segment (t in 0..1).
+        bool segmentHitsTriangle(const Segment &s, const float *a, const float *b, const float *c)
+        {
+            const float e1[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]}, e2[3] = {c[0] - a[0], c[1] - a[1], c[2] - a[2]};
+            const float pv[3] = {s.d[1] * e2[2] - s.d[2] * e2[1], s.d[2] * e2[0] - s.d[0] * e2[2], s.d[0] * e2[1] - s.d[1] * e2[0]};
+            const float det = e1[0] * pv[0] + e1[1] * pv[1] + e1[2] * pv[2];
+            if (std::fabs(det) < 1e-9f)
+                return false;
+            const float inv = 1.0f / det;
+            const float tv[3] = {s.a[0] - a[0], s.a[1] - a[1], s.a[2] - a[2]};
+            const float u = (tv[0] * pv[0] + tv[1] * pv[1] + tv[2] * pv[2]) * inv;
+            if (u < 0.0f || u > 1.0f)
+                return false;
+            const float qv[3] = {tv[1] * e1[2] - tv[2] * e1[1], tv[2] * e1[0] - tv[0] * e1[2], tv[0] * e1[1] - tv[1] * e1[0]};
+            const float v = (s.d[0] * qv[0] + s.d[1] * qv[1] + s.d[2] * qv[2]) * inv;
+            if (v < 0.0f || u + v > 1.0f)
+                return false;
+            const float t = (e2[0] * qv[0] + e2[1] * qv[1] + e2[2] * qv[2]) * inv;
+            return t > 0.0f && t < 1.0f;
+        }
+        // Does any of the segments cross a collision polygon that is on?
+        bool sightBlocked(const uint8_t *rdram, const Segment *segs, int count)
+        {
+            const uint32_t header = rdWord(rdram, kCollScroll);
+            const uint32_t verts = rdWord(rdram, kCollScroll + 0x0Cu), polys = rdWord(rdram, kCollScroll + 0x14u);
+            if (count <= 0 || !inGuestRam(header, 0x30u) || !inGuestRam(verts, 0x0Cu))
+                return false;
+            const uint32_t polyCount = rdHalf(rdram, header + 0x28u);
+            if (polyCount == 0u || !inGuestRam(polys, polyCount * 0x14u))
+                return false;
+            float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f}; // all the segments' box
+            for (int i = 0; i < count; ++i)
+                for (int k = 0; k < 3; ++k)
+                {
+                    lo[k] = std::fmin(lo[k], std::fmin(segs[i].a[k], segs[i].a[k] + segs[i].d[k]));
+                    hi[k] = std::fmax(hi[k], std::fmax(segs[i].a[k], segs[i].a[k] + segs[i].d[k]));
+                }
+            for (uint32_t p = 0; p < polyCount; ++p)
+            {
+                const uint32_t rec = polys + p * 0x14u;
+                uint32_t flags = 0;
+                std::memcpy(&flags, rdram + rec + 0x10u, 4);
+                if (flags & 2u)
+                    continue; // switched off (a broken object's, or ours)
+                const int corners = (flags & 1u) ? 4 : 3;
+                float v[4][3];
+                float plo[3] = {1e30f, 1e30f, 1e30f}, phi[3] = {-1e30f, -1e30f, -1e30f};
+                bool ok = true;
+                for (int c = 0; c < corners && ok; ++c)
+                {
+                    const uint32_t at = verts + rdHalf(rdram, rec + 2u * c) * 0x0Cu;
+                    ok = inGuestRam(at, 12u);
+                    if (!ok)
+                        break;
+                    std::memcpy(v[c], rdram + at, 12);
+                    for (int k = 0; k < 3; ++k)
+                    {
+                        ok = ok && std::isfinite(v[c][k]);
+                        plo[k] = std::fmin(plo[k], v[c][k]);
+                        phi[k] = std::fmax(phi[k], v[c][k]);
+                    }
+                }
+                if (!ok || plo[0] > hi[0] || phi[0] < lo[0] || plo[1] > hi[1] || phi[1] < lo[1] || plo[2] > hi[2] || phi[2] < lo[2])
+                    continue;
+                for (int i = 0; i < count; ++i)
+                    if (segmentHitsTriangle(segs[i], v[0], v[1], v[2]) || (corners == 4 && segmentHitsTriangle(segs[i], v[0], v[2], v[3])))
+                        return true;
+            }
+            return false;
         }
 
         void seeThroughOff()
@@ -497,12 +600,82 @@ namespace kamite
                 seeThroughOff();
                 return;
             }
+            // The trigger: sight lines from the eye to Gene and to the enemies inside the oval.
+            Segment segs[5 + 2 * 16];
+            int count = 0;
+            const auto aim = [&](const float *point) {
+                Segment &sg = segs[count];
+                float d[3] = {point[0] - eye[0], point[1] - eye[1], point[2] - eye[2]};
+                const float len = length3(d);
+                if (!(len > kSeeShort + 0.05f))
+                    return;
+                const float k = (len - kSeeShort) / len;
+                for (int i = 0; i < 3; ++i)
+                {
+                    sg.a[i] = eye[i];
+                    sg.d[i] = d[i] * k;
+                }
+                ++count;
+            };
+            const float feet = centre[1] - 0.95f;
+            const float genePoints[5][3] = {{centre[0], feet + 1.7f, centre[2]},
+                                            {centre[0], feet + 1.3f, centre[2]},
+                                            {centre[0], feet + 0.95f, centre[2]},
+                                            {centre[0] + side[0] * 0.2f, feet + 0.15f, centre[2] + side[2] * 0.2f},
+                                            {centre[0] - side[0] * 0.2f, feet + 0.15f, centre[2] - side[2] * 0.2f}};
+            for (const auto &pt : genePoints)
+                aim(pt);
+            {
+                uint32_t slot = rdWord(rdram, kEmListHead);
+                for (int guard = 0; guard < 64 && inGuestRam(slot, 16u) && count + 2 <= static_cast<int>(sizeof(segs) / sizeof(segs[0])); ++guard)
+                {
+                    const uint32_t em = rdWord(rdram, slot + 8u);
+                    slot = rdWord(rdram, slot + 4u);
+                    if (!inGuestRam(em, 0x1800u))
+                        continue;
+                    const uint16_t kind = rdHalf(rdram, em + 0x2FEu);
+                    int16_t hp = 0;
+                    std::memcpy(&hp, rdram + em + 0x54Au, 2);
+                    uint32_t flags = 0;
+                    std::memcpy(&flags, rdram + em + 0x250u, 4);
+                    const uint32_t ep = rdWord(rdram, em + 0xF0u);
+                    if (kind < 0x200u || kind >= 0x280u || hp <= 0 || static_cast<int32_t>(flags) < 0 || !inGuestRam(ep, 12u))
+                        continue;
+                    const float base[3] = {loadFloat(rdram, ep), loadFloat(rdram, ep + 4u), loadFloat(rdram, ep + 8u)};
+                    const float mid[3] = {base[0], base[1] + 0.95f, base[2]}, top[3] = {base[0], base[1] + 1.6f, base[2]};
+                    const Clip ce = project(m, mid);
+                    if (!(ce.w > 0.2f))
+                        continue;
+                    const float ox = (ce.x / ce.w - cx) / rx, oy = (ce.y / ce.w - cy) / ry;
+                    if (ox * ox + oy * oy > 1.0f)
+                        continue; // outside the oval: not what it would uncover
+                    aim(mid);
+                    aim(top);
+                }
+            }
+            const int64_t now = steadyMs();
+            if (sightBlocked(rdram, segs, count))
+                g_seeBlockedMs = now;
+            const float dt = std::fmin(0.25f, std::fmax(0.0f, static_cast<float>(now - g_seeLevelMs) / 1000.0f));
+            g_seeLevelMs = now;
+            if (static_cast<float>(now - g_seeBlockedMs) / 1000.0f <= kSeeHold)
+                g_seeLevel = std::fmin(1.0f, g_seeLevel + dt / kSeeFadeIn);
+            else
+                g_seeLevel = std::fmax(0.0f, g_seeLevel - dt / kSeeFadeOut);
+            if (g_seeLevel <= 0.0f)
+            {
+                seeThroughOff();
+                return;
+            }
             const float start = distance - margin;
             const float ramp = std::fmin(0.3f, std::fmax(start - 0.15f, 0.05f));
+            // The ground that stays (up / down-facing surfaces, the shader's last value): below Gene's feet + 0.3 m
+            // (K, Nov 6; was his middle, which kept window sills and ledges sticking out of the walls whole).
+            const float groundBelow = feet + 0.3f;
             char text[640];
             int length = std::snprintf(text, sizeof(text), "%.2f %.2f %.2f %.2f %.4f %.4f %.3f %.3f %.5f %.5f %.5f %.5f", cx, cy, rx, ry,
-                                       start, ramp, g_seeStrength.load(std::memory_order_relaxed) / 100.0f,
-                                       g_seeSoftness.load(std::memory_order_relaxed) / 100.0f, eye[0], eye[1], eye[2], centre[1]);
+                                       start, ramp, g_seeStrength.load(std::memory_order_relaxed) / 100.0f * g_seeLevel,
+                                       g_seeSoftness.load(std::memory_order_relaxed) / 100.0f, eye[0], eye[1], eye[2], groundBelow);
             for (int i = 0; i < 16 && length > 0 && length < static_cast<int>(sizeof(text)); ++i)
                 length += std::snprintf(text + length, sizeof(text) - static_cast<size_t>(length), " %.9g", inverse[i]);
             if (!g_seeSent)
