@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 6, 2026
 
+- Busta-Chan Jive: a window only lets Gene through from its own floor (no more passing walls from the ground under a platform's windows); K's stage 5 windows ship.
 - Wild Curry Funk: stage 5's fruit signs can be picked up and thrown.
 - K's new casino NPC poses ship.
 - Busta-Chan Jive: K's stage 3 ledges and stage 4 windows ship; windows can be up to 12 m wide.

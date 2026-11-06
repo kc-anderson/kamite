@@ -315,6 +315,7 @@ namespace kamite::sprint_traversal
         // r0 windows are marked per face of a 1.7 m wall with no depth, so the two faces' boxes must meet inside the
         // wall (0.6 m left a 0.5 m gap there and Gene stuck in it: K, Nov 4).
         constexpr float kWindowMargin = 1.0f;
+        constexpr float kWindowFloor = 0.6f; // a window this far above or below Gene's floor is another floor's
         void windowPass(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             const uint32_t gene = GPR_U32(ctx, 17); // s1
@@ -324,7 +325,7 @@ namespace kamite::sprint_traversal
             const uint32_t pos = rd32(rdram, gene + game::GameObj::kPos);
             if (!inRam(pos, 12u))
                 return;
-            const float px = rdf(rdram, pos), pz = rdf(rdram, pos + 8u);
+            const float px = rdf(rdram, pos), py = rdf(rdram, pos + 4u), pz = rdf(rdram, pos + 8u);
             const uint16_t room = rd16(rdram, game::GameWork::address(game::GameWork::kRoom));
             const Window *inside = nullptr;
             {
@@ -340,7 +341,10 @@ namespace kamite::sprint_traversal
                 }
                 for (const Window &w : g_winCache)
                 {
-                    if (!(w.passes & kind))
+                    // Only from the window's own floor: Gene's position stays on his floor through the dive, so one
+                    // well below (or above) is at another floor's wall (K, Nov 6: r404's platform windows let him
+                    // through the wall from the ground under them).
+                    if (!(w.passes & kind) || std::fabs(w.y - py) > kWindowFloor)
                         continue;
                     const float cx = w.x + w.dx * w.offset, cz = w.z + w.dz * w.offset;
                     const float along = (px - cx) * w.dx + (pz - cz) * w.dz;
@@ -384,7 +388,6 @@ namespace kamite::sprint_traversal
         // The lift moves at most 0.125 m a vblank toward its target, so a flush dive rises instead of jumping.
         constexpr float kDiveClears = 0.95f;
         constexpr uint32_t kMotionFrame = 0x41Cu;
-        constexpr float kSameFloor = 0.6f;    // a window this far above or below Gene's floor is another floor's
         constexpr float kLiftStep = 0.125f;   // metres a vblank
         // The dive's torso bottom (m above the floor) by motion frame 0, 1, ... 14 (from 14 on: the top, 0.95 clears).
         constexpr float kDiveBottom[] = {0.15f, 0.15f, 0.15f, 0.15f, 0.15f, 0.17f, 0.21f, 0.27f,
@@ -430,7 +433,7 @@ namespace kamite::sprint_traversal
                         continue;
                     for (const Window &w : list)
                     {
-                        if (!(w.passes & kJump) || std::fabs(w.y - py) > kSameFloor)
+                        if (!(w.passes & kJump) || std::fabs(w.y - py) > kWindowFloor)
                             continue;
                         const float cx = w.x + w.dx * w.offset, cz = w.z + w.dz * w.offset;
                         const float along = (px - cx) * w.dx + (pz - cz) * w.dz;
