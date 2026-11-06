@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 6, 2026
 
+- Busta-Chan Jive: rooms r201, r204, r205 and r206 ship with K's railing and window marks.
 - Money: the slider shows in F2 > NPCs again (it was left out of the build).
 - Busta-Chan Jive: room r200 ships with K's railing marks.
 
