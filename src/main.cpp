@@ -321,6 +321,15 @@ namespace
                         std::fprintf(stderr, "[crash] abort on thread %lu\n", GetCurrentThreadId());
                         printStackTrace();
                         endProcess(kExitCrash); });
+        // A bad argument to a C runtime function (ucrtbase's _invalid_parameter): otherwise a silent fail-fast
+        // 0xC0000409 that only the event log sees (crash_history; K's stage 3 door crash, Nov 6). Process-wide, so the
+        // GS DLL's and SDL's calls land here too.
+        _set_invalid_parameter_handler([](const wchar_t *, const wchar_t *, const wchar_t *, unsigned int, uintptr_t)
+                                       {
+                                           std::fprintf(stderr, "[crash] invalid parameter to a C runtime function on thread %lu\n",
+                                                        GetCurrentThreadId());
+                                           printStackTrace();
+                                           endProcess(kExitCrash); });
     }
 
     // Hidden runs: nothing may appear on screen, not even Windows Error Reporting's "stopped working" dialog, the
