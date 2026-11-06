@@ -868,7 +868,7 @@ namespace kamite::hitbox_overlay
                 const bool remove = ui->small_button("Delete##delwin") != 0;
                 bool changed = false;
                 ui->set_next_width(220.0f);
-                changed |= ui->slider_float("Width##ww", &w.width, 0.3f, 6.0f, "%.2f m") != 0;
+                changed |= ui->slider_float("Width##ww", &w.width, 0.3f, 12.0f, "%.2f m") != 0;
                 dragging |= ui->is_item_active() != 0;
                 ui->same_line();
                 ui->set_next_width(220.0f);

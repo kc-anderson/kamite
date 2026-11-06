@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 6, 2026
 
+- Busta-Chan Jive: K's stage 3 ledges and stage 4 switch room windows ship; windows can be up to 12 m wide.
 - Stage 4's "Use the switch?" arrow points at the option that is selected (it showed No while Yes was chosen).
 - Money ranges 85% to 130%.
 - Wild Curry Funk: K's hold values are the defaults for the park chair.
