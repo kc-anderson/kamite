@@ -1136,12 +1136,44 @@ namespace kamite
             0x22C984u, 0x22D3E0u, 0x2385A4u, 0x2385BCu, 0x2452A4u, 0x278B48u, // the enemy's +0x5A8 x a factor
             0x27BBCCu, 0x27E0ECu, 0x27F1F0u, 0x280900u, 0x2819A8u, 0x282BD8u, // GetSpeedRate (cEm63 / 66 / 6b / 6c)
         };
+        // Objects (Nov 6, T1's "Conchita and possibly whip ladies broken whip physics"): the weapons cOmWeapon (the whip
+        // ladies' whips: object em +0x6F0, state 6) set their motion step from cEmManage_GetSpeedRate (0.5 at 60) or
+        // copy their holder's +0x5A8: the whip's motion ran at +0x444 0.5 at 60 (1.0 at 30), so it unfolded and folded
+        // back slowly. x2 where the rate is the halved kind: GetSpeedRate always; a holder's rate only when the holder is
+        // an enemy (Gene's rate stays the 30 FPS value). Holder offset 0 = GetSpeedRate only.
+        struct MotionStepObjectSite
+        {
+            uint32_t site, holder;
+        };
+        constexpr MotionStepObjectSite kMotionStepObjectSites[] = {
+            {0x1C80C0u, 0x644u}, // func_001C8020: the holder's +0x5A8 (always a holder)
+            {0x1CB060u, 0x600u}, // func_001CB030: the holder's (+0x600) +0x5A8, else GetSpeedRate
+            {0x1CB430u, 0x600u}, // func_001CB400: same
+            {0x1CB84Cu, 0u},     // func_001CB828 / 001CB8C0 / 001CB990 / 001CEF28: GetSpeedRate
+            {0x1CB8E4u, 0u},
+            {0x1CB9B4u, 0u},
+            {0x1CEF58u, 0u},
+        };
         void motionStepRate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // at SetMotionStep's entry
         {
             const uint32_t site = GPR_U32(ctx, 31) - 8u;
             if (std::binary_search(std::begin(kMotionStepRateSites), std::end(kMotionStepRateSites), site) &&
                 inEnemyList(rdram, GPR_U32(ctx, 4)))
+            {
                 ctx->f[12] *= 2.0f;
+                return;
+            }
+            for (const MotionStepObjectSite &s : kMotionStepObjectSites)
+            {
+                if (s.site != site)
+                    continue;
+                uint32_t holder = 0;
+                if (s.holder != 0u)
+                    std::memcpy(&holder, &ram8(rdram, GPR_U32(ctx, 4) + s.holder), sizeof(holder));
+                if (holder == 0u ? s.site != 0x1C80C0u : inEnemyList(rdram, holder))
+                    ctx->f[12] *= 2.0f;
+                return;
+            }
         }
 
         // The body push (Nov 3, T1's lunge cases: Gene's running attack no longer went through Azel at 60, the Elite

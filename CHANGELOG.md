@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 6, 2026
 
+- 60 FPS: the whip ladies' whips (and other enemy weapons and thrown objects with their own animation) animated at half speed, so the whip folded back slowly.
 - 60 FPS: Gene's projectile moves flew twice as fast and far.
 - 60 FPS: some enemy projectiles (fire and the like) could keep going instead of burning out.
 - 60 FPS: homing projectiles (Elvis' ring of fire and the other homing bullets) and twelve enemy turns turned at half speed.
