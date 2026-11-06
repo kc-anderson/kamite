@@ -3637,16 +3637,27 @@ address = "0x001B8F58"
 hook = "km_fps60_countdown_self"
 flag = "fps60"
 replace = true
-[[patches.hooks]] # func_001B93E8 lw +0x61C (decrement in a delay slot: load-raise)
-address = "0x001B9ED8"
-hook = "km_fps60_om_cd_s1_61c_v1"
+# func_001B93E8 (the bullets cOmbe) +0x61C at 0x1B9ED8 / 0x1BA0E4 is not a per-frame countdown (Nov 6): it counts the
+# bursts of a float interval (+0x618 from 3.0, reset at each burst), so it is left unhooked. The interval itself steps
+# by the rate (subtypes 0x4 / 0x10 / 0x18: -= GetSpeedRate) or by 0.5 at 60 (Gene's 0x2C / 0x2D, below). With the
+# parity hook an interval of 6 vblanks always ended on the same half: half of those bullets never counted down.
+# Gene's projectiles (his phases 30 / 31 / 34 / 35, func_0012BC00: subtypes 0x29..0x2F) move by their velocity once a
+# game frame with no rate (0x1B9C98, 0x1BA06C; the enemies' bullets multiply by GetSpeedRate) and their burst interval
+# counts 1.0 a frame (0x1BA078): half the step at 60.
+[[patches.hooks]]
+address = "0x001B9C98"
+hook = "km_fps60_bullet_vadd_half"
 flag = "fps60"
 replace = true
-[[patches.hooks]] # func_001B93E8 lw +0x61C
-address = "0x001BA0E4"
-hook = "km_fps60_countdown_self"
+[[patches.hooks]]
+address = "0x001BA06C"
+hook = "km_fps60_bullet_vadd_half"
 flag = "fps60"
 replace = true
+[[patches.conditional]] # func_001B93E8: Gene's bullets' burst interval step, 1.0 -> 0.5 at 60
+address = "0x001BA078"
+value = "0x3C013F00"
+flag = "fps60"
 [[patches.hooks]] # func_001BBC08 lhu +0x56A
 address = "0x001BBDD8"
 hook = "km_fps60_countdown"

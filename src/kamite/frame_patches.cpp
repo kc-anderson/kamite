@@ -1460,6 +1460,19 @@ namespace kamite
         // path, so with the flag clear they ran at the enemies' slow rate (Gene's brace pieces in slow motion, the wave
         // late against its sound, the glow's growth stalled while its fade ran). Flag clear: the effect rate is the
         // plain 60 FPS step (1/k of a PS2 frame); flag set: the slowed rate stands (already x0.5, effectSlowRate).
+        // The bullets cOmbe (func_001B93E8), Gene's subtypes 0x29..0x2F (Nov 6): `vadd.xyz vf4,vf4,vf5` = position +
+        // velocity once a game frame with no rate (the enemies' bullets scale it by GetSpeedRate): half the velocity a
+        // vblank at 60. For k: 1/k.
+        void bulletVaddHalf(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            alignas(16) float a[4], b[4];
+            _mm_store_ps(a, ctx->vu0_vf[4]);
+            _mm_store_ps(b, ctx->vu0_vf[5]);
+            for (int i = 0; i < 3; ++i)
+                a[i] += 0.5f * b[i];
+            ctx->vu0_vf[4] = _mm_load_ps(a);
+        }
+
         void effectRateForFlag(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             const uint32_t zero = 0;
@@ -2023,7 +2036,6 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_om_cd_s1_600_2", &countdownLoadAny<17, 0x600u, 2, 2>);
         ps2xRegisterHostHook("km_fps60_om_cd_s1_604_2", &countdownLoadAny<17, 0x604u, 2, 2>);
         ps2xRegisterHostHook("km_fps60_om_cd_s1_608_2", &countdownLoadAny<17, 0x608u, 2, 2>);
-        ps2xRegisterHostHook("km_fps60_om_cd_s1_61c_v1", &countdownLoadAny<17, 0x61Cu, 3, 4>);
         ps2xRegisterHostHook("km_fps60_om_cd_s1_628_2", &countdownLoadAny<17, 0x628u, 2, 2>);
         ps2xRegisterHostHook("km_fps60_om_cd_s1_650_2", &countdownLoadAny<17, 0x650u, 2, 2>);
         ps2xRegisterHostHook("km_fps60_om_cd_s1_654_2", &countdownLoadAny<17, 0x654u, 2, 2>);
@@ -2088,6 +2100,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_effect_world_slow", &effectWorldSlow);
         ps2xRegisterHostHook("km_fps60_effect_slow_rate", &effectSlowRate);
         ps2xRegisterHostHook("km_fps60_effect_rate_for_flag", &effectRateForFlag);
+        ps2xRegisterHostHook("km_fps60_bullet_vadd_half", &bulletVaddHalf);
         ps2xRegisterHostHook("km_fps60_wiggle_begin", &wiggleBegin);
         ps2xRegisterHostHook("km_fps60_wiggle_end", &wiggleEnd);
         ps2xRegisterHostHook("km_fps60_pl56e_store_s0", &countdownStore16<16, 2, 3, 0x56Eu>);

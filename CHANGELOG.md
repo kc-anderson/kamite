@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## November 6, 2026
 
+- 60 FPS: Gene's projectile moves flew twice as fast and far.
+- 60 FPS: some enemy projectiles (fire and the like) could keep going instead of burning out.
 - 60 FPS: homing projectiles (Elvis' ring of fire and the other homing bullets) and twelve enemy turns turned at half speed.
 - Test cases carry F2 > NPCs' locked target into their replays (an older case can be given it in a small .fix file next to it).
 - Test cases: a gameplay option missing from a case replays with its default, not the replaying machine's setting.
