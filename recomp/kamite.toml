@@ -926,6 +926,42 @@ flag = "fps60"
 address = "0x001C1FEC"
 value = "0x3C013C23"
 flag = "fps60"
+# Nov 7 (K's case pickup_animations_and_subboss_intro: pickups rise too high and spin too fast at 60): per-frame
+# steps inside loops whose countdowns already count at 30 (km_fps60_countdown*: +0x568 / +0x60C / +0x602), so the
+# step ran twice per 30 FPS frame: twice the rise, spin and flip. Halved (the lui of the constant, exponent - 1):
+# the values at every even vblank are the 30 FPS ones.
+[[patches.conditional]] # func_001C0678 (items): on the ground, yaw += 5 deg a frame -> 2.5
+address = "0x001C0BB4"
+value = "0x3C013D32"
+flag = "fps60"
+[[patches.conditional]] # func_001C0678: picked up, yaw += 30 deg a frame -> 15
+address = "0x001C1A80"
+value = "0x3C013E86"
+flag = "fps60"
+[[patches.conditional]] # func_001C0678: picked up, y += 0.2 a frame while +0x568 counts -> 0.1
+address = "0x001C1AB4"
+value = "0x3C013DCC"
+flag = "fps60"
+[[patches.conditional]] # func_001C0678: part 0 pitch += -10 deg a frame down to -90 -> -5
+address = "0x001C1B6C"
+value = "0x3C01BDB2"
+flag = "fps60"
+[[patches.conditional]] # func_001C0678: the shown item (+0x678) y += 0.18 a frame while +0x568 counts -> 0.09
+address = "0x001C1F98"
+value = "0x3C013DB8"
+flag = "fps60"
+[[patches.conditional]] # func_001BEBA0 (chests): lid pitch += -10 deg a frame down to -90 -> -5
+address = "0x001BEC48"
+value = "0x3C01BDB2"
+flag = "fps60"
+[[patches.conditional]] # func_001BEBA0: the item (+0x608) y += 0.18 a frame while +0x60C counts -> 0.09
+address = "0x001BF214"
+value = "0x3C013DB8"
+flag = "fps60"
+[[patches.conditional]] # func_001BF5E0: yaw += 6 deg a frame while +0x602 counts -> 3
+address = "0x001BF618"
+value = "0x3C013D56"
+flag = "fps60"
 [[patches.conditional]] # object state func_001CC668: alpha -= 0.02
 address = "0x001CC994"
 value = "0x3C013C23"
