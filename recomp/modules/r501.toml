@@ -30,6 +30,9 @@ stubs = []
 # ran every frame while its +0x70 timer (0x79F6F0) counts every other: taken every other frame too (parity, as the
 # timer), so it sinks the same way as at 30.
 # The boat ride's scrolling town (0x79A7FC): see frame_patches.cpp r501BoatStep.
+# The cannon minigame's per-frame tasks (game / result / UFOTask / EnemyShipTask) run once per 30 FPS frame at 60
+# (kamite.toml's cTaskWork_sleep hook, frame_patches.cpp r501FrameTask), so the countdowns and parity steps above step
+# on every run; their two press tests add a press made on the skipped half (r501PressedLatch, below).
 [[patches.hooks]]
 address = "0x0079E2C0"
 hook = "km_fps60_countdown_self"
@@ -100,5 +103,17 @@ replace = true
 [[patches.hooks]]
 address = "0x0079F6E8"
 hook = "km_fps60_charge_sub_f0"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x0079F49C"
+hook = "km_fps60_r501_pressed_v0_v1"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x0079D9E4"
+hook = "km_fps60_r501_pressed_v1_v0"
 flag = "fps60"
 replace = true

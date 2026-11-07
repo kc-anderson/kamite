@@ -5,6 +5,7 @@ Newest first, one line per change; the code comments say how.
 ## November 7, 2026
 
 - 60 FPS: the stage 5 boat ride's town scrolls past at the right speed; sinking enemy ships sink as at 30.
+- 60 FPS: the boat's cannon minigame (targets, ships, crosshair, results) runs at the right speed.
 - Busta-Chan Jive: K's stage 5 boat and r508 windows ship.
 
 ## November 6, 2026
