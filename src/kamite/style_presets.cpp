@@ -683,7 +683,7 @@ namespace kamite::style_presets
         static_assert(kStoreOffset + sizeof(Store) <= kListText, "the strings clear of the Store");
         static_assert(kTextEnd <= kSaveSize, "the strings in cCoreSaveData");
         constexpr uint16_t kHudMessage = 0x3041u, kHudShadowMessage = 0x3042u;            // two more "<7d>" placeholders of bank 3
-        constexpr float kListX = 311.0f, kListY = 56.5f; // the lines' block is centred here (align 0), where the old list was
+        constexpr float kListX = 328.0f, kListY = 56.5f; // the lines' block centre (align 0): their right end (the arrows) on the move boxes' right edge (~360; K, Nov 7)
         constexpr float kRowX = 100.0f, kRowY = 78.0f;   // the row's centre: under the title, above the TECHNIQUES bar
         constexpr float kTextScale = 0.65f;
         // Line pitch: a new line moves down by the line's height (the tallest code: a letter, 41 x the scale = 26.8 at
