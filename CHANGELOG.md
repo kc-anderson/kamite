@@ -6,7 +6,7 @@ Newest first, one line per change; the code comments say how.
 
 - Busta-Chan Jive: a window can take a room jump (F2, same stage only); diving through it jumps there (r503's windows past the locked door).
 - 60 FPS: picked-up items, chest lids and spinning pickups rise, flip and spin at the 30 FPS speed.
-- Busta-Chan Jive: K's stage 5 marks (r503, r509) ship, incl. r503's room-jump windows.
+- Busta-Chan Jive: K's stage 5 marks (r503, r504, r509) ship, incl. r503's room-jump windows.
 - 60 FPS: the stage 5 cannon minigame runs at its 30 FPS speed, smoothly (targets, crosshair, aim, cannonballs, hit banner).
 - 60 FPS: the cannon minigame's ships no longer flip their facing every frame.
 - 60 FPS: the stage 5 boat ride's town scrolls past at the right speed; sinking enemy ships sink as at 30.
