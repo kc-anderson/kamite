@@ -63,7 +63,7 @@ namespace kamite::characters
 
     std::vector<Character> list(const fs::path &exeDir)
     {
-        std::vector<Character> out{{"gene", "Gene", "The game's own"}};
+        std::vector<Character> out{{"gene", "Gene", "Vanilla Thrilla"}};
         std::error_code error;
         const fs::path root = exeDir / "mods" / "characters";
         std::vector<fs::path> folders;

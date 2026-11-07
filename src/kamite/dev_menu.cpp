@@ -30,6 +30,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
+#include <mutex>
 #include <string>
 
 namespace kamite::dev_menu
@@ -207,6 +208,17 @@ namespace kamite::dev_menu
             status(ui, g_gameplayStatus);
         }
 #endif
+    }
+
+    bool saveIniValue(const char *section, const char *key, const std::string &value)
+    {
+        static std::mutex lock;
+        std::lock_guard<std::mutex> guard(lock);
+        IniFile ini;
+        if (g_iniPath.empty() || !ini.load(g_iniPath))
+            return false;
+        ini.set(section, key, value);
+        return ini.save();
     }
 
     void install(const std::filesystem::path &iniPath)

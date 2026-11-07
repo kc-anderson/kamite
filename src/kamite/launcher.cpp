@@ -1583,33 +1583,6 @@ void main()
                     }
                     ImGui::EndTabItem();
                 }
-                if (ImGui::BeginTabItem("Mods"))
-                {
-                    if (beginSettings("mods"))
-                    {
-                        settingLabel("Character", "Who you play as. Other characters use Gene's moves and his gauntlet "
-                                                  "arm.");
-                        static std::vector<characters::Character> list;
-                        if (list.empty())
-                            list = characters::list(state.context->exeDir);
-                        const std::string current = lower(state.ini.get("Mods", "Character", "gene"));
-                        int picked = 0;
-                        std::vector<const char *> names;
-                        for (size_t i = 0; i < list.size(); ++i)
-                        {
-                            names.push_back(list[i].name.c_str());
-                            if (lower(list[i].id) == current)
-                                picked = static_cast<int>(i);
-                        }
-                        ImGui::SetNextItemWidth(-1.0f);
-                        if (ImGui::Combo("##character", &picked, names.data(), static_cast<int>(names.size())))
-                            state.ini.set("Mods", "Character", list[static_cast<size_t>(picked)].id);
-                        if (!list[static_cast<size_t>(picked)].credit.empty())
-                            ImGui::TextColored(kTextDim, "%s", list[static_cast<size_t>(picked)].credit.c_str());
-                        ImGui::EndTable();
-                    }
-                    ImGui::EndTabItem();
-                }
                 if (ImGui::BeginTabItem("Controls"))
                 {
                     drawControls(state);
@@ -1648,6 +1621,33 @@ void main()
                         settingLabel("Sway Bar", "A stun gauge under each enemy's health bar: it fills as you hit them and "
                                                  "drains while they are stunned.");
                         iniCheckbox(state, "On##swaybar", "Game", "SwayBar", false);
+                        ImGui::EndTable();
+                    }
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("Mods"))
+                {
+                    if (beginSettings("mods"))
+                    {
+                        settingLabel("Character", "Who you play as. Currently, other characters use Gene's moves and his "
+                                                  "God Hand.");
+                        static std::vector<characters::Character> list;
+                        if (list.empty())
+                            list = characters::list(state.context->exeDir);
+                        const std::string current = lower(state.ini.get("Mods", "Character", "gene"));
+                        int picked = 0;
+                        std::vector<const char *> names;
+                        for (size_t i = 0; i < list.size(); ++i)
+                        {
+                            names.push_back(list[i].name.c_str());
+                            if (lower(list[i].id) == current)
+                                picked = static_cast<int>(i);
+                        }
+                        ImGui::SetNextItemWidth(-1.0f);
+                        if (ImGui::Combo("##character", &picked, names.data(), static_cast<int>(names.size())))
+                            state.ini.set("Mods", "Character", list[static_cast<size_t>(picked)].id);
+                        if (!list[static_cast<size_t>(picked)].credit.empty())
+                            ImGui::TextColored(kTextDim, "%s", list[static_cast<size_t>(picked)].credit.c_str());
                         ImGui::EndTable();
                     }
                     ImGui::EndTabItem();

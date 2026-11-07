@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## November 7, 2026
 
+- Launcher: Mods tab moved to the end; character descriptions updated.
+- Money remembers its value.
 - Techniques screen: the right stick turns Gene.
 - Style switching: L2 / R2 cycle Style None, S, E, X, Y on the Techniques screen; changes save to the style shown; None turns styles off.
 - F2 room jump starts the stage fresh: enemies, doors, objects and dropped items in all its rooms are back.
