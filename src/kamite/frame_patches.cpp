@@ -2029,7 +2029,7 @@ namespace kamite
             SET_GPR_U32(ctx, Dst, skipFrame(rdram) && value != 0u ? value + 1u : value);
         }
 
-        // The 1 -> 0 step (Nov 7 census of the 472 countdown hooks, claude/fps60-notes.md "1 -> 0 step"): a hooked
+        // The 1 -> 0 step (Nov 7 census of the 472 countdown hooks, claude/countdown-step.md): a hooked
         // countdown steps on the tick, so on the second half it already reads 0 where the 30 FPS frame still had 1.
         // `if (n > 0) n--; else { act }` then acted a vblank early, and in a chain of states (an enemy's wait -> attack
         // -> wait) every wait after the first came out a whole 30 FPS frame short (r505's sparks: 5 steps ahead in

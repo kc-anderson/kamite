@@ -4370,7 +4370,7 @@ address = "0x00158288"
 hook = "km_fps60_motion_step_rate"
 flag = "fps60"
 
-# 60 FPS, the 1 -> 0 step (Nov 7 census of every countdown hook, claude/fps60-notes.md): the signed guard loads in front
+# 60 FPS, the 1 -> 0 step (Nov 7 census of every countdown hook, claude/countdown-step.md): the signed guard loads in front
 # of hooked decrements (`lh v0,X; beqz v0; lhu v1,X; addiu v0,v1,-1`, or `if (n < 0) act; n--` with bgez). On the
 # second half after the tick stepped the counter from 1 (from 0 for bgez), the guard reads it unstepped, so the state
 # change / reload behind it waits for the tick as at 30 (frame_patches.cpp countdownGuard).
