@@ -20,7 +20,7 @@ target_compile_definitions(pcsx2_flags INTERFACE
     _M_X86=1 __SSE4_1__=1
     WINVER=0x0A00 _WIN32_WINNT=0x0A00 WIN32_LEAN_AND_MEAN WIL_SUPPRESS_EXCEPTIONS
     _CRT_NONSTDC_NO_WARNINGS _CRT_SECURE_NO_WARNINGS CRT_SECURE_NO_DEPRECATE _SCL_SECURE_NO_WARNINGS
-    _UNICODE UNICODE NOMINMAX
+    _UNICODE UNICODE NOMINMAX ENABLE_VULKAN
     IMGUI_USER_CONFIG="pcsx2gs_imconfig.h")
 target_compile_options(pcsx2_flags INTERFACE
     $<$<COMPILE_LANGUAGE:CXX>:/Zc:externConstexpr /Zc:__cplusplus /permissive- /Zc:preprocessor>
@@ -28,7 +28,7 @@ target_compile_options(pcsx2_flags INTERFACE
 target_include_directories(pcsx2_flags INTERFACE
     "${P}" "${P}/pcsx2" "${CMAKE_CURRENT_SOURCE_DIR}/compat"
     "${P}/3rdparty/fmt/include" "${P}/3rdparty/imgui/include" "${P}/3rdparty/xbyak"
-    "${P}/3rdparty/fast_float/include" "${P}/3rdparty/d3d12memalloc/include" "${P}/3rdparty/winwil/include"
+    "${P}/3rdparty/fast_float/include" "${P}/3rdparty/vulkan/include" "${P}/3rdparty/winwil/include"
     "${P}/3rdparty/cpuinfo/include" "${P}/3rdparty/include"
     "${DIRECTX_HEADERS_DIR}/include")
 
@@ -41,9 +41,6 @@ add_library(pcsx2_imgui STATIC
     "${P}/3rdparty/imgui/src/imgui_tables.cpp" "${P}/3rdparty/imgui/src/imgui_widgets.cpp"
     "${P}/3rdparty/imgui/src/imgui_stdlib.cpp")
 target_link_libraries(pcsx2_imgui PRIVATE pcsx2_flags)
-
-add_library(pcsx2_d3d12ma STATIC "${P}/3rdparty/d3d12memalloc/src/D3D12MemAlloc.cpp")
-target_link_libraries(pcsx2_d3d12ma PRIVATE pcsx2_flags)
 
 set(CPUINFO_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(CPUINFO_BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
@@ -63,7 +60,7 @@ list(TRANSFORM COMMON_SOURCES PREPEND "${P}/common/")
 add_library(pcsx2_common STATIC ${COMMON_SOURCES})
 target_link_libraries(pcsx2_common PRIVATE pcsx2_flags cpuinfo)
 
-# --- GS (pcsx2/CMakeLists.txt: pcsx2GSSources + pcsx2GSSourcesUnshared, single ISA, DX11 + DX12) ---
+# --- GS (pcsx2/CMakeLists.txt: pcsx2GSSources + pcsx2GSSourcesUnshared, single ISA, DX11 + Vulkan; no DX12) ---
 # Left out: GSDump/GSLzma (GS dumps, zstd/xz), GSCapture (FFmpeg video capture), GSPng (libpng snapshots); compat/
 # has empty versions.
 set(GS_SOURCES
@@ -78,16 +75,20 @@ set(GS_SOURCES
     GS/Renderers/SW/GSRendererSW.cpp GS/Renderers/SW/GSDrawScanlineCodeGenerator.all.cpp
     GS/Renderers/SW/GSSetupPrimCodeGenerator.all.cpp
     GS/Renderers/DX11/D3D.cpp GS/Renderers/DX11/D3D11ShaderCache.cpp GS/Renderers/DX11/GSDevice11.cpp
-    GS/Renderers/DX11/GSTexture11.cpp GS/Renderers/DX12/D3D12Builders.cpp GS/Renderers/DX12/D3D12DescriptorHeapManager.cpp
-    GS/Renderers/DX12/D3D12ShaderCache.cpp GS/Renderers/DX12/D3D12StreamBuffer.cpp GS/Renderers/DX12/GSDevice12.cpp
-    GS/Renderers/DX12/GSTexture12.cpp GS/Renderers/HW/GSTextureReplacements.cpp)
+    GS/Renderers/DX11/GSTexture11.cpp GS/Renderers/HW/GSTextureReplacements.cpp
+    GS/Renderers/Vulkan/GSDeviceVK.cpp GS/Renderers/Vulkan/GSTextureVK.cpp GS/Renderers/Vulkan/vk_mem_alloc.cpp
+    GS/Renderers/Vulkan/VKBuilders.cpp GS/Renderers/Vulkan/VKLoader.cpp GS/Renderers/Vulkan/VKShaderCache.cpp
+    GS/Renderers/Vulkan/VKStreamBuffer.cpp GS/Renderers/Vulkan/VKSwapChain.cpp)
 list(TRANSFORM GS_SOURCES PREPEND "${P}/pcsx2/")
 # Texture replacement loaders: PCSX2's file with PNG through WIC instead of libpng (tools/make_loaders.py); .zip
 # texture packs are left out (compat/zip.h).
 list(APPEND GS_SOURCES compat/GSTextureReplacementLoaders.cpp)
 add_library(pcsx2_gs STATIC ${GS_SOURCES})
 target_link_libraries(pcsx2_gs PRIVATE pcsx2_flags)
-target_link_libraries(pcsx2_gs PUBLIC pcsx2_common pcsx2_fmt pcsx2_imgui pcsx2_d3d12ma cpuinfo
+# The Vulkan device compiles its shaders with shaderc_shared.dll at run time (shaderc.cmake builds it from source).
+include("${CMAKE_CURRENT_SOURCE_DIR}/shaderc.cmake")
+target_include_directories(pcsx2_gs PRIVATE "${KAMITE_SHADERC_INCLUDE_DIR}")
+target_link_libraries(pcsx2_gs PUBLIC pcsx2_common pcsx2_fmt pcsx2_imgui cpuinfo
     d3d11 d3d12 dxgi d3dcompiler dxguid winmm windowscodecs ole32)
 target_include_directories(pcsx2_gs INTERFACE
     "${P}" "${P}/pcsx2" "${CMAKE_CURRENT_SOURCE_DIR}/compat" "${P}/3rdparty/fmt/include")
@@ -99,7 +100,7 @@ add_library(pcsx2_gs_host STATIC compat/HostStubs.cpp compat/Pcsx2ConfigGS.cpp)
 target_link_libraries(pcsx2_gs_host PRIVATE pcsx2_flags)
 target_link_libraries(pcsx2_gs_host PUBLIC pcsx2gs_api) # the menu types (pcsx2gs_host.h)
 target_link_libraries(pcsx2_gs PUBLIC onecore pathcch dxcompiler delayimp)
-# dxcompiler.dll (DX12's shader compiler) only loads when the DX12 renderer is used.
+# dxcompiler.dll (DX12's shader compiler): D3D.cpp still references it, but with no DX12 device it never loads.
 target_link_options(pcsx2_gs INTERFACE /DELAYLOAD:dxcompiler.dll)
 
 add_executable(pcsx2_gs_test test/GSTest.cpp)
@@ -111,7 +112,10 @@ add_library(pcsx2gs SHARED compat/Bridge.cpp)
 target_link_libraries(pcsx2gs PRIVATE pcsx2_flags pcsx2gs_api pcsx2_gs pcsx2_gs_host)
 if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set_target_properties(pcsx2gs PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    set_target_properties(shaderc_shared PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 endif()
+# shaderc_shared.dll next to the exe (built with the DLL; LoadLibrary finds it in the exe's folder).
+add_dependencies(pcsx2gs shaderc_shared)
 # resources/ (shaders, OSD font; see resources/README.md) next to the DLL. No shader cache is shipped: the Urban Reign
 # one came without its blob (.gitignore drops *.bin), and its orphan index, copied over a player's own cache, made PCSX2
 # read wrong bytecode from that player's blob (black screen, then a failed swap chain resize). PCSX2 builds the cache

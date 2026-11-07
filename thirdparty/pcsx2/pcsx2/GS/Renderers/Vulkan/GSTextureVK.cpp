@@ -1,0 +1,977 @@
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
+// SPDX-License-Identifier: GPL-3.0+
+
+#include "GS/GSGL.h"
+#include "GS/GSPerfMon.h"
+#include "GS/Renderers/Vulkan/GSDeviceVK.h"
+#include "GS/Renderers/Vulkan/GSTextureVK.h"
+#include "GS/Renderers/Vulkan/VKBuilders.h"
+
+#include "common/Assertions.h"
+#include "common/Console.h"
+#include "common/BitUtils.h"
+
+VkFramebuffer GSTextureVK::CreateNullFramebuffer(u32 w, u32 h)
+{
+	const VkRenderPass rp = GSDeviceVK::GetInstance()->GetRenderPass(
+		VK_FORMAT_UNDEFINED, VK_FORMAT_UNDEFINED,
+		VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE,
+		VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE,
+		VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE,
+		false, false);
+
+	if (!rp)
+		return VK_NULL_HANDLE;
+	
+	Vulkan::FramebufferBuilder fbb;
+	fbb.SetSize(w, h, 1);
+	fbb.SetRenderPass(rp);
+
+	return fbb.Create(GSDeviceVK::GetInstance()->GetDevice());
+}
+
+static constexpr const VkComponentMapping s_identity_swizzle {
+	VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+	VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+};
+
+VkImageLayout GSTextureVK::GetVkImageLayout(GSTextureVK::Layout layout)
+{
+	static constexpr VkImageLayout s_vk_layout_mapping[] = {
+		VK_IMAGE_LAYOUT_UNDEFINED,            // Undefined
+		VK_IMAGE_LAYOUT_PREINITIALIZED,       // Preinitialized
+		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, // ColorAttachment
+		VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, // DepthStencilAttachment
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, // ShaderReadOnly
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, // ClearDst
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, // CopySrc
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, // CopyDst
+		VK_IMAGE_LAYOUT_GENERAL,              // CopySelf
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, // BlitSrc
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, // BlitDst
+		VK_IMAGE_LAYOUT_GENERAL,              // BlitSelf
+		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,      // PresentSrc
+		VK_IMAGE_LAYOUT_GENERAL,              // FeedbackLoop
+		VK_IMAGE_LAYOUT_GENERAL,              // ReadWriteImage
+		VK_IMAGE_LAYOUT_GENERAL,              // ComputeReadWriteImage
+		VK_IMAGE_LAYOUT_GENERAL,              // General
+	};
+	static_assert(std::size(s_vk_layout_mapping) == static_cast<u32>(GSTextureVK::Layout::Count));
+	if (layout == GSTextureVK::Layout::FeedbackLoop)
+		return GSDeviceVK::GetInstance()->GetFeedbackLoopLayout();
+	else
+		return s_vk_layout_mapping[static_cast<u32>(layout)];
+}
+
+static VkPipelineStageFlags2 GetPipelineStageFlags(GSTextureVK::Layout layout, bool color)
+{
+	static constexpr VkPipelineStageFlags2 VK_PIPELINE_STAGE_2_FRAGMENT_TESTS_BITS =
+		VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+	static constexpr VkPipelineStageFlags2 s_vk_stage_mapping[] = {
+		VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,             // Undefined
+		VK_PIPELINE_STAGE_2_HOST_BIT,                    // Preinitialized
+		VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, // ColorAttachment
+		VK_PIPELINE_STAGE_2_FRAGMENT_TESTS_BITS,         // DepthStencilAttachment
+		VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,         // ShaderReadOnly
+		VK_PIPELINE_STAGE_2_CLEAR_BIT,                   // ClearDst
+		VK_PIPELINE_STAGE_2_COPY_BIT,                    // CopySrc
+		VK_PIPELINE_STAGE_2_COPY_BIT,                    // CopyDst
+		VK_PIPELINE_STAGE_2_COPY_BIT,                    // CopySelf
+		VK_PIPELINE_STAGE_2_BLIT_BIT,                    // BlitSrc
+		VK_PIPELINE_STAGE_2_BLIT_BIT,                    // BlitDst
+		VK_PIPELINE_STAGE_2_BLIT_BIT,                    // BlitSelf
+		VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,          // PresentSrc
+		VK_PIPELINE_STAGE_2_NONE,                        // FeedbackLoop (overridden)
+		VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,         // ReadWriteImage
+		VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,          // ComputeReadWriteImage
+		VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,            // General
+	};
+	static_assert(std::size(s_vk_stage_mapping) == static_cast<u32>(GSTextureVK::Layout::Count));
+	if (layout == GSTextureVK::Layout::FeedbackLoop)
+	{
+		VkPipelineStageFlags2 flags = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+		if (color)
+			flags |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+		else
+			flags |= VK_PIPELINE_STAGE_2_FRAGMENT_TESTS_BITS;
+		return flags;
+	}
+	else
+	{
+		return s_vk_stage_mapping[static_cast<u32>(layout)];
+	}
+}
+
+static VkAccessFlags2 GetAccessFlags(GSTextureVK::Layout layout, bool color)
+{
+#define VK_ACCESS_2_READ_WRITE_BITS(x) VK_ACCESS_2_##x##_READ_BIT | VK_ACCESS_2_##x##_WRITE_BIT
+	static constexpr VkPipelineStageFlags2 s_vk_access_mapping[] = {
+		VK_ACCESS_2_NONE,               // Undefined
+		VK_ACCESS_2_HOST_WRITE_BIT,     // Preinitialized
+		VK_ACCESS_2_READ_WRITE_BITS(COLOR_ATTACHMENT),         // ColorAttachment
+		VK_ACCESS_2_READ_WRITE_BITS(DEPTH_STENCIL_ATTACHMENT), // DepthStencilAttachment
+		VK_ACCESS_2_SHADER_READ_BIT,    // ShaderReadOnly
+		VK_ACCESS_2_TRANSFER_WRITE_BIT, // ClearDst
+		VK_ACCESS_2_TRANSFER_READ_BIT,  // CopySrc
+		VK_ACCESS_2_TRANSFER_WRITE_BIT, // CopyDst
+		VK_ACCESS_2_READ_WRITE_BITS(TRANSFER), // CopySelf
+		VK_ACCESS_2_TRANSFER_READ_BIT,  // BlitSrc
+		VK_ACCESS_2_TRANSFER_WRITE_BIT, // BlitDst
+		VK_ACCESS_2_READ_WRITE_BITS(TRANSFER), // BlitSelf
+		VK_ACCESS_2_NONE,               // PresentSrc
+		VK_ACCESS_2_NONE,               // FeedbackLoop (overridden)
+		VK_ACCESS_2_READ_WRITE_BITS(SHADER_STORAGE), // ReadWriteImage
+		VK_ACCESS_2_READ_WRITE_BITS(SHADER_STORAGE), // ComputeReadWriteImage
+		VK_ACCESS_2_NONE,               // General
+	};
+#undef VK_ACCESS_2_READ_WRITE_BITS
+	static_assert(std::size(s_vk_access_mapping) == static_cast<u32>(GSTextureVK::Layout::Count));
+
+	if (layout == GSTextureVK::Layout::FeedbackLoop)
+	{
+		VkAccessFlags2 flags;
+		if (color)
+			flags = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+		else
+			flags = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		return flags | GSDeviceVK::GetInstance()->GetFeedbackLoopInputAccessFlags();
+	}
+	else
+	{
+		return s_vk_access_mapping[static_cast<u32>(layout)];
+	}
+}
+
+GSTextureVK::GSTextureVK(Usage usage, Format format, int width, int height, int levels, VkImage image,
+	VmaAllocation allocation, VkImageView view, VkFormat vk_format)
+	: GSTexture()
+	, m_image(image)
+	, m_allocation(allocation)
+	, m_view(view)
+	, m_vk_format(vk_format)
+{
+	m_usage = usage;
+	m_format = format;
+	m_size.x = width;
+	m_size.y = height;
+	m_mipmap_levels = levels;
+}
+
+GSTextureVK::~GSTextureVK()
+{
+	Destroy(true);
+}
+
+std::unique_ptr<GSTextureVK> GSTextureVK::Create(Usage usage, Format format, int width, int height, int levels)
+{
+	pxAssert(ValidateUsageAndFormat(usage, format));
+
+	const VkFormat vk_format = GSDeviceVK::GetInstance()->LookupNativeFormat(format);
+
+	VkImageCreateInfo ici = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+	ici.imageType   = VK_IMAGE_TYPE_2D;
+	ici.format      = vk_format;
+	ici.extent      = {static_cast<u32>(width), static_cast<u32>(height), 1};
+	ici.mipLevels   = levels;
+	ici.arrayLayers = 1;
+	ici.samples     = VK_SAMPLE_COUNT_1_BIT;
+	ici.tiling      = VK_IMAGE_TILING_OPTIMAL;
+
+	VmaAllocationCreateInfo aci = {};
+	aci.flags = VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT;
+	aci.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+	VkImageViewCreateInfo vci = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+	vci.viewType   = VK_IMAGE_VIEW_TYPE_2D;
+	vci.format     = vk_format;
+	vci.components = s_identity_swizzle;
+	vci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	vci.subresourceRange.levelCount = levels;
+	vci.subresourceRange.layerCount = 1;
+
+	ici.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+	if (format == Format::UNorm8)
+	{
+		// UNorm8 wants value in alpha, not red.
+		static constexpr const VkComponentMapping r8_swizzle = {
+			VK_COMPONENT_SWIZZLE_ZERO, VK_COMPONENT_SWIZZLE_ZERO, VK_COMPONENT_SWIZZLE_ZERO, VK_COMPONENT_SWIZZLE_R };
+		vci.components = r8_swizzle;
+	}
+
+	if (IsRenderTarget(usage))
+	{
+		pxAssert(levels == 1);
+		ici.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	}
+
+	if (IsFeedback(usage))
+	{
+		ici.usage |= GSDeviceVK::GetInstance()->UseFeedbackLoopLayout() ?
+			VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT :
+			VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+	}
+
+	if (IsDepthStencil(usage))
+	{
+		ici.usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+		vci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+	}
+
+	if (IsShaderWrite(usage))
+	{
+		ici.usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+	}
+
+	// Use dedicated allocations for typical RT size
+	if (IsRenderTargetOrDepthStencil(usage) && width >= 512 && height >= 448)
+		aci.flags |= VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+
+	VkImage image = VK_NULL_HANDLE;
+	VmaAllocation allocation = VK_NULL_HANDLE;
+	VkResult res = vmaCreateImage(GSDeviceVK::GetInstance()->GetAllocator(), &ici, &aci, &image, &allocation, nullptr);
+	if (aci.flags & VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT && res != VK_SUCCESS)
+	{
+		// try without dedicated allocation
+		aci.flags &= ~VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+		res = vmaCreateImage(GSDeviceVK::GetInstance()->GetAllocator(), &ici, &aci, &image, &allocation, nullptr);
+	}
+	if (res == VK_ERROR_OUT_OF_DEVICE_MEMORY)
+	{
+		DevCon.WriteLn("Failed to allocate device memory for %ux%u texture", width, height);
+		return {};
+	}
+	else if (res != VK_SUCCESS)
+	{
+		LOG_VULKAN_ERROR(res, "vmaCreateImage failed: ");
+		return {};
+	}
+
+	VkImageView view = VK_NULL_HANDLE;
+	vci.image = image;
+	res = vkCreateImageView(GSDeviceVK::GetInstance()->GetDevice(), &vci, nullptr, &view);
+	if (res != VK_SUCCESS)
+	{
+		LOG_VULKAN_ERROR(res, "vkCreateImageView failed: ");
+		vmaDestroyImage(GSDeviceVK::GetInstance()->GetAllocator(), image, allocation);
+		return {};
+	}
+
+	return std::unique_ptr<GSTextureVK>(
+		new GSTextureVK(usage, format, width, height, levels, image, allocation, view, vk_format));
+}
+
+std::unique_ptr<GSTextureVK> GSTextureVK::Adopt(
+	VkImage image, Usage usage, Format format, int width, int height, int levels, VkFormat vk_format)
+{
+	// Only need to create the image view, this is mainly for swap chains.
+	VkImageViewCreateInfo view_info = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+	view_info.image      = image;
+	view_info.viewType   = VK_IMAGE_VIEW_TYPE_2D;
+	view_info.format     = vk_format;
+	view_info.components = s_identity_swizzle;
+	view_info.subresourceRange.aspectMask = IsDepthStencil(usage) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+	view_info.subresourceRange.levelCount = levels;
+	view_info.subresourceRange.layerCount = 1;
+
+	// Memory is managed by the owner of the image.
+	VkImageView view = VK_NULL_HANDLE;
+	VkResult res = vkCreateImageView(GSDeviceVK::GetInstance()->GetDevice(), &view_info, nullptr, &view);
+	if (res != VK_SUCCESS)
+	{
+		LOG_VULKAN_ERROR(res, "vkCreateImageView failed: ");
+		return {};
+	}
+
+	return std::unique_ptr<GSTextureVK>(
+		new GSTextureVK(usage, format, width, height, levels, image, VK_NULL_HANDLE, view, vk_format));
+}
+
+void GSTextureVK::Destroy(bool defer)
+{
+	GSDeviceVK::GetInstance()->UnbindTexture(this);
+
+	if (IsRenderTargetOrDepthStencil())
+	{
+		for (const auto& [other_tex, fb, feedback_color, feedback_depth] : m_framebuffers)
+		{
+			if (other_tex)
+			{
+				for (auto other_it = other_tex->m_framebuffers.begin(); other_it != other_tex->m_framebuffers.end(); ++other_it)
+				{
+					if (std::get<0>(*other_it) == this)
+					{
+						other_tex->m_framebuffers.erase(other_it);
+						break;
+					}
+				}
+			}
+
+			if (defer)
+				GSDeviceVK::GetInstance()->DeferFramebufferDestruction(fb);
+			else
+				vkDestroyFramebuffer(GSDeviceVK::GetInstance()->GetDevice(), fb, nullptr);
+		}
+		m_framebuffers.clear();
+	}
+
+	if (m_view != VK_NULL_HANDLE)
+	{
+		if (defer)
+			GSDeviceVK::GetInstance()->DeferImageViewDestruction(m_view);
+		else
+			vkDestroyImageView(GSDeviceVK::GetInstance()->GetDevice(), m_view, nullptr);
+		m_view = VK_NULL_HANDLE;
+	}
+
+	// If we don't have device memory allocated, the image is not owned by us (e.g. swapchain)
+	if (m_allocation != VK_NULL_HANDLE)
+	{
+		if (defer)
+			GSDeviceVK::GetInstance()->DeferImageDestruction(m_image, m_allocation);
+		else
+			vmaDestroyImage(GSDeviceVK::GetInstance()->GetAllocator(), m_image, m_allocation);
+		m_image = VK_NULL_HANDLE;
+		m_allocation = VK_NULL_HANDLE;
+	}
+
+#ifdef PCSX2_DEVBUILD
+	m_debug_name.clear();
+#endif
+}
+
+VkImageLayout GSTextureVK::GetVkLayout() const
+{
+	return GetVkImageLayout(m_layout);
+}
+
+void* GSTextureVK::GetNativeHandle() const
+{
+	return const_cast<GSTextureVK*>(this);
+}
+
+VkCommandBuffer GSTextureVK::GetCommandBufferForUpdate()
+{
+	if (!IsTexture() || m_use_fence_counter == GSDeviceVK::GetInstance()->GetCurrentFenceCounter())
+	{
+		// Console.WriteLn("Texture update within frame, can't use do beforehand");
+		GSDeviceVK::GetInstance()->EndRenderPass();
+		return GSDeviceVK::GetInstance()->GetCurrentCommandBuffer();
+	}
+
+	return GSDeviceVK::GetInstance()->GetCurrentInitCommandBuffer();
+}
+
+void GSTextureVK::CopyTextureDataForUpload(void* dst, const void* src, u32 pitch, u32 upload_pitch, u32 height) const
+{
+	const u32 block_size = GetCompressedBlockSize();
+	const u32 count = (height + (block_size - 1)) / block_size;
+	StringUtil::StrideMemCpy(dst, upload_pitch, src, pitch, std::min(upload_pitch, pitch), count);
+}
+
+VkBuffer GSTextureVK::AllocateUploadStagingBuffer(const void* data, u32 pitch, u32 upload_pitch, u32 height) const
+{
+	const u32 size = upload_pitch * height;
+	VkBufferCreateInfo bci = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+	bci.size  = size;
+	bci.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	bci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	// Don't worry about setting the coherent bit for this upload, the main reason we had
+	// that set in StreamBuffer was for MoltenVK, which would upload the whole buffer on
+	// smaller uploads, but we're writing to the whole thing anyway.
+	VmaAllocationCreateInfo aci = {};
+	aci.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+	aci.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+	aci.preferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+	VmaAllocationInfo ai;
+	VkBuffer buffer;
+	VmaAllocation allocation;
+	VkResult res = vmaCreateBuffer(GSDeviceVK::GetInstance()->GetAllocator(), &bci, &aci, &buffer, &allocation, &ai);
+	if (res != VK_SUCCESS)
+	{
+		LOG_VULKAN_ERROR(res, "(AllocateUploadStagingBuffer) vmaCreateBuffer() failed: ");
+		return VK_NULL_HANDLE;
+	}
+
+	// Immediately queue it for freeing after the command buffer finishes, since it's only needed for the copy.
+	GSDeviceVK::GetInstance()->DeferBufferDestruction(buffer, allocation);
+
+	// And write the data.
+	CopyTextureDataForUpload(ai.pMappedData, data, pitch, upload_pitch, height);
+	vmaFlushAllocation(GSDeviceVK::GetInstance()->GetAllocator(), allocation, 0, size);
+	return buffer;
+}
+
+void GSTextureVK::UpdateFromBuffer(VkCommandBuffer cmdbuf, int level, u32 x, u32 y, u32 width, u32 height,
+	u32 buffer_height, u32 row_length, VkBuffer buffer, u32 buffer_offset)
+{
+	const Layout old_layout = m_layout;
+	if (old_layout == Layout::Undefined)
+		TransitionToLayout(cmdbuf, Layout::CopyDst);
+	else if (old_layout != Layout::CopyDst)
+		TransitionSubresourcesToLayout(cmdbuf, level, 1, old_layout, Layout::CopyDst);
+
+	VkBufferImageCopy bic = {};
+	bic.bufferOffset      = buffer_offset;
+	bic.bufferRowLength   = row_length;
+	bic.bufferImageHeight = buffer_height;
+	bic.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	bic.imageSubresource.mipLevel   = level;
+	bic.imageSubresource.layerCount = 1;
+	bic.imageOffset = {static_cast<s32>(x), static_cast<s32>(y), 0};
+	bic.imageExtent = {width, height, 1};
+
+	vkCmdCopyBufferToImage(cmdbuf, buffer, m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bic);
+
+	if (old_layout != Layout::CopyDst && old_layout != Layout::Undefined)
+		TransitionSubresourcesToLayout(cmdbuf, level, 1, Layout::CopyDst, old_layout);
+}
+
+bool GSTextureVK::Update(const GSVector4i& r, const void* data, int pitch, int layer)
+{
+	if (layer >= m_mipmap_levels)
+		return false;
+
+	g_perfmon.Put(GSPerfMon::TextureUploads, 1);
+
+	const u32 width = r.width();
+	const u32 height = r.height();
+	const u32 upload_pitch = Common::AlignUpPow2(pitch, GSDeviceVK::GetInstance()->GetBufferCopyRowPitchAlignment());
+	const u32 required_size = CalcUploadSize(height, upload_pitch);
+
+	// If the texture is larger than half our streaming buffer size, use a separate buffer.
+	// Otherwise allocation will either fail, or require lots of cmdbuffer submissions.
+	VkBuffer buffer;
+	u32 buffer_offset;
+	if (required_size > (GSDeviceVK::GetInstance()->GetTextureUploadBuffer().GetCurrentSize() / 2))
+	{
+		buffer_offset = 0;
+		buffer = AllocateUploadStagingBuffer(data, pitch, upload_pitch, height);
+		if (buffer == VK_NULL_HANDLE)
+			return false;
+	}
+	else
+	{
+		VKStreamBuffer& sbuffer = GSDeviceVK::GetInstance()->GetTextureUploadBuffer();
+		if (!sbuffer.ReserveMemory(required_size, GSDeviceVK::GetInstance()->GetBufferCopyOffsetAlignment()))
+		{
+			GSDeviceVK* dev = GSDeviceVK::GetInstance();
+			if (!dev->IsPresenting())
+			{
+				dev->ExecuteCommandBuffer(
+					false, "While waiting for %u bytes in texture upload buffer", required_size);
+			}
+			else
+			{
+				dev->ExecuteCommandBufferAndRestartPresent(
+					false, "While waiting for %u bytes in texture upload buffer", required_size);
+			}
+
+			if (!sbuffer.ReserveMemory(required_size, GSDeviceVK::GetInstance()->GetBufferCopyOffsetAlignment()))
+			{
+				Console.Error("Failed to reserve texture upload memory (%u bytes).", required_size);
+				return false;
+			}
+		}
+
+		buffer = sbuffer.GetBuffer();
+		buffer_offset = sbuffer.GetCurrentOffset();
+		CopyTextureDataForUpload(sbuffer.GetCurrentHostPointer(), data, pitch, upload_pitch, height);
+		sbuffer.CommitMemory(required_size);
+	}
+
+	const VkCommandBuffer cmdbuf = GetCommandBufferForUpdate();
+	GL_PUSH("GSTextureVK::Update({%d,%d} %dx%d Lvl:%u", r.x, r.y, r.width(), r.height(), layer);
+
+	// first time the texture is used? don't leave it undefined
+	if (m_layout == Layout::Undefined)
+		TransitionToLayout(cmdbuf, Layout::CopyDst);
+
+	// if we're an rt and have been cleared, and the full rect isn't being uploaded, do the clear
+	if (IsRenderTarget())
+	{
+		if (!r.eq(GSVector4i(0, 0, m_size.x, m_size.y)))
+			CommitClear(cmdbuf);
+		else
+			m_state = State::Dirty;
+	}
+
+	UpdateFromBuffer(cmdbuf, layer, r.x, r.y, width, height, Common::AlignUpPow2(height, GetCompressedBlockSize()),
+		CalcUploadRowLengthFromPitch(upload_pitch), buffer, buffer_offset);
+	TransitionToLayout(cmdbuf, Layout::ShaderReadOnly);
+
+	if (IsTexture())
+		m_needs_mipmaps_generated |= (layer == 0);
+
+	return true;
+}
+
+bool GSTextureVK::Map(GSMap& m, const GSVector4i* r, int layer)
+{
+	if (layer >= m_mipmap_levels || IsCompressedFormat())
+		return false;
+
+	// map for writing
+	m_map_area = r ? *r : GetRect();
+	m_map_level = layer;
+
+	m.pitch = Common::AlignUpPow2(
+		CalcUploadPitch(m_map_area.width()), GSDeviceVK::GetInstance()->GetBufferCopyRowPitchAlignment());
+
+	// see note in Update() for the reason why.
+	const u32 required_size = CalcUploadSize(m_map_area.height(), m.pitch);
+	VKStreamBuffer& buffer = GSDeviceVK::GetInstance()->GetTextureUploadBuffer();
+	if (required_size >= (buffer.GetCurrentSize() / 2))
+		return false;
+
+	if (!buffer.ReserveMemory(required_size, GSDeviceVK::GetInstance()->GetBufferCopyOffsetAlignment()))
+	{
+		GSDeviceVK* dev = GSDeviceVK::GetInstance();
+		if (!dev->IsPresenting())
+		{
+			dev->ExecuteCommandBuffer(
+				false, "While waiting for %u bytes in texture upload buffer", required_size);
+		}
+		else
+		{
+			dev->ExecuteCommandBufferAndRestartPresent(
+				false, "While waiting for %u bytes in texture upload buffer", required_size);
+		}
+
+		if (!buffer.ReserveMemory(required_size, GSDeviceVK::GetInstance()->GetBufferCopyOffsetAlignment()))
+			pxFailRel("Failed to reserve texture upload memory");
+	}
+
+	m.bits = static_cast<u8*>(buffer.GetCurrentHostPointer());
+	return true;
+}
+
+void GSTextureVK::Unmap()
+{
+	// this can't handle blocks/compressed formats at the moment.
+	pxAssert(m_map_level < m_mipmap_levels && !IsCompressedFormat());
+	g_perfmon.Put(GSPerfMon::TextureUploads, 1);
+
+	const u32 width = m_map_area.width();
+	const u32 height = m_map_area.height();
+	const u32 pitch =
+		Common::AlignUpPow2(CalcUploadPitch(width), GSDeviceVK::GetInstance()->GetBufferCopyRowPitchAlignment());
+	const u32 required_size = CalcUploadSize(height, pitch);
+	VKStreamBuffer& buffer = GSDeviceVK::GetInstance()->GetTextureUploadBuffer();
+	const u32 buffer_offset = buffer.GetCurrentOffset();
+	buffer.CommitMemory(required_size);
+
+	const VkCommandBuffer cmdbuf = GetCommandBufferForUpdate();
+	GL_PUSH("GSTextureVK::Update({%d,%d} %dx%d Lvl:%u", m_map_area.x, m_map_area.y, m_map_area.width(),
+		m_map_area.height(), m_map_level);
+
+	// first time the texture is used? don't leave it undefined
+	if (m_layout == Layout::Undefined)
+		TransitionToLayout(cmdbuf, Layout::CopyDst);
+
+	// if we're an rt and have been cleared, and the full rect isn't being uploaded, do the clear
+	if (IsRenderTarget())
+	{
+		if (!m_map_area.eq(GSVector4i(0, 0, m_size.x, m_size.y)))
+			CommitClear(cmdbuf);
+		else
+			m_state = State::Dirty;
+	}
+
+	UpdateFromBuffer(cmdbuf, m_map_level, m_map_area.x, m_map_area.y, width, height,
+		Common::AlignUpPow2(height, GetCompressedBlockSize()), CalcUploadRowLengthFromPitch(pitch), buffer.GetBuffer(),
+		buffer_offset);
+	TransitionToLayout(cmdbuf, Layout::ShaderReadOnly);
+
+	if (IsTexture())
+		m_needs_mipmaps_generated |= (m_map_level == 0);
+}
+
+void GSTextureVK::GenerateMipmap()
+{
+	const VkCommandBuffer cmdbuf = GetCommandBufferForUpdate();
+
+	if (m_layout == Layout::Undefined)
+		TransitionToLayout(cmdbuf, Layout::BlitSrc);
+
+	for (int dst_level = 1; dst_level < m_mipmap_levels; dst_level++)
+	{
+		const int src_level = dst_level - 1;
+		const int src_width = std::max<int>(m_size.x >> src_level, 1);
+		const int src_height = std::max<int>(m_size.y >> src_level, 1);
+		const int dst_width = std::max<int>(m_size.x >> dst_level, 1);
+		const int dst_height = std::max<int>(m_size.y >> dst_level, 1);
+
+		TransitionSubresourcesToLayout(cmdbuf, src_level, 1, m_layout, Layout::BlitSrc);
+		TransitionSubresourcesToLayout(cmdbuf, dst_level, 1, m_layout, Layout::BlitDst);
+
+		VkImageBlit blit;
+		blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, static_cast<u32>(src_level), 0u, 1u};
+		blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, static_cast<u32>(dst_level), 0u, 1u};
+		blit.srcOffsets[0] = {0, 0, 0};
+		blit.dstOffsets[0] = {0, 0, 0};
+		blit.srcOffsets[1] = {src_width, src_height, 1};
+		blit.dstOffsets[1] = {dst_width, dst_height, 1};
+
+		vkCmdBlitImage(cmdbuf, m_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_image,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+
+		TransitionSubresourcesToLayout(cmdbuf, src_level, 1, Layout::BlitSrc, m_layout);
+		TransitionSubresourcesToLayout(cmdbuf, dst_level, 1, Layout::BlitDst, m_layout);
+	}
+}
+
+#ifdef PCSX2_DEVBUILD
+
+void GSTextureVK::SetDebugName(std::string_view name)
+{
+	if (name.empty())
+		return;
+
+	Vulkan::SetObjectName(GSDeviceVK::GetInstance()->GetDevice(), m_image, "%.*s", static_cast<int>(name.size()), name.data());
+	Vulkan::SetObjectName(GSDeviceVK::GetInstance()->GetDevice(), m_view, "%.*s", static_cast<int>(name.size()), name.data());
+
+	m_debug_name = name;
+}
+
+#endif
+
+void GSTextureVK::CommitClear()
+{
+	if (m_state != GSTexture::State::Cleared)
+		return;
+
+	GSDeviceVK::GetInstance()->EndRenderPass();
+
+	CommitClear(GSDeviceVK::GetInstance()->GetCurrentCommandBuffer());
+}
+
+void GSTextureVK::CommitClear(VkCommandBuffer cmdbuf)
+{
+	TransitionToLayout(cmdbuf, Layout::ClearDst);
+
+	if (IsDepthStencil())
+	{
+		VkClearDepthStencilValue cv = {};
+		cv.depth = m_clear_value.depth;
+		VkImageSubresourceRange srr = {};
+		srr.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		srr.levelCount = 1u;
+		srr.layerCount = 1u;
+		vkCmdClearDepthStencilImage(cmdbuf, m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &cv, 1, &srr);
+	}
+	else if (IsRenderTarget())
+	{
+		alignas(16) VkClearColorValue cv;
+		GSVector4::store<true>(cv.float32, GetClearForFormat());
+		VkImageSubresourceRange srr = {};
+		srr.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		srr.levelCount = 1u;
+		srr.layerCount = 1u;
+		vkCmdClearColorImage(cmdbuf, m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &cv, 1, &srr);
+	}
+	else
+	{
+		pxFailRel("Illegal texture type for clear.");
+	}
+
+	SetState(GSTexture::State::Dirty);
+}
+
+void GSTextureVK::OverrideImageLayout(Layout new_layout)
+{
+	m_layout = new_layout;
+}
+
+void GSTextureVK::TransitionToLayout(Layout layout)
+{
+	TransitionToLayout(GSDeviceVK::GetInstance()->GetCurrentCommandBuffer(), layout);
+}
+
+void GSTextureVK::TransitionToLayout(VkCommandBuffer command_buffer, Layout new_layout)
+{
+	if (m_layout == new_layout)
+		return;
+
+	TransitionSubresourcesToLayout(command_buffer, 0, m_mipmap_levels, m_layout, new_layout);
+
+	m_layout = new_layout;
+}
+
+void GSTextureVK::TransitionSubresourcesToLayout(
+	VkCommandBuffer command_buffer, int start_level, int num_levels, Layout old_layout, Layout new_layout)
+{
+	// Windows RDNA2 drivers don't always correctly transition the layout(?) when ROV is involved.
+	// ReadWriteImage -> Feedback transitions are broken.
+	// ReadWriteImage -> Read only layout  -> Feedback transitions are broken.
+	// ReadWriteImage -> General layout    -> Feedback transitions are broken.
+	// ReadWriteImage -> Write only layout -> Feedback transitions works fine.
+	// Not every broken transition gives broken rendering, the Shadow of the colossus eagle dump is fine after the 1st frame.
+	// Transition to a write only layout using an extra barrier, then to feedback fixes this issue.
+	if (old_layout == Layout::ReadWriteImage && new_layout != Layout::ColorAttachment && new_layout != Layout::ReadWriteImage)
+	{
+		GL_INS("VK: Doing extra transition for broken RDNA2 feedback transitions");
+		TransitionSubresourcesToLayout(command_buffer, 0, num_levels, old_layout, Layout::ColorAttachment);
+		old_layout = Layout::ColorAttachment;
+	}
+
+	VkImageAspectFlags aspect;
+	if (IsDepthStencil())
+	{
+		aspect = g_gs_device->Features().stencil_buffer ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT) :
+		                                                  VK_IMAGE_ASPECT_DEPTH_BIT;
+	}
+	else
+	{
+		aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+	}
+
+	// These layouts should only be used on one side of the barrier
+	pxAssert(old_layout != Layout::PresentSrc);
+	pxAssert(new_layout != Layout::Undefined);
+	pxAssert(new_layout != Layout::Preinitialized);
+
+	VkImageMemoryBarrier2 barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+	barrier.srcStageMask  = GetPipelineStageFlags(old_layout, !IsDepthStencil());
+	barrier.dstStageMask  = GetPipelineStageFlags(new_layout, !IsDepthStencil());
+	barrier.srcAccessMask = GetAccessFlags(old_layout, !IsDepthStencil());
+	barrier.dstAccessMask = GetAccessFlags(new_layout, !IsDepthStencil());
+	barrier.oldLayout     = GetVkImageLayout(old_layout);
+	barrier.newLayout     = GetVkImageLayout(new_layout);
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = m_image;
+	barrier.subresourceRange = {aspect, static_cast<u32>(start_level), static_cast<u32>(num_levels), 0u, 1u};
+
+	VkDependencyInfo dependency = {VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+	dependency.imageMemoryBarrierCount = 1;
+	dependency.pImageMemoryBarriers = &barrier;
+
+	vkCmdPipelineBarrier2KHR(command_buffer, &dependency);
+
+	// Count as a UAV barrier if we transition to/from UAV.
+	if (IsRenderTargetOrDepthStencil() &&
+		(old_layout == Layout::ReadWriteImage || new_layout == Layout::ReadWriteImage))
+	{
+		g_perfmon.Put(GSPerfMon::Barriers, 1);
+		g_perfmon.Put(GSPerfMon::BarriersROV, 1);
+	}
+}
+
+VkFramebuffer GSTextureVK::GetFramebuffer(bool feedback_loop)
+{
+	return GetLinkedFramebuffer(nullptr, feedback_loop, false);
+}
+
+VkFramebuffer GSTextureVK::GetLinkedFramebuffer(GSTextureVK* depth_texture, bool feedback_loop_color, bool feedback_loop_depth)
+{
+	pxAssertRel(!IsTexture(), "Texture is a render target");
+
+	for (const auto& [other_tex, fb, other_feedback_loop_color, other_feedback_loop_depth] : m_framebuffers)
+	{
+		if (other_tex == depth_texture && other_feedback_loop_color == feedback_loop_color && other_feedback_loop_depth == feedback_loop_depth)
+			return fb;
+	}
+
+	const VkRenderPass rp = GSDeviceVK::GetInstance()->GetRenderPass(
+		!IsDepthStencil() ? m_vk_format : VK_FORMAT_UNDEFINED,
+		!IsDepthStencil() ? (depth_texture ? depth_texture->m_vk_format : VK_FORMAT_UNDEFINED) : m_vk_format,
+		VK_ATTACHMENT_LOAD_OP_LOAD,      VK_ATTACHMENT_STORE_OP_STORE,
+		VK_ATTACHMENT_LOAD_OP_LOAD,      VK_ATTACHMENT_STORE_OP_STORE,
+		VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE,
+		feedback_loop_color, feedback_loop_depth);
+	if (!rp)
+		return VK_NULL_HANDLE;
+
+	Vulkan::FramebufferBuilder fbb;
+	fbb.AddAttachment(m_view);
+	if (depth_texture)
+		fbb.AddAttachment(depth_texture->m_view);
+	fbb.SetSize(m_size.x, m_size.y, 1);
+	fbb.SetRenderPass(rp);
+
+	VkFramebuffer fb = fbb.Create(GSDeviceVK::GetInstance()->GetDevice());
+	if (!fb)
+		return VK_NULL_HANDLE;
+
+	m_framebuffers.emplace_back(depth_texture, fb, feedback_loop_color, feedback_loop_depth);
+	if (depth_texture)
+		depth_texture->m_framebuffers.emplace_back(this, fb, feedback_loop_color, feedback_loop_depth);
+	return fb;
+}
+
+GSDownloadTextureVK::GSDownloadTextureVK(u32 width, u32 height, GSTexture::Format format)
+	: GSDownloadTexture(width, height, format)
+{
+}
+
+GSDownloadTextureVK::~GSDownloadTextureVK()
+{
+	// Buffer was created mapped, no need to manually unmap.
+	if (m_buffer != VK_NULL_HANDLE)
+		GSDeviceVK::GetInstance()->DeferBufferDestruction(m_buffer, m_allocation);
+}
+
+std::unique_ptr<GSDownloadTextureVK> GSDownloadTextureVK::Create(u32 width, u32 height, GSTexture::Format format)
+{
+	const u32 buffer_size =
+		GetBufferSize(width, height, format, GSDeviceVK::GetInstance()->GetBufferCopyRowPitchAlignment());
+
+	VkBufferCreateInfo bci = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+	bci.size = buffer_size;
+	bci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	bci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	VmaAllocationCreateInfo aci = {};
+	aci.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+	aci.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+	aci.preferredFlags = VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+
+	VmaAllocationInfo ai = {};
+	VmaAllocation allocation;
+	VkBuffer buffer;
+	VkResult res = vmaCreateBuffer(GSDeviceVK::GetInstance()->GetAllocator(), &bci, &aci, &buffer, &allocation, &ai);
+	if (res != VK_SUCCESS)
+	{
+		LOG_VULKAN_ERROR(res, "vmaCreateBuffer() failed: ");
+		return {};
+	}
+
+	std::unique_ptr<GSDownloadTextureVK> tex =
+		std::unique_ptr<GSDownloadTextureVK>(new GSDownloadTextureVK(width, height, format));
+	tex->m_allocation = allocation;
+	tex->m_buffer = buffer;
+	tex->m_buffer_size = buffer_size;
+	tex->m_map_pointer = static_cast<const u8*>(ai.pMappedData);
+	return tex;
+}
+
+void GSDownloadTextureVK::CopyFromTexture(
+	const GSVector4i& drc, GSTexture* stex, const GSVector4i& src, u32 src_level, bool use_transfer_pitch)
+{
+	GSTextureVK* const vkTex = static_cast<GSTextureVK*>(stex);
+
+	pxAssert(vkTex->GetFormat() == m_format);
+	pxAssert(drc.width() == src.width() && drc.height() == src.height());
+	pxAssert(src.z <= vkTex->GetWidth() && src.w <= vkTex->GetHeight());
+	pxAssert(static_cast<u32>(drc.z) <= m_width && static_cast<u32>(drc.w) <= m_height);
+	pxAssert(src_level < static_cast<u32>(vkTex->GetMipmapLevels()));
+	pxAssert((drc.left == 0 && drc.top == 0) || !use_transfer_pitch);
+
+	u32 copy_offset, copy_size, copy_rows;
+	m_current_pitch = GetTransferPitch(use_transfer_pitch ? static_cast<u32>(drc.width()) : m_width,
+		GSDeviceVK::GetInstance()->GetBufferCopyRowPitchAlignment());
+	GetTransferSize(drc, &copy_offset, &copy_size, &copy_rows);
+
+	g_perfmon.Put(GSPerfMon::Readbacks, 1);
+	GSDeviceVK::GetInstance()->EndRenderPass();
+	vkTex->CommitClear();
+
+	const VkCommandBuffer cmdbuf = GSDeviceVK::GetInstance()->GetCurrentCommandBuffer();
+	GL_INS("GSDownloadTextureVK::CopyFromTexture: {%d,%d} %ux%u", src.left, src.top, src.width(), src.height());
+
+	GSTextureVK::Layout old_layout = vkTex->GetLayout();
+	if (old_layout == GSTextureVK::Layout::Undefined)
+		vkTex->TransitionToLayout(cmdbuf, GSTextureVK::Layout::CopySrc);
+	else if (old_layout != GSTextureVK::Layout::CopySrc)
+		vkTex->TransitionSubresourcesToLayout(cmdbuf, src_level, 1, old_layout, GSTextureVK::Layout::CopySrc);
+
+	VkBufferImageCopy image_copy = {};
+	const VkImageAspectFlags aspect = vkTex->IsDepthStencil() ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+	image_copy.bufferOffset = copy_offset;
+	image_copy.bufferRowLength = GSTexture::CalcUploadRowLengthFromPitch(m_format, m_current_pitch);
+	image_copy.bufferImageHeight = 0;
+	image_copy.imageSubresource.aspectMask = aspect;
+	image_copy.imageSubresource.mipLevel   = src_level;
+	image_copy.imageSubresource.layerCount = 1u;
+	image_copy.imageOffset.x = src.left;
+	image_copy.imageOffset.y = src.top;
+	image_copy.imageOffset.z = 0;
+	image_copy.imageExtent.width  = src.width();
+	image_copy.imageExtent.height = src.height();
+	image_copy.imageExtent.depth  = 1u;
+
+	// do the copy
+	vkCmdCopyImageToBuffer(cmdbuf, vkTex->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_buffer, 1, &image_copy);
+
+	// flush gpu cache
+	VkBufferMemoryBarrier2 buffer_info = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+	buffer_info.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+	buffer_info.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+	buffer_info.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+	buffer_info.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+	buffer_info.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	buffer_info.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	buffer_info.buffer = m_buffer;
+	buffer_info.size = copy_size;
+
+	VkDependencyInfo barrier_info = {VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+	barrier_info.bufferMemoryBarrierCount = 1;
+	barrier_info.pBufferMemoryBarriers = &buffer_info;
+
+	vkCmdPipelineBarrier2KHR(cmdbuf, &barrier_info);
+
+	if (old_layout != GSTextureVK::Layout::CopySrc && old_layout != GSTextureVK::Layout::Undefined)
+		vkTex->TransitionSubresourcesToLayout(cmdbuf, src_level, 1, GSTextureVK::Layout::CopySrc, old_layout);
+
+	m_copy_fence_counter = GSDeviceVK::GetInstance()->GetCurrentFenceCounter();
+	m_needs_cache_invalidate = true;
+	m_needs_flush = true;
+}
+
+bool GSDownloadTextureVK::Map(const GSVector4i& read_rc)
+{
+	// Always mapped, but we might need to invalidate the cache.
+	if (m_needs_cache_invalidate)
+	{
+		u32 copy_offset, copy_size, copy_rows;
+		GetTransferSize(read_rc, &copy_offset, &copy_size, &copy_rows);
+		vmaInvalidateAllocation(GSDeviceVK::GetInstance()->GetAllocator(), m_allocation, copy_offset, copy_size);
+		m_needs_cache_invalidate = false;
+	}
+
+	return true;
+}
+
+void GSDownloadTextureVK::Unmap()
+{
+	// Always mapped.
+}
+
+void GSDownloadTextureVK::Flush()
+{
+	if (!m_needs_flush)
+		return;
+
+	m_needs_flush = false;
+
+	if (GSDeviceVK::GetInstance()->GetCompletedFenceCounter() >= m_copy_fence_counter)
+		return;
+
+	// Need to execute command buffer.
+	if (GSDeviceVK::GetInstance()->GetCurrentFenceCounter() == m_copy_fence_counter)
+	{
+		if (GSDeviceVK::GetInstance()->InRenderPass())
+			GSDeviceVK::GetInstance()->EndRenderPass();
+
+		GSDeviceVK::GetInstance()->ExecuteCommandBufferForReadback();
+	}
+	else
+	{
+		GSDeviceVK::GetInstance()->WaitForFenceCounter(m_copy_fence_counter);
+	}
+}
+
+#ifdef PCSX2_DEVBUILD
+
+void GSDownloadTextureVK::SetDebugName(std::string_view name)
+{
+	if (name.empty())
+		return;
+
+	Vulkan::SetObjectName(GSDeviceVK::GetInstance()->GetDevice(), m_buffer, "%.*s", static_cast<int>(name.size()), name.data());
+}
+
+#endif

@@ -48,6 +48,7 @@ namespace kamite::launcher
         constexpr Choice kHudLayouts[] = {{"16:9: HUD at the screen edges", "16:9"}, {"4:3: HUD where the PS2 had it", "4:3"}};
         constexpr Choice kMenuLayouts[] = {{"4:3: as on the PS2, with side bars", "4:3"}, {"Stretched to the screen", "stretch"}};
         constexpr Choice kRouletteTimers[] = {{"Normal", "normal"}, {"Double time", "double"}};
+        constexpr Choice kGraphicsApis[] = {{"Direct3D 11", "dx11"}, {"Vulkan", "vulkan"}};
         constexpr Choice kPostEffects[] = {{"PS2 resolution (PCSX2's fix)", "ps2"}, {"Upscaled", "upscaled"}, {"No fix", "off"}};
         constexpr Choice kWindowModes[] = {{"Window", "window"}, {"Fullscreen (borderless)", "fullscreen"}, {"Maximized window", "maximized"}};
         constexpr Choice kFovs[] = {{"100%: as on the PS2", "100"}, {"110%", "110"}, {"120%", "120"}, {"130%", "130"},
@@ -1486,6 +1487,10 @@ void main()
                 {
                     if (beginSettings("graphics"))
                     {
+                        settingLabel("Graphics API", "Direct3D 11 is the default. If Vulkan fails to start, the game "
+                                                     "uses Direct3D 11 instead.");
+                        iniCombo(state, "##graphicsapi", "Video", "GraphicsAPI", "dx11",
+                                 [](const char *id, std::string &value) { return choiceCombo(id, kGraphicsApis, value); });
                         settingLabel("Internal resolution", "How sharp the 3D is drawn. 3x suits a 1440p screen, 4x and "
                                                             "up a 4K one; higher costs more GPU time.");
                         iniCombo(state, "##scale", "Video", "InternalResolution", "3",

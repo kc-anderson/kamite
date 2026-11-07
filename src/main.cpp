@@ -424,6 +424,7 @@ namespace
         {"run", "logfile", "KAMITE_LOG_FILE"},
         {"run", "test", "KAMITE_TEST"},
         {"video", "renderer", "PS2X_GS_RENDERER"},
+        {"video", "graphicsapi", "PS2X_PCSX2_API"},
         {"video", "internalresolution", "PS2X_GS_SCALE"},
         {"video", "startmaximized", "KAMITE_START_MAXIMIZED"},
         {"video", "windowsize", "PS2X_WINDOW_SIZE"},

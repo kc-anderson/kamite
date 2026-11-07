@@ -129,6 +129,7 @@ namespace kamite::dev_menu
         {
             ui->separator_text("At start");
             launcherOnly(ui, "Renderer", env("PS2X_GS_RENDERER", "pcsx2"));
+            launcherOnly(ui, "Graphics API", env("PS2X_PCSX2_API", "dx11") == "vulkan" ? "Vulkan" : "Direct3D 11");
             launcherOnly(ui, "Internal resolution", env("PS2X_GS_SCALE", "3") + "x");
             launcherOnly(ui, "Post effects", env("PS2X_PCSX2_NATIVE_SCALING", "ps2"));
             launcherOnly(ui, "HD textures", envOn("PS2X_PCSX2_TEXTURES", true) ? "on, " + env("PS2X_PCSX2_TEXTURE_DIR", "textures/SLUS-21503") : "off");

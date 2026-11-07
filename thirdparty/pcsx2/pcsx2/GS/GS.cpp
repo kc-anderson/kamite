@@ -38,7 +38,7 @@
 #ifdef _WIN32
 
 #include "GS/Renderers/DX11/GSDevice11.h"
-#include "GS/Renderers/DX12/GSDevice12.h"
+// pcsx2gs (Kamite): no DX12 device in this build (DX11 + Vulkan).
 #include "GS/Renderers/DX11/D3D.h"
 
 #endif
@@ -114,9 +114,6 @@ static bool OpenGSDevice(GSRendererType renderer, bool clear_state_on_fail, bool
 #ifdef _WIN32
 		case RenderAPI::D3D11:
 			g_gs_device = std::make_unique<GSDevice11>();
-			break;
-		case RenderAPI::D3D12:
-			g_gs_device = std::make_unique<GSDevice12>();
 			break;
 #endif
 #ifdef __APPLE__

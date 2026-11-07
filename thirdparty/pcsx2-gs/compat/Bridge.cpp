@@ -87,6 +87,7 @@ namespace
 
     // Pcsx2GsOpenParams::options: "key=value;key=value".
     float g_customAspect = 0.0f; // options "aspect=<width/height>": the image shown in that shape (0 = the open's choice)
+    GSRendererType g_api = GSRendererType::DX11; // options "api=dx11|vulkan" ([Video] GraphicsAPI)
 
     void ApplyOptions(Pcsx2Config::GSOptions &options, const char *text)
     {
@@ -109,6 +110,11 @@ namespace
                 // A widescreen game (the port widens the camera itself): PCSX2's patch-driven custom aspect ratio.
                 const float aspect = static_cast<float>(std::atof(text.c_str()));
                 g_customAspect = aspect > 0.5f && aspect < 5.0f ? aspect : 0.0f;
+                continue;
+            }
+            if (key == "api")
+            {
+                g_api = (text == "vulkan" || text == "vk") ? GSRendererType::VK : GSRendererType::DX11;
                 continue;
             }
             if (key == "texture_dir")
@@ -219,12 +225,13 @@ namespace
         pcsx2gs::SetFolders(params->resources ? params->resources : "", params->cache ? params->cache : "");
 
         Pcsx2Config::GSOptions options;
-        options.Renderer = GSRendererType::DX11;
         options.UpscaleMultiplier = std::max(1.0f, params->scale);
         options.AspectRatio = params->stretch ? AspectRatioType::Stretch : AspectRatioType::R4_3;
         ApplyGameFixes(options);
         g_customAspect = 0.0f;
+        g_api = GSRendererType::DX11;
         ApplyOptions(options, params->options);
+        options.Renderer = g_api;
         if (g_customAspect > 0.0f && !params->stretch)
             options.AspectRatio = AspectRatioType::RAuto4_3_3_2;
         EmuConfig.CurrentCustomAspectRatio = g_customAspect;
@@ -236,7 +243,16 @@ namespace
         const GSVSyncMode vsync = params->vsync == 1u ? GSVSyncMode::FIFO
                                   : params->vsync == 2u ? GSVSyncMode::Mailbox
                                                         : GSVSyncMode::Disabled;
-        if (!GSopen(options, GSRendererType::DX11, g_regs, vsync, false))
+        bool opened = GSopen(options, options.Renderer, g_regs, vsync, false);
+        if (!opened && options.Renderer == GSRendererType::VK)
+        {
+            // Vulkan could not start (no driver, or shaderc_shared.dll missing): Direct3D 11 instead.
+            std::fprintf(stderr, "[pcsx2-gs] Vulkan failed to open; falling back to Direct3D 11\n");
+            options.Renderer = GSRendererType::DX11;
+            EmuConfig.GS.Renderer = GSRendererType::DX11;
+            opened = GSopen(options, options.Renderer, g_regs, vsync, false);
+        }
+        if (!opened)
         {
             std::fprintf(stderr, "[pcsx2-gs] GSopen failed\n");
             return 0;
@@ -244,7 +260,8 @@ namespace
         g_open = true;
         int w = 0, h = 0;
         GSgetInternalResolution(&w, &h);
-        std::fprintf(stderr, "[pcsx2-gs] DX11, scale %.0f (%dx%d), window %ux%u, options: %s\n", options.UpscaleMultiplier, w, h,
+        std::fprintf(stderr, "[pcsx2-gs] %s, scale %.0f (%dx%d), window %ux%u, options: %s\n",
+                     options.Renderer == GSRendererType::VK ? "Vulkan" : "DX11", options.UpscaleMultiplier, w, h,
                      g_window.surface_width, g_window.surface_height, params->options ? params->options : "");
         return 1;
     }
@@ -278,7 +295,9 @@ namespace
                 std::fputs("qpc,last_present,shown_present,shown_refresh,sync_refresh,sync_qpc\n", f);
             return f;
         }();
-        GSDevice11 *device = file ? GSDevice11::GetInstance() : nullptr;
+        // Direct3D 11 only (the swap chain's frame statistics); nothing under Vulkan.
+        const bool d3d11 = g_gs_device && g_gs_device->GetRenderAPI() == RenderAPI::D3D11;
+        GSDevice11 *device = (file && d3d11) ? GSDevice11::GetInstance() : nullptr;
         IDXGISwapChain1 *swapChain = device ? device->GetSwapChain() : nullptr;
         if (!swapChain)
             return;

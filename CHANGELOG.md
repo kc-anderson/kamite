@@ -4,6 +4,9 @@ Newest first, one line per change; the code comments say how.
 
 ## November 7, 2026
 
+- Vulkan renderer (launcher: Graphics > Graphics API); Direct3D 11 stays the default and the fallback.
+- Removed the unused Direct3D 12 renderer from the build.
+- Renderer: took PCSX2's out-of-bounds texture read fix and an Intel driver shader fix.
 - Busta-Chan Jive: new railings and windows in stages 6 and 7.
 - Busta-Chan Jive works in every costume.
 - Launcher: Mods tab moved to the end; character descriptions updated.
