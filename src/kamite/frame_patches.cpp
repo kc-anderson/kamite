@@ -1049,6 +1049,16 @@ namespace kamite
         // counter read as half the vblanks. Visual only (k: 1/k).
         // func_00319970 (+0x38C / +0x390 += speed x step): mul.s f1,f0,f20 at 0x319A80 and 0x319B54.
         void mapScrollStep(uint8_t *, R5900Context *ctx, PS2Runtime *) { ctx->f[1] = ctx->f[0] * ctx->f[20] * 0.5f; }
+        // The stage 5 boat ride's scrolling town (r501, func at 0x79A7C0: K, Nov 7, case boat_too_fast: the buildings
+        // slid by 0.11 a game frame at both rates, 3.3 m/s at 30 and 6.6 at 60): its step is GameWork +0x574 x the
+        // object rate 0x754C48 (1.0 at either rate, as the map scroll objects above), which then moves the scenery
+        // (+0x394 -= step x 0.11, wrapped at 550) and its texture phase (+0x2E4 += step x 0.002). The only room-DLL read
+        // of 0x754C48 (census of all 79 room DLLs, Nov 7). Replaces mul.s f4,f4,f0 at 0x79A7FC: half while the game
+        // runs at 60.
+        void r501BoatStep(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            ctx->f[4] = ctx->f[4] * ctx->f[0] * (motion60(rdram) ? 0.5f : 1.0f);
+        }
         // func_00318B58's step f23 (counter x f23 at 0x319470, a vector step at 0x3190B8): mul.s f23,f0,f1 at 0x318BB4.
         void mapScrollStep23(uint8_t *, R5900Context *ctx, PS2Runtime *) { ctx->f[23] = ctx->f[0] * ctx->f[1] * 0.5f; }
         // func_00318B58's camera-locked dome: V += (counter & 0xFF) / 256 (mul.s f0,f2,f0 at 0x319088): half the count.
@@ -2055,6 +2065,8 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_charge_sub_f1", &floatSubParity<1, 1, 0>); // sub.s f1,f1,f0
         ps2xRegisterHostHook("km_fps60_charge_add_f2f1", &floatAddParity<2, 2, 1>); // add.s f2,f2,f1
         ps2xRegisterHostHook("km_fps60_charge_add_f2f0", &floatAddParity<2, 2, 0>); // add.s f2,f2,f0
+        ps2xRegisterHostHook("km_fps60_add_f2f1f0", &floatAddParity<2, 1, 0>);      // add.s f2,f1,f0
+        ps2xRegisterHostHook("km_fps60_r501_boat_step", &r501BoatStep);
         // The objects' countdowns (kamite.toml, generated Oct 30).
         ps2xRegisterHostHook("km_fps60_om_cd_a0_9e0", &countdownLoadAny<4, 0x9E0u, 2, 4>);
         ps2xRegisterHostHook("km_fps60_om_cd_s0_600_2", &countdownLoadAny<16, 0x600u, 2, 2>);

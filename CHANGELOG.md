@@ -2,6 +2,11 @@
 
 Newest first, one line per change; the code comments say how.
 
+## November 7, 2026
+
+- 60 FPS: the stage 5 boat ride's town scrolls past at the right speed; sinking enemy ships sink as at 30.
+- Busta-Chan Jive: K's stage 5 boat and r508 windows ship.
+
 ## November 6, 2026
 
 - See Through: walls dissolve only while they block the view of Gene or the enemies near him, in an oval fitted to what is hidden; ledges and sills sticking out of walls dissolve with them; new default sizes.

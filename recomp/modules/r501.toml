@@ -26,7 +26,10 @@ stubs = []
 # 60 FPS family 1 (census Nov 2): the stage 5 shooting minigame's timers (UFO / EnemyShip / Site / CannonGame code
 # after the float helpers, unexported): +0x28 / +0x20 (0x79E2C0 / 0x79E2CC), +0x14 (load and decrement in delay
 # slots: its store at 0x79F354), +0x18, the state timers +0x70 (0x79F6F0, 0x79F8DC, 0x79FAAC load, 0x79FD54).
-# Not done: its per-frame float steps (e.g. 0x79F6D0..0x79F6FC: +0x10 +=, +0x14 -= 0.05): needs a case at 60.
+# EnemyShip's sinking (StateSinking 0x79F680, Nov 7): its per-frame steps (+0x6C -= 0.015, +0x10 += +-1.0, +0x14 -= 0.05)
+# ran every frame while its +0x70 timer (0x79F6F0) counts every other: taken every other frame too (parity, as the
+# timer), so it sinks the same way as at 30.
+# The boat ride's scrolling town (0x79A7FC): see frame_patches.cpp r501BoatStep.
 [[patches.hooks]]
 address = "0x0079E2C0"
 hook = "km_fps60_countdown_self"
@@ -75,3 +78,27 @@ hook = "km_fps60_countdown_self"
 flag = "fps60"
 replace = true
 
+
+[[patches.hooks]]
+address = "0x0079A7FC"
+hook = "km_fps60_r501_boat_step"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x0079F694"
+hook = "km_fps60_charge_sub_f0"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x0079F6D0"
+hook = "km_fps60_add_f2f1f0"
+flag = "fps60"
+replace = true
+
+[[patches.hooks]]
+address = "0x0079F6E8"
+hook = "km_fps60_charge_sub_f0"
+flag = "fps60"
+replace = true
