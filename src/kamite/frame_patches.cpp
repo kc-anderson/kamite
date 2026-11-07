@@ -1056,6 +1056,32 @@ namespace kamite
         // (+0x394 -= step x 0.11, wrapped at 550) and its texture phase (+0x2E4 += step x 0.002). The only room-DLL read
         // of 0x754C48 (census of all 79 room DLLs, Nov 7). Replaces mul.s f4,f4,f0 at 0x79A7FC: half while the game
         // runs at 60.
+        // Dropped items (func_001C0678, the item object: heals, roulette reels, magazines; T1's case "Item drop speed",
+        // Nov 7): substep 1 pops the item up and lets it fall, `pos += vel (+0x610); vel.y -= g (+0x600, 0.02)` once a
+        // frame with no rate (spawn func_001C0128: vel.y 0.2), and the settled state pulls it down the same way; at 60
+        // both ran twice as fast. Half steps that put every tick on the 30 FPS arc (position first, then the pull):
+        // pos += vel / 2 + (0, g / 8, 0) at the vadd (0x1C07FC / 0x1C0ACC), vel.y -= g / 2 at the sub.s (0x1C0838 /
+        // 0x1C0B08). s2 = the item. Cutscenes (divider 2) keep the full steps.
+        void itemDropMove(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // replaces vadd.xyz vf4,vf4,vf5
+        {
+            alignas(16) float a[4], b[4];
+            _mm_store_ps(a, ctx->vu0_vf[4]);
+            _mm_store_ps(b, ctx->vu0_vf[5]);
+            const bool half = motion60(rdram);
+            for (int i = 0; i < 3; ++i)
+                a[i] += half ? 0.5f * b[i] : b[i];
+            if (half)
+            {
+                float g = 0.0f;
+                std::memcpy(&g, &ram8(rdram, GPR_U32(ctx, 18) + 0x600u), sizeof(g));
+                a[1] += g * 0.125f;
+            }
+            ctx->vu0_vf[4] = _mm_load_ps(a);
+        }
+        void itemDropPull(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // replaces sub.s f0,f0,f1 (f1 = g)
+        {
+            ctx->f[0] = ctx->f[0] - ctx->f[1] * (motion60(rdram) ? 0.5f : 1.0f);
+        }
         void r501BoatStep(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             ctx->f[4] = ctx->f[4] * ctx->f[0] * (motion60(rdram) ? 0.5f : 1.0f);
@@ -2258,6 +2284,8 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_charge_add_f2f0", &floatAddParity<2, 2, 0>); // add.s f2,f2,f0
         ps2xRegisterHostHook("km_fps60_add_f2f1f0", &floatAddParity<2, 1, 0>);      // add.s f2,f1,f0
         ps2xRegisterHostHook("km_fps60_r501_boat_step", &r501BoatStep);
+        ps2xRegisterHostHook("km_fps60_item_drop_move", &itemDropMove);
+        ps2xRegisterHostHook("km_fps60_item_drop_pull", &itemDropPull);
         // The cannon minigame (r501.toml, Nov 7).
         ps2xRegisterHostHook("km_fps60_add_half_f0f0f1", &floatAddHalf<0, 0, 1>);
         ps2xRegisterHostHook("km_fps60_add_half_f0f0f2", &floatAddHalf<0, 0, 2>);

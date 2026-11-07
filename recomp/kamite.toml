@@ -4509,3 +4509,26 @@ address = "0x001A4B20"
 hook = "km_fps60_cd_guard_neg_s1_79c"
 flag = "fps60"
 replace = true
+
+# 60 FPS: dropped items' pop-up and fall (func_001C0678 substep 1 and its settled state: pos += vel; vel.y -= g once a
+# frame, twice as fast at 60; T1's case "Item drop speed", Nov 7). frame_patches.cpp itemDropMove / itemDropPull.
+[[patches.hooks]]
+address = "0x001C07FC"
+hook = "km_fps60_item_drop_move"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x001C0838"
+hook = "km_fps60_item_drop_pull"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x001C0ACC"
+hook = "km_fps60_item_drop_move"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x001C0B08"
+hook = "km_fps60_item_drop_pull"
+flag = "fps60"
+replace = true
