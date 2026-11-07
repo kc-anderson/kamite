@@ -513,7 +513,7 @@ namespace kamite::sprint_traversal
         // next room (r509) and has no collision. Linking them to the door's own trigger (c4fcbdc) sent Gene to r506
         // whatever the door's record said (the trigger's jump data read back r506 for record 2, which F2 read as
         // r509: not understood, dropped), so a window names a RoomJmpTbl point and the dive starts the game's forced
-        // door jump to it (debug_tools::jumpTo, the F2 room jump) as soon as Gene crosses the far face (K: snappier,
+        // door jump to it (debug_tools::jumpTo, the F2 room jump) as soon as Gene enters the window past its near face (K: snappier,
         // and fits other such windows). Gene keeps a key he holds (claude/later.md).
         constexpr int kJumpWait = 30; // vblanks to keep trying while the game can't jump yet (a talk, a menu)
         struct Pending
@@ -522,7 +522,7 @@ namespace kamite::sprint_traversal
             int toRoom = -1, toPoint = 0;
             int wait = 0;
         } g_pending;
-        std::vector<float> g_lastAcross; // per window with a jump: how far past its near face Gene was last frame
+        std::vector<float> g_lastAcross; // per window with a jump: how far past its near face Gene was last frame (-1e9 = not near)
 
         // After it, on every path.
         void switchOn(uint8_t *rdram, R5900Context *, PS2Runtime *)
@@ -594,7 +594,8 @@ namespace kamite::sprint_traversal
         if (!inRam(gene, 0x600u))
             return;
         const int kind = moveKind(rdram, gene);
-        // Gene crossing a window's far face in a jump move (from its near side the frame before).
+        // Gene entering a window in a jump move: past its near face, from in front of it the frame before (K, Nov 7:
+        // a dive at an angle or from a tight spot could stop short of the far face and skip the jump).
         Windows linked;
         {
             std::lock_guard<std::mutex> lock(g_mutex);
@@ -618,10 +619,10 @@ namespace kamite::sprint_traversal
             const float across = ((px - cx) * -w.dz + (pz - cz) * w.dx) * static_cast<float>(w.side);
             const float far = std::max(0.0f, w.depth * static_cast<float>(w.side));
             const bool in = kind == kJump && std::fabs(along) <= 0.5f * w.width && std::fabs(w.y - py) <= kWindowFloor &&
-                            across >= -kWindowMargin && across <= far + kWindowMargin;
+                            across <= far + kWindowMargin;
             const float last = g_lastAcross[i];
             g_lastAcross[i] = in ? across : -1e9f;
-            if (in && last > -1e8f && last <= far && across > far)
+            if (in && last > -1e8f && last < 0.0f && across >= 0.0f)
             {
                 std::fill(g_lastAcross.begin(), g_lastAcross.end(), -1e9f);
                 g_pending = Pending{room, w.toRoom, w.toPoint, 0};

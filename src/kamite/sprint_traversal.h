@@ -42,7 +42,7 @@ namespace kamite::sprint_traversal
         bool twoWay = true;
         int side = 1;
         // A room jump (K, Nov 7): a window into space that belongs to the next room (r503's windows past the locked door
-        // to r509: no collision there). As Gene crosses its far face in the dive, the game's door jump (black fade) takes
+        // to r509: no collision there). As Gene enters it (past its near face) in the dive, the game's door jump (black fade) takes
         // him to jump point (toRoom, toPoint) of RoomJmpTbl (F2 lists the window's own stage). -1 = none. One-way.
         int toRoom = -1, toPoint = 0;
         bool linked() const { return toRoom >= 0; }
