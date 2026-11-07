@@ -158,6 +158,7 @@ namespace kamite::modern
             style_presets::padFilter(player, state); // the d-pad style swaps (ps2_host_input has one filter)
             if (player != 0u)
                 return;
+            menu_buttons::noteRightStick(state.connected ? state.rightX : 0x80u); // the Techniques screen's Gene turn
             if (!g_modern.load(std::memory_order_relaxed))
                 return;
             const bool r3 = (state.buttons & ps2x::iop::PadButton::R3) != 0u;

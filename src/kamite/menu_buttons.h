@@ -40,6 +40,9 @@ namespace kamite::menu_buttons
     void setStyle(Style style);
     // "western" / "japanese" / "classic", as kamite.ini spells them.
     const char *styleName(Style style);
+    // modern_controls' pad filter (window thread), player 1: the right stick's x (0..255), which turns Gene on the
+    // Techniques screen (every menu style; turnTechniquesGene).
+    void noteRightStick(uint8_t x);
 
     // Text patches (16-bit glyph codes: A=0x40.., a=0x5A.., space 0x10 or 0x35, the button icons 0..13, end 0x8001).
     // `original` must be there before `modern` is written; both the same length, so the tables around them hold.

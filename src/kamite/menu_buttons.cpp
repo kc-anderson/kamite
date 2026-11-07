@@ -13,6 +13,7 @@
 #include "runtime/ps2_pnach.h"
 
 #include <algorithm>
+#include <cmath>
 #include <atomic>
 #include <cctype>
 #include <chrono>
@@ -339,11 +340,88 @@ namespace kamite::menu_buttons
             PS2DiscOverlay::add(std::move(patches));
         }
 
+        // ---- the Techniques screen's Gene turned by the right stick (K, Nov 7; no option) ----
+        // The screen (cSubScr kind 1, cSubScrWaza at cSubScr + 0x310) shows Gene (waza +0x264, the player) playing the
+        // hovered move. The stick's x turns his heading (+0x104, radians) like a turntable, up to 180 degrees a second
+        // (host time: the same at 30 and 60). The turn stays while the screen is open: when the game puts his heading
+        // back to the screen's facing (the facing seen when the stick first moved), the turn goes back on. Closing the
+        // screen puts back the heading the game saved at its opening (Screen_closeAndRestorePlayer 0x16C678: waza +0x270
+        // -> player +0x100), so play is untouched; the next opening starts unturned.
+        std::atomic<int> g_rightX{0x80}; // the pad filter (window thread)
+        bool g_turnOpen = false;
+        float g_turn = 0.0f, g_turnBase = 0.0f, g_turnWritten = 0.0f;
+        bool g_turnHasBase = false;
+        std::chrono::steady_clock::time_point g_turnTime;
+
+        float rdF(uint32_t address)
+        {
+            float value;
+            std::memcpy(&value, g_ram + (address & 0x1FFFFFFu), sizeof(value));
+            return value;
+        }
+        void wrF(uint32_t address, float value) { std::memcpy(g_ram + (address & 0x1FFFFFFu), &value, sizeof(value)); }
+        bool ramPointer(uint32_t p, uint32_t room) { return p >= 0x100000u && p < 0x2000000u - room; }
+
+        float wrapPi(float a)
+        {
+            constexpr float kPi = 3.14159265f;
+            while (a > kPi)
+                a -= 2.0f * kPi;
+            while (a < -kPi)
+                a += 2.0f * kPi;
+            return a;
+        }
+
+        void turnTechniquesGene()
+        {
+            const auto now = std::chrono::steady_clock::now();
+            const float dt = std::min(0.1f, std::chrono::duration<float>(now - g_turnTime).count());
+            g_turnTime = now;
+            const uint32_t subScr = rd32(game::SubScr::kPointer);
+            const bool open = ramPointer(subScr, 0x1000u) && static_cast<int32_t>(rd32(subScr + game::SubScr::kKind)) == 1;
+            const uint32_t player = open ? rd32(subScr + 0x310u + 0x264u) : 0u;
+            if (!open || !ramPointer(player, 0x700u) || g_ram[(subScr + 0x310u + 0x5Au) & 0x1FFFFFFu] == 2u)
+            {
+                g_turnOpen = open && g_turnOpen; // leaving (state 2): keep the turn until it closes
+                if (!open)
+                {
+                    g_turnOpen = false;
+                    g_turn = 0.0f;
+                    g_turnHasBase = false;
+                }
+                return;
+            }
+            g_turnOpen = true;
+            const uint32_t heading = player + 0x104u;
+            const float now_ = rdF(heading);
+            float x = (static_cast<float>(g_rightX.load(std::memory_order_relaxed)) - 128.0f) / 127.0f;
+            constexpr float kDead = 0.2f;
+            x = std::fabs(x) < kDead ? 0.0f : (x - std::copysign(kDead, x)) / (1.0f - kDead);
+            if (x != 0.0f && !g_turnHasBase)
+            {
+                g_turnBase = now_;
+                g_turnWritten = now_;
+                g_turnHasBase = true;
+            }
+            if (!g_turnHasBase)
+                return;
+            const float step = x * 3.14159265f * dt; // 180 degrees a second at full tilt
+            float want = now_;
+            if (g_turn != 0.0f && std::fabs(wrapPi(now_ - g_turnBase)) < 1e-4f && std::fabs(wrapPi(now_ - g_turnWritten)) > 1e-4f)
+                want = g_turnBase + g_turn; // the game put the screen's facing back (a new move): the turn goes back on
+            g_turn = wrapPi(g_turn + step);
+            want = wrapPi(want + step);
+            if (want != now_)
+                wrF(heading, want);
+            g_turnWritten = want;
+        }
+
         void onVblank()
         {
             static uint32_t vblanks = 0u;
             ++vblanks;
             applyTables();
+            turnTechniquesGene();
             if (vblanks % 30u == 0u)
             {
                 applyCoreText();
@@ -377,6 +455,8 @@ namespace kamite::menu_buttons
             rdram[(GPR_U32(ctx, 17) + window) & 0x1FFFFFFu] = 0u;
         }
     }
+
+    void noteRightStick(uint8_t x) { g_rightX.store(x, std::memory_order_relaxed); }
 
     const char *styleName(Style style)
     {
