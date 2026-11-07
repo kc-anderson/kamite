@@ -112,7 +112,6 @@ namespace kamite
         // skipped the frame its countdowns were due to step.)
         bool thinkSkipped(uint8_t *rdram);
         bool skipFrame(uint8_t *rdram) { return thinkSkipped(rdram); }
-        uint32_t g_pressedBefore = 0; // GameWork +8 (pressed) as the last game frame left it, read at frame start
 
         // KAMITE_CALL_PROFILE=1 with KAMITE_CALL_PROFILE_EVERY=<game frames>: a call count report of every function
         // called in each window of that many frames (finding the code behind something seen on screen: compare the
@@ -1337,7 +1336,6 @@ namespace kamite
         {
             pcsampler::noteMainContext(ctx);
             ++g_gameFrame;
-            std::memcpy(&g_pressedBefore, rdram + 0x7474A8u, 4); // the pad update comes later in the loop (0x30AFC8)
             g_handlerDepth = 0; // no dispatcher's handler spans a frame (a load or a rate switch left one open)
             forgetStickAfterLoad();
             forgetRandAfterLoad(rdram);
@@ -1947,22 +1945,6 @@ namespace kamite
         // (2 or more) becomes 2N vblanks = N 30 FPS frames (k: N x k). sleep(1) stays one game frame: the scripts use it
         // as "poll again next frame" (r301: all 13 are wait-until loops), so a condition or a press is seen on the
         // vblank it happens; a counted sleep(1) loop would run at 2x.
-        // The stage 5 boat's cannon minigame (r501, Nov 7: K's case cannon_minigame_too_fast: targets, ships, the
-        // crosshair's animation and the result screen all twice as fast at 60): its tasks are per-frame update loops,
-        // not waits (game__10CannonGame, result__10CannonGame, UFOTask, EnemyShipTask: dozens of per-frame steps,
-        // rolls and the layout animations, each followed by sleep(1)). Their sleep(1) wakes them on the next 30 FPS
-        // frame (2 vblanks, or 1 when called on a second half), so they run once per 30 FPS frame, on its first half.
-        // The countdowns and parity steps already hooked inside them (r501.toml) see first halves only and step
-        // every run. Presses on the skipped half are kept (r501PressedLatch). Return addresses in r501 (room 0x501).
-        bool r501FrameTask(uint8_t *rdram, uint32_t ra)
-        {
-            uint16_t room = 0;
-            std::memcpy(&room, rdram + game::GameWork::address(game::GameWork::kRoom), 2);
-            if (room != 0x501u)
-                return false;
-            return ra == 0x799E18u /* EnemyShipTask */ || ra == 0x79A1F0u /* UFOTask */ || ra == 0x79F110u /* game */ ||
-                   ra == 0x79DEBCu || ra == 0x79DEE8u /* result */;
-        }
         // Scroll-layer fades in room scripts (Nov 7 census of the 79 room DLLs: r101 x5, r103, r104, r403, r604, r607 x2,
         // r701 x4, r803, r804, r805): `alpha -/+= step; setAlphaScrollLayer(layer, alpha); sleep(1); while (alpha <
         // end)` - a counted loop, so the fade ran in half the time at 60. Its shape: jal setAlphaScrollLayer (0x2DB318)
@@ -1982,21 +1964,8 @@ namespace kamite
             const uint32_t frames = GPR_U32(ctx, 5) & 0xFFFFu;
             if (frames >= 2u)
                 SET_GPR_U32(ctx, 5, std::min(frames * 2u, 0xFFFFu));
-            else if (frames == 1u && motion60(rdram) &&
-                     (r501FrameTask(rdram, GPR_U32(ctx, 31)) || fadeLoopSleep(rdram, GPR_U32(ctx, 31))))
+            else if (frames == 1u && motion60(rdram) && fadeLoopSleep(rdram, GPR_U32(ctx, 31)))
                 SET_GPR_U32(ctx, 5, skipFrame(rdram) ? 1u : 2u);
-        }
-        // The cannon game's press tests (`lw rD,8(base)` = GameWork pressed, & 0xF0 the face buttons: StateNeutral's
-        // fire 0x79F49C, the result screen 0x79D9E4) run on first halves only (above): a press on the skipped half
-        // is added from the frame before.
-        template <int Dst, int Base>
-        void r501PressedLatch(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
-        {
-            uint32_t value = 0;
-            std::memcpy(&value, rdram + ((GPR_U32(ctx, Base) + 8u) & 0x01FFFFFFu), 4);
-            if (motion60(rdram))
-                value |= g_pressedBefore;
-            SET_GPR_U32(ctx, Dst, value);
         }
 
         // Drivers that step a phase and a timer once a game frame and act on timer values (a beep at 30, a sound at 10),
@@ -2114,8 +2083,6 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_charge_add_f2f0", &floatAddParity<2, 2, 0>); // add.s f2,f2,f0
         ps2xRegisterHostHook("km_fps60_add_f2f1f0", &floatAddParity<2, 1, 0>);      // add.s f2,f1,f0
         ps2xRegisterHostHook("km_fps60_r501_boat_step", &r501BoatStep);
-        ps2xRegisterHostHook("km_fps60_r501_pressed_v0_v1", &r501PressedLatch<2, 3>); // lw v0,8(v1)
-        ps2xRegisterHostHook("km_fps60_r501_pressed_v1_v0", &r501PressedLatch<3, 2>); // lw v1,8(v0)
         // The objects' countdowns (kamite.toml, generated Oct 30).
         ps2xRegisterHostHook("km_fps60_om_cd_a0_9e0", &countdownLoadAny<4, 0x9E0u, 2, 4>);
         ps2xRegisterHostHook("km_fps60_om_cd_s0_600_2", &countdownLoadAny<16, 0x600u, 2, 2>);
