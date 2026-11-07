@@ -40,6 +40,7 @@
 #include "kamite/npc_poses.h"
 #include "kamite/debug_tools.h"
 #include "kamite/npc_tools.h"
+#include "kamite/sprint_traversal.h"
 #include "kamite/hitbox_overlay.h"
 #include "kamite/bone_tweaks.h"
 #include "kamite/call_profile.h"
@@ -1450,6 +1451,7 @@ namespace kamite
             characters::onFrame(rdram);
             npc_poses::onFrame(rdram, ctx, runtime);
             debug_tools::onFrame(rdram, ctx, runtime);
+            sprint_traversal::onFrame(rdram, ctx, runtime); // Busta-Chan Jive: a window linked to a door runs it
             npc_tools::onFrame(rdram, ctx, runtime);
             hitbox_overlay::onFrame();
             bone_tweaks::onFrame(rdram, ctx, runtime);

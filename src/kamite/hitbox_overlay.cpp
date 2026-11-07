@@ -628,6 +628,17 @@ namespace kamite::hitbox_overlay
             // The room's windows (white; the ones unfolded in F2 in the highlight colour, magenta): the opening's rectangle and its diagonals.
             const uint64_t open = g_openWindows.load(std::memory_order_relaxed);
             int windowIndex = -1;
+            // The room's door triggers (cyan crosses, red while locked), for linking windows to them.
+            const auto doors = sprint_traversal::doors();
+            for (const auto &d : doors)
+            {
+                if (g_colors.size() + 3u > kMaxLines)
+                    break;
+                const uint32_t c = d.locked ? 0xFF4040FFu : 0xFFFFFF00u;
+                line(Vec3{d.x - 0.4f, d.y + 1.0f, d.z}, Vec3{d.x + 0.4f, d.y + 1.0f, d.z}, c);
+                line(Vec3{d.x, d.y + 1.0f, d.z - 0.4f}, Vec3{d.x, d.y + 1.0f, d.z + 0.4f}, c);
+                line(Vec3{d.x, d.y, d.z}, Vec3{d.x, d.y + 2.0f, d.z}, c);
+            }
             for (const auto &ref : sprint_traversal::windows(static_cast<uint16_t>(room)))
             {
                 ++windowIndex;
@@ -653,6 +664,10 @@ namespace kamite::hitbox_overlay
                     line(b1 + off, a1 + off, kWindowColor);
                     line(a1 + off, a0 + off, kWindowColor);
                 }
+                if (w.linked()) // a line from the opening to its door's trigger
+                    for (const auto &d : doors)
+                        if (d.room == w.doorRoom && d.point == w.doorPoint)
+                            line(Vec3{cx, 0.5f * (y0 + y1), cz}, Vec3{d.x, d.y + 1.0f, d.z}, kWindowColor);
                 if (!w.twoWay) // one-way: an arrow through the opening's middle, the way Gene may go
                 {
                     const float ym = 0.5f * (y0 + y1), len = 0.6f, nx = -w.dz * w.side, nz = w.dx * w.side;
@@ -840,7 +855,8 @@ namespace kamite::hitbox_overlay
                          "place it with the sliders. A thick wall's far side is found by itself (the second rectangle; 0 = "
                          "none). Any number per wall: mark again for another section (e.g. one to jump, one to slide). "
                          "Unfold a window to edit it; unfolded windows show magenta. New windows are one-way (the arrow: the way Gene "
-                         "faced when marking it); tick Two-way to allow both.");
+                         "faced when marking it); tick Two-way to allow both. A window into the space behind a door (crosses: door "
+                         "triggers, red = locked) can be linked to it: landing from the dive then goes through that door.");
         if (ui->button("Mark window (the wall Gene faces)##markwin"))
         {
             g_markResult.store(0);
@@ -911,19 +927,52 @@ namespace kamite::hitbox_overlay
                     }
                     // One-way: through only from the side it was marked from (the arrow); Flip turns it round.
                     int twoWay = w.twoWay ? 1 : 0;
-                    if (ui->checkbox("Two-way##wtwo", &twoWay))
+                    if (!w.linked() && ui->checkbox("Two-way##wtwo", &twoWay))
                     {
                         w.twoWay = twoWay != 0;
                         changed = true;
                     }
                     if (!w.twoWay)
                     {
-                        ui->same_line();
+                        if (!w.linked())
+                            ui->same_line();
                         if (ui->small_button("Flip side##wflip"))
                         {
                             w.side = -w.side;
                             changed = true;
                         }
+                    }
+                    // A window into the space behind a door: landing from it runs the door (sprint_traversal.h).
+                    if (w.linked())
+                    {
+                        char text[96];
+                        std::snprintf(text, sizeof(text), "Door: %02X %02X (one-way)", w.doorRoom, w.doorPoint);
+                        ui->text(text);
+                        ui->same_line();
+                        if (ui->small_button("Unlink##wunlink"))
+                        {
+                            w.doorRoom = w.doorPoint = -1;
+                            changed = true;
+                        }
+                    }
+                    else if (sprint_traversal::doors().empty())
+                        ui->text_disabled("No door triggers in this room to link to.");
+                    else if (ui->small_button("Link to the nearest door##wlink"))
+                    {
+                        const float cx = w.x + w.dx * w.offset, cz = w.z + w.dz * w.offset;
+                        float best = 1e9f;
+                        for (const auto &d : sprint_traversal::doors())
+                        {
+                            const float dd = (d.x - cx) * (d.x - cx) + (d.z - cz) * (d.z - cz);
+                            if (dd < best)
+                            {
+                                best = dd;
+                                w.doorRoom = d.room;
+                                w.doorPoint = d.point;
+                            }
+                        }
+                        w.twoWay = false;
+                        changed = true;
                     }
                 }
                 ui->separator();

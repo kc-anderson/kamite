@@ -22,6 +22,7 @@
 #include "kamite/game_layout.h"
 #include "kamite/log.h"
 #include "runtime/ps2_memory.h"
+#include "runtime/ee_scheduler.h"
 #include "ps2_runtime_macros.h" // GPR_U32
 
 #include <algorithm>
@@ -29,6 +30,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <initializer_list>
 #include <iterator>
 #include <map>
 #include <mutex>
@@ -116,6 +118,11 @@ namespace kamite::sprint_traversal
                 out += w.passes == kSlide ? " slide" : w.passes == (kJump | kSlide) ? " jump slide" : " none";
             if (!w.twoWay) // two-way (every window before Nov 6) writes no word
                 out += w.side > 0 ? " oneway" : " oneway_back";
+            if (w.linked())
+            {
+                std::snprintf(text, sizeof(text), " door %02X %02X", w.doorRoom & 0xFF, w.doorPoint & 0xFF);
+                out += text;
+            }
             return out;
         }
         bool sameWindows(const Windows &a, const Windows &b)
@@ -179,7 +186,13 @@ namespace kamite::sprint_traversal
                         bool named = false;
                         while (words >> word)
                         {
-                            if (word == "oneway" || word == "oneway_back")
+                            std::string a, b;
+                            if (word == "door" && words >> a >> b)
+                            {
+                                w.doorRoom = static_cast<int>(std::strtoul(a.c_str(), nullptr, 16) & 0xFFu);
+                                w.doorPoint = static_cast<int>(std::strtoul(b.c_str(), nullptr, 16) & 0xFFu);
+                            }
+                            else if (word == "oneway" || word == "oneway_back")
                             {
                                 w.twoWay = false;
                                 w.side = word == "oneway" ? 1 : -1;
@@ -193,6 +206,8 @@ namespace kamite::sprint_traversal
                                 w.depth = static_cast<float>(std::atof(word.c_str()));
                         }
                         w.passes = named ? passes : kJump;
+                        if (w.linked())
+                            w.twoWay = false; // a door's window only leads toward the door
                         if (w.twoWay && w.depth != 0.0f) // the side it was marked from, should it be made one-way
                             w.side = w.depth > 0.0f ? 1 : -1;
                         const float len = std::sqrt(w.dx * w.dx + w.dz * w.dz);
@@ -485,6 +500,125 @@ namespace kamite::sprint_traversal
             g_liftPos = 0u;
         }
 
+        // Windows linked to a door (K, Nov 7): r503's windows look past a locked door whose far side belongs to the
+        // next room (r509) and has no collision. A dive through one runs the door's own trigger when Gene lands (K's
+        // choice: the landing spot is solid, what lies past it isn't), so the game makes the jump exactly as when he
+        // walks through the door: its fade, exit callback (the SAVE / CONTINUE screen) and landing point. Gene keeps a
+        // key he holds (K: an immersive-sim spare; claude/later.md has the fallback should a spare break something).
+        // The doors: cSceAtManager D_005FEA60, its unit list at +0x5C (tagged links: bit 31 = a unit, 0xFFFFFFFF ends,
+        // cSceAtManager_getNextUnit); type +0x35 indexes the handler table D_003C2650, type 1 = func_002C2078 (the door
+        // trigger: cDoor_getJumpData(&D_00583EC0, +0x79, +0x5E, 2, 0, 0), returns at once while +0x7A (lock) is 1,
+        // installs the exit callback +0x74 / +0x70, cDoor_setDoorJump). The area (cArea) at +0x04: type +0x05,
+        // y +0x08, corners (x, z) from +0x14 (one, the centre, for a circle).
+        constexpr uint32_t kSceAt = 0x5FEA60u, kSceAtList = 0x5Cu;
+        constexpr uint32_t kUnitType = 0x35u, kUnitRoom = 0x5Eu, kUnitPoint = 0x79u, kUnitLock = 0x7Au;
+        constexpr uint8_t kDoorType = 1;
+        constexpr uint32_t kDoorTrigger = 0x2C2078u, kGetJumpData = 0x2004C8u, kSetDoorJump = 0x1FFF80u;
+        constexpr uint32_t kDoorJump = 0x583EC0u; // D_00583EC0, the door jump's cDoor
+        constexpr int kLandWait = 90; // vblanks: run the door anyway if the dive has not ended by then
+
+        std::mutex g_doorMutex;
+        std::vector<Door> g_doors; // this room's (GS thread reads)
+        std::vector<std::pair<uint32_t, Door>> g_doorUnits; // game thread: (unit, door)
+        struct Pending
+        {
+            uint16_t room = 0xFFFFu;
+            int doorRoom = -1, doorPoint = -1;
+            int wait = 0;
+        } g_pending;
+        std::vector<float> g_lastAcross; // per linked window this frame: how far past its near face Gene was
+
+        void scanDoors(const uint8_t *rdram)
+        {
+            g_doorUnits.clear();
+            uint32_t x = rd32(rdram, kSceAt + kSceAtList);
+            for (int guard = 0; x != 0xFFFFFFFFu && guard < 4096; ++guard)
+            {
+                const uint32_t u = x & 0x7FFFFFFFu;
+                if (!inRam(u, 0x9Cu))
+                    break;
+                if ((x & 0x80000000u) && rdram[(u + kUnitType) & 0x01FFFFFFu] == kDoorType)
+                {
+                    Door d;
+                    d.room = rdram[(u + kUnitRoom) & 0x01FFFFFFu];
+                    d.point = rdram[(u + kUnitPoint) & 0x01FFFFFFu];
+                    d.locked = rdram[(u + kUnitLock) & 0x01FFFFFFu] == 1u;
+                    const uint8_t shape = rdram[(u + 0x05u) & 0x01FFFFFFu];
+                    const int corners = shape == 1u ? 4 : 1;
+                    for (int c = 0; c < corners; ++c)
+                    {
+                        d.x += rdf(rdram, u + 0x14u + 8u * c) / corners;
+                        d.z += rdf(rdram, u + 0x18u + 8u * c) / corners;
+                    }
+                    d.y = rdf(rdram, u + 0x08u);
+                    g_doorUnits.emplace_back(u, d);
+                }
+                x = rd32(rdram, u);
+            }
+            std::lock_guard<std::mutex> lock(g_doorMutex);
+            g_doors.clear();
+            for (const auto &e : g_doorUnits)
+                g_doors.push_back(e.second);
+        }
+
+        // A guest function run to its end on a copy of the registers (frame_patches.cpp callGuest); v0 back.
+        uint32_t callGuest(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t address,
+                           std::initializer_list<uint32_t> args)
+        {
+            if (!runtime || !runtime->hasFunction(address))
+                return 0u;
+            PS2Runtime::RecompiledFunction fn = runtime->lookupFunction(address);
+            if (!fn)
+                return 0u;
+            const R5900Context saved = *ctx;
+            int r = 4;
+            for (uint32_t a : args)
+                SET_GPR_U32(ctx, r++, a);
+            ctx->pc = address; // a hooked function finds its hook by the pc
+            runtime->eeScheduler().beginHostCall();
+            fn(rdram, ctx, runtime);
+            runtime->eeScheduler().endHostCall();
+            const uint32_t v0 = GPR_U32(ctx, 2);
+            *ctx = saved;
+            return v0;
+        }
+
+        // Run the door: its own trigger (the lock let go for the call: the window is the way in), or, with no trigger
+        // unit for it in the room, the jump the trigger would make (no exit callback then).
+        void runDoor(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, int doorRoom, int doorPoint)
+        {
+            for (const auto &[u, d] : g_doorUnits)
+            {
+                if (d.room != doorRoom || d.point != doorPoint)
+                    continue;
+                uint8_t &lock = rdram[(u + kUnitLock) & 0x01FFFFFFu];
+                const uint8_t was = lock;
+                lock = 0u;
+                callGuest(rdram, ctx, runtime, kDoorTrigger, {u});
+                lock = was;
+                const bool jumping = (rd32(rdram, game::GameWork::address(game::GameWork::kFlags5E4)) & game::Sta::kRoomJump) != 0u;
+                KM_INFO(Game, "busta-chan jive: window -> door " << std::hex << doorRoom << " " << doorPoint << std::dec
+                                                                   << " (trigger, lock " << int(was) << ")"
+                                                                   << (jumping ? "" : ": no jump started"));
+                return;
+            }
+            const uint32_t found = callGuest(rdram, ctx, runtime, kGetJumpData,
+                                             {kDoorJump, static_cast<uint32_t>(doorPoint), static_cast<uint32_t>(doorRoom), 2u, 0u, 0u});
+            if (found)
+                callGuest(rdram, ctx, runtime, kSetDoorJump, {kDoorJump});
+            KM_INFO(Game, "busta-chan jive: window -> door " << std::hex << doorRoom << " " << doorPoint << std::dec
+                                                               << (found ? " (no trigger in the room: the jump only)" : ": no such door, nothing done"));
+        }
+
+        bool canRunDoor(const uint8_t *rdram)
+        {
+            using namespace game;
+            const uint32_t sta = rd32(rdram, GameWork::address(GameWork::kFlags5E4));
+            if (sta & (Sta::kEvent | Sta::kRoomJump | Sta::kTalk | Sta::kSoftEvent | Sta::kSubScr))
+                return false;
+            return (rd32(rdram, GameWork::address(GameWork::kFlags5D8)) & kFlags5D8PlayerOff) == 0u;
+        }
+
         // After it, on every path.
         void switchOn(uint8_t *rdram, R5900Context *, PS2Runtime *)
         {
@@ -535,6 +669,77 @@ namespace kamite::sprint_traversal
     }
 
     bool enabled() { return g_enabled; }
+
+    std::vector<Door> doors()
+    {
+        std::lock_guard<std::mutex> lock(g_doorMutex);
+        return g_doors;
+    }
+
+    void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        if (!g_enabled || !rdram || !ctx)
+            return;
+        scanDoors(rdram);
+        const uint16_t room = rd16(rdram, game::GameWork::address(game::GameWork::kRoom));
+        const uint32_t gene = rd32(rdram, game::GameWork::address(game::GameWork::kPlayerObj));
+        if (g_pending.room != 0xFFFFu && g_pending.room != room)
+            g_pending = Pending{}; // left the room some other way
+        if (!inRam(gene, 0x600u))
+            return;
+        const int kind = moveKind(rdram, gene);
+        // Through a linked window and landed (the dive over): run its door.
+        if (g_pending.room != 0xFFFFu)
+        {
+            const uint8_t vblanks = std::max<uint8_t>(1u, rdram[game::GameWork::address(game::GameWork::kVblankDivider)]);
+            g_pending.wait += vblanks;
+            if ((kind == 0 || g_pending.wait >= kLandWait) && canRunDoor(rdram))
+            {
+                const Pending p = g_pending;
+                g_pending = Pending{};
+                runDoor(rdram, ctx, runtime, p.doorRoom, p.doorPoint);
+            }
+            return;
+        }
+        // Gene crossing a linked window's far face in a jump move (from its near side the frame before).
+        Windows linked;
+        {
+            std::lock_guard<std::mutex> lock(g_mutex);
+            for (const auto &[key, list] : g_windows)
+                if (key.first == room)
+                    for (const Window &w : list)
+                        if (w.linked() && (w.passes & kJump))
+                            linked.push_back(w);
+        }
+        g_lastAcross.resize(linked.size(), -1e9f);
+        const uint32_t pos = rd32(rdram, gene + game::GameObj::kPos);
+        if (linked.empty() || !inRam(pos, 12u))
+            return;
+        const float px = rdf(rdram, pos), py = rdf(rdram, pos + 4u), pz = rdf(rdram, pos + 8u);
+        for (size_t i = 0; i < linked.size(); ++i)
+        {
+            const Window &w = linked[i];
+            const float cx = w.x + w.dx * w.offset, cz = w.z + w.dz * w.offset;
+            const float along = (px - cx) * w.dx + (pz - cz) * w.dz;
+            // Across, measured the way the window lets Gene through; near face 0, far face `far`.
+            const float across = ((px - cx) * -w.dz + (pz - cz) * w.dx) * static_cast<float>(w.side);
+            const float far = std::max(0.0f, w.depth * static_cast<float>(w.side));
+            const bool in = kind == kJump && std::fabs(along) <= 0.5f * w.width && std::fabs(w.y - py) <= kWindowFloor &&
+                            across >= -kWindowMargin && across <= far + kWindowMargin;
+            const float last = g_lastAcross[i];
+            g_lastAcross[i] = in ? across : -1e9f;
+            if (in && last > -1e8f && last <= far && across > far)
+            {
+                g_pending.room = room;
+                g_pending.doorRoom = w.doorRoom;
+                g_pending.doorPoint = w.doorPoint;
+                g_pending.wait = 0;
+                std::fill(g_lastAcross.begin(), g_lastAcross.end(), -1e9f);
+                KM_INFO(Game, "busta-chan jive: through a door's window, the door runs when Gene lands");
+                break;
+            }
+        }
+    }
 
     int marks(uint16_t room, const std::string &group)
     {
