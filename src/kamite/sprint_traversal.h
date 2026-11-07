@@ -69,6 +69,7 @@ namespace kamite::sprint_traversal
         int room = 0, point = 0; // cSceAtUnit +0x5E, +0x79
         float x = 0.0f, y = 0.0f, z = 0.0f; // the trigger area's centre
         bool locked = false;     // +0x7A
+        int to = -1;             // the room it leads to (the room's JMP table, record `point`), -1 = not found
     };
     std::vector<Door> doors();
     // Game frame start (frame_patches.cpp): the door list, and a dive through a linked window runs its door on landing.

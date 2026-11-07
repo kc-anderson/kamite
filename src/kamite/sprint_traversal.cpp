@@ -526,11 +526,34 @@ namespace kamite::sprint_traversal
             int doorRoom = -1, doorPoint = -1;
             int wait = 0;
         } g_pending;
-        std::vector<float> g_lastAcross; // per linked window this frame: how far past its near face Gene was
+        std::vector<float> g_lastAcross;
+        int g_watchTo = -1; // diagnostic (strip once door windows are confirmed): the jump's room, logged if it changes // per linked window this frame: how far past its near face Gene was
+
+        // The room's jump table: the room data pack (GameWork +0x5AC: u32 count, count offsets, count 4-byte names), the
+        // file named JMP (u32 count, 0x14-byte records: landing x y z angle (s16, 1/100), +8 u16 room it leads to, +0xA
+        // index there, +0xC the trigger's x y z angle in this room). cDoor_getJumpData reads record +0x79 of a door unit.
+        uint32_t jumpTable(const uint8_t *rdram)
+        {
+            const uint32_t pack = rd32(rdram, game::GameWork::address(0x5ACu));
+            if (!inRam(pack, 8u))
+                return 0u;
+            const uint32_t n = rd32(rdram, pack);
+            if (n == 0u || n > 256u || !inRam(pack, 4u + 8u * n))
+                return 0u;
+            for (uint32_t i = 0; i < n; ++i)
+                if (rd32(rdram, pack + 4u + 4u * n + 4u * i) == 0x00504D4Au) // "JMP\0"
+                {
+                    const uint32_t tbl = pack + rd32(rdram, pack + 4u + 4u * i);
+                    return inRam(tbl, 4u) ? tbl : 0u;
+                }
+            return 0u;
+        }
 
         void scanDoors(const uint8_t *rdram)
         {
             g_doorUnits.clear();
+            const uint32_t jmp = jumpTable(rdram);
+            const uint32_t jmpCount = jmp ? rd32(rdram, jmp) : 0u;
             uint32_t x = rd32(rdram, kSceAt + kSceAtList);
             for (int guard = 0; x != 0xFFFFFFFFu && guard < 4096; ++guard)
             {
@@ -551,6 +574,8 @@ namespace kamite::sprint_traversal
                         d.z += rdf(rdram, u + 0x18u + 8u * c) / corners;
                     }
                     d.y = rdf(rdram, u + 0x08u);
+                    if (static_cast<uint32_t>(d.point) < jmpCount && inRam(jmp + 4u + 0x14u * (d.point + 1u), 0u))
+                        d.to = rd16(rdram, jmp + 4u + 0x14u * d.point + 8u);
                     g_doorUnits.emplace_back(u, d);
                 }
                 x = rd32(rdram, u);
@@ -594,11 +619,29 @@ namespace kamite::sprint_traversal
                 uint8_t &lock = rdram[(u + kUnitLock) & 0x01FFFFFFu];
                 const uint8_t was = lock;
                 lock = 0u;
+                // The other doors stand down (enable bit +0x34 bit 0, what cSceAtManager_SetDisable clears): their
+                // trigger reads its jump data into the same cDoor before it checks a jump is running, so one Gene
+                // stands in afterwards would change where this jump goes. Back on if no jump starts.
+                std::vector<uint32_t> off;
+                for (const auto &other : g_doorUnits)
+                {
+                    uint8_t &flags = rdram[(other.first + 0x34u) & 0x01FFFFFFu];
+                    if (other.first != u && (flags & 1u))
+                    {
+                        flags &= ~1u;
+                        off.push_back(other.first);
+                    }
+                }
                 callGuest(rdram, ctx, runtime, kDoorTrigger, {u});
                 lock = was;
                 const bool jumping = (rd32(rdram, game::GameWork::address(game::GameWork::kFlags5E4)) & game::Sta::kRoomJump) != 0u;
-                KM_INFO(Game, "busta-chan jive: window -> door " << std::hex << doorRoom << " " << doorPoint << std::dec
-                                                                   << " (trigger, lock " << int(was) << ")"
+                if (!jumping)
+                    for (uint32_t o : off)
+                        rdram[(o + 0x34u) & 0x01FFFFFFu] |= 1u;
+                g_watchTo = jumping ? rd16(rdram, kDoorJump + 0x14u) : -1;
+                KM_INFO(Game, "busta-chan jive: window -> door " << std::hex << doorRoom << " " << doorPoint << " to r"
+                                                                   << rd16(rdram, kDoorJump + 0x14u) << std::dec << " (trigger, lock "
+                                                                   << int(was) << ", " << off.size() << " other doors off)"
                                                                    << (jumping ? "" : ": no jump started"));
                 return;
             }
@@ -685,6 +728,15 @@ namespace kamite::sprint_traversal
         const uint32_t gene = rd32(rdram, game::GameWork::address(game::GameWork::kPlayerObj));
         if (g_pending.room != 0xFFFFu && g_pending.room != room)
             g_pending = Pending{}; // left the room some other way
+        if (g_watchTo >= 0)
+        {
+            const int to = rd16(rdram, kDoorJump + 0x14u);
+            const bool jumping = (rd32(rdram, game::GameWork::address(game::GameWork::kFlags5E4)) & game::Sta::kRoomJump) != 0u;
+            if (to != g_watchTo || !jumping)
+                KM_INFO(Game, "busta-chan jive: door jump " << (jumping ? "now to r" : "over, room r") << std::hex
+                                                             << (jumping ? to : room) << std::dec);
+            g_watchTo = jumping ? to : -1;
+        }
         if (!inRam(gene, 0x600u))
             return;
         const int kind = moveKind(rdram, gene);

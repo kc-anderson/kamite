@@ -945,9 +945,26 @@ namespace kamite::hitbox_overlay
                     // A window into the space behind a door: landing from it runs the door (sprint_traversal.h).
                     if (w.linked())
                     {
+                        const auto doors = sprint_traversal::doors();
+                        int to = -1;
+                        size_t at = doors.size();
+                        for (size_t k = 0; k < doors.size(); ++k)
+                            if (doors[k].room == w.doorRoom && doors[k].point == w.doorPoint)
+                                to = doors[k].to, at = k;
                         char text[96];
-                        std::snprintf(text, sizeof(text), "Door: %02X %02X (one-way)", w.doorRoom, w.doorPoint);
+                        if (to >= 0)
+                            std::snprintf(text, sizeof(text), "Door %d: to r%03X (one-way)", w.doorPoint, to);
+                        else
+                            std::snprintf(text, sizeof(text), "Door %d (one-way)", w.doorPoint);
                         ui->text(text);
+                        ui->same_line();
+                        if (doors.size() > 1 && ui->small_button("Next door##wnext"))
+                        {
+                            const auto &d = doors[at < doors.size() ? (at + 1) % doors.size() : 0];
+                            w.doorRoom = d.room;
+                            w.doorPoint = d.point;
+                            changed = true;
+                        }
                         ui->same_line();
                         if (ui->small_button("Unlink##wunlink"))
                         {
