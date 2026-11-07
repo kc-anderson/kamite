@@ -53,10 +53,15 @@ namespace kamite::sprint_traversal
         constexpr uint32_t kPhase = 0x2F5u;  // Gene's phase byte (+0x2F4 mode, +0x2F5 phase)
         constexpr uint8_t kSprintAttackPhase = 12;
 
-        // Gene's sprint attacks (K's case 2026-10-30_11-24-30, room 0x100: the run E9D860 in phase 2, then phase 12
-        // with one motion per attack, in the order K did them).
-        constexpr uint32_t kJumpMotions[] = {0xED53E0u /* sprint + X */, 0xE8B8A0u /* sprint + Y */};
-        constexpr uint32_t kSlideMotions[] = {0xED6A60u /* sprint + A */};
+        // Gene's sprint attacks (K's case 2026-10-30_11-24-30, room 0x100: the run in phase 2, then phase 12 with one
+        // motion per attack), by their index in Gene's motion pack, not their address: another costume loads its pack
+        // elsewhere (K, Nov 7: no jumps in another skin). The pack: Gene +0x304 -> u32 count, then count u32 offsets
+        // from the pack's start, each an "mtb3" motion (+0x428 = pack + offset). Default costume: 523 = ED53E0 (sprint
+        // + X), 390 = E8B8A0 (sprint + Y), 525 = ED6A60 (sprint + A), the pack at 0xD2CFC0 (618 motions).
+        constexpr uint32_t kMotionPack = 0x304u;
+        constexpr int kDiveMotion = 523;                   // sprint + X
+        constexpr int kJumpMotions[] = {kDiveMotion, 390}; // sprint + X, sprint + Y
+        constexpr int kSlideMotions[] = {525};             // sprint + A
 
         bool g_enabled = false;
         fs::path g_file, g_shipped;
@@ -275,15 +280,31 @@ namespace kamite::sprint_traversal
             return static_cast<bool>(out);
         }
 
+        // Gene's motion as its index in his motion pack (-1: none, or not in it).
+        int motionIndex(const uint8_t *rdram, uint32_t gene)
+        {
+            const uint32_t pack = rd32(rdram, gene + kMotionPack), motion = rd32(rdram, gene + kMotion);
+            if (pack < 0x100000u || pack >= 0x2000000u || motion <= pack)
+                return -1;
+            const uint32_t count = rd32(rdram, pack);
+            if (count == 0u || count > 4096u || pack + 4u + count * 4u >= 0x2000000u)
+                return -1;
+            const uint32_t offset = motion - pack;
+            for (uint32_t i = 0; i < count; ++i)
+                if (rd32(rdram, pack + 4u + i * 4u) == offset)
+                    return static_cast<int>(i);
+            return -1;
+        }
+
         int moveKind(const uint8_t *rdram, uint32_t gene)
         {
             if (rdram[(gene + kPhase) & 0x01FFFFFFu] != kSprintAttackPhase)
                 return 0;
-            const uint32_t motion = rd32(rdram, gene + kMotion);
-            for (uint32_t m : kJumpMotions)
+            const int motion = motionIndex(rdram, gene);
+            for (int m : kJumpMotions)
                 if (m == motion)
                     return kJump;
-            for (uint32_t m : kSlideMotions)
+            for (int m : kSlideMotions)
                 if (m == motion)
                     return kSlide;
             return 0;
@@ -439,7 +460,7 @@ namespace kamite::sprint_traversal
 
         float diveClears(const uint8_t *rdram, uint32_t gene)
         {
-            if (rd32(rdram, gene + kMotion) != kJumpMotions[0])
+            if (motionIndex(rdram, gene) != kDiveMotion)
                 return kDiveClears; // the flying kick
             const float frame = rdf(rdram, gene + kMotionFrame);
             constexpr int last = static_cast<int>(sizeof(kDiveBottom) / sizeof(kDiveBottom[0])) - 1;

@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 7, 2026
 
+- Busta-Chan Jive works in every costume.
 - Launcher: Mods tab moved to the end; character descriptions updated.
 - Money remembers its value.
 - Techniques screen: the right stick turns Gene.
