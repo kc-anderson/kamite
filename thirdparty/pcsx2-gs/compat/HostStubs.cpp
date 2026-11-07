@@ -457,6 +457,16 @@ void Host::AddIconOSDMessage(std::string key, const char *icon, const std::strin
     std::fprintf(stderr, "[pcsx2-gs] %.*s\n", static_cast<int>(message.size()), message.data());
 }
 
+// As PCSX2's Host.cpp (the Vulkan device reports missing features through it).
+void Host::ReportFormattedErrorAsync(const std::string_view title, const char* format, ...)
+{
+    std::va_list ap;
+    va_start(ap, format);
+    std::string message(StringUtil::StdStringFromFormatV(format, ap));
+    va_end(ap);
+    ReportErrorAsync(title, message);
+}
+
 void Host::ReportErrorAsync(const std::string_view title, const std::string_view message)
 {
     std::fprintf(stderr, "[pcsx2-gs] %.*s: %.*s\n", static_cast<int>(title.size()), title.data(), static_cast<int>(message.size()),

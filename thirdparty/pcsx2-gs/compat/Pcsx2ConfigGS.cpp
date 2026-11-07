@@ -157,6 +157,12 @@ Pcsx2Config::CpuOptions::CpuOptions()
 	ExtraMemory = false;
 }
 
+// As PCSX2's Pcsx2Config.cpp (the Vulkan device reads its tri-state options through it).
+std::optional<bool> Pcsx2Config::GSOptions::TriStateToOptionalBoolean(int value)
+{
+	return (value < 0) ? std::optional<bool>(std::nullopt) : std::optional<bool>((value != 0));
+}
+
 Pcsx2Config::GSOptions::GSOptions()
 {
 	bitsets[0] = 0;
