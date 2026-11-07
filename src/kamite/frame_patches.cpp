@@ -1270,6 +1270,12 @@ namespace kamite
             {0x1CB8E4u, 0u},
             {0x1CB9B4u, 0u},
             {0x1CEF58u, 0u},
+            // Nov 7 (K's case 2026-11-07_15-41-10, r601: the rolling boulders at half speed, motion frames 15 a second
+            // at 60 against 30): the census of every other object caller of SetMotionStep, GetSpeedRate in f12.
+            {0x1A5570u, 0u}, // func_001A5540: cOm50 (the boulder) state 0
+            {0x1AA1F8u, 0u}, // func_001AA188: GetSpeedRate x GameWork +0x7A14
+            {0x1AF0C0u, 0u}, // func_001AF098
+            {0x1B8380u, 0u}, // func_001B8338
         };
         void motionStepRate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // at SetMotionStep's entry
         {
