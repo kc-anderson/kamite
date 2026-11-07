@@ -87,7 +87,7 @@ namespace
 
     // Pcsx2GsOpenParams::options: "key=value;key=value".
     float g_customAspect = 0.0f; // options "aspect=<width/height>": the image shown in that shape (0 = the open's choice)
-    GSRendererType g_api = GSRendererType::DX11; // options "api=dx11|vulkan" ([Video] GraphicsAPI)
+    GSRendererType g_graphicsApi = GSRendererType::DX11; // options "api=dx11|vulkan" ([Video] GraphicsAPI)
 
     void ApplyOptions(Pcsx2Config::GSOptions &options, const char *text)
     {
@@ -114,7 +114,7 @@ namespace
             }
             if (key == "api")
             {
-                g_api = (text == "vulkan" || text == "vk") ? GSRendererType::VK : GSRendererType::DX11;
+                g_graphicsApi = (text == "vulkan" || text == "vk") ? GSRendererType::VK : GSRendererType::DX11;
                 continue;
             }
             if (key == "texture_dir")
@@ -229,9 +229,9 @@ namespace
         options.AspectRatio = params->stretch ? AspectRatioType::Stretch : AspectRatioType::R4_3;
         ApplyGameFixes(options);
         g_customAspect = 0.0f;
-        g_api = GSRendererType::DX11;
+        g_graphicsApi = GSRendererType::DX11;
         ApplyOptions(options, params->options);
-        options.Renderer = g_api;
+        options.Renderer = g_graphicsApi;
         if (g_customAspect > 0.0f && !params->stretch)
             options.AspectRatio = AspectRatioType::RAuto4_3_3_2;
         EmuConfig.CurrentCustomAspectRatio = g_customAspect;
