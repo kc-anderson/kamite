@@ -718,6 +718,117 @@ namespace kamite
             put64(before, (0x4B4D5345ull << 32) | cls, 0x0F);                   // NOP: "KMSE" | class
         }
 
+        // The log line now and then (both walks count their packets).
+        void countPacket()
+        {
+            if (g_packets.fetch_add(1, std::memory_order_relaxed) % 200000u == 199999u)
+                KM_INFO(Game, "near geometry: " << g_patched.load() << " clip tests patched; " << g_crossing.load()
+                                                << " packets needed cutting, " << g_crossingMatched.load()
+                                                << " of them matched to their input (stitch flags); triangles cut: "
+                                                << g_cut.load() << " at the screen's edges, " << g_cutNear.load()
+                                                << " at the camera; " << g_noStitch.load()
+                                                << " reaching behind it without stitch flags; microcode analyses: "
+                                                << g_analysisHits.load() << " from the cache, " << g_analysisMisses.load() << " fresh");
+        }
+
+        // Nearly every packet of the patched renderers has all its vertices on the screen and in front of the camera
+        // (the casino's slow spot, Nov 7: 42,145 of millions needed cutting), and for those the full walk in
+        // path1Filter changes nothing but the PRIM it follows, at ~7% of the VU1 thread there. This scan reads the same
+        // tags and registers without building vertices or triangles. A vertex the full walk could flag (off
+        // 0..0xFFFF, Q at or behind the camera, no Q and Z <= 0; a saturated X/Y is off 0..0xFFFF too) sends the packet
+        // through the full walk from its start, t_prim untouched; otherwise t_prim ends as the full walk leaves it and
+        // the packet goes to the GS as it is. A tag with a PRIM register also goes to the full walk: that walk keeps
+        // the tag's starting type for the whole tag, so a fan begun by such a PRIM checks against an empty first
+        // vertex; the full walk keeps doing exactly that (the scan is checked to change nothing: 400,000 random packets).
+        bool needsFullWalk(const uint8_t *packet, uint32_t size)
+        {
+            uint32_t prim = t_prim;
+            bool primKnown = t_primKnown;
+            const float qNear = 1.0f / static_cast<float>(kNear);
+            uint32_t pos = 0;
+            while (pos + 16u <= size)
+            {
+                uint64_t lo, hi;
+                std::memcpy(&lo, packet + pos, 8u);
+                std::memcpy(&hi, packet + pos + 8u, 8u);
+                pos += 16u;
+                const uint32_t nloop = static_cast<uint32_t>(lo & 0x7FFFu);
+                const bool eop = (lo >> 15) & 1u;
+                const uint32_t flg = static_cast<uint32_t>((lo >> 58) & 3u);
+                uint32_t nreg = static_cast<uint32_t>((lo >> 60) & 0xFu);
+                if (nreg == 0u)
+                    nreg = 16u;
+                if ((lo >> 46) & 1u)
+                {
+                    prim = static_cast<uint32_t>((lo >> 47) & 0x7FFu);
+                    primKnown = true;
+                }
+                if (flg != 0u)
+                {
+                    const uint64_t bytes = flg == 1u ? ((static_cast<uint64_t>(nloop) * nreg + 1u) & ~1ull) * 8u
+                                                     : static_cast<uint64_t>(nloop) * 16u;
+                    pos += static_cast<uint32_t>(std::min<uint64_t>(bytes, size - pos));
+                    if (eop)
+                        break;
+                    continue;
+                }
+                // Only STQ and the vertex registers matter here, in register order (a vertex takes the Q of the last
+                // STQ before it in the tag).
+                uint8_t at[16], kind[16];
+                uint32_t interesting = 0;
+                for (uint32_t r = 0; r < nreg; ++r)
+                {
+                    const uint32_t desc = static_cast<uint32_t>((hi >> (r * 4u)) & 0xFu);
+                    if (desc == 0x0u)
+                        return true; // a PRIM register (see above)
+                    if (desc == 0x2u || desc == 0x4u || desc == 0x5u || desc == 0xCu || desc == 0xDu)
+                    {
+                        at[interesting] = static_cast<uint8_t>(r);
+                        kind[interesting++] = static_cast<uint8_t>(desc);
+                    }
+                }
+                bool hasQ = false; // as the full walk's Vertex cur: per tag
+                float q = 0.0f;
+                const uint32_t loopBytes = nreg * 16u;
+                for (uint32_t loop = 0; loop < nloop && pos + loopBytes <= size; ++loop, pos += loopBytes)
+                {
+                    for (uint32_t i = 0; i < interesting; ++i)
+                    {
+                        const uint8_t *reg = packet + pos + at[i] * 16u;
+                        if (kind[i] == 0x2u)
+                        {
+                            std::memcpy(&q, reg + 8u, 4u);
+                            hasQ = true;
+                            continue;
+                        }
+                        int32_t x, y;
+                        std::memcpy(&x, reg, 4u);
+                        std::memcpy(&y, reg + 4u, 4u);
+                        if (static_cast<uint32_t>(x) > 0xFFFFu || static_cast<uint32_t>(y) > 0xFFFFu)
+                            return true; // off 0..0xFFFF (negative included)
+                        if (hasQ)
+                        {
+                            if (q <= 0.0f || q > qNear)
+                                return true;
+                        }
+                        else
+                        {
+                            uint32_t z;
+                            std::memcpy(&z, reg + 8u, 4u);
+                            const bool zero = (kind[i] == 0x4u || kind[i] == 0xCu) ? (s32(z) >> 4) <= 0 : z == 0u;
+                            if (zero)
+                                return true;
+                        }
+                    }
+                }
+                if (eop)
+                    break;
+            }
+            t_prim = prim;
+            t_primKnown = primKnown;
+            return false;
+        }
+
         void path1Filter(uint8_t *packet, uint32_t size, uint32_t sourceAddress, const uint8_t *vuData, uint32_t vuDataSize,
                          uint32_t kickPc, std::vector<uint8_t> &before, std::vector<uint8_t> &extra)
         {
@@ -730,6 +841,11 @@ namespace kamite
             // packets went to the GS untouched, wrapped triangles across the screen; Oct 2026, gif_8136).
             if (!g_programPatched[pair])
                 return;
+            if (!needsFullWalk(packet, size))
+            {
+                countPacket();
+                return;
+            }
             thread_local std::vector<Cut> poly, scratch;
             Out out{extra};
             TagInfo outTag{};
@@ -922,14 +1038,7 @@ namespace kamite
                 if (haveInput)
                     g_crossingMatched.fetch_add(1, std::memory_order_relaxed);
             }
-            if (g_packets.fetch_add(1, std::memory_order_relaxed) % 200000u == 199999u)
-                KM_INFO(Game, "near geometry: " << g_patched.load() << " clip tests patched; " << g_crossing.load()
-                                                << " packets needed cutting, " << g_crossingMatched.load()
-                                                << " of them matched to their input (stitch flags); triangles cut: "
-                                                << g_cut.load() << " at the screen's edges, " << g_cutNear.load()
-                                                << " at the camera; " << g_noStitch.load()
-                                                << " reaching behind it without stitch flags; microcode analyses: "
-                                                << g_analysisHits.load() << " from the cache, " << g_analysisMisses.load() << " fresh");
+            countPacket();
             if (!out.tag)
             {
                 extra.clear();

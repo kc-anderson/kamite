@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 7, 2026
 
+- Performance: faster near-camera geometry checks and VU1 data unpacking (the casino slowdown).
 - Vulkan renderer (launcher: Graphics > Graphics API); Direct3D 11 stays the default and the fallback.
 - Removed the unused Direct3D 12 renderer from the build.
 - Renderer: took PCSX2's out-of-bounds texture read fix and an Intel driver shader fix.
