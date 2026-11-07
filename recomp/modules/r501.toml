@@ -102,3 +102,266 @@ address = "0x0079F6E8"
 hook = "km_fps60_charge_sub_f0"
 flag = "fps60"
 replace = true
+
+# 60 FPS, the cannon minigame's per-frame steps (K Nov 7, case cannon_minigame_too_fast): each step in its 60 FPS
+# form (half steps, root factors, timers and counters every other vblank; frame_patches.cpp "cannon minigame"). The tasks
+# still run every vblank (holding them flickered, 68e079a).
+
+# ball vy += -0.02
+[[patches.hooks]]
+address = "0x0079E168"
+hook = "km_fps60_add_half_f0f0f1"
+flag = "fps60"
+replace = true
+
+# ball pos += v
+[[patches.hooks]]
+address = "0x0079E184"
+hook = "km_fps60_r501_ball_move"
+flag = "fps60"
+replace = true
+
+# crosshair pulse +0x10 += +0x14
+[[patches.hooks]]
+address = "0x0079EBE0"
+hook = "km_fps60_add_half_f0f0f2"
+flag = "fps60"
+replace = true
+
+# +0x60 0..14 cycle
+[[patches.hooks]]
+address = "0x0079EE1C"
+hook = "km_fps60_countup_self"
+flag = "fps60"
+replace = true
+
+# banner alpha x0.78
+[[patches.hooks]]
+address = "0x0079EF40"
+hook = "km_fps60_mul_root_f0f0f2"
+flag = "fps60"
+replace = true
+
+# banner phase x0x1C8
+[[patches.hooks]]
+address = "0x0079EF5C"
+hook = "km_fps60_r501_banner_phase_a1"
+flag = "fps60"
+replace = true
+
+# banner phase x0xEA
+[[patches.hooks]]
+address = "0x0079EFAC"
+hook = "km_fps60_r501_banner_phase_a0"
+flag = "fps60"
+replace = true
+
+# banner +0xD8 += +0xD4
+[[patches.hooks]]
+address = "0x0079F01C"
+hook = "km_fps60_geom_add_f1f1f2f4"
+flag = "fps60"
+replace = true
+
+# banner +0x6C++
+[[patches.hooks]]
+address = "0x0079F020"
+hook = "km_fps60_countup_self"
+flag = "fps60"
+replace = true
+
+# banner +0xD4 x0.88
+[[patches.hooks]]
+address = "0x0079F024"
+hook = "km_fps60_mul_root_f0f0f4"
+flag = "fps60"
+replace = true
+
+# aim vx -= stick (path 1)
+[[patches.hooks]]
+address = "0x0079F3A8"
+hook = "km_fps60_sub_half_f1f1f2"
+flag = "fps60"
+replace = true
+
+# aim vx -= stick (path 2)
+[[patches.hooks]]
+address = "0x0079F3E0"
+hook = "km_fps60_sub_half_f1f1f2"
+flag = "fps60"
+replace = true
+
+# aim vz += stick
+[[patches.hooks]]
+address = "0x0079F3E8"
+hook = "km_fps60_add_half_f0f0f3"
+flag = "fps60"
+replace = true
+
+# aim vx x0.8/0.92
+[[patches.hooks]]
+address = "0x0079F3F4"
+hook = "km_fps60_r501_aim_damp_x"
+flag = "fps60"
+replace = true
+
+# aim vz x0.8/0.92
+[[patches.hooks]]
+address = "0x0079F3F8"
+hook = "km_fps60_r501_aim_damp_z"
+flag = "fps60"
+replace = true
+
+# aim angle +0x4 += vx
+[[patches.hooks]]
+address = "0x0079F3FC"
+hook = "km_fps60_r501_aim_add_x"
+flag = "fps60"
+replace = true
+
+# aim angle +0xC += vz
+[[patches.hooks]]
+address = "0x0079F400"
+hook = "km_fps60_r501_aim_add_z"
+flag = "fps60"
+replace = true
+
+# ship ToPlayer +0x6C lerp 0.1
+[[patches.hooks]]
+address = "0x0079F7C4"
+hook = "km_fps60_lerp_root_f0f0f3"
+flag = "fps60"
+replace = true
+
+# ship ToPlayer pos += dir x speed
+[[patches.hooks]]
+address = "0x0079F898"
+hook = "km_fps60_bullet_vadd_half"
+flag = "fps60"
+replace = true
+
+# ship Move +0x6C lerp 0.1
+[[patches.hooks]]
+address = "0x0079FBE4"
+hook = "km_fps60_lerp_root_f1f1f2"
+flag = "fps60"
+replace = true
+
+# ship Move sway +0x54 flip
+[[patches.hooks]]
+address = "0x0079FC8C"
+hook = "km_fps60_neg_odd_f0"
+flag = "fps60"
+replace = true
+
+# ship Move pos += dir x speed
+[[patches.hooks]]
+address = "0x0079FD20"
+hook = "km_fps60_bullet_vadd_half"
+flag = "fps60"
+replace = true
+
+# UFO enter timer +0x70
+[[patches.hooks]]
+address = "0x0079FF68"
+hook = "km_fps60_sub_parity_f0f0f12"
+flag = "fps60"
+replace = true
+
+# UFO enter +0x40 lerp 0.3
+[[patches.hooks]]
+address = "0x0079FF74"
+hook = "km_fps60_lerp_root_f1f1f6"
+flag = "fps60"
+replace = true
+
+# UFO enter y -= 0.125
+[[patches.hooks]]
+address = "0x0079FF7C"
+hook = "km_fps60_sub_half_f2f2f4"
+flag = "fps60"
+replace = true
+
+# UFO bob phase +0x8 += 0.08
+[[patches.hooks]]
+address = "0x007A0010"
+hook = "km_fps60_add_half_f1f1f2"
+flag = "fps60"
+replace = true
+
+# UFO bob phase +0xC += 0.016
+[[patches.hooks]]
+address = "0x007A0038"
+hook = "km_fps60_add_half_f1f1f2"
+flag = "fps60"
+replace = true
+
+# UFO hover pos += +0x30
+[[patches.hooks]]
+address = "0x007A0058"
+hook = "km_fps60_bullet_vadd_half"
+flag = "fps60"
+replace = true
+
+# UFO hover timer +0x70
+[[patches.hooks]]
+address = "0x007A0070"
+hook = "km_fps60_sub_parity_f0f0f1"
+flag = "fps60"
+replace = true
+
+# UFO leave pos += +0x80
+[[patches.hooks]]
+address = "0x007A0130"
+hook = "km_fps60_bullet_vadd_half"
+flag = "fps60"
+replace = true
+
+# UFO leave +0x40 lerp 0.3
+[[patches.hooks]]
+address = "0x007A0160"
+hook = "km_fps60_lerp_root_f1f1f6"
+flag = "fps60"
+replace = true
+
+# UFO leave timer +0x70
+[[patches.hooks]]
+address = "0x007A016C"
+hook = "km_fps60_sub_parity_f0f0f5"
+flag = "fps60"
+replace = true
+
+# UFO leave y += 0.125
+[[patches.hooks]]
+address = "0x007A0170"
+hook = "km_fps60_add_half_f2f2f3"
+flag = "fps60"
+replace = true
+
+# UFO wait timer +0x70
+[[patches.hooks]]
+address = "0x007A01D0"
+hook = "km_fps60_sub_parity_f0f0f1"
+flag = "fps60"
+replace = true
+
+# UFO shot down y -= 0.4
+[[patches.hooks]]
+address = "0x007A0204"
+hook = "km_fps60_sub_half_f2f2f3"
+flag = "fps60"
+replace = true
+
+# UFO shot down spin +0x4
+[[patches.hooks]]
+address = "0x007A0218"
+hook = "km_fps60_add_half_f1f1f0"
+flag = "fps60"
+replace = true
+
+# UFOTask anim +0x68++
+[[patches.hooks]]
+address = "0x0079A1BC"
+hook = "km_fps60_countup_a0"
+flag = "fps60"
+replace = true

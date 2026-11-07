@@ -1059,6 +1059,92 @@ namespace kamite
         {
             ctx->f[4] = ctx->f[4] * ctx->f[0] * (motion60(rdram) ? 0.5f : 1.0f);
         }
+
+        // The stage 5 cannon minigame at 60 (r501, K Nov 7, case cannon_minigame_too_fast): its tasks sleep(1) and step
+        // once a game frame with no rate, so every target, the crosshair and the banner ran at twice the speed. The tasks
+        // keep running every vblank (they draw: holding them every other vblank flickered, 68e079a), and each step is
+        // made the 60 FPS form of its 30 FPS self, so the values at every even vblank are the 30 FPS ones:
+        //   x += c                     -> x += c / 2                     (floatAddHalf / floatSubHalf)
+        //   v += a; x += v             -> v += a/2; x += v/2 + a/8       (the cannonballs: r501BallMove)
+        //   x += (t - x) k             -> k' = 1 - sqrt(1 - k)           (lerpRoot)
+        //   x *= r                     -> r' = sqrt(r)                   (mulRoot)
+        //   v += a; x += v; v *= d     -> a/2, x += v / (1 + sqrt d), d' = sqrt d (aim: r501AimDamp; banner: geomAdd)
+        //   timers, frame counters     -> every other vblank (the countdown rule)
+        template <int Dst, int A, int B>
+        void floatSubHalf(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            ctx->f[Dst] = ctx->f[A] - ctx->f[B] * 0.5f;
+        }
+        template <int Dst, int A, int K>
+        void lerpRoot(uint8_t *, R5900Context *ctx, PS2Runtime *) // mul.s Dst,A,K: (t - x) x k
+        {
+            const float k = ctx->f[K];
+            ctx->f[Dst] = ctx->f[A] * (k > 0.0f && k < 1.0f ? 1.0f - std::sqrt(1.0f - k) : k);
+        }
+        template <int Dst, int A, int R>
+        void mulRoot(uint8_t *, R5900Context *ctx, PS2Runtime *) // mul.s Dst,A,R: x x r (a decay)
+        {
+            const float r = ctx->f[R];
+            ctx->f[Dst] = ctx->f[A] * (r > 0.0f ? std::sqrt(r) : r);
+        }
+        // x += v ahead of v *= r (R holds r): x += v / (1 + sqrt r).
+        template <int Dst, int A, int V, int R>
+        void geomAdd(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            const float r = ctx->f[R];
+            ctx->f[Dst] = ctx->f[A] + ctx->f[V] / (1.0f + (r > 0.0f ? std::sqrt(r) : 0.0f));
+        }
+        template <int Reg>
+        void countupReg(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // addiu Reg,Reg,1
+        {
+            const int32_t value = GPR_S32(ctx, Reg);
+            SET_GPR_S32(ctx, Reg, skipFrame(rdram) ? value : value + 1);
+        }
+        // neg.s f0,f0 every game frame (EnemyShip's Move state flips its sway +0x54 each frame): flipped on the odd vblank,
+        // so the sign holds two vblanks (+a +a -a -a, the 30 FPS +a -a).
+        void negOdd(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            ctx->f[0] = skipFrame(rdram) ? -ctx->f[0] : ctx->f[0];
+        }
+        // CannonGame's balls (0x79E168 vy += -0.02, then position += velocity at 0x79E184): with vy += -0.01 a vblank,
+        // position += v/2 + (0, g/8, 0) lands on the 30 FPS arc (and the aim predictor's) at every even vblank.
+        void r501BallMove(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            alignas(16) float a[4], b[4];
+            _mm_store_ps(a, ctx->vu0_vf[4]);
+            _mm_store_ps(b, ctx->vu0_vf[5]);
+            for (int i = 0; i < 3; ++i)
+                a[i] += 0.5f * b[i];
+            a[1] += -0.02f / 8.0f;
+            ctx->vu0_vf[4] = _mm_load_ps(a);
+        }
+        // The hit banner's wobble (0x79EF5C / 0x79EFAC: phase = +0x6C x 0x1C8 / x 0xEA): +0x6C now counts every other
+        // vblank (0x79F020, raised at the end of the even vblank), so the odd vblank takes it half a count back.
+        template <int Reg>
+        void r501BannerPhase(uint8_t *rdram, R5900Context *ctx, PS2Runtime *) // mult v0,v0,Reg
+        {
+            const int32_t step = GPR_S32(ctx, Reg);
+            int32_t value = GPR_S32(ctx, 2) * step;
+            if (skipFrame(rdram))
+                value -= step / 2;
+            SET_GPR_S32(ctx, 2, value);
+            ctx->lo = static_cast<uint64_t>(static_cast<int64_t>(value));
+            ctx->hi = 0;
+        }
+        // StateNeutral's aim (0x79F3A8..0x79F410): v -= stick x a, angle += v, v *= d (d 0.8 / 0.92 per axis), per frame.
+        float g_aimMove[2] = {1.0f, 1.0f};
+        template <int Axis, int Dst, int A, int D>
+        void r501AimDamp(uint8_t *, R5900Context *ctx, PS2Runtime *) // mul.s Dst,A,D
+        {
+            const float root = ctx->f[D] > 0.0f ? std::sqrt(ctx->f[D]) : 0.0f;
+            g_aimMove[Axis] = 1.0f / (1.0f + root);
+            ctx->f[Dst] = ctx->f[A] * root;
+        }
+        template <int Axis, int Dst, int A, int V>
+        void r501AimAdd(uint8_t *, R5900Context *ctx, PS2Runtime *) // add.s Dst,A,V
+        {
+            ctx->f[Dst] = ctx->f[A] + ctx->f[V] * g_aimMove[Axis];
+        }
         // func_00318B58's step f23 (counter x f23 at 0x319470, a vector step at 0x3190B8): mul.s f23,f0,f1 at 0x318BB4.
         void mapScrollStep23(uint8_t *, R5900Context *ctx, PS2Runtime *) { ctx->f[23] = ctx->f[0] * ctx->f[1] * 0.5f; }
         // func_00318B58's camera-locked dome: V += (counter & 0xFF) / 256 (mul.s f0,f2,f0 at 0x319088): half the count.
@@ -2083,6 +2169,34 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_charge_add_f2f0", &floatAddParity<2, 2, 0>); // add.s f2,f2,f0
         ps2xRegisterHostHook("km_fps60_add_f2f1f0", &floatAddParity<2, 1, 0>);      // add.s f2,f1,f0
         ps2xRegisterHostHook("km_fps60_r501_boat_step", &r501BoatStep);
+        // The cannon minigame (r501.toml, Nov 7).
+        ps2xRegisterHostHook("km_fps60_add_half_f0f0f1", &floatAddHalf<0, 0, 1>);
+        ps2xRegisterHostHook("km_fps60_add_half_f0f0f2", &floatAddHalf<0, 0, 2>);
+        ps2xRegisterHostHook("km_fps60_add_half_f0f0f3", &floatAddHalf<0, 0, 3>);
+        ps2xRegisterHostHook("km_fps60_add_half_f1f1f0", &floatAddHalf<1, 1, 0>);
+        ps2xRegisterHostHook("km_fps60_add_half_f1f1f2", &floatAddHalf<1, 1, 2>);
+        ps2xRegisterHostHook("km_fps60_add_half_f2f2f3", &floatAddHalf<2, 2, 3>);
+        ps2xRegisterHostHook("km_fps60_sub_half_f1f1f2", &floatSubHalf<1, 1, 2>);
+        ps2xRegisterHostHook("km_fps60_sub_half_f2f2f3", &floatSubHalf<2, 2, 3>);
+        ps2xRegisterHostHook("km_fps60_sub_half_f2f2f4", &floatSubHalf<2, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_sub_parity_f0f0f1", &floatSubParity<0, 0, 1>);
+        ps2xRegisterHostHook("km_fps60_sub_parity_f0f0f5", &floatSubParity<0, 0, 5>);
+        ps2xRegisterHostHook("km_fps60_sub_parity_f0f0f12", &floatSubParity<0, 0, 12>);
+        ps2xRegisterHostHook("km_fps60_lerp_root_f0f0f3", &lerpRoot<0, 0, 3>);
+        ps2xRegisterHostHook("km_fps60_lerp_root_f1f1f2", &lerpRoot<1, 1, 2>);
+        ps2xRegisterHostHook("km_fps60_lerp_root_f1f1f6", &lerpRoot<1, 1, 6>);
+        ps2xRegisterHostHook("km_fps60_mul_root_f0f0f2", &mulRoot<0, 0, 2>);
+        ps2xRegisterHostHook("km_fps60_mul_root_f0f0f4", &mulRoot<0, 0, 4>);
+        ps2xRegisterHostHook("km_fps60_geom_add_f1f1f2f4", &geomAdd<1, 1, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_countup_a0", &countupReg<4>);
+        ps2xRegisterHostHook("km_fps60_neg_odd_f0", &negOdd);
+        ps2xRegisterHostHook("km_fps60_r501_ball_move", &r501BallMove);
+        ps2xRegisterHostHook("km_fps60_r501_banner_phase_a1", &r501BannerPhase<5>);
+        ps2xRegisterHostHook("km_fps60_r501_banner_phase_a0", &r501BannerPhase<4>);
+        ps2xRegisterHostHook("km_fps60_r501_aim_damp_x", &r501AimDamp<0, 5, 1, 5>); // mul.s f5,f1,f5
+        ps2xRegisterHostHook("km_fps60_r501_aim_damp_z", &r501AimDamp<1, 4, 0, 4>); // mul.s f4,f0,f4
+        ps2xRegisterHostHook("km_fps60_r501_aim_add_x", &r501AimAdd<0, 2, 2, 1>);   // add.s f2,f2,f1
+        ps2xRegisterHostHook("km_fps60_r501_aim_add_z", &r501AimAdd<1, 3, 3, 0>);   // add.s f3,f3,f0
         // The objects' countdowns (kamite.toml, generated Oct 30).
         ps2xRegisterHostHook("km_fps60_om_cd_a0_9e0", &countdownLoadAny<4, 0x9E0u, 2, 4>);
         ps2xRegisterHostHook("km_fps60_om_cd_s0_600_2", &countdownLoadAny<16, 0x600u, 2, 2>);
