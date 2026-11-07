@@ -83,6 +83,13 @@ namespace kamite::debug_tools
         constexpr uint32_t kLanding = 0x000FFF00u;        // 16 bytes of guest scratch for the landing position
                                                           // (below the ELF, past npc_poses' slots, unused by the game)
         constexpr uint32_t kFadeBlack = 2u;
+        // The F2 jump starts the stage fresh, as the game's stage start does (cSaveManager_stageClear 0x2BF8C8 ->
+        // cRoomSave_systemInit + cCoreSave_initItem): the room pages D_005E9CB8 (7 x 0x1650: dead enemies, used
+        // one-shot keys = broken / taken objects and opened doors, the rooms' own words) and the save record's
+        // remembered drops (data +0x288 count = 1, +0x28A 0x80 x 0x10, stage 0xFFFF = free). Pages 1..3 belong to
+        // a room in every stage (D_003C26C0), so a jump to another stage read the last stage's page before.
+        constexpr uint32_t kRoomPages = 0x005E9CB8u, kRoomPagesSize = 7u * 0x1650u;
+        constexpr uint32_t kCoreSave = 0x00569B70u; // cCoreSave: -> the 0x14A0-byte record
         constexpr float kPi = 3.1415927f;
 
         struct Switch
@@ -178,6 +185,10 @@ namespace kamite::debug_tools
         std::string g_status;
         PS2Runtime::RecompiledFunction g_jump = nullptr;
         uint16_t g_room = 0xFFFFu;          // the room Gene is in (game thread writes)
+        // A reset owed to the room an F2 jump goes to, done when the game sets that room up (km_dbg_room_reset);
+        // forgotten after ~20 s without it (a save state loaded during the fade).
+        uint32_t g_resetRoom = 0xFFFFFFFFu; // game thread
+        int g_resetFrames = 0;
 
         void setStatus(std::string text)
         {
@@ -206,6 +217,31 @@ namespace kamite::debug_tools
             if ((g_dbg[0].wanted.load(std::memory_order_relaxed) & Dbg::kPlMuteki) &&
                 GPR_U32(ctx, 17) == rd32(rdram, GameWork::address(GameWork::kPlayerObj)))
                 SET_GPR_U32(ctx, 2, 1u);
+        }
+
+        // km_dbg_room_reset at 0x2C3308 (func_002C32F0, the new room's set-up, right after the old room's tasks are
+        // killed and before it picks the room's page at 0x2C33BC; the room-change checkpoint 0x2A6304 comes after).
+        void roomResetHook(uint8_t *rdram, R5900Context *, PS2Runtime *)
+        {
+            if (g_resetRoom == 0xFFFFFFFFu)
+                return;
+            uint16_t room = 0;
+            std::memcpy(&room, rdram + GameWork::address(GameWork::kRoom), 2);
+            const bool ours = room == g_resetRoom;
+            g_resetRoom = 0xFFFFFFFFu;
+            g_resetFrames = 0;
+            if (!ours)
+                return;
+            std::memset(rdram + kRoomPages, 0, kRoomPagesSize);
+            const uint32_t data = rd32(rdram, kCoreSave);
+            if (inRam(data, 0x14A0u))
+            {
+                const uint16_t one = 1, freeSlot = 0xFFFFu;
+                std::memcpy(rdram + ((data + 0x288u) & 0x01FFFFFFu), &one, 2);
+                for (uint32_t i = 0; i < 0x80u; ++i)
+                    std::memcpy(rdram + ((data + 0x28Au + 0x10u * i) & 0x01FFFFFFu), &freeSlot, 2);
+            }
+            KM_INFO(Game, "room jump: stage reset for r" << std::hex << room << std::dec);
         }
 
         // km_dbg_em_dizzy at 0x28ED3C (func_0028ED28, the enemies' add-stun: +0x5B4 += a1, clamped to 0..100000, then
@@ -586,7 +622,7 @@ namespace kamite::debug_tools
             return true;
         }
 
-        bool jump(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, const Point &p)
+        bool jump(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, const Point &p, bool fresh)
         {
             std::string why;
             if (!canJump(rdram, why))
@@ -616,8 +652,13 @@ namespace kamite::debug_tools
             g_jump(rdram, ctx, runtime);
             runtime->eeScheduler().endHostCall();
             *ctx = saved;
-            KM_INFO(Game, "room jump to " << p.label);
+            KM_INFO(Game, "room jump to " << p.label << (fresh ? " (rooms reset)" : ""));
             setStatus("Jumped to " + p.label + ".");
+            if (fresh)
+            {
+                g_resetRoom = p.room;
+                g_resetFrames = 600;
+            }
             return true;
         }
 
@@ -674,8 +715,9 @@ namespace kamite::debug_tools
                     g_request.store(g_selected);
                     setStatus("Jumping...");
                 }
-                ui->text_disabled("The game's door jump with a black fade. The story flags of the place are not set: "
-                                  "don't save after a jump you don't want in your save. Other stages: untested.");
+                ui->text_disabled("The game's door jump with a black fade. The stage starts fresh (enemies, doors, "
+                                  "objects and drops in all its rooms); the story flags of the place are not set: "
+                                  "don't save after a jump you don't want in your save.");
                 std::lock_guard<std::mutex> lock(g_statusMutex);
                 if (!g_status.empty())
                     ui->text(g_status.c_str());
@@ -742,6 +784,7 @@ namespace kamite::debug_tools
         ps2xRegisterHostHook("km_dbg_pl_damage", &playerDamageHook);
         ps2xRegisterHostHook("km_dbg_em_damage", &enemyDamageHook);
         ps2xRegisterHostHook("km_dbg_em_dizzy", &dizzyHook);
+        ps2xRegisterHostHook("km_dbg_room_reset", &roomResetHook);
         ps2xSetPatchFlag("debug_cheats", true); // the hooks test their switches themselves
         if (const char *probe = std::getenv("KAMITE_ADX_PROBE"); probe && *probe == '1')
         {
@@ -822,7 +865,9 @@ namespace kamite::debug_tools
         // Room jump.
         const int request = g_request.exchange(-1);
         if (request >= 0 && request < static_cast<int>(g_points.size()) && ctx && runtime)
-            jump(rdram, ctx, runtime, g_points[static_cast<size_t>(request)]);
+            jump(rdram, ctx, runtime, g_points[static_cast<size_t>(request)], true);
+        if (g_resetFrames > 0 && --g_resetFrames == 0)
+            g_resetRoom = 0xFFFFFFFFu;
     }
 
     std::string cheatState()
@@ -876,7 +921,7 @@ namespace kamite::debug_tools
     {
         for (const Point &p : g_points)
             if (p.room == room && p.index == index)
-                return rdram && ctx && runtime && jump(rdram, ctx, runtime, p);
+                return rdram && ctx && runtime && jump(rdram, ctx, runtime, p, false);
         return false;
     }
 

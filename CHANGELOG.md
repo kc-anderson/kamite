@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 7, 2026
 
+- F2 room jump starts the stage fresh: enemies, doors, objects and dropped items in all its rooms are back.
 - 60 FPS: the stage 6 rolling boulders (and three other animated props) animate at full speed again.
 - 60 FPS: dropped items (heals, roulette reels, magazines) pop up and fall at the 30 FPS speed.
 - 60 FPS: enemy and object waits (timed attacks, pauses, reloads) no longer end a frame early; repeating waits ran up to a frame short each cycle.

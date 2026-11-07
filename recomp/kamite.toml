@@ -1659,6 +1659,13 @@ address = "0x0028ED3C"
 hook = "km_dbg_em_dizzy"
 flag = "debug_cheats"
 
+# The new room's set-up func_002C32F0, after the old room's tasks are killed, before its page is picked: an F2 room
+# jump resets the stage's room pages and remembered drops here (the room-change checkpoint comes after).
+[[patches.hooks]]
+address = "0x002C3308"
+hook = "km_dbg_room_reset"
+flag = "debug_cheats"
+
 # Top of the main loop, after the wait for the next frame: frame divider, stick hold (fps60), L3 dash, frame count.
 [[patches.hooks]]
 address = "0x0030ADF4"
