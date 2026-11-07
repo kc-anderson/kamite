@@ -44,8 +44,9 @@ namespace kamite::tutorial_text
         constexpr uint32_t kRamBytes = 0x2000000u;
         constexpr uint32_t kText = 0x000FE000u;     // our text (6 KB up to 0xFF800): entries 0, 1, 2, then the
                                                     // titles (0x100 each, up to 0xFFA00), the dash (entry 4, up to
-                                                    // 0xFFC00); debug_tools' landing
-                                                    // scratch is at 0xFFF00, game_options' 0xFFFF0
+                                                    // 0xFFC00); buck_breaker's slot text at 0xFFC00
+                                                    // (0x100); debug_tools' landing scratch is at
+                                                    // 0xFFF00, game_options' 0xFFFF0
         constexpr uint32_t kTitleText = 0x000FF800u, kTitleBytes = 0x100u;
         constexpr uint32_t kTextBytes = 0x800u;     // per entry
         constexpr uint32_t kEntryCount = 13u;

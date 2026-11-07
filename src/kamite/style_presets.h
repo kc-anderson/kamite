@@ -36,4 +36,7 @@ namespace kamite::style_presets
 
     // ps2_host_input's pad filter, player 1 (window thread): called by modern_controls' filter before its own work.
     void padFilter(uint32_t player, ps2x::iop::PadInputState &state);
+
+    // EE thread: 0 for None (also with Style switching off), 1..4 for the style on (S..Y). Buck Breaker's per-style pick.
+    int activePosition();
 }

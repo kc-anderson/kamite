@@ -184,6 +184,7 @@ namespace kamite::dev_menu
 
             ui->separator_text("At start");
             launcherOnly(ui, "Style switching", envOn("KAMITE_STYLE_SWITCHING", false) ? "on" : "off");
+            launcherOnly(ui, "Buck Breaker", envOn("KAMITE_BUCK_BREAKER", false) ? "on" : "off");
             launcherOnly(ui, "Better shop & casino poses", envOn("KAMITE_NPC_POSES", false) ? "on" : "off");
             launcherOnly(ui, "Busta-Chan Jive", envOn("KAMITE_SPRINT_TRAVERSAL", false) ? "on" : "off");
 

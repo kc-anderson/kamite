@@ -1,4 +1,5 @@
 #include "kamite/function_hooks.h"
+#include "kamite/buck_breaker.h"
 #include "kamite/log.h"
 #include "kamite/module_registry.h"
 #include "kamite/sha256.h"
@@ -547,6 +548,8 @@ namespace kamite
         static_assert(0x007C0000u + 0x00020000u <= kHoleEnd && 0x007A8000u + 0x00018000u <= 0x007C0000u &&
                           0x00799000u + 0x0000F000u <= 0x007A8000u,
                       "slot layout");
+        static_assert(0x007C0000u + 0x00020000u <= buck_breaker::kMotionArea && buck_breaker::kMotionAreaEnd <= kHoleEnd,
+                      "Buck Breaker's motions above the slots, in the hole");
         std::mutex g_slotMutex;
         int g_slotCheck = 0; // 0 not yet checked, 1 ok, -1 redirect disabled
         std::set<uint32_t> g_guardReported;
@@ -622,7 +625,9 @@ namespace kamite
         // Caller holds g_slotMutex.
         void checkHoleLocked(const uint8_t *rdram, const char *when)
         {
-            std::vector<std::pair<uint32_t, uint32_t>> skip{{kSlotDescBegin, kSlotDescEnd}};
+            // Buck Breaker's punish motions (buck_breaker.h) sit in the hole's free top, above the slots.
+            std::vector<std::pair<uint32_t, uint32_t>> skip{{kSlotDescBegin, kSlotDescEnd},
+                                                            {buck_breaker::kMotionArea, buck_breaker::kMotionAreaEnd}};
             for (const DllSlot &slot : g_slots)
             {
                 if (!slotInitialized(rdram, slot))

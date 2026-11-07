@@ -107,7 +107,8 @@ namespace kamite::test_mode
                                                  "KAMITE_ROULETTE_TIMER", "KAMITE_ROULETTE_NO_ORBS", "KAMITE_STYLE_SWITCHING",
                                                  "KAMITE_SPRINT_TRAVERSAL", "KAMITE_CHARACTER", "KAMITE_LIFT_CHAIRS",
                                                  "KAMITE_TENSION_PLACABLE", "KAMITE_OFF_THE_CUFF",
-                                                 "KAMITE_BALL_BUSTER_WOMEN", "KAMITE_ROULETTE_CYCLE"};
+                                                 "KAMITE_BALL_BUSTER_WOMEN", "KAMITE_ROULETTE_CYCLE",
+                                                 "KAMITE_BUCK_BREAKER"};
         // The game's own value of the gameplay settings above when nothing sets them (kamite.ini's defaults). A case
         // without one (the recorder's kamite.ini had no such line, or the option is newer than the case) ran with this
         // value, so its replay does too instead of taking the replaying machine's (Nov 6: T1's Elvis case replayed
@@ -121,7 +122,8 @@ namespace kamite::test_mode
             {"KAMITE_MENU_BUTTONS", "western"},  {"KAMITE_L3_DASH", "0"},             {"KAMITE_ROULETTE_TIMER", "normal"},
             {"KAMITE_ROULETTE_NO_ORBS", "0"},    {"KAMITE_STYLE_SWITCHING", "0"},     {"KAMITE_SPRINT_TRAVERSAL", "0"},
             {"KAMITE_CHARACTER", "gene"},        {"KAMITE_LIFT_CHAIRS", "0"},         {"KAMITE_TENSION_PLACABLE", "0"},
-            {"KAMITE_OFF_THE_CUFF", "0"},        {"KAMITE_BALL_BUSTER_WOMEN", "0"},   {"KAMITE_ROULETTE_CYCLE", "0"}};
+            {"KAMITE_OFF_THE_CUFF", "0"},        {"KAMITE_BALL_BUSTER_WOMEN", "0"},   {"KAMITE_ROULETTE_CYCLE", "0"},
+            {"KAMITE_BUCK_BREAKER", "0"}};
         const char *caseDefault(const std::string &name)
         {
             for (const CaseDefault &d : kCaseDefaults)

@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 7, 2026
 
+- Buck Breaker (launcher: Gameplay): pick the punish for stunned enemies (Pummel, Spanking, Suplex, Stinger, Cobra Twist) in a new slot on the Techniques screen; per style with Style switching.
 - Performance: faster near-camera geometry checks and VU1 data unpacking (the casino slowdown).
 - Vulkan renderer (launcher: Graphics > Graphics API); Direct3D 11 stays the default and the fallback.
 - Removed the unused Direct3D 12 renderer from the build.

@@ -1,6 +1,7 @@
 // Style presets, stage 1. See style_presets.h.
 #include "kamite/style_presets.h"
 
+#include "kamite/buck_breaker.h"
 #include "kamite/button_prompt_sheets.h"
 #include "kamite/debug_tools.h"
 #include "kamite/function_hooks.h"
@@ -576,6 +577,7 @@ namespace kamite::style_presets
                             read(data, store.styles[slot]); // first visit: the equipped moves (K, Nov 7)
                             store.used = static_cast<uint8_t>(store.used | (1u << slot));
                             copied = true;
+                            buck_breaker::styleCreated(at, to); // and the punish shown (K, Nov 7)
                         }
                         store.active = static_cast<uint8_t>(slot);
                     }
@@ -1383,6 +1385,17 @@ namespace kamite::style_presets
     void noteEntry(uint32_t entry)
     {
         g_drawingEntry = entry & 0x1FFFFFFu;
+    }
+
+    int activePosition()
+    {
+        if (!g_ram)
+            return 0;
+        const uint32_t data = dataPointer();
+        Store store{};
+        if (!data || !readStore(data, store))
+            return 0;
+        return store.active < kStyles && (store.used & (1u << store.active)) ? store.active + 1 : 0;
     }
 
     bool onHudEntry(uint32_t entry)

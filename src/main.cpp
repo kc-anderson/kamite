@@ -22,6 +22,7 @@
 #include "kamite/radar_glow.h"
 #include "kamite/tutorial_text.h"
 #include "kamite/style_presets.h"
+#include "kamite/buck_breaker.h"
 #include "kamite/npc_poses.h"
 #include "kamite/sprint_traversal.h"
 #include "kamite/debug_tools.h"
@@ -438,6 +439,7 @@ namespace
         {"video", "cameratilt", "KAMITE_CAMERA_TILT"},
         {"video", "steadyidlecamera", "KAMITE_STEADY_IDLE_CAMERA"},
         {"game", "styleswitching", "KAMITE_STYLE_SWITCHING"},
+        {"game", "buckbreaker", "KAMITE_BUCK_BREAKER"},
         {"game", "npcposes", "KAMITE_NPC_POSES"},
         {"game", "sprinttraversal", "KAMITE_SPRINT_TRAVERSAL"},
         {"game", "enemiesfollowview", "KAMITE_ENEMY_VIEW"},
@@ -1029,6 +1031,7 @@ int main(int argc, char *argv[])
         kamite::hotkeys::install(exeDir / "kamite.ini"); // [Hotkeys]: the port's shortcut keys
         kamite::dev_menu::install(exeDir / "kamite.ini"); // F2: the dev menu's tab order, Display and Gameplay
         kamite::style_presets::install(runtime); // style presets: d-pad swaps in play, the Techniques screen's style row and L2 / R2
+        kamite::buck_breaker::install(runtime);  // [Game] BuckBreaker: the stun punish per style (the Techniques screen's punish slot)
         kamite::npc_tools::install(runtime);       // F2: NPCs > Enemies, Target enemy (first: above Pose NPC; dev-only)
         kamite::sprint_traversal::install(runtime, exeDir); // sprint attacks pass the marked railings (sprint_traversal.txt)
         kamite::npc_poses::install(runtime, exeDir); // NPCs who lean on their counter (F2: NPCs; npc_poses.txt)

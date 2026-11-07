@@ -369,6 +369,17 @@ address = "0x0025A4D0"
 hook = "km_ball_buster_motion"
 replace = true
 flag = "ball_buster_women"
+# [Game] BuckBreaker (buck_breaker.cpp): the stun punish prompt func_002DCD50 switches on the enemy number (a0 = number
+# - 0x205, table 0x44D430); a generic punish (Suplex, Pummel, Spanking, Stinger, Cobra Twist) goes to the pick's case.
+[[patches.hooks]]
+address = "0x002DD02C"
+hook = "km_buck_breaker_case"
+replace = true
+flag = "buck_breaker"
+[[patches.hooks]] # the Techniques screen's draw (func_0016DC18), after its main layout's cIDBase_trans: the punish slot
+address = "0x0016DD78"
+hook = "km_buck_breaker_slot"
+flag = "buck_breaker"
 # [Game] SwayBar (game_options.cpp): after the enemy health bar's cIDBase_trans (func_0028F108 / func_0028F5B0; the
 # enemy in s3 / s2) the layout is drawn again as the stun bar.
 [[patches.hooks]]

@@ -1541,6 +1541,9 @@ void main()
                                                         "between them in play with the d-pad (on the Techniques "
                                                         "screen, L2 / R2 cycle the styles).");
                         iniCheckbox(state, "On##styles", "Game", "StyleSwitching", false);
+                        settingLabel("Buck Breaker", "Choose how to punish stunned enemies with a new slot on the "
+                                                     "Techniques screen. Works with Style Switching.");
+                        iniCheckbox(state, "On##buckbreaker", "Game", "BuckBreaker", false);
                         settingLabel("Control style", "Classic: as on the PS2. Modern: the free camera: the right stick "
                                                       "turns the camera and Gene moves where you point; pressing "
                                                       "the right stick switches to brawl mode (classic controls) and back (the radar "
