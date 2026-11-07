@@ -1963,12 +1963,27 @@ namespace kamite
             return ra == 0x799E18u /* EnemyShipTask */ || ra == 0x79A1F0u /* UFOTask */ || ra == 0x79F110u /* game */ ||
                    ra == 0x79DEBCu || ra == 0x79DEE8u /* result */;
         }
+        // Scroll-layer fades in room scripts (Nov 7 census of the 79 room DLLs: r101 x5, r103, r104, r403, r604, r607 x2,
+        // r701 x4, r803, r804, r805): `alpha -/+= step; setAlphaScrollLayer(layer, alpha); sleep(1); while (alpha <
+        // end)` - a counted loop, so the fade ran in half the time at 60. Its shape: jal setAlphaScrollLayer (0x2DB318)
+        // 0x18 before the return address, a float compare (c.cond.s) at it. Wait-until polls after a fade are not this
+        // shape (r104 / r403: jal 0x295CA8 after the sleep).
+        bool fadeLoopSleep(uint8_t *rdram, uint32_t ra)
+        {
+            if (ra < 0x100018u || ra >= 0x2000000u)
+                return false;
+            uint32_t before = 0, after = 0;
+            std::memcpy(&before, rdram + ra - 0x18u, 4);
+            std::memcpy(&after, rdram + ra, 4);
+            return before == (0x0C000000u | (0x2DB318u >> 2)) && (after >> 21) == 0x230u && (after & 0x30u) == 0x30u;
+        }
         void taskSleep(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             const uint32_t frames = GPR_U32(ctx, 5) & 0xFFFFu;
             if (frames >= 2u)
                 SET_GPR_U32(ctx, 5, std::min(frames * 2u, 0xFFFFu));
-            else if (frames == 1u && motion60(rdram) && r501FrameTask(rdram, GPR_U32(ctx, 31)))
+            else if (frames == 1u && motion60(rdram) &&
+                     (r501FrameTask(rdram, GPR_U32(ctx, 31)) || fadeLoopSleep(rdram, GPR_U32(ctx, 31))))
                 SET_GPR_U32(ctx, 5, skipFrame(rdram) ? 1u : 2u);
         }
         // The cannon game's press tests (`lw rD,8(base)` = GameWork pressed, & 0xF0 the face buttons: StateNeutral's
