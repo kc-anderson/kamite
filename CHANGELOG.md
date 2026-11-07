@@ -4,6 +4,9 @@ Newest first, one line per change; the code comments say how.
 
 ## November 7, 2026
 
+- 60 FPS: enemy and object waits (timed attacks, pauses, reloads) no longer end a frame early; repeating waits ran up to a frame short each cycle.
+- 60 FPS: the damage hit stop, Dead Pan's wait and the stage 3 / stage 5 room timers (cannon games, Chihuahua) end on time.
+- 60 FPS: fixed an item-release routine looping through all its slots when it ran on the second half of a frame.
 - Busta-Chan Jive: a window can take a room jump (F2, same stage only); diving through it jumps there (r503's windows past the locked door).
 - Fixed boss portraits drifting out of their ring (16:9 HUD) or staying at the screen edge (4:3 HUD).
 - Fixed the free-camera radar glow showing speckled colours after loading a save state made with the other texture setting.

@@ -2029,6 +2029,89 @@ namespace kamite
             SET_GPR_U32(ctx, Dst, skipFrame(rdram) && value != 0u ? value + 1u : value);
         }
 
+        // The 1 -> 0 step (Nov 7 census of the 472 countdown hooks, claude/fps60-notes.md "1 -> 0 step"): a hooked
+        // countdown steps on the tick, so on the second half it already reads 0 where the 30 FPS frame still had 1.
+        // `if (n > 0) n--; else { act }` then acted a vblank early, and in a chain of states (an enemy's wait -> attack
+        // -> wait) every wait after the first came out a whole 30 FPS frame short (r505's sparks: 5 steps ahead in
+        // 17 s). The tick notes each such counter it reads at the threshold (1, or 0 for `if (n < 0)` guards); on
+        // the next vblank the counter one below it reads as the threshold again, so the second half runs the
+        // counting path as the 30 FPS frame did. Only for sites with no one-shot test of the new value after the
+        // decrement (those would fire twice): the census sorted them.
+        struct CountdownNotes
+        {
+            uint32_t frame = 0xFFFFFFFFu, count = 0;
+            uint32_t addr[128];
+        };
+        CountdownNotes g_cdNotes;
+        void cdNote(uint8_t *rdram, uint32_t addr)
+        {
+            const uint32_t now = gameFrames(rdram);
+            if (g_cdNotes.frame != now)
+            {
+                g_cdNotes.frame = now;
+                g_cdNotes.count = 0;
+            }
+            for (uint32_t i = 0; i < g_cdNotes.count; ++i)
+                if (g_cdNotes.addr[i] == addr)
+                    return;
+            if (g_cdNotes.count < 128u)
+                g_cdNotes.addr[g_cdNotes.count++] = addr;
+        }
+        bool cdNoted(uint8_t *rdram, uint32_t addr)
+        {
+            if (g_cdNotes.frame + 1u != gameFrames(rdram))
+                return false;
+            for (uint32_t i = 0; i < g_cdNotes.count; ++i)
+                if (g_cdNotes.addr[i] == addr)
+                    return true;
+            return false;
+        }
+        // countdownLoadAny (unsigned loads) plus the 1 -> 0 step: a 0 the tick left behind is raised too.
+        template <int Base, uint32_t Offset, int Dst, int Bytes>
+        void countdownLoadExact(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t addr = (GPR_U32(ctx, Base) + Offset) & 0x01FFFFFFu;
+            uint32_t value = 0;
+            std::memcpy(&value, rdram + addr, Bytes);
+            if (!skipFrame(rdram))
+            {
+                if (value == 1u)
+                    cdNote(rdram, addr);
+                SET_GPR_U32(ctx, Dst, value);
+                return;
+            }
+            SET_GPR_U32(ctx, Dst, value != 0u || cdNoted(rdram, addr) ? value + 1u : value);
+        }
+        // A signed load (lh / lb) that only tests a countdown whose decrement is hooked separately (`lh v0; beqz v0;
+        // lhu v1; addiu v0,v1,-1`): Threshold 1 for beqz / blez / bgtz guards, 0 for bgez (`if (n < 0) act; n--`).
+        // On the second half after the tick stepped it from the threshold, the guard sees the threshold again.
+        template <int Base, uint32_t Offset, int Dst, int Bytes, int Threshold>
+        void countdownGuard(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t addr = (GPR_U32(ctx, Base) + Offset) & 0x01FFFFFFu;
+            int32_t value = 0;
+            if constexpr (Bytes == 2)
+            {
+                int16_t v = 0;
+                std::memcpy(&v, rdram + addr, 2);
+                value = v;
+            }
+            else
+            {
+                int8_t v = 0;
+                std::memcpy(&v, rdram + addr, 1);
+                value = v;
+            }
+            if (!skipFrame(rdram))
+            {
+                if (value == Threshold)
+                    cdNote(rdram, addr);
+            }
+            else if (value == Threshold - 1 && cdNoted(rdram, addr))
+                value = Threshold;
+            SET_GPR_S32(ctx, Dst, value);
+        }
+
         // Scripted waits (task family, Nov 2): cTaskWork_sleep(task, frames) (0x2D5AA0) stores the game frames a script
         // task sleeps (task +0xE, `sh a1,0xE(a0)` at 0x2D5AAC); cTaskWork_step (0x2D5838) counts it down once a game
         // frame and wakes the task on the frame it reaches 0. Room scripts, soft events and the scenario wait this way
@@ -2151,19 +2234,19 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_task_sleep", &taskSleep);
         // r301 (the cannon game, recomp/modules/r301.toml): ExecStart's wait before the explanation, ExecGame's
         // cannonball interval, ChkMastCannonBallHit's +0x70.
-        ps2xRegisterHostHook("km_fps60_r301_cd_s1_a0", &countdownLoad<17, 0xA0u>);
-        ps2xRegisterHostHook("km_fps60_r301_cd_s1_78", &countdownLoad<17, 0x78u>);
-        ps2xRegisterHostHook("km_fps60_r301_cd_s2_70", &countdownLoad<18, 0x70u>);
+        ps2xRegisterHostHook("km_fps60_r301_cd_s1_a0", &countdownLoadExact<17, 0xA0u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_r301_cd_s1_78", &countdownLoadExact<17, 0x78u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_r301_cd_s2_70", &countdownLoadExact<18, 0x70u, 2, 4>);
         ps2xRegisterHostHook("km_fps60_r301_countdown_tick", &tickOnlyGate<17, 1u>);
         // The other room DLLs' countdowns (recomp/modules/r*.toml, census Nov 2).
         ps2xRegisterHostHook("km_fps60_countdown_a0v0", &countdownPair<4, 2>); // addiu a0,v0,-1
         ps2xRegisterHostHook("km_fps60_r040_fight_tick", &tickOnlyGate<19, 2u>);
         ps2xRegisterHostHook("km_fps60_r040_youwin_tick", &tickOnlyGate<16, 4u>);
         ps2xRegisterHostHook("km_fps60_r040_timeup_tick", &tickOnlyGate<16, 8u>);
-        ps2xRegisterHostHook("km_fps60_r305_cd_s0_c", &countdownLoad<16, 0xCu>);
+        ps2xRegisterHostHook("km_fps60_r305_cd_s0_c", &countdownLoadExact<16, 0xCu, 2, 4>);
         ps2xRegisterHostHook("km_fps60_r505_cd_s2_0", &countdownLoadAll<18, 0x0u>); // raised at 0 too
-        ps2xRegisterHostHook("km_fps60_r501_cd_s1_18", &countdownLoad<17, 0x18u>);
-        ps2xRegisterHostHook("km_fps60_r501_cd_s0_70", &countdownLoad<16, 0x70u>);
+        ps2xRegisterHostHook("km_fps60_r501_cd_s1_18", &countdownLoadExact<17, 0x18u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_r501_cd_s0_70", &countdownLoadExact<16, 0x70u, 2, 4>);
         ps2xRegisterHostHook("km_fps60_r501_store_s1_14", &countdownStore<17, 0x14u, 2>);
         ps2xRegisterHostHook("km_fps60_flash_guard_rate", &flashGuardRate);
         ps2xRegisterHostHook("km_fps60_tension_drain", &tensionDrainRate);
@@ -2206,9 +2289,9 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_om_cd_a0_9e0", &countdownLoadAny<4, 0x9E0u, 2, 4>);
         ps2xRegisterHostHook("km_fps60_om_cd_s0_600_2", &countdownLoadAny<16, 0x600u, 2, 2>);
         ps2xRegisterHostHook("km_fps60_om_cd_s0_604_2", &countdownLoadAny<16, 0x604u, 2, 2>);
-        ps2xRegisterHostHook("km_fps60_om_cd_s0_60a_2", &countdownLoadAny<16, 0x60Au, 2, 2>);
-        ps2xRegisterHostHook("km_fps60_om_cd_s0_900", &countdownLoadAny<16, 0x900u, 2, 4>);
-        ps2xRegisterHostHook("km_fps60_om_cd_s0_9d4", &countdownLoadAny<16, 0x9D4u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s0_60a_2", &countdownLoadExact<16, 0x60Au, 2, 2>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s0_900", &countdownLoadExact<16, 0x900u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s0_9d4", &countdownLoadExact<16, 0x9D4u, 2, 4>);
         ps2xRegisterHostHook("km_fps60_om_cd_s0_a90_2", &countdownLoadAny<16, 0xA90u, 2, 2>);
         ps2xRegisterHostHook("km_fps60_om_cd_s0_af4", &countdownLoadAny<16, 0xAF4u, 2, 4>);
         ps2xRegisterHostHook("km_fps60_om_cd_s0_f15_1", &countdownLoadAny<16, 0xF15u, 2, 1>);
@@ -2221,7 +2304,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_om_cd_s1_850", &countdownLoadAny<17, 0x850u, 2, 4>);
         ps2xRegisterHostHook("km_fps60_om_cd_s1_900", &countdownLoadAny<17, 0x900u, 2, 4>);
         ps2xRegisterHostHook("km_fps60_om_cd_s1_960_2", &countdownLoadAny<17, 0x960u, 2, 2>);
-        ps2xRegisterHostHook("km_fps60_om_cd_s2_60c", &countdownLoadAny<18, 0x60Cu, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_om_cd_s2_60c", &countdownLoadExact<18, 0x60Cu, 2, 4>);
         ps2xRegisterHostHook("km_fps60_om_cd_s2_60e_2", &countdownLoadAny<18, 0x60Eu, 2, 2>);
         ps2xRegisterHostHook("km_fps60_om_cd_s2_62c_2", &countdownLoadAny<18, 0x62Cu, 2, 2>);
         ps2xRegisterHostHook("km_fps60_om_cd_s2_9d4_2", &countdownLoadAny<18, 0x9D4u, 2, 2>);
@@ -2233,28 +2316,30 @@ namespace kamite
         // The common enemy code's countdowns (kamite.toml, generated Oct 30).
         ps2xRegisterHostHook("km_fps60_countdown_v0a0", &countdownPair<2, 4>);
         ps2xRegisterHostHook("km_fps60_countdown_v1", &countdownPair<3, 3>);
-        ps2xRegisterHostHook("km_fps60_em_cd_s0_5f0", &countdownLoadAny<16, 0x5F0u, 2, 4>);
-        ps2xRegisterHostHook("km_fps60_em_cd_s0_5f8", &countdownLoadAny<16, 0x5F8u, 2, 4>);
-        ps2xRegisterHostHook("km_fps60_em_cd_s1_5f0", &countdownLoadAny<17, 0x5F0u, 2, 4>);
-        ps2xRegisterHostHook("km_fps60_em_cd_s1_5f4", &countdownLoadAny<17, 0x5F4u, 2, 4>);
-        ps2xRegisterHostHook("km_fps60_em_cd_s2_16dc", &countdownLoadAny<18, 0x16DCu, 2, 4>);
-        ps2xRegisterHostHook("km_fps60_em_cd_s2_16e0", &countdownLoadAny<18, 0x16E0u, 2, 4>);
-        ps2xRegisterHostHook("km_fps60_em_cd_s2_16ec", &countdownLoadAny<18, 0x16ECu, 2, 4>);
-        ps2xRegisterHostHook("km_fps60_em_cd_s2_16f8_v1", &countdownLoadAny<18, 0x16F8u, 3, 4>);
-        ps2xRegisterHostHook("km_fps60_em_cd_s2_17b0_1", &countdownLoadAny<18, 0x17B0u, 2, 1>);
-        ps2xRegisterHostHook("km_fps60_em_cd_s2_5f0", &countdownLoadAny<18, 0x5F0u, 2, 4>);
-        ps2xRegisterHostHook("km_fps60_em_cd_s2_5f4", &countdownLoadAny<18, 0x5F4u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s0_5f0", &countdownLoadExact<16, 0x5F0u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s0_5f0_post", &countdownLoadAny<16, 0x5F0u, 2, 4>); // a test of the new value follows
+        ps2xRegisterHostHook("km_fps60_em_cd_s0_5f8", &countdownLoadExact<16, 0x5F8u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s1_5f0", &countdownLoadExact<17, 0x5F0u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s1_5f0_post", &countdownLoadAny<17, 0x5F0u, 2, 4>); // a test of the new value follows
+        ps2xRegisterHostHook("km_fps60_em_cd_s1_5f4", &countdownLoadExact<17, 0x5F4u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s2_16dc", &countdownLoadExact<18, 0x16DCu, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s2_16e0", &countdownLoadExact<18, 0x16E0u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s2_16ec", &countdownLoadExact<18, 0x16ECu, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s2_16f8_v1", &countdownLoadExact<18, 0x16F8u, 3, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s2_17b0_1", &countdownLoadExact<18, 0x17B0u, 2, 1>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s2_5f0", &countdownLoadExact<18, 0x5F0u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s2_5f4", &countdownLoadExact<18, 0x5F4u, 2, 4>);
         ps2xRegisterHostHook("km_fps60_em_cd_s2_5f8", &countdownLoadAny<18, 0x5F8u, 2, 4>);
-        ps2xRegisterHostHook("km_fps60_em_cd_s2_5fc", &countdownLoadAny<18, 0x5FCu, 2, 4>);
-        ps2xRegisterHostHook("km_fps60_em_cd_s3_5f0", &countdownLoadAny<19, 0x5F0u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s2_5fc", &countdownLoadExact<18, 0x5FCu, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_em_cd_s3_5f0", &countdownLoadExact<19, 0x5F0u, 2, 4>);
         ps2xRegisterHostHook("km_fps60_countdown_5f8", &countdownLoad<17, 0x5F8u>);
         ps2xRegisterHostHook("km_fps60_countdown_em510", &countdownLoad<16, 0x510u>);
         ps2xRegisterHostHook("km_fps60_countdown_em514", &countdownLoad<16, 0x514u>);
         ps2xRegisterHostHook("km_fps60_countdown_em530", &countdownLoad<16, 0x530u>);
-        ps2xRegisterHostHook("km_fps60_countdown_hitstop", &countdownLoad<3, 0x2CD0u>);
+        ps2xRegisterHostHook("km_fps60_countdown_hitstop", &countdownLoadExact<3, 0x2CD0u, 2, 4>);
         ps2xRegisterHostHook("km_fps60_countdown_pl1658", &countdownLoad<16, 0x1658u>); // Gene's 15-frame cooldown, 0x126840
         ps2xRegisterHostHook("km_fps60_countdown_pl15b8", &countdownLoad<17, 0x15B8u>);    // the mash states' decay (s1)
-        ps2xRegisterHostHook("km_fps60_countdown_pl15b0", &countdownLoad<17, 0x15B0u>);    // Dead Pan's wait (s1)
+        ps2xRegisterHostHook("km_fps60_countdown_pl15b0", &countdownLoadExact<17, 0x15B0u, 2, 4>);    // Dead Pan's wait (s1)
         ps2xRegisterHostHook("km_fps60_float_add_f0f1", &floatAddParity<0, 0, 1>);         // add.s f0,f0,f1
         ps2xRegisterHostHook("km_fps60_coat_wind", &floatAddHalf<0, 0, 3>);                // add.s f0,f0,f3
         ps2xRegisterHostHook("km_fps60_cloth_begin", &clothBegin);
@@ -2270,6 +2355,20 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_cloth_spring_f1", &clothSpring<1>);
         ps2xRegisterHostHook("km_fps60_countdown_pl15b8_s0", &countdownLoad<16, 0x15B8u>); // the same in func_0011FD10 (s0)
         ps2xRegisterHostHook("km_fps60_countup_self", &countupSelf);
+        // The 1 -> 0 step's guards (countdownGuard): the signed test loads in front of hooked decrements.
+        ps2xRegisterHostHook("km_fps60_cd_guard_s1_568", &countdownGuard<17, 0x568u, 2, 2, 1>);
+        ps2xRegisterHostHook("km_fps60_cd_guard_s0_568", &countdownGuard<16, 0x568u, 2, 2, 1>);
+        ps2xRegisterHostHook("km_fps60_cd_guard_s1_56a", &countdownGuard<17, 0x56Au, 2, 2, 1>);
+        ps2xRegisterHostHook("km_fps60_cd_guard_s0_56a", &countdownGuard<16, 0x56Au, 2, 2, 1>);
+        ps2xRegisterHostHook("km_fps60_cd_guard_s2_186c_b", &countdownGuard<18, 0x186Cu, 2, 1, 1>);
+        ps2xRegisterHostHook("km_fps60_cd_guard_s1_616", &countdownGuard<17, 0x616u, 2, 2, 1>);
+        ps2xRegisterHostHook("km_fps60_cd_guard_s0_984_v1", &countdownGuard<16, 0x984u, 3, 2, 1>);
+        ps2xRegisterHostHook("km_fps60_cd_guard_s1_622", &countdownGuard<17, 0x622u, 2, 2, 1>);
+        ps2xRegisterHostHook("km_fps60_cd_guard_s1_628", &countdownGuard<17, 0x628u, 2, 2, 1>);
+        ps2xRegisterHostHook("km_fps60_cd_guard_s2_602", &countdownGuard<18, 0x602u, 2, 2, 1>);
+        ps2xRegisterHostHook("km_fps60_cd_guard_neg_s1_604", &countdownGuard<17, 0x604u, 2, 2, 0>);
+        ps2xRegisterHostHook("km_fps60_cd_guard_neg_s1_602", &countdownGuard<17, 0x602u, 2, 2, 0>);
+        ps2xRegisterHostHook("km_fps60_cd_guard_neg_s1_79c", &countdownGuard<17, 0x79Cu, 2, 2, 0>);
         ps2xRegisterHostHook("km_fps60_gene_rate_half", &geneRateHalfF0);
         ps2xRegisterHostHook("km_fps60_stick_turn_half", &stickTurnHalfF1);
         ps2xRegisterHostHook("km_fps60_em_rate_f1_s0", &enemyRate30<16, 1>);

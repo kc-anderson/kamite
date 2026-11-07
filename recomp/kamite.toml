@@ -2318,9 +2318,9 @@ address = "0x00223A6C"
 hook = "km_fps60_em_cd_s1_5f0"
 flag = "fps60"
 replace = true
-[[patches.hooks]] # func_00225110 lw +0x5F0 (decrement in a delay slot: load-raise)
+[[patches.hooks]] # func_00225110 lw +0x5F0 (decrement in a delay slot: load-raise; a test of the new value follows)
 address = "0x00225424"
-hook = "km_fps60_em_cd_s1_5f0"
+hook = "km_fps60_em_cd_s1_5f0_post"
 flag = "fps60"
 replace = true
 [[patches.hooks]] # func_002256C8 lw +0x5F0 (decrement in a delay slot: load-raise)
@@ -2833,9 +2833,9 @@ address = "0x0025C0CC"
 hook = "km_fps60_countdown"
 flag = "fps60"
 replace = true
-[[patches.hooks]] # func_0025C010 lw +0x5F0 (decrement in a delay slot: load-raise)
+[[patches.hooks]] # func_0025C010 lw +0x5F0 (decrement in a delay slot: load-raise; a test of the new value follows)
 address = "0x0025C0EC"
-hook = "km_fps60_em_cd_s0_5f0"
+hook = "km_fps60_em_cd_s0_5f0_post"
 flag = "fps60"
 replace = true
 [[patches.hooks]] # func_0025C1D0 lhu +0x56E
@@ -3543,16 +3543,8 @@ address = "0x001A7DBC"
 hook = "km_fps60_countdown_self"
 flag = "fps60"
 replace = true
-[[patches.hooks]] # func_001A7F58 lbu +0x615
-address = "0x001A807C"
-hook = "km_fps60_countdown_self"
-flag = "fps60"
-replace = true
-[[patches.hooks]] # func_001A7F58 lbu +0x612
-address = "0x001A8080"
-hook = "km_fps60_countdown_v1"
-flag = "fps60"
-replace = true
+# (func_001A7F58's +0x615 / +0x612 are not timers: the loop counters of a one-shot routine, called once on a state
+# change; hooked, a call on a second half looped round all 16 slots. Unhooked Nov 7, census.)
 [[patches.hooks]] # cOmBase_blinkTick lw +0x9E0 (decrement in a delay slot: load-raise)
 address = "0x001AA480"
 hook = "km_fps60_om_cd_a0_9e0"
@@ -4377,3 +4369,143 @@ flag = "fps60"
 address = "0x00158288"
 hook = "km_fps60_motion_step_rate"
 flag = "fps60"
+
+# 60 FPS, the 1 -> 0 step (Nov 7 census of every countdown hook, claude/fps60-notes.md): the signed guard loads in front
+# of hooked decrements (`lh v0,X; beqz v0; lhu v1,X; addiu v0,v1,-1`, or `if (n < 0) act; n--` with bgez). On the
+# second half after the tick stepped the counter from 1 (from 0 for bgez), the guard reads it unstepped, so the state
+# change / reload behind it waits for the tick as at 30 (frame_patches.cpp countdownGuard).
+[[patches.hooks]]
+address = "0x001148CC"
+hook = "km_fps60_cd_guard_s1_568"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0011B7D0"
+hook = "km_fps60_cd_guard_s1_568"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0025FC98"
+hook = "km_fps60_cd_guard_s1_568"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x001CBC6C"
+hook = "km_fps60_cd_guard_s1_568"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00209FA0"
+hook = "km_fps60_cd_guard_s2_186c_b"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00218B28"
+hook = "km_fps60_cd_guard_s1_56a"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00237214"
+hook = "km_fps60_cd_guard_s0_56a"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00237558"
+hook = "km_fps60_cd_guard_s0_56a"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0023784C"
+hook = "km_fps60_cd_guard_s0_56a"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00237C2C"
+hook = "km_fps60_cd_guard_s0_56a"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00238268"
+hook = "km_fps60_cd_guard_s0_56a"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x00239060"
+hook = "km_fps60_cd_guard_s0_56a"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x002393CC"
+hook = "km_fps60_cd_guard_s0_56a"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0025BF68"
+hook = "km_fps60_cd_guard_s0_56a"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x002472F0"
+hook = "km_fps60_cd_guard_s0_568"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x001BBE10"
+hook = "km_fps60_cd_guard_s0_568"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x001A7B98"
+hook = "km_fps60_cd_guard_s1_616"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x001AF644"
+hook = "km_fps60_cd_guard_s0_984_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x001B07E0"
+hook = "km_fps60_cd_guard_s1_622"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x001B8F2C"
+hook = "km_fps60_cd_guard_s1_628"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x001BF7A8"
+hook = "km_fps60_cd_guard_s2_602"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0017B28C"
+hook = "km_fps60_cd_guard_neg_s1_604"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0017B4F8"
+hook = "km_fps60_cd_guard_neg_s1_604"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0017E484"
+hook = "km_fps60_cd_guard_neg_s1_602"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x0017E618"
+hook = "km_fps60_cd_guard_neg_s1_602"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x001A495C"
+hook = "km_fps60_cd_guard_neg_s1_79c"
+flag = "fps60"
+replace = true
+[[patches.hooks]]
+address = "0x001A4B20"
+hook = "km_fps60_cd_guard_neg_s1_79c"
+flag = "fps60"
+replace = true
