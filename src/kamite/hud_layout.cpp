@@ -207,10 +207,9 @@ namespace kamite::hud
             if (g_layout != Layout::Anchored || g_edgeShare <= 0.0f)
                 return 0.5f * width;
             const float left = 0.5f * width * (1.0f - g_edgeShare);
-            // A group that starts near one screen edge belongs to it, however far it reaches: the boss bar's portrait
-            // sits at the left edge (an edge draw, never narrowed, so not in the extent) and its bar and background
-            // run so far right that their centre is in the middle third, which put them at the 4:3 position while the
-            // portrait stayed at the screen's edge (Thinso, Oct 27).
+            // A group that starts near one screen edge belongs to it, however far it reaches: the boss bar starts at
+            // the left edge and its bar and background run so far right that their centre is in the middle third,
+            // which put them at the 4:3 position while the portrait stayed at the screen's edge (Thinso, Oct 27).
             const bool hugsLeft = x0 < 0.15f * width, hugsRight = x1 > 0.85f * width;
             if (hugsLeft != hugsRight)
                 return hugsLeft ? left : width - left;
@@ -279,6 +278,12 @@ namespace kamite::hud
             g_dump.emplace_back(line);
         }
 
+        // The boss bars' cIDBase_trans calls (cCockBossBar, cCockLastBossBar, cCockMiddleBoss): of isHudCaller's.
+        bool isBossBarCaller(uint32_t ra)
+        {
+            return ra == 0x0013CFA0u || ra == 0x0013EC38u || ra == 0x001406CCu || ra == 0x001406FCu;
+        }
+
         // n vertices, x at address + i*16 (y at +4), in GS units: screen*16 + offset (offset 0 for the font drawer).
         void narrowVertices(uint8_t *rdram, uint32_t address, int n, uint32_t caller, const char *tag, bool withOffset = true)
         {
@@ -336,7 +341,10 @@ namespace kamite::hud
             }
             // Screen-edge overlays (the low-health red corners): drawn from the screen's edge, they belong to the edge,
             // so they stay stretched with it; narrowed they left angled stripes short of the corners.
-            if (x0 <= 1.0f || x1 >= width - 1.0f)
+            // Not the boss bars' portraits (K, Nov 7): the portrait starts at x 1 but sits inside its ring, which is
+            // narrowed; left stretched it spilled past the ring at 16:9 and stayed at the screen's edge, away from the
+            // ring, with the 4:3 HUD.
+            if ((x0 <= 1.0f || x1 >= width - 1.0f) && !(g_inIdTrans && isBossBarCaller(g_idCaller)))
             {
                 dumpPrim(tag, caller, x0, x1, y0, y1, "edge", none);
                 return;

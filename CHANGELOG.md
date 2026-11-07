@@ -5,6 +5,7 @@ Newest first, one line per change; the code comments say how.
 ## November 7, 2026
 
 - Busta-Chan Jive: a window can take a room jump (F2, same stage only); diving through it jumps there (r503's windows past the locked door).
+- Fixed boss portraits drifting out of their ring (16:9 HUD) or staying at the screen edge (4:3 HUD).
 - Fixed the free-camera radar glow showing speckled colours after loading a save state made with the other texture setting.
 - 60 FPS: stage 5 electric sparks: glow pulse, buzz sound and spark pattern at the 30 FPS rate.
 - 60 FPS: picked-up items, chest lids and spinning pickups rise, flip and spin at the 30 FPS speed.
