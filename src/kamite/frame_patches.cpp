@@ -2010,6 +2010,16 @@ namespace kamite
             SET_GPR_U32(ctx, 2, skipFrame(rdram) && value != 0u ? value + 1u : value);
         }
 
+        // countdownLoad also raising a 0 on the skipped frames, for `if (n > 0) n--; else { action; n = reload }`: the
+        // action then waits for the 30 FPS frame too (r505's spark pattern).
+        template <int Base, uint32_t Offset>
+        void countdownLoadAll(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            uint32_t value = 0;
+            std::memcpy(&value, rdram + ((GPR_U32(ctx, Base) + Offset) & 0x01FFFFFFu), 4);
+            SET_GPR_U32(ctx, 2, skipFrame(rdram) ? value + 1u : value);
+        }
+
         // countdownLoad for any load: `l[w|hu|bu] Dst,Offset(Base)` (Bytes 4 / 2 / 1) before a decrement in a delay slot.
         template <int Base, uint32_t Offset, int Dst, int Bytes>
         void countdownLoadAny(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
@@ -2151,7 +2161,7 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_r040_youwin_tick", &tickOnlyGate<16, 4u>);
         ps2xRegisterHostHook("km_fps60_r040_timeup_tick", &tickOnlyGate<16, 8u>);
         ps2xRegisterHostHook("km_fps60_r305_cd_s0_c", &countdownLoad<16, 0xCu>);
-        ps2xRegisterHostHook("km_fps60_r505_cd_s2_0", &countdownLoad<18, 0x0u>);
+        ps2xRegisterHostHook("km_fps60_r505_cd_s2_0", &countdownLoadAll<18, 0x0u>); // raised at 0 too
         ps2xRegisterHostHook("km_fps60_r501_cd_s1_18", &countdownLoad<17, 0x18u>);
         ps2xRegisterHostHook("km_fps60_r501_cd_s0_70", &countdownLoad<16, 0x70u>);
         ps2xRegisterHostHook("km_fps60_r501_store_s1_14", &countdownStore<17, 0x14u, 2>);

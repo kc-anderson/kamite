@@ -24,10 +24,27 @@ stubs = []
 # (r505_runtime_relocations.csv has 0 rows).
 
 # 60 FPS family 1 (census Nov 2): cR505::ElectricTask's three countdowns (+0x30.., a sleep(1) loop: counted per poll,
-# so the load is raised on second halves).
+# so the load is raised on second halves). `if (n > 0) n--; else { next step of the spark pattern: SetEffect /
+# KillEffect, n = pattern[i + 1] }`: raised at 0 too (Nov 7, K's case electricity_check: 0 was left as is, so the
+# pattern stepped on the second half as well and ran a vblank early every step, 5 steps ahead over the case).
 [[patches.hooks]]
 address = "0x00799C40"
 hook = "km_fps60_r505_cd_s2_0"
 flag = "fps60"
 replace = true
+
+# Nov 7 (electricity_check): the sparks' glow pulse counter +0x14 (alpha = 0.5 + 0.5 sin(2 pi (n / +0x18) - pi) on the
+# four spark objects' +0x24C) counted every vblank: twice the pulse rate. Every other vblank.
+[[patches.hooks]]
+address = "0x00799D28"
+hook = "km_fps60_countup_self"
+flag = "fps60"
+replace = true
+
+# Nov 7 (electricity_check): the buzz sound's timer +0x3C -= 1.0 a poll (SE 0x72 again when it runs out, reset to
+# +0x40 = 30 / 16 frames): the buzz repeated twice as often. -= 0.5 (lui 0x3F80 -> 0x3F00).
+[[patches.conditional]]
+address = "0x00799E60"
+value = "0x3C013F00"
+flag = "fps60"
 
