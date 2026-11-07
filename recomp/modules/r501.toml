@@ -106,6 +106,8 @@ replace = true
 # 60 FPS, the cannon minigame's per-frame steps (K Nov 7, case cannon_minigame_too_fast): each step in its 60 FPS
 # form (half steps, root factors, timers and counters every other vblank; frame_patches.cpp "cannon minigame"). The tasks
 # still run every vblank (holding them flickered, 68e079a).
+# Not a step: EnemyShip Move's neg.s at 0x79FC8C (+0x54 is the yaw func_15A3E8 writes fresh each frame, negated once;
+# taking it every other vblank flipped the ships' facing, c16d7c4).
 
 # ball vy += -0.02
 [[patches.hooks]]
@@ -244,13 +246,6 @@ replace = true
 [[patches.hooks]]
 address = "0x0079FBE4"
 hook = "km_fps60_lerp_root_f1f1f2"
-flag = "fps60"
-replace = true
-
-# ship Move sway +0x54 flip
-[[patches.hooks]]
-address = "0x0079FC8C"
-hook = "km_fps60_neg_odd_f0"
 flag = "fps60"
 replace = true
 

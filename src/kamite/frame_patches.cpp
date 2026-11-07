@@ -1100,12 +1100,6 @@ namespace kamite
             const int32_t value = GPR_S32(ctx, Reg);
             SET_GPR_S32(ctx, Reg, skipFrame(rdram) ? value : value + 1);
         }
-        // neg.s f0,f0 every game frame (EnemyShip's Move state flips its sway +0x54 each frame): flipped on the odd vblank,
-        // so the sign holds two vblanks (+a +a -a -a, the 30 FPS +a -a).
-        void negOdd(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
-        {
-            ctx->f[0] = skipFrame(rdram) ? -ctx->f[0] : ctx->f[0];
-        }
         // CannonGame's balls (0x79E168 vy += -0.02, then position += velocity at 0x79E184): with vy += -0.01 a vblank,
         // position += v/2 + (0, g/8, 0) lands on the 30 FPS arc (and the aim predictor's) at every even vblank.
         void r501BallMove(uint8_t *, R5900Context *ctx, PS2Runtime *)
@@ -2189,7 +2183,6 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_mul_root_f0f0f4", &mulRoot<0, 0, 4>);
         ps2xRegisterHostHook("km_fps60_geom_add_f1f1f2f4", &geomAdd<1, 1, 2, 4>);
         ps2xRegisterHostHook("km_fps60_countup_a0", &countupReg<4>);
-        ps2xRegisterHostHook("km_fps60_neg_odd_f0", &negOdd);
         ps2xRegisterHostHook("km_fps60_r501_ball_move", &r501BallMove);
         ps2xRegisterHostHook("km_fps60_r501_banner_phase_a1", &r501BannerPhase<5>);
         ps2xRegisterHostHook("km_fps60_r501_banner_phase_a0", &r501BannerPhase<4>);
