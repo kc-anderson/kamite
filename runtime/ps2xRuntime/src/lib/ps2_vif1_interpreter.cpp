@@ -163,13 +163,19 @@ namespace
             return;
         }
         constexpr uint32_t bytes = (Vl == 0u ? 4u : Vl == 1u ? 2u : 1u) * Components;
-        // V4-8 and V2-16 (4 source bytes per vector) written back to back (CL == WL) with no wrap: four vectors from
-        // one 16-byte load (Kamite, the casino's slow spot, Nov 7: these two were ~9% of the VU1 thread; 1.4-2.6x
-        // faster, the same VU memory and ROW over 20,000 random unpacks of each kind). The rest (0..3) below.
+        // V4-8 and V2-16 (4 source bytes per vector), WL 1, 2 or 4 (any CL >= WL) and no wrap: four vectors from one
+        // 16-byte load, stored at their places in the cycle (Kamite, the casino's slow spot, Nov 7: these two were ~9%
+        // of the VU1 thread there, all strided: CL 6 / WL 1, CL 3 / WL 1, CL 6 / WL 2 in the F8 RAM dump). The same VU
+        // memory and ROW as the loop below over random unpacks of each kind (tools-free check in the session; see
+        // claude/vu1-performance.md). The rest (0..3 vectors) goes through the loop below.
         if constexpr (((Vl == 2u && Components == 4u) || (Vl == 1u && Components == 2u)) && Mode != 2u)
         {
-            if (cl == wl && count >= 4u && vuAddr + count <= 0x400u)
+            if ((wl == 1u || wl == 2u || wl == 4u) && count >= 4u && vuAddr + ((count + wl - 1u) / wl) * cl <= 0x400u)
             {
+                // Element e of a block of four lands (e / WL) * CL + e % WL vectors after the block's first; a block
+                // is 4 / WL cycles of CL vectors.
+                const uint32_t o1 = (1u / wl) * cl + 1u % wl, o2 = (2u / wl) * cl + 2u % wl, o3 = (3u / wl) * cl + 3u % wl;
+                const uint32_t blockStep = (4u / wl) * cl;
                 const __m128i add = _mm_loadu_si128(reinterpret_cast<const __m128i *>(row));
                 auto widen = [](__m128i raw)
                 {
@@ -180,7 +186,7 @@ namespace
                 };
                 auto *out = reinterpret_cast<__m128i *>(vuData + vuAddr * 16u);
                 uint32_t done = 0;
-                for (; done + 4u <= count; done += 4u, out += 4)
+                for (; done + 4u <= count; done += 4u, out += blockStep)
                 {
                     const __m128i raw = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + done * bytes));
                     __m128i v0, v1, v2, v3;
@@ -207,11 +213,11 @@ namespace
                         v3 = _mm_add_epi32(v3, add);
                     }
                     _mm_storeu_si128(out, v0);
-                    _mm_storeu_si128(out + 1, v1);
-                    _mm_storeu_si128(out + 2, v2);
-                    _mm_storeu_si128(out + 3, v3);
+                    _mm_storeu_si128(out + o1, v1);
+                    _mm_storeu_si128(out + o2, v2);
+                    _mm_storeu_si128(out + o3, v3);
                 }
-                vuAddr += done;
+                vuAddr += (done / wl) * cl; // done is a whole number of cycles: the loop below starts a cycle
                 src += done * bytes;
                 count -= done;
             }
