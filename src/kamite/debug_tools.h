@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace kamite::debug_tools
 {
@@ -28,4 +29,17 @@ namespace kamite::debug_tools
     // F2 > Debug "Every technique owned" (DBG_WAZA_FULL_OPEN) switched on (the switch, not the guest word).
     bool wazaFullOpen();
     void setPathfindingOff(bool on);
+
+    // The room jump points (etc/debugres/RoomJmpTbl.dat, rooms on the disc only): fixed after install.
+    struct JumpPoint
+    {
+        uint16_t room = 0;
+        uint8_t index = 0;
+        std::string label; // "r509  Stage 5: Harbour town 2"
+    };
+    std::vector<JumpPoint> jumpPoints();
+    // The game's forced door jump (black fade) to a jump point, on the game thread at frame start; false (nothing done)
+    // while Gene isn't in play (a cutscene, a door, a talk or a menu) or there is no such point. Busta-Chan Jive's
+    // windows use it.
+    bool jumpTo(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint16_t room, uint8_t index);
 }

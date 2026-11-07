@@ -586,20 +586,20 @@ namespace kamite::debug_tools
             return true;
         }
 
-        void jump(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, const Point &p)
+        bool jump(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, const Point &p)
         {
             std::string why;
             if (!canJump(rdram, why))
             {
                 setStatus(why);
-                return;
+                return false;
             }
             if (!g_jump && runtime->hasFunction(kForcedDoorJump))
                 g_jump = runtime->lookupFunction(kForcedDoorJump);
             if (!g_jump)
             {
                 setStatus("The game's door jump is not in this build.");
-                return;
+                return false;
             }
             for (int i = 0; i < 3; ++i)
                 std::memcpy(rdram + kLanding + 4 * i, &p.pos[i], 4);
@@ -616,8 +616,9 @@ namespace kamite::debug_tools
             g_jump(rdram, ctx, runtime);
             runtime->eeScheduler().endHostCall();
             *ctx = saved;
-            KM_INFO(Game, "debug: room jump to " << p.label);
+            KM_INFO(Game, "room jump to " << p.label);
             setStatus("Jumped to " + p.label + ".");
+            return true;
         }
 
 #if defined(KAMITE_HAS_GS_MENU)
@@ -863,6 +864,22 @@ namespace kamite::debug_tools
     }
 
     bool wazaFullOpen() { return (g_dbg[2].wanted.load(std::memory_order_relaxed) & Dbg::kWazaFullOpen) != 0u; }
+    std::vector<JumpPoint> jumpPoints()
+    {
+        std::vector<JumpPoint> out;
+        for (const Point &p : g_points)
+            out.push_back({p.room, p.index, p.label});
+        return out;
+    }
+
+    bool jumpTo(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint16_t room, uint8_t index)
+    {
+        for (const Point &p : g_points)
+            if (p.room == room && p.index == index)
+                return rdram && ctx && runtime && jump(rdram, ctx, runtime, p);
+        return false;
+    }
+
     bool pathfindingOff() { return (g_dbg[3].wanted.load() & Dbg::kPathfindingOff) != 0u; }
     void setPathfindingOff(bool on)
     {

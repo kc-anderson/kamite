@@ -39,6 +39,7 @@
 #include "kamite/game_layout.h"
 #include "kamite/log.h"
 #include "kamite/sprint_traversal.h"
+#include "kamite/debug_tools.h"
 #include "runtime/ps2_memory.h"
 #include "runtime/gs/gs_pcsx2_backend.h"
 
@@ -628,17 +629,6 @@ namespace kamite::hitbox_overlay
             // The room's windows (white; the ones unfolded in F2 in the highlight colour, magenta): the opening's rectangle and its diagonals.
             const uint64_t open = g_openWindows.load(std::memory_order_relaxed);
             int windowIndex = -1;
-            // The room's door triggers (cyan crosses, red while locked), for linking windows to them.
-            const auto doors = sprint_traversal::doors();
-            for (const auto &d : doors)
-            {
-                if (g_colors.size() + 3u > kMaxLines)
-                    break;
-                const uint32_t c = d.locked ? 0xFF4040FFu : 0xFFFFFF00u;
-                line(Vec3{d.x - 0.4f, d.y + 1.0f, d.z}, Vec3{d.x + 0.4f, d.y + 1.0f, d.z}, c);
-                line(Vec3{d.x, d.y + 1.0f, d.z - 0.4f}, Vec3{d.x, d.y + 1.0f, d.z + 0.4f}, c);
-                line(Vec3{d.x, d.y, d.z}, Vec3{d.x, d.y + 2.0f, d.z}, c);
-            }
             for (const auto &ref : sprint_traversal::windows(static_cast<uint16_t>(room)))
             {
                 ++windowIndex;
@@ -664,10 +654,6 @@ namespace kamite::hitbox_overlay
                     line(b1 + off, a1 + off, kWindowColor);
                     line(a1 + off, a0 + off, kWindowColor);
                 }
-                if (w.linked()) // a line from the opening to its door's trigger
-                    for (const auto &d : doors)
-                        if (d.room == w.doorRoom && d.point == w.doorPoint)
-                            line(Vec3{cx, 0.5f * (y0 + y1), cz}, Vec3{d.x, d.y + 1.0f, d.z}, kWindowColor);
                 if (!w.twoWay) // one-way: an arrow through the opening's middle, the way Gene may go
                 {
                     const float ym = 0.5f * (y0 + y1), len = 0.6f, nx = -w.dz * w.side, nz = w.dx * w.side;
@@ -855,8 +841,8 @@ namespace kamite::hitbox_overlay
                          "place it with the sliders. A thick wall's far side is found by itself (the second rectangle; 0 = "
                          "none). Any number per wall: mark again for another section (e.g. one to jump, one to slide). "
                          "Unfold a window to edit it; unfolded windows show magenta. New windows are one-way (the arrow: the way Gene "
-                         "faced when marking it); tick Two-way to allow both. A window into the space behind a door (crosses: door "
-                         "triggers, red = locked) can be linked to it: landing from the dive then goes through that door.");
+                         "faced when marking it); tick Two-way to allow both. A window into space that belongs to another room (past a "
+                         "locked door) can take a Room jump: diving through it jumps there.");
         if (ui->button("Mark window (the wall Gene faces)##markwin"))
         {
             g_markResult.store(0);
@@ -942,54 +928,32 @@ namespace kamite::hitbox_overlay
                             changed = true;
                         }
                     }
-                    // A window into the space behind a door: landing from it runs the door (sprint_traversal.h).
-                    if (w.linked())
+                    // A window into space that belongs to another room (sprint_traversal.h): crossing it jumps there.
                     {
-                        const auto doors = sprint_traversal::doors();
-                        int to = -1;
-                        size_t at = doors.size();
-                        for (size_t k = 0; k < doors.size(); ++k)
-                            if (doors[k].room == w.doorRoom && doors[k].point == w.doorPoint)
-                                to = doors[k].to, at = k;
-                        char text[96];
-                        if (to >= 0)
-                            std::snprintf(text, sizeof(text), "Door %d: to r%03X (one-way)", w.doorPoint, to);
-                        else
-                            std::snprintf(text, sizeof(text), "Door %d (one-way)", w.doorPoint);
-                        ui->text(text);
-                        ui->same_line();
-                        if (doors.size() > 1 && ui->small_button("Next door##wnext"))
-                        {
-                            const auto &d = doors[at < doors.size() ? (at + 1) % doors.size() : 0];
-                            w.doorRoom = d.room;
-                            w.doorPoint = d.point;
-                            changed = true;
-                        }
-                        ui->same_line();
-                        if (ui->small_button("Unlink##wunlink"))
-                        {
-                            w.doorRoom = w.doorPoint = -1;
-                            changed = true;
-                        }
-                    }
-                    else if (sprint_traversal::doors().empty())
-                        ui->text_disabled("No door triggers in this room to link to.");
-                    else if (ui->small_button("Link to the nearest door##wlink"))
-                    {
-                        const float cx = w.x + w.dx * w.offset, cz = w.z + w.dz * w.offset;
-                        float best = 1e9f;
-                        for (const auto &d : sprint_traversal::doors())
-                        {
-                            const float dd = (d.x - cx) * (d.x - cx) + (d.z - cz) * (d.z - cz);
-                            if (dd < best)
+                        static std::vector<debug_tools::JumpPoint> points;
+                        if (points.empty())
+                            points = debug_tools::jumpPoints();
+                        std::vector<const char *> labels{"No room jump"};
+                        std::vector<const debug_tools::JumpPoint *> picks{nullptr};
+                        int current = 0;
+                        for (const auto &p : points)
+                            if ((p.room >> 8) == (r >> 8) && p.room != r) // the window's own stage
                             {
-                                best = dd;
-                                w.doorRoom = d.room;
-                                w.doorPoint = d.point;
+                                if (w.toRoom == p.room && w.toPoint == p.index)
+                                    current = static_cast<int>(picks.size());
+                                labels.push_back(p.label.c_str());
+                                picks.push_back(&p);
                             }
+                        ui->set_next_width(320.0f);
+                        if (ui->combo("Room jump##wjumpto", &current, labels.data(), static_cast<int>(labels.size())))
+                        {
+                            const auto *p = picks[static_cast<size_t>(current)];
+                            w.toRoom = p ? p->room : -1;
+                            w.toPoint = p ? p->index : 0;
+                            if (p)
+                                w.twoWay = false;
+                            changed = true;
                         }
-                        w.twoWay = false;
-                        changed = true;
                     }
                 }
                 ui->separator();

@@ -41,13 +41,11 @@ namespace kamite::sprint_traversal
         // faced when it was marked, side = +1 along (-dz, dx), -1 against it.
         bool twoWay = true;
         int side = 1;
-        // Linked to a door (K, Nov 7): a window into the space behind a door that leads to the next room. When Gene lands
-        // from a dive through it, that door's own trigger runs (the same jump, fade and SAVE / CONTINUE screen as walking
-        // through it), so he never stands where the room has no collision. The door's trigger is found by its two bytes
-        // (cSceAtUnit +0x5E and +0x79, what func_002C2078 passes cDoor_getJumpData); -1 = not linked. A linked window is
-        // one-way.
-        int doorRoom = -1, doorPoint = -1;
-        bool linked() const { return doorPoint >= 0; }
+        // A room jump (K, Nov 7): a window into space that belongs to the next room (r503's windows past the locked door
+        // to r509: no collision there). As Gene crosses its far face in the dive, the game's door jump (black fade) takes
+        // him to jump point (toRoom, toPoint) of RoomJmpTbl (F2 lists the window's own stage). -1 = none. One-way.
+        int toRoom = -1, toPoint = 0;
+        bool linked() const { return toRoom >= 0; }
     };
     // The side a window marked by Gene heading (fx, fz) lets him through from.
     inline int windowSide(const Window &w, float fx, float fz) { return fx * -w.dz + fz * w.dx >= 0.0f ? 1 : -1; }
@@ -63,16 +61,7 @@ namespace kamite::sprint_traversal
     void setWindow(uint16_t room, const std::string &group, int index, const Window &window);
     bool removeWindow(uint16_t room, const std::string &group, int index);
     bool flushWindows(); // saves pending changes (call when no slider is being dragged); false = could not write
-    // The room's doors (scenario trigger units of type 1, handler func_002C2078), refreshed each frame by onFrame.
-    struct Door
-    {
-        int room = 0, point = 0; // cSceAtUnit +0x5E, +0x79
-        float x = 0.0f, y = 0.0f, z = 0.0f; // the trigger area's centre
-        bool locked = false;     // +0x7A
-        int to = -1;             // the room it leads to (the room's JMP table, record `point`), -1 = not found
-    };
-    std::vector<Door> doors();
-    // Game frame start (frame_patches.cpp): the door list, and a dive through a linked window runs its door on landing.
+    // Game frame start (frame_patches.cpp): a dive through a window with a room jump starts the jump.
     void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
 
     // Every room back to the marks and windows the port ships (resources/sprint_traversal.txt): the user's file keeps

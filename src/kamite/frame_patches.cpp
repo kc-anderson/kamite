@@ -1451,7 +1451,7 @@ namespace kamite
             characters::onFrame(rdram);
             npc_poses::onFrame(rdram, ctx, runtime);
             debug_tools::onFrame(rdram, ctx, runtime);
-            sprint_traversal::onFrame(rdram, ctx, runtime); // Busta-Chan Jive: a window linked to a door runs it
+            sprint_traversal::onFrame(rdram, ctx, runtime); // Busta-Chan Jive: a window with a room jump starts it
             npc_tools::onFrame(rdram, ctx, runtime);
             hitbox_overlay::onFrame();
             bone_tweaks::onFrame(rdram, ctx, runtime);
