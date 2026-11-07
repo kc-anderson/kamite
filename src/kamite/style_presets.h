@@ -17,12 +17,13 @@ class PS2Runtime;
 // save data's unused tail (+0xC00), so they go to the memory card with the save, and a new game has none. Loading one
 // keeps out moves the save does not own (skill[id] < 0): a single slot stays empty, the chain closes up.
 //
-// Controls (d-pad up, right, down, left = S, E, X, Y):
-//   In play (Gene under the player's control, mid-fight and mid-combo included): a d-pad tap loads that style.
-//   On the Techniques screen with the Modern menu buttons (Y does nothing there): Y + d-pad, let go before 1.5 s,
-//   loads; held 1.5 s saves the equipped moves to it. The d-pad is hidden from the screen while Y is held.
-// The Techniques screen lists the four under "Attack Str" (Modern menu buttons), with the bottom bar's hint.
-// F2 > Styles shows the equipped moves and the styles and saves/loads them too.
+// Style None is the game's own moves (the default: styles off). On the Techniques screen L2 / R2 cycle None, S, E, X,
+// Y (wrapping); every change of the equipped moves saves to the style shown; a style first cycled to takes the moves
+// equipped then; None's moves wait while a style is on. The screen shows "Style: None / S / E / X / Y" under its
+// title, the d-pad hints right of it and "[L2] [R2] Cycle Style" in the bottom bar.
+// In play (Gene under the player's control, mid-fight and mid-combo included), while a style is on: a d-pad tap
+// (up, right, down, left = S, E, X, Y) switches to that style if it is filled; the HUD shows the letters.
+// F2 > Styles shows the equipped moves and the styles and selects one too.
 namespace kamite::style_presets
 {
     // Before the game starts, with the EE's RDRAM: the per-vblank work, the screen's list and the F2 tab.

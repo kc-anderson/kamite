@@ -1532,9 +1532,9 @@ void main()
                         iniCheckbox(state, "On##fps60", "Game", "Fps60", false);
                         settingLabel("L3 dash", "Clicking the left stick dashes (where the stick points, or straight ahead).");
                         iniCheckbox(state, "On##l3", "Game", "L3Dash", false);
-                        settingLabel("Style switching", "Save up to four sets of techniques as styles and swap "
+                        settingLabel("Style switching", "Keep up to four sets of techniques as styles and swap "
                                                         "between them in play with the d-pad (on the Techniques "
-                                                        "screen, hold Square / X + d-pad to save one).");
+                                                        "screen, L2 / R2 cycle the styles).");
                         iniCheckbox(state, "On##styles", "Game", "StyleSwitching", false);
                         settingLabel("Control style", "Classic: as on the PS2. Modern: the free camera: the right stick "
                                                       "turns the camera and Gene moves where you point; pressing "

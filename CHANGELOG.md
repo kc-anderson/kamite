@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 7, 2026
 
+- Style switching: L2 / R2 cycle Style None, S, E, X, Y on the Techniques screen; changes save to the style shown; None turns styles off.
 - F2 room jump starts the stage fresh: enemies, doors, objects and dropped items in all its rooms are back.
 - 60 FPS: the stage 6 rolling boulders (and three other animated props) animate at full speed again.
 - 60 FPS: dropped items (heals, roulette reels, magazines) pop up and fall at the 30 FPS speed.

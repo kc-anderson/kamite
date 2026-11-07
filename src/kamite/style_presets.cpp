@@ -191,27 +191,43 @@ namespace kamite::style_presets
         constexpr uint32_t kStoreOffset = 0xC00u;
         constexpr uint32_t kCheckpointPointer = 0x3C264Cu;
         constexpr uint32_t kStoreMagic = 0x54534D4Bu; // "KMST"
-        constexpr uint8_t kStoreVersion = 1u;
+        constexpr uint8_t kStoreVersion = 2u;
         constexpr uint8_t kNoStyle = 0xFFu;
+        constexpr uint8_t kNoneKept = 1u; // Store::flags: `none` holds the None moves (kept while a style is on)
+        // Version 2 (Nov 7, K): Style None = the game's own moves, the default; L2 / R2 on the Techniques screen cycle
+        // None, S, E, X, Y; edits save to the style on show; a style first visited copies the equipped moves. While a
+        // style is on, the None moves wait in `none`.
         struct Store
         {
             uint32_t magic;
             uint8_t version;
-            uint8_t used;   // bit n: style n saved
-            uint8_t active; // the style loaded or saved last (shown as loaded while the equipped moves still match it)
+            uint8_t used;   // bit n: style n filled
+            uint8_t active; // the style on (its moves are the equipped ones), kNoStyle = None (styles off)
+            uint8_t flags;  // kNoneKept
+            Combo styles[kStyles][kSets];
+            Combo none[kSets];
+            uint32_t checksum;
+        };
+        static_assert(sizeof(Store) == 8u + (kStyles + 1) * kComboBytes + 4u, "Store layout");
+        // Version 1 (Oct 25 .. Nov 7): no None; `active` = the style loaded or saved last.
+        struct StoreV1
+        {
+            uint32_t magic;
+            uint8_t version;
+            uint8_t used;
+            uint8_t active;
             uint8_t reserved;
             Combo styles[kStyles][kSets];
             uint32_t checksum;
         };
-        static_assert(sizeof(Store) == 8u + kStyles * kComboBytes + 4u, "Store layout");
         static_assert(kStoreOffset >= game::CoreSaveData::kUsedEnd, "Store clear of the game's fields");
         static_assert(kStoreOffset + sizeof(Store) <= kSaveSize, "Store fits in cCoreSaveData");
 
-        uint32_t checksumOf(const Store &store)
+        template <typename T> uint32_t checksumOf(const T &store)
         {
             const uint8_t *bytes = reinterpret_cast<const uint8_t *>(&store);
             uint32_t sum = 0x9E3779B9u;
-            for (size_t i = 0; i < offsetof(Store, checksum); ++i)
+            for (size_t i = 0; i < offsetof(T, checksum); ++i)
                 sum = (sum ^ bytes[i]) * 0x01000193u;
             return sum;
         }
@@ -221,7 +237,7 @@ namespace kamite::style_presets
         {
             Elsewhere,  // title, menus, cutscenes, minigames...
             Play,       // Gene in a stage under the player's control: a d-pad tap loads a style
-            Techniques, // the Techniques screen, browsing the slots: Square (X) + d-pad
+            Techniques, // the Techniques screen, browsing the slots: L2 / R2 cycle the styles
         };
         std::atomic<int> g_moment{Elsewhere};
 
@@ -239,10 +255,11 @@ namespace kamite::style_presets
         std::mutex g_mutex; // the snapshot and the status (EE thread writes, the F2 tab reads)
         Snapshot g_snapshot;
         std::string g_status;
-        // Pad filter / F2 -> EE thread: 1..4 save that style, 11..14 load it.
+        // Pad filter / F2 -> EE thread: 1..5 pick None, S..Y (F2); 11..14 in play, the d-pad's style; 21 / 22 the
+        // Techniques screen's R2 / L2 (next / previous, wrapping).
         std::atomic<int> g_request{0};
-        std::atomic<bool> g_saveSound{false}; // a style was saved: the Techniques screen plays its cursor sound
-        // Shown (the list, a flash) after a load or a save: which style and when. Host milliseconds, not frame-hook
+        std::atomic<bool> g_cycleSound{false}; // a cycle on the Techniques screen: it plays its cursor sound
+        // The HUD's blink after a swap in play: which style and when. Host milliseconds, not frame-hook
         // ticks: the hook runs once a game frame, so a tick count made the blinking last twice as long at 30 fps
         // (Thinso, Oct 27: "saving a style takes twice as long on 30fps").
         std::atomic<int> g_lastStyle{-1};
@@ -300,19 +317,34 @@ namespace kamite::style_presets
             std::memcpy(out, g_ram + data + kCombos, kComboBytes);
         }
 
-        // The record's styles: false (store cleared) when there are none yet or the bytes are not ours.
-        bool readStore(uint32_t data, Store &store)
+        bool equipped(uint32_t data, const Combo (&style)[kSets]);
+
+        // The record's styles: false (store cleared: None, no styles) when there are none yet or the bytes are not
+        // ours. A version 1 record is converted (*converted set: write it back): None = the moves equipped now (K, Nov
+        // 7), the last style loaded stays on when the equipped moves are still its own, else None.
+        bool readStore(uint32_t data, Store &store, bool *converted = nullptr)
         {
             std::memcpy(&store, g_ram + data + kStoreOffset, sizeof(Store));
-            const bool ok = store.magic == kStoreMagic && store.version == kStoreVersion && store.checksum == checksumOf(store);
-            if (!ok)
-            {
-                store = Store{};
-                store.magic = kStoreMagic;
-                store.version = kStoreVersion;
-                store.active = kNoStyle;
-            }
-            return ok;
+            if (store.magic == kStoreMagic && store.version == kStoreVersion && store.checksum == checksumOf(store))
+                return true;
+            StoreV1 old{};
+            std::memcpy(&old, g_ram + data + kStoreOffset, sizeof(StoreV1));
+            const bool wasV1 = old.magic == kStoreMagic && old.version == 1u && old.checksum == checksumOf(old);
+            store = Store{};
+            store.magic = kStoreMagic;
+            store.version = kStoreVersion;
+            store.active = kNoStyle;
+            if (!wasV1)
+                return false;
+            store.used = static_cast<uint8_t>(old.used & 0x0Fu);
+            std::memcpy(store.styles, old.styles, sizeof(store.styles));
+            read(data, store.none);
+            store.flags = kNoneKept;
+            if (old.active < kStyles && (store.used & (1u << old.active)) && equipped(data, store.styles[old.active]))
+                store.active = old.active;
+            if (converted)
+                *converted = true;
+            return true;
         }
 
         void writeStore(uint32_t data, Store &store)
@@ -398,6 +430,8 @@ namespace kamite::style_presets
             for (int slot = 0; slot < kStyles; ++slot)
                 if (store.used & (1u << slot))
                     removed += keepEquippable(store.styles[slot], store.styles[slot], skillsOf(data), false);
+            if (store.flags & kNoneKept)
+                removed += keepEquippable(store.none, store.none, skillsOf(data), false);
             return removed;
         }
 
@@ -445,8 +479,7 @@ namespace kamite::style_presets
             int moment = Elsewhere;
             if (data)
             {
-                // Square (X on an Xbox pad) is used by no menu, so it works with every menu style (K / Thinso, Oct 31;
-                // it was Y, which Classic uses to cancel).
+                // L2 / R2 on the Techniques screen: no menu uses the triggers, so they work with every menu style.
                 if (techniquesBrowsing(subScr, subScreenOpen))
                     moment = Techniques;
                 else if (inPlay(subScr, subScreenOpen))
@@ -469,61 +502,114 @@ namespace kamite::style_presets
 
             const int request = g_request.exchange(0);
             Store store{};
+            bool converted = false;
+            if (data)
+                readStore(data, store, &converted);
+            if (converted)
+            {
+                writeStore(data, store);
+                KM_INFO(Game, "styles: record converted to version 2 (None = the equipped moves)");
+            }
             // While the switch is off the saved styles hold only owned moves (also a record saved with the switch on
             // and loaded later with it off).
-            if (data && readStore(data, store) && !everyNow)
+            if (data && store.used && !everyNow)
                 if (const int removed = stripStyles(data, store))
                 {
                     writeStore(data, store);
                     KM_INFO(Game, "styles: every technique off: " << removed << " move(s) the save does not own removed from the styles");
                 }
+
+            // A style on is the equipped moves: the Techniques screen saves every change to it (each vblank the screen
+            // is open; the picker writes combo[] when a move is set); opening the screen or being in play with other
+            // moves equipped (a Continue puts the checkpoint's moves back) puts the style's back.
+            const bool wazaOpen = data && subScreenOpen && static_cast<int32_t>(rd32(subScr + game::SubScr::kKind)) == kTechniquesKind;
+            static bool wazaWas = false;
+            const int on = store.active < kStyles && (store.used & (1u << store.active)) ? store.active : -1;
+            if (on >= 0 && !equipped(data, store.styles[on]))
+            {
+                if (wazaOpen && wazaWas)
+                {
+                    read(data, store.styles[on]);
+                    writeStore(data, store);
+                }
+                else if (wazaOpen || moment == Play)
+                    load(data, store.styles[on]);
+            }
+            wazaWas = wazaOpen;
+
             if (request != 0)
             {
-                const int slot = (request % 10) - 1;
-                const bool save = request < 10;
-                char text[160];
-                if (!data || slot < 0 || slot >= kStyles)
+                // The position to go to: 0 None, 1..4 S..Y.
+                const int at = on + 1;
+                int to = -1;
+                if (request >= 1 && request <= 5)
+                    to = request - 1;
+                else if (request >= 11 && request <= 14)
+                    to = on >= 0 && (store.used & (1u << (request - 11))) ? request - 10 : -1; // in play: styles on, filled
+                else if (request == 21 || request == 22)
+                    to = moment == Techniques ? (at + (request == 21 ? 1 : kStyles)) % (kStyles + 1) : -1;
+                char text[160] = "";
+                if (!data)
                     std::snprintf(text, sizeof(text), "No save data in memory yet.");
-                else if (save)
+                else if (to >= 0 && to != at)
                 {
-                    read(data, store.styles[slot]);
-                    store.used = static_cast<uint8_t>(store.used | (1u << slot));
-                    store.active = static_cast<uint8_t>(slot);
+                    if (on < 0)
+                    {
+                        read(data, store.none); // None's moves wait while a style is on
+                        store.flags = static_cast<uint8_t>(store.flags | kNoneKept);
+                    }
+                    int skipped = 0;
+                    bool copied = false;
+                    if (to == 0)
+                    {
+                        if (store.flags & kNoneKept)
+                            skipped = load(data, store.none);
+                        store.active = kNoStyle;
+                    }
+                    else
+                    {
+                        const int slot = to - 1;
+                        if (store.used & (1u << slot))
+                            skipped = load(data, store.styles[slot]);
+                        else
+                        {
+                            read(data, store.styles[slot]); // first visit: the equipped moves (K, Nov 7)
+                            store.used = static_cast<uint8_t>(store.used | (1u << slot));
+                            copied = true;
+                        }
+                        store.active = static_cast<uint8_t>(slot);
+                    }
                     writeStore(data, store);
-                    g_lastStyle = slot;
-                    g_lastActionMs = steadyMs();
-                    if (moment == Techniques)
-                        g_saveSound = true;
-                    std::snprintf(text, sizeof(text), "Style %c saved.", g_letters[slot]);
-                }
-                else if (!(store.used & (1u << slot)))
-                    std::snprintf(text, sizeof(text), "Style %c is empty.", g_letters[slot]);
-                else
-                {
-                    const int skipped = load(data, store.styles[slot]);
                     if (moment == Techniques)
                     {
                         // A shorter chain: the cursor no further than the chain's first empty row.
+                        Combo now[kSets];
+                        read(data, now);
                         const uint32_t waza = wazaScreen(subScr);
-                        const int32_t chain = store.styles[slot][0].max < 0 ? 0 : store.styles[slot][0].max;
+                        const int32_t chain = now[0].max < 0 ? 0 : now[0].max;
                         int8_t &cursor = reinterpret_cast<int8_t &>(g_ram[waza + kWazaCursor]);
                         if (g_ram[waza + kWazaColumn] == 0u && cursor > chain)
                             cursor = static_cast<int8_t>(chain);
+                        g_cycleSound = true;
                     }
-                    store.active = static_cast<uint8_t>(slot);
-                    writeStore(data, store);
-                    g_lastStyle = slot;
-                    g_lastActionMs = steadyMs();
-                    std::snprintf(text, sizeof(text), "Style %c loaded%s.", g_letters[slot],
-                                  skipped ? " (moves this save does not own left out)" : "");
+                    else
+                    {
+                        g_lastStyle = to - 1;
+                        g_lastActionMs = steadyMs();
+                    }
+                    if (to == 0)
+                        std::snprintf(text, sizeof(text), "Style None (styles off).");
+                    else
+                        std::snprintf(text, sizeof(text), "Style %c%s%s.", g_letters[to - 1],
+                                      copied ? " (new: the equipped moves)" : "",
+                                      skipped ? " (moves this save does not own left out)" : "");
                 }
-                // No corner notice (Oct 26): the HUD indicator and the screen's list show the result; the one case
-                // neither can, a save with no save data in memory, still gets a word.
-                if (!data)
-                    ps2x::menu::notify(std::string(text, std::strlen(text) - 1u), 1.5f);
-                std::lock_guard<std::mutex> lock(g_mutex);
-                g_status = text;
-                KM_INFO(Game, "styles: " << text << " (save data 0x" << std::hex << data << std::dec << ")");
+                if (text[0])
+                {
+                    std::lock_guard<std::mutex> lock(g_mutex);
+                    g_status = text;
+                    KM_INFO(Game, "styles: " << text << " (save data 0x" << std::hex << data << std::dec << ")");
+                }
             }
             if (request != 0 || g_vblanks % 15u == 0u)
             {
@@ -547,18 +633,11 @@ namespace kamite::style_presets
 
         constexpr uint16_t kDpad[kStyles] = {ps2x::iop::PadButton::Up, ps2x::iop::PadButton::Right,
                                              ps2x::iop::PadButton::Down, ps2x::iop::PadButton::Left};
-        constexpr ps2x::iop::PadPressure kDpadPressure[kStyles] = {ps2x::iop::PadPressure::Up, ps2x::iop::PadPressure::Right,
-                                                                   ps2x::iop::PadPressure::Down, ps2x::iop::PadPressure::Left};
         constexpr uint16_t kAllDpad = ps2x::iop::PadButton::Up | ps2x::iop::PadButton::Right | ps2x::iop::PadButton::Down |
                                       ps2x::iop::PadButton::Left;
-        constexpr int64_t kSaveHoldMs = 1000; // K, Oct 31: 1.5 s felt too long (a third less)
+        constexpr uint16_t kTriggers = ps2x::iop::PadButton::L2 | ps2x::iop::PadButton::R2;
 
-        uint16_t g_dpadWas = 0u;
-        int g_held = -1;         // Techniques: the direction pressed with X, waiting for its release or 1 s
-        int64_t g_heldSince = 0;
-        std::atomic<int64_t> g_holdStartMs{0}; // g_heldSince for the list's fill (EE thread reads it)
-        bool g_heldSaved = false;
-        bool g_swallow = false;  // the d-pad is kept from the game until it is let go (it was pressed with X)
+        uint16_t g_dpadWas = 0u, g_triggersWas = 0u;
 
         int firstPressed(uint16_t pressed)
         {
@@ -568,57 +647,63 @@ namespace kamite::style_presets
             return -1;
         }
 
-        void hideDpad(ps2x::iop::PadInputState &state)
+        // The Techniques screen: L2 / R2 are the styles' (no menu uses the triggers; K, Nov 7).
+        void hideTriggers(ps2x::iop::PadInputState &state)
         {
-            state.buttons = static_cast<uint16_t>(state.buttons & ~kAllDpad);
-            for (const ps2x::iop::PadPressure pressure : kDpadPressure)
-                state.pressure[static_cast<size_t>(pressure)] = 0u;
+            state.buttons = static_cast<uint16_t>(state.buttons & ~kTriggers);
+            state.pressure[static_cast<size_t>(ps2x::iop::PadPressure::L2)] = 0u;
+            state.pressure[static_cast<size_t>(ps2x::iop::PadPressure::R2)] = 0u;
         }
 
-        // ---- the list on the Techniques screen ----
-        // The info panel's "Already Set" text (shown by the game only while the move picker is open, to say the
-        // highlighted move is in another slot) carries the list while the slots are browsed, moved to the empty space
-        // right of the big TECHNIQUES title (x ~225..365, y ~10..110 of the 512 x 448 menu screen; K's pick, Oct 25):
-        // four lines, "[X] + arrow  Style S" down to "Style Y" (reads SEXY; LIFE as Xavier). parts[0x23] is the text
-        // (align 3: the block centred on its draw position, scale 0.65), parts[0x24] its shadow (+1,+1, colour set 1:
-        // black, icons skipped); the rest of its group (parts[0x25] the move name, [0x26] the "down+" art, [0x27] the
-        // slot's button, the name box: record #57, no id) is hidden. The text is message 0x30C4 (an unused "<7d>"
-        // placeholder) whose offset word points at a string of ours; the shadow is 0x30FE (no colour codes, which
-        // would colour the shadow too). The bottom bar's spare line (ids 57/58: "Release" on the chain's last rows,
-        // otherwise blank 0x30D0) says "[X] Hold D-Pad: Save Style" (0x30FF). Entry fields: +0x2C flags (0x08000000 =
-        // not drawn), +0x50/+0x54 draw position, +0x90 message id.
+        // ---- the Techniques screen (Nov 7, K) ----
+        // The style row "Style: None / S / E / X / Y" under the big TECHNIQUES title (the space above the slots'
+        // TECHNIQUES bar), the one on gold, filled beige, empty dim, with its shadow: the "Already Set" text and shadow
+        // (parts[0x23] / [0x24], shown by the game only while the move picker is open, to say the highlighted move is in
+        // another slot) carry it while the slots are browsed. The four hint lines "Style S: [up]" .. "Style Y: [left]"
+        // right of the title (x ~225..365, y ~10..110 of the 512 x 448 menu screen; K's pick, Oct 25; reads SEXY, LIFE as
+        // Xavier) go in that group's move name (parts[0x25], a text entry, no shadow), the style on gold, empty ones dim.
+        // The rest of the group ([0x26] the "down+" art, [0x27] the slot's button, the name box: record #57, no id) is
+        // hidden. The texts are placeholder messages (unused "<7d>": 0x30C4 the row, 0x30FE its shadow (no colour codes,
+        // which would colour the shadow too), 0x3043 the lines) pointed at strings of ours. The bottom bar's spare line
+        // (ids 57/58: "Release" on the chain's last rows, otherwise blank 0x30D0) says "[L2] [R2] Cycle Style" (0x30FF).
+        // Entry fields: +0x2C flags (0x08000000 = not drawn), +0x50/+0x54 draw position, +0x90 message id.
         //
-        // The arrows and the plus are the icon sheet's style pieces (button_prompt_sheets.h: a down arrow, a plus and a
-        // right arrow shaped like the game's "+down" art, in the sheet's empty cells; up and left are the arrows
-        // flipped), drawn in place of icon codes 4..8 (L1 R1 L2 R2 L3, never in this text) while the list's entry is
-        // drawn, at the size the game draws its own "+down" art next to a button, the plus against the arrow as in
-        // that art.
+        // The arrows are the icon sheet's style pieces (button_prompt_sheets.h: a down arrow and a right arrow shaped
+        // like the game's "+down" art, in the sheet's empty cells; up and left are the arrows flipped), drawn in place of
+        // icon codes 4..7 (L1 R1 L2 R2, never in the lines' text) while the lines' entry is drawn, at the size the game
+        // draws its own "+down" art next to a button.
         constexpr uint32_t kNoDraw = game::kIdentFlagNoDraw;
         constexpr uint32_t kMessageBankPointer = 0x3C23A4u; // *(*(u32 *)0x3C23A4 + 0xC) = the message bank
-        constexpr uint16_t kListMessage = 0x30C4u, kShadowMessage = 0x30FEu, kHintMessage = 0x30FFu, kBlankMessage = 0x30D0u;
-        constexpr uint32_t kListText = 0x1000u, kShadowText = 0x1100u, kHintText = 0x1200u; // in the save record's unused tail
-        constexpr uint32_t kHudText = 0x1300u, kHudShadowText = 0x1400u;                  // the in-play indicator's strings
+        constexpr uint16_t kRowMessage = 0x30C4u, kRowShadowMessage = 0x30FEu, kHintMessage = 0x30FFu, kBlankMessage = 0x30D0u;
+        constexpr uint16_t kListMessage = 0x3043u; // one more "<7d>" placeholder of bank 3
+        // Strings in the save record's unused tail, past the Store (0xC00..0x1044), rewritten every frame (outside the
+        // checksum); each with its room (writeText cuts a longer one).
+        constexpr uint32_t kListText = 0x1050u, kRowText = 0x1150u, kRowShadowText = 0x1250u, kHintText = 0x1300u;
+        constexpr uint32_t kHudText = 0x1340u, kHudShadowText = 0x13C0u, kTextEnd = 0x1440u;
+        static_assert(kStoreOffset + sizeof(Store) <= kListText, "the strings clear of the Store");
+        static_assert(kTextEnd <= kSaveSize, "the strings in cCoreSaveData");
         constexpr uint16_t kHudMessage = 0x3041u, kHudShadowMessage = 0x3042u;            // two more "<7d>" placeholders of bank 3
-        constexpr float kListX = 311.0f, kListY = 56.5f; // the block is centred here (align 3): the names' right end and the top line stay put
+        constexpr float kListX = 311.0f, kListY = 56.5f; // the lines' block is centred here (align 0), where the old list was
+        constexpr float kRowX = 100.0f, kRowY = 78.0f;   // the row's centre: under the title, above the TECHNIQUES bar
+        constexpr float kTextScale = 0.65f;
         // Line pitch: a new line moves down by the line's height (the tallest code: a letter, 41 x the scale = 26.8 at
         // 0.65; icons are 32 x the scale) + state+0x30 x state+0x48. The game's +0x30 at this scale gives ~22 (K: right).
         constexpr float kLinePitch = 22.0f, kLineHeight = 26.8f;
         constexpr uint16_t kArrowCode[kStyles] = {4u, 5u, 6u, 7u}; // up, right, down, left
-        constexpr uint16_t kPlusCode = 8u;                         // the plus before the arrow
-        constexpr int kPlusPiece = kStyles;                        // g_pendingArrow: the plus
+        constexpr uint16_t kL2Icon = 6u, kR2Icon = 7u;             // the game's own (prompt set) icons in the hint
         constexpr uint32_t kFontState = game::MessDrawFont::kInstance; // the font's draw state (D_005E7510)
-        constexpr float kArrowTextGap = 5.0f;                      // texels between the arrow and the style's name
-        constexpr uint16_t kSquareIcon = 2u, kPlus = 0x0Eu, kSpace = 0x10u, kNewLine = 0xA001u, kEnd = 0x8001u;
+        constexpr float kArrowTextGap = 5.0f;                      // texels after the arrow
+        constexpr uint16_t kPlus = 0x0Eu, kSlash = 0x2Du, kSpace = 0x10u, kNewLine = 0xA001u, kEnd = 0x8001u;
         constexpr uint16_t kColour = 0xB203u, kColourRestore = 0xB301u; // 0xB203 hi lo: A B G R (0x80 = full)
         constexpr uint32_t kGold = 0x80106880u, kDim = 0x80343434u; // dim: darker than the cream (K, Oct 26)
 
-        std::atomic<int> g_holding{-1}; // the pad filter: the direction held with X, before it saves
-        uint32_t g_listEntry = 0u;      // the entry the arrows are drawn for (EE thread)
-        uint32_t g_shadowEntry = 0u;    // its shadow entry (same text, icons not drawn): gets the same line pitch
-        uint32_t g_hintEntry = 0u, g_hintShadow = 0u; // the save hint's entries: its plus is the list's piece too
+        uint32_t g_listEntry = 0u;      // the lines' entry, the arrows are drawn for it (EE thread)
         uint32_t g_drawingEntry = 0u;   // the cIDBase entry being drawn (hud_layout's hook)
-        bool g_listShown = false;       // this frame's list is on (the screen's draw places it)
-        uint32_t g_hidName = 0u, g_hidBox = 0u; // entries hidden by us, shown again when the picker opens
+        bool g_listShown = false;       // this frame's row and lines are on (the screen's draw places them)
+        uint32_t g_hidBox = 0u;         // the name box, hidden by us, shown again when the picker opens
+        uint32_t g_nameEntry = 0u;      // parts[0x25] while it carries the lines: its message given back after
+        uint16_t g_nameMsg = 0xFFFFu;
+        uint8_t g_nameColourSet = 0u;
         int g_pendingArrow = -1;        // the icon drawer is drawing this arrow (its quad is shaped next)
 
         uint16_t glyph(char c)
@@ -635,6 +720,8 @@ namespace kamite::style_presets
                 return 0x1Fu;
             if (c == '+')
                 return kPlus;
+            if (c == '/')
+                return kSlash;
             return kSpace;
         }
 
@@ -660,8 +747,14 @@ namespace kamite::style_presets
         }
         void wrFloat(uint32_t address, float value) { std::memcpy(g_ram + (address & 0x1FFFFFFu), &value, sizeof(value)); }
 
-        void writeText(uint32_t address, const std::vector<uint16_t> &text)
+        void writeText(uint32_t address, std::vector<uint16_t> text, uint32_t room)
         {
+            const size_t most = room / sizeof(uint16_t);
+            if (text.size() > most)
+            {
+                text.resize(most);
+                text.back() = kEnd;
+            }
             std::memcpy(g_ram + (address & 0x1FFFFFFu), text.data(), text.size() * sizeof(uint16_t));
         }
 
@@ -728,7 +821,7 @@ namespace kamite::style_presets
         uint32_t g_hudText = 0u, g_hudShadow = 0u; // the two entries (EE thread); 0 = not found
         bool g_hudShown = false;
 
-        std::vector<uint16_t> hudText(uint32_t data, const Store &store, bool colours)
+        std::vector<uint16_t> hudText(const Store &store, bool colours)
         {
             const int64_t now = steadyMs();
             const bool blinkOn = (now / kBlinkMs) % 2 == 0;
@@ -740,9 +833,8 @@ namespace kamite::style_presets
                     out.push_back(kSpace);
                 const bool used = (store.used & (1u << slot)) != 0u;
                 uint32_t colour = kBeige;
-                // In play a d-pad tap only loads a style; saving is the Techniques screen's alone (padFilter).
-                if (used && store.active == slot && equipped(data, store.styles[slot]))
-                    colour = (flash && !blinkOn) ? kBeige : kGold;
+                if (used && store.active == slot)
+                    colour = (flash && !blinkOn && g_lastStyle.load(std::memory_order_relaxed) == slot) ? kBeige : kGold;
                 else if (!used)
                     colour = kDim;
                 if (colours)
@@ -753,54 +845,54 @@ namespace kamite::style_presets
             return out;
         }
 
-        // Four lines: [X] + arrow  Style S. The style's words take its colour: gold when loaded (blinking for a
-        // moment after a load or a save), dim when empty. While X + its direction is held the words fill with gold
-        // from left to right over the 1 s hold (the rest dim): full = saved (K, Oct 31: the blink did not say when it was done).
-        std::vector<uint16_t> listText(uint32_t data, const Store &store, bool colours)
+        void colourOn(std::vector<uint16_t> &out, uint32_t colour)
         {
-            const int holding = g_holding.load(std::memory_order_relaxed);
-            const int64_t now = steadyMs();
-            const bool blinkOn = (now / kBlinkMs) % 2 == 0;
-            const bool flash = now - g_lastActionMs.load(std::memory_order_relaxed) < kFlashMs;
+            out.insert(out.end(), {kColour, static_cast<uint16_t>(colour >> 16), static_cast<uint16_t>(colour & 0xFFFFu)});
+        }
+
+        // Four hint lines: "Style S: [up]" .. "Style Y: [left]": the style on gold, empty ones dim.
+        std::vector<uint16_t> listText(const Store &store)
+        {
             std::vector<uint16_t> out;
             for (int slot = 0; slot < kStyles; ++slot)
             {
                 if (slot > 0)
                     out.push_back(kNewLine);
-                out.push_back(kSquareIcon);
-                out.push_back(kPlusCode);
-                out.push_back(kArrowCode[slot]);
                 const bool used = (store.used & (1u << slot)) != 0u;
-                if (slot == holding)
-                {
-                    std::vector<uint16_t> words;
-                    append(words, "Style ");
-                    words.push_back(glyph(g_letters[slot]));
-                    const double progress = std::clamp(static_cast<double>(now - g_holdStartMs.load(std::memory_order_relaxed)) /
-                                                           static_cast<double>(kSaveHoldMs), 0.0, 1.0);
-                    const size_t filled = std::min(words.size(), static_cast<size_t>(progress * static_cast<double>(words.size())));
-                    if (colours && filled > 0u)
-                        out.insert(out.end(), {kColour, static_cast<uint16_t>(kGold >> 16), static_cast<uint16_t>(kGold & 0xFFFFu)});
-                    out.insert(out.end(), words.begin(), words.begin() + static_cast<std::ptrdiff_t>(filled));
-                    if (colours && filled > 0u)
-                        out.push_back(kColourRestore);
-                    // The rest dim, not cream (K: gold on cream was hard to follow, the two are about as light).
-                    if (colours && filled < words.size())
-                        out.insert(out.end(), {kColour, static_cast<uint16_t>(kDim >> 16), static_cast<uint16_t>(kDim & 0xFFFFu)});
-                    out.insert(out.end(), words.begin() + static_cast<std::ptrdiff_t>(filled), words.end());
-                    if (colours && filled < words.size())
-                        out.push_back(kColourRestore);
-                    continue;
-                }
-                uint32_t colour = 0u; // 0: the line's own colour
-                if (used && store.active == slot && equipped(data, store.styles[slot]))
-                    colour = (flash && !blinkOn) ? 0u : kGold; // the loaded style (a few blinks right after)
-                else if (!used)
-                    colour = kDim;
-                if (colours && colour)
-                    out.insert(out.end(), {kColour, static_cast<uint16_t>(colour >> 16), static_cast<uint16_t>(colour & 0xFFFFu)});
+                const uint32_t colour = used && store.active == slot ? kGold : used ? 0u : kDim; // 0: the line's own
+                if (colour)
+                    colourOn(out, colour);
                 append(out, "Style ");
                 out.push_back(glyph(g_letters[slot]));
+                append(out, ": ");
+                out.push_back(kArrowCode[slot]);
+                if (colour)
+                    out.push_back(kColourRestore);
+            }
+            out.push_back(kEnd);
+            return out;
+        }
+
+        // "Style: None / S / E / X / Y": the one on gold, filled cream (the line's own), empty dim. The shadow has no
+        // colour codes.
+        std::vector<uint16_t> rowText(const Store &store, bool colours)
+        {
+            std::vector<uint16_t> out;
+            append(out, "Style: ");
+            for (int at = 0; at <= kStyles; ++at)
+            {
+                if (at > 0)
+                    append(out, " / ");
+                const int slot = at - 1;
+                const bool on = slot < 0 ? store.active >= kStyles : store.active == slot;
+                const bool used = slot < 0 || (store.used & (1u << slot)) != 0u;
+                const uint32_t colour = on ? kGold : used ? 0u : kDim;
+                if (colours && colour)
+                    colourOn(out, colour);
+                if (slot < 0)
+                    append(out, "None");
+                else
+                    out.push_back(glyph(g_letters[slot]));
                 if (colours && colour)
                     out.push_back(kColourRestore);
             }
@@ -810,11 +902,9 @@ namespace kamite::style_presets
 
         std::vector<uint16_t> hintText()
         {
-            // "[X] Hold + D-Pad: Save Style", the plus the list's own (K, Oct 26).
-            std::vector<uint16_t> out{kSquareIcon};
-            append(out, "Hold ");
-            out.push_back(kPlusCode);
-            append(out, " D-Pad: Save Style");
+            // "[L2] [R2] Cycle Style" (K, Nov 7): the game's trigger icons, which follow the prompt set.
+            std::vector<uint16_t> out{kL2Icon, kSpace, kR2Icon};
+            append(out, "Cycle Style");
             out.push_back(kEnd);
             return out;
         }
@@ -928,7 +1018,7 @@ namespace kamite::style_presets
             claimHudEntry(1, shadow);
             const uint32_t data = dataPointer();
             Store store{};
-            const bool show = data && readStore(data, store) && store.used != 0u;
+            const bool show = data && readStore(data, store) && store.active < kStyles; // None: styles off, no letters
             g_hudText = text;
             g_hudShadow = shadow;
             if (!show)
@@ -938,8 +1028,8 @@ namespace kamite::style_presets
                 setNoDraw(shadow, true);
                 return;
             }
-            writeText(data + kHudText, hudText(data, store, true));
-            writeText(data + kHudShadowText, hudText(data, store, false));
+            writeText(data + kHudText, hudText(store, true), kHudShadowText - kHudText);
+            writeText(data + kHudShadowText, hudText(store, false), kTextEnd - kHudShadowText);
             if (!pointMessage(kHudMessage, data + kHudText) || !pointMessage(kHudShadowMessage, data + kHudShadowText))
                 return;
             for (const uint32_t e : {text, shadow})
@@ -967,18 +1057,23 @@ namespace kamite::style_presets
             const uint32_t data = dataPointer();
             const bool show = data && static_cast<int32_t>(rd32(subScr + game::SubScr::kKind)) == kTechniquesKind &&
                               g_ram[waza + kWazaState] == 0u;
-            const uint32_t text = part(waza, 0x23), shadow = part(waza, 0x24), hintEntry = part(waza, 57),
-                           hintShadow = part(waza, 58);
+            const uint32_t text = part(waza, 0x23), shadow = part(waza, 0x24), name = part(waza, 0x25),
+                           hintEntry = part(waza, 57), hintShadow = part(waza, 58);
             g_listShown = false;
             if (!show)
             {
-                // The game's own use of the group (the picker's "Already Set"): what we hid comes back.
-                if (g_hidName)
-                    setNoDraw(g_hidName, false);
+                // The game's own use of the group (the picker's "Already Set"): what we changed comes back.
                 if (g_hidBox)
                     setNoDraw(g_hidBox, false);
-                g_hidName = g_hidBox = 0u;
-                g_listEntry = g_shadowEntry = g_hintEntry = g_hintShadow = 0u;
+                if (g_nameEntry && validPointer(g_nameEntry, ent::kSize))
+                {
+                    wr16(g_nameEntry + ent::kMsg, g_nameMsg);
+                    g_ram[(g_nameEntry + ent::kColourSet) & 0x1FFFFFFu] = g_nameColourSet;
+                    restoreFromSource(g_nameEntry);
+                    setNoDraw(g_nameEntry, false);
+                }
+                g_hidBox = g_nameEntry = 0u;
+                g_listEntry = 0u;
                 for (const uint32_t entry : {hintEntry, hintShadow})
                     if (validPointer(entry, ent::kSize) && rd16(entry + ent::kMsg) == kHintMessage)
                         wr16(entry + ent::kMsg, kBlankMessage);
@@ -988,30 +1083,46 @@ namespace kamite::style_presets
                 return;
             Store store{};
             readStore(data, store);
-            writeText(data + kListText, listText(data, store, true));
-            writeText(data + kShadowText, listText(data, store, false));
-            writeText(data + kHintText, hintText());
-            if (!pointMessage(kListMessage, data + kListText) || !pointMessage(kShadowMessage, data + kShadowText) ||
-                !pointMessage(kHintMessage, data + kHintText))
+            writeText(data + kRowText, rowText(store, true), kRowShadowText - kRowText);
+            writeText(data + kRowShadowText, rowText(store, false), kHintText - kRowShadowText);
+            writeText(data + kListText, listText(store), kRowText - kListText);
+            writeText(data + kHintText, hintText(), kHudText - kHintText);
+            if (!pointMessage(kRowMessage, data + kRowText) || !pointMessage(kRowShadowMessage, data + kRowShadowText) ||
+                !pointMessage(kListMessage, data + kListText) || !pointMessage(kHintMessage, data + kHintText))
                 return;
             setNoDraw(text, false);
-            wr16(text + ent::kMsg, kListMessage);
-            wr16(shadow + ent::kMsg, kShadowMessage);
-            const uint32_t name = part(waza, 0x25), entries = rd32(waza + 0x4u);
+            wr16(text + ent::kMsg, kRowMessage);
+            wr16(shadow + ent::kMsg, kRowShadowMessage);
+            // The lines in the move name (a text entry: anything else is left alone, and the lines go unshown).
+            if (validPointer(name, ent::kSize) && g_ram[(name + ent::kKind) & 0x1FFFFFFu] == game::kIdentKindText)
+            {
+                if (g_nameEntry != (name & 0x1FFFFFFu))
+                {
+                    g_nameEntry = name & 0x1FFFFFFu;
+                    g_nameMsg = rd16(name + ent::kMsg);
+                    g_nameColourSet = g_ram[(name + ent::kColourSet) & 0x1FFFFFFu];
+                }
+                wr16(name + ent::kMsg, kListMessage);
+                g_ram[(name + ent::kAlign) & 0x1FFFFFFu] = 0u; // the block centred on its position
+                g_ram[(name + ent::kColourSet) & 0x1FFFFFFu] = g_ram[(text + ent::kColourSet) & 0x1FFFFFFu];
+                setNoDraw(name, false);
+                g_listEntry = g_nameEntry;
+            }
+            for (const uint32_t e : {text, shadow, name})
+                if (validPointer(e, ent::kSize))
+                {
+                    wrFloat(e + ent::kDrawSclX, kTextScale);
+                    wrFloat(e + ent::kDrawSclY, kTextScale);
+                }
+            const uint32_t entries = rd32(waza + 0x4u);
             const uint32_t box = validPointer(entries, 0x4000u) ? entries + 57u * ent::kSize : 0u;
-            setNoDraw(name, true);
             setNoDraw(box, true);
-            g_hidName = validPointer(name, ent::kSize) ? name : 0u;
             g_hidBox = validPointer(box, ent::kSize) ? box : 0u;
             setNoDraw(part(waza, 0x26), true);
             setNoDraw(part(waza, 0x27), true);
             for (const uint32_t entry : {hintEntry, hintShadow})
                 if (validPointer(entry, ent::kSize) && rd16(entry + ent::kMsg) == kBlankMessage)
                     wr16(entry + ent::kMsg, kHintMessage);
-            g_listEntry = text & 0x1FFFFFFu;
-            g_shadowEntry = shadow & 0x1FFFFFFu;
-            g_hintEntry = validPointer(hintEntry, ent::kSize) ? hintEntry & 0x1FFFFFFu : 0u;
-            g_hintShadow = validPointer(hintShadow, ent::kSize) ? hintShadow & 0x1FFFFFFu : 0u;
             g_listShown = true;
         }
 
@@ -1039,18 +1150,23 @@ namespace kamite::style_presets
 
         void onWazaDraw(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
-            if (g_saveSound.exchange(false))
-                playCursorSound(rdram, ctx, runtime); // a style was just saved (K, Oct 31: it needs a cue)
+            if (g_cycleSound.exchange(false))
+                playCursorSound(rdram, ctx, runtime); // L2 / R2 cycled the style
             if (!g_ram || !g_listShown)
                 return;
             const uint32_t waza = GPR_U32(ctx, 4);
             const uint32_t text = part(waza, 0x23), shadow = part(waza, 0x24);
             if (!validPointer(text, ent::kSize) || !validPointer(shadow, ent::kSize))
                 return;
-            wrFloat(text + ent::kDrawX, kListX);
-            wrFloat(text + ent::kDrawY, kListY);
-            wrFloat(shadow + ent::kDrawX, kListX + 1.0f);
-            wrFloat(shadow + ent::kDrawY, kListY + 1.0f);
+            wrFloat(text + ent::kDrawX, kRowX);
+            wrFloat(text + ent::kDrawY, kRowY);
+            wrFloat(shadow + ent::kDrawX, kRowX + 1.0f);
+            wrFloat(shadow + ent::kDrawY, kRowY + 1.0f);
+            if (g_listEntry)
+            {
+                wrFloat(g_listEntry + ent::kDrawX, kListX);
+                wrFloat(g_listEntry + ent::kDrawY, kListY);
+            }
         }
 
         // cIDBase_transText at 0x2AB1E0 ($s1 the entry, $s0 the font's draw state D_005E7510, its line spacing just
@@ -1063,7 +1179,7 @@ namespace kamite::style_presets
             if (!g_ram || !g_listEntry)
                 return;
             const uint32_t entry = GPR_U32(ctx, 17) & 0x1FFFFFFu;
-            if (entry != g_listEntry && entry != g_shadowEntry)
+            if (entry != g_listEntry)
                 return;
             const uint32_t state = GPR_U32(ctx, 16);
             const float zoom = rdFloat(state + game::MessDrawFont::kZoomY);
@@ -1073,9 +1189,15 @@ namespace kamite::style_presets
 
         prompt_sheets::ArrowRect pieceRect(int piece)
         {
-            return prompt_sheets::arrowRect(piece == kPlusPiece ? prompt_sheets::ArrowPlus
-                                            : piece == 0 || piece == 2 ? prompt_sheets::ArrowDown
-                                                                        : prompt_sheets::ArrowRight);
+            return prompt_sheets::arrowRect(piece == 0 || piece == 2 ? prompt_sheets::ArrowDown : prompt_sheets::ArrowRight);
+        }
+
+        int pieceOfCode(uint16_t code)
+        {
+            for (int i = 0; i < kStyles; ++i)
+                if (code == kArrowCode[i])
+                    return i;
+            return -1;
         }
 
         // The icon drawer func_002B1300 at 0x2B1584 (every icon's UVs stored at sp+0x14..0x20, $s0 -> the code, $a3 the
@@ -1084,13 +1206,9 @@ namespace kamite::style_presets
         void onIconDraw(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
             g_pendingArrow = -1;
-            if (!g_ram || !g_listEntry || (g_drawingEntry != g_listEntry && g_drawingEntry != g_hintEntry))
+            if (!g_ram || !g_listEntry || g_drawingEntry != g_listEntry)
                 return;
-            const uint16_t code = rd16(GPR_U32(ctx, 16));
-            int arrow = code == kPlusCode ? kPlusPiece : -1;
-            for (int i = 0; i < kStyles; ++i)
-                if (code == kArrowCode[i])
-                    arrow = i;
+            const int arrow = pieceOfCode(rd16(GPR_U32(ctx, 16)));
             if (arrow < 0)
                 return;
             // Up = the down arrow flipped vertically, left = the right arrow flipped horizontally.
@@ -1106,36 +1224,16 @@ namespace kamite::style_presets
         // A piece's width in the text, in the units cMessDrawFont_measureCode gets from func_002B12D8 for an icon (32 =
         // a cell, drawn as a 26-unit square; a piece is drawn at side / 28 a texel, so w texels = w x 26 / 28 units).
         // Every arrow advances by the widest arrow, so the names start in one column (K, Oct 25).
-        float pieceAdvance(int piece)
+        float pieceAdvance(int)
         {
             float texels = 0.0f;
-            if (piece == kPlusPiece)
-                texels = pieceRect(piece).x1 - pieceRect(piece).x0;
-            else
-            {
-                for (int i = 0; i < kStyles; ++i)
-                    texels = std::max(texels, pieceRect(i).x1 - pieceRect(i).x0);
-                texels += kArrowTextGap;
-            }
-            return texels * (26.0f / 28.0f);
-        }
-
-        // The list's text entry or its shadow is being drawn (the shadow draws no icons but measures and advances
-        // over them: it gets the same widths, so its letters sit under the text's).
-        bool drawingList()
-        {
-            return g_listEntry && (g_drawingEntry == g_listEntry || g_drawingEntry == g_shadowEntry ||
-                                   (g_hintEntry && (g_drawingEntry == g_hintEntry || g_drawingEntry == g_hintShadow)));
-        }
-
-        int pieceOfCode(uint16_t code)
-        {
-            int piece = code == kPlusCode ? kPlusPiece : -1;
             for (int i = 0; i < kStyles; ++i)
-                if (code == kArrowCode[i])
-                    piece = i;
-            return piece;
+                texels = std::max(texels, pieceRect(i).x1 - pieceRect(i).x0);
+            return (texels + kArrowTextGap) * (26.0f / 28.0f);
         }
+
+        // The lines' entry is being drawn.
+        bool drawingList() { return g_listEntry && g_drawingEntry == g_listEntry; }
 
         // cMessDrawFont_measureCode at 0x2B0A24, right after func_002B12D8 gave an icon's width in $f0 (32; before
         // lwc1 f1,($s2); $s1 -> the code): the measured width of the plus and the arrows is the width they are drawn
@@ -1203,9 +1301,9 @@ namespace kamite::style_presets
             if (ui->version >= 4u && !ui->collapsing_header("Styles", 0))
                 return; // a fold-out section of the Gameplay tab (K, Oct 27)
             std::lock_guard<std::mutex> lock(g_mutex);
-            ui->text_wrapped("Styles are kept in the save (they go to the memory card with it). In play, a d-pad tap loads "
-                             "one (up, right, down, left). On the Techniques screen: X (square) + d-pad loads, "
-                             "held 1 s saves.");
+            ui->text_wrapped("Styles are kept in the save (they go to the memory card with it). On the Techniques screen "
+                             "L2 / R2 cycle None, S, E, X, Y; changes save to the style shown; None = styles off. In play "
+                             "a d-pad tap switches style (up, right, down, left) while one is on.");
             ui->separator_text("Equipped now");
             if (!g_snapshot.valid)
                 ui->text_disabled("No save data in memory yet (start or load a game).");
@@ -1217,27 +1315,28 @@ namespace kamite::style_presets
                 }
             ui->separator_text("Styles");
             static const char *const kDirections[kStyles] = {"up", "right", "down", "left"};
-            for (int slot = 0; slot < kStyles; ++slot)
+            for (int at = 0; at <= kStyles; ++at)
             {
-                const bool used = g_snapshot.valid && (g_snapshot.store.used & (1u << slot));
-                ui->push_id(slot);
+                const int slot = at - 1;
+                const Store &st = g_snapshot.store;
+                const bool used = g_snapshot.valid && (slot < 0 || (st.used & (1u << slot)));
+                const bool on = g_snapshot.valid && (slot < 0 ? st.active >= kStyles : st.active == slot);
+                ui->push_id(at);
                 char label[48];
-                std::snprintf(label, sizeof(label), "Style %c (%s)%s", g_letters[slot], kDirections[slot],
-                              used && g_snapshot.store.active == slot ? " - loaded" : "");
+                if (slot < 0)
+                    std::snprintf(label, sizeof(label), "Style None (styles off)%s", on ? " - on" : "");
+                else
+                    std::snprintf(label, sizeof(label), "Style %c (%s)%s%s", g_letters[slot], kDirections[slot],
+                                  used ? "" : " - empty", on ? " - on" : "");
                 ui->text(label);
                 ui->same_line();
-                ui->begin_disabled(!g_snapshot.valid);
-                if (ui->small_button("Save"))
-                    g_request = slot + 1;
+                ui->begin_disabled(!g_snapshot.valid || on);
+                if (ui->small_button("Select"))
+                    g_request = at + 1;
                 ui->end_disabled();
-                ui->same_line();
-                ui->begin_disabled(!used);
-                if (ui->small_button("Load"))
-                    g_request = slot + 11;
-                ui->end_disabled();
-                if (used)
+                if (slot >= 0 && used && !on)
                 {
-                    const std::string line = describe(g_snapshot.store.styles[slot][0]);
+                    const std::string line = describe(st.styles[slot][0]);
                     ui->text_disabled(line.c_str());
                 }
                 ui->pop_id();
@@ -1258,64 +1357,26 @@ namespace kamite::style_presets
         const uint16_t dpad = static_cast<uint16_t>(state.buttons & kAllDpad);
         const uint16_t pressed = static_cast<uint16_t>(dpad & ~g_dpadWas);
         g_dpadWas = dpad;
+        const uint16_t triggers = static_cast<uint16_t>(state.buttons & kTriggers);
+        const uint16_t pulled = static_cast<uint16_t>(triggers & ~g_triggersWas);
+        g_triggersWas = triggers;
         const int moment = g_moment.load(std::memory_order_relaxed);
-        const bool square = (state.buttons & ps2x::iop::PadButton::Square) != 0u;
         if (moment == Techniques)
         {
-            // Square (X) + a d-pad direction: let go before 1 s loads that style, held 1 s saves to it (at once, so the
-            // list's flash says when to let go).
-            const int64_t now = nowMs();
-            if (g_held >= 0)
-            {
-                if (!(dpad & kDpad[g_held]))
-                {
-                    if (!g_heldSaved)
-                        g_request = 11 + g_held;
-                    g_held = -1;
-                }
-                else if (!g_heldSaved && now - g_heldSince >= kSaveHoldMs)
-                {
-                    g_request = 1 + g_held;
-                    g_heldSaved = true;
-                }
-            }
-            if (square && g_held < 0)
-            {
-                const int direction = firstPressed(pressed);
-                if (direction >= 0)
-                {
-                    g_held = direction;
-                    g_heldSince = now;
-                    g_holdStartMs.store(now, std::memory_order_relaxed);
-                    g_heldSaved = false;
-                }
-            }
-            g_holding.store(g_held >= 0 && !g_heldSaved ? g_held : -1, std::memory_order_relaxed);
-            if (square && dpad != 0u)
-                g_swallow = true;
-            if (square)
-                hideDpad(state);
+            // L2 / R2: the previous / next style (None, S, E, X, Y, wrapping), kept from the game.
+            if (pulled & ps2x::iop::PadButton::R2)
+                g_request = 21;
+            else if (pulled & ps2x::iop::PadButton::L2)
+                g_request = 22;
+            hideTriggers(state);
         }
-        else
+        else if (moment == Play)
         {
-            g_held = -1;
-            g_holding.store(-1, std::memory_order_relaxed);
-            // In play a tap loads at once (Gene's controls never read the d-pad; the next move of a chain already
-            // comes from the new style).
-            if (moment == Play)
-            {
-                const int direction = firstPressed(pressed);
-                if (direction >= 0)
-                    g_request = 11 + direction;
-            }
-        }
-        // A direction pressed with X stays hidden from the game until it is let go (X let go first: no cursor jump).
-        if (g_swallow)
-        {
-            if (dpad == 0u)
-                g_swallow = false;
-            else
-                hideDpad(state);
+            // In play a tap switches at once while a style is on (Gene's controls never read the d-pad; the next move
+            // of a chain already comes from the new style).
+            const int direction = firstPressed(pressed);
+            if (direction >= 0)
+                g_request = 11 + direction;
         }
     }
 
