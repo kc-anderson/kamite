@@ -29,7 +29,9 @@ namespace kamite::mot
     float sample(const Rec &rec, float t);
     // A curve through `v` (one value a frame), keys every 3 frames (more apart past 120) and on the last; `every` > 0
     // sets the spacing. `loop`: the slopes at the ends wrap round (a looping motion) or not.
-    Rec encode(uint8_t bone, uint8_t component, const std::vector<float> &v, int every = 0, bool loop = true);
+    // `inSlopes` / `outSlopes` (one a frame, used with every = 1): the keys' slopes, instead of from the neighbours.
+    Rec encode(uint8_t bone, uint8_t component, const std::vector<float> &v, int every = 0, bool loop = true,
+               const std::vector<float> *inSlopes = nullptr, const std::vector<float> *outSlopes = nullptr);
     // delta[f] (repeated if shorter) added to the bone's component (0..2 translation, 3..5 rotation) every frame; the
     // record becomes a curve.
     // `every` as encode's (0: its default spacing; 1: a key every frame, the curve kept to the 8-bit steps).

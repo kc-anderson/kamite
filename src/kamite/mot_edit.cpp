@@ -3,6 +3,7 @@
 #include "kamite/mot_edit.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 
@@ -192,7 +193,8 @@ namespace kamite::mot
 
     // A looping curve through `v` (one value a frame), keys every 3 frames (more apart past 120) and on the last;
     // `every` > 0 sets the spacing (the pinned arms: denser, so the hands hold still between keys).
-    Rec encode(uint8_t bone, uint8_t component, const std::vector<float> &v, int every, bool loop)
+    Rec encode(uint8_t bone, uint8_t component, const std::vector<float> &v, int every, bool loop, const std::vector<float> *inSlopes,
+               const std::vector<float> *outSlopes)
     {
         Rec rec;
         rec.bone = bone;
@@ -214,9 +216,11 @@ namespace kamite::mot
                                  : (f == 0 ? v[std::min(1, n - 1)] - v[0]
                                     : f == n - 1 ? v[n - 1] - v[n - 2] : 0.5f * (v[f + 1] - v[f - 1]));
             const int lin = i > 0 ? f - frames[i - 1] : 1, lout = i + 1 < frames.size() ? frames[i + 1] - f : 1;
+            const bool given = every == 1 && inSlopes && outSlopes && static_cast<int>(inSlopes->size()) == n &&
+                               static_cast<int>(outSlopes->size()) == n;
             vals.push_back(v[f]);
-            ins.push_back(slope * lin);
-            outs.push_back(slope * lout);
+            ins.push_back(given ? (*inSlopes)[f] : slope * lin);
+            outs.push_back(given ? (*outSlopes)[f] : slope * lout);
         }
         uint16_t h[6];
         range(*std::min_element(vals.begin(), vals.end()), *std::max_element(vals.begin(), vals.end()), h[0], h[1]);
@@ -313,32 +317,126 @@ namespace kamite::mot
         uint16_t frames;
         std::memcpy(&frames, m.data() + 4, 2);
         const uint8_t loop = m[7];
+        if (frames == 0)
+            return;
         const Rec *comp[3] = {};
         for (const Rec &r : recs)
             if (r.bone == bone && (r.channel & 0x0F) >= 3 && (r.channel & 0x0F) <= 5)
                 comp[(r.channel & 0x0F) - 3] = &r;
-        std::vector<float> xs(frames), ys(frames), zs(frames);
+        // Per frame, the new rotation's two Euler triples, (x, y, z) and (x + pi, pi - y, z + pi), each wound to within
+        // half a turn of the motion's own (so the windings stay the motion's). The first and last frames take the
+        // triple nearest the motion's own (the next motion, or the loop, starts where the original did); between them
+        // the branch sequence with the least total change from frame to frame (a 2-state path search). Picking the
+        // nearest to the motion's own at every frame flipped branch between two frames where its own y sits near
+        // -90 deg, and the half frames between them (60 FPS) swung the elbow ~45 deg (Spanking's grab, Nov 8).
+        std::vector<std::array<std::array<float, 3>, 2>> cand(frames);
+        std::vector<int> nearest(frames);
         for (int f = 0; f < frames; ++f)
         {
             float a[3];
             for (int c = 0; c < 3; ++c)
                 a[c] = comp[c] ? sample(*comp[c], static_cast<float>(f)) : 0.0f;
-            // Of the two Euler triples of the new rotation, the one nearest the motion's own at this frame (its winding
-            // and branch: a small pre-rotation stays a small change of each curve).
-            float x, y, z;
             Mat r = mul(pre.empty() ? identity : pre[std::min<size_t>(f, pre.size() - 1)], euler(a[0], a[1], a[2]));
             if (!post.empty())
                 r = mul(r, post[std::min<size_t>(f, post.size() - 1)]);
+            float x, y, z;
             toEuler(r, x, y, z);
             constexpr float pi = 3.14159265358979f;
-            const float p[3] = {nearAngle(x, a[0]), nearAngle(y, a[1]), nearAngle(z, a[2])};
-            const float q[3] = {nearAngle(x + pi, a[0]), nearAngle(pi - y, a[1]), nearAngle(z + pi, a[2])};
-            const float dp = std::fabs(p[0] - a[0]) + std::fabs(p[1] - a[1]) + std::fabs(p[2] - a[2]);
-            const float dq = std::fabs(q[0] - a[0]) + std::fabs(q[1] - a[1]) + std::fabs(q[2] - a[2]);
+            cand[f][0] = {nearAngle(x, a[0]), nearAngle(y, a[1]), nearAngle(z, a[2])};
+            cand[f][1] = {nearAngle(x + pi, a[0]), nearAngle(pi - y, a[1]), nearAngle(z + pi, a[2])};
+            float d[2];
+            for (int k = 0; k < 2; ++k)
+                d[k] = std::fabs(cand[f][k][0] - a[0]) + std::fabs(cand[f][k][1] - a[1]) + std::fabs(cand[f][k][2] - a[2]);
+            nearest[f] = d[1] < d[0] ? 1 : 0;
+        }
+        const auto step = [&](int f, int k, int j) {
+            float t = 0.0f;
+            for (int c = 0; c < 3; ++c)
+                t += std::fabs(cand[f][k][c] - cand[f - 1][j][c]);
+            return t;
+        };
+        std::vector<std::array<float, 2>> cost(frames);
+        std::vector<std::array<int, 2>> from(frames);
+        for (int k = 0; k < 2; ++k)
+            cost[0][k] = k == nearest[0] ? 0.0f : 1e30f;
+        for (int f = 1; f < frames; ++f)
+            for (int k = 0; k < 2; ++k)
+            {
+                const float c0 = cost[f - 1][0] + step(f, k, 0), c1 = cost[f - 1][1] + step(f, k, 1);
+                cost[f][k] = std::min(c0, c1);
+                from[f][k] = c1 < c0 ? 1 : 0;
+            }
+        std::vector<float> xs(frames), ys(frames), zs(frames);
+        for (int f = frames - 1, k = nearest[frames - 1]; f >= 0; k = f > 0 ? from[f][k] : k, --f)
+        {
+            xs[f] = cand[f][k][0];
+            ys[f] = cand[f][k][1];
+            zs[f] = cand[f][k][2];
+        }
+        // Each key's slope from the new rotation's own rate at that frame (the motion's own curve sampled half a frame
+        // either side, plus the change of pre / post between neighbouring frames), not from the neighbouring keys:
+        // the half frames (60 FPS) then follow the motion's own path where it moves fast.
+        const auto newAt = [&](int f, float t, int fp, const float *ref, float out[3]) {
+            float a[3];
+            for (int c = 0; c < 3; ++c)
+                a[c] = comp[c] ? sample(*comp[c], t) : 0.0f;
+            const int pi_ = std::clamp(fp, 0, frames - 1);
+            Mat r = mul(pre.empty() ? identity : pre[std::min<size_t>(pi_, pre.size() - 1)], euler(a[0], a[1], a[2]));
+            if (!post.empty())
+                r = mul(r, post[std::min<size_t>(pi_, post.size() - 1)]);
+            float x, y, z;
+            toEuler(r, x, y, z);
+            constexpr float pi = 3.14159265358979f;
+            const float p[3] = {nearAngle(x, ref[0]), nearAngle(y, ref[1]), nearAngle(z, ref[2])};
+            const float q[3] = {nearAngle(x + pi, ref[0]), nearAngle(pi - y, ref[1]), nearAngle(z + pi, ref[2])};
+            const float dp = std::fabs(p[0] - ref[0]) + std::fabs(p[1] - ref[1]) + std::fabs(p[2] - ref[2]);
+            const float dq = std::fabs(q[0] - ref[0]) + std::fabs(q[1] - ref[1]) + std::fabs(q[2] - ref[2]);
             const float *pick = dq < dp ? q : p;
-            xs[f] = pick[0];
-            ys[f] = pick[1];
-            zs[f] = pick[2];
+            for (int c = 0; c < 3; ++c)
+                out[c] = pick[c];
+            (void)f;
+        };
+        std::vector<float> slope[3], ins[3], outs[3];
+        for (int c = 0; c < 3; ++c)
+        {
+            slope[c].resize(frames);
+            ins[c].resize(frames);
+            outs[c].resize(frames);
+        }
+        for (int f = 0; f < frames; ++f)
+        {
+            const float ref[3] = {xs[f], ys[f], zs[f]};
+            const float t0 = std::max(0.0f, f - 0.5f), t1 = std::min(frames - 1.0f, f + 0.5f);
+            float lo[3], hi[3], pl[3], pr[3];
+            newAt(f, t0, f, ref, lo);
+            newAt(f, t1, f, ref, hi);
+            const int f0 = std::max(0, f - 1), f1 = std::min(frames - 1, f + 1);
+            newAt(f, static_cast<float>(f), f0, ref, pl);
+            newAt(f, static_cast<float>(f), f1, ref, pr);
+            for (int c = 0; c < 3; ++c)
+                slope[c][f] = (t1 > t0 ? (hi[c] - lo[c]) / (t1 - t0) : 0.0f) + (f1 > f0 ? (pr[c] - pl[c]) / (f1 - f0) : 0.0f);
+        }
+        // The game samples half frames at 60 FPS: each segment's out / in slopes are moved apart so the curve passes
+        // the new rotation at the half frame (Hermite at 0.5: (v0 + v1) / 2 + (out0 - in1) / 8), the pre / post of
+        // the two frames averaged there.
+        for (int c = 0; c < 3; ++c)
+        {
+            ins[c] = slope[c];
+            outs[c] = slope[c];
+        }
+        for (int f = 0; f + 1 < frames; ++f)
+        {
+            const float ref[3] = {0.5f * (xs[f] + xs[f + 1]), 0.5f * (ys[f] + ys[f + 1]), 0.5f * (zs[f] + zs[f + 1])};
+            float m0[3], m1[3];
+            newAt(f, f + 0.5f, f, ref, m0);
+            newAt(f, f + 0.5f, f + 1, ref, m1);
+            for (int c = 0; c < 3; ++c)
+            {
+                const float e = 0.5f * (m0[c] + m1[c]) - ref[c];
+                const float d = 0.5f * (8.0f * e - slope[c][f] + slope[c][f + 1]);
+                outs[c][f] = slope[c][f] + d;
+                ins[c][f + 1] = slope[c][f + 1] - d;
+            }
         }
         // The bone's rotation records replaced where they were (records keep the motion's own order: root motion,
         // bone 255, comes first; a motion whose records go out of that order breaks in the game, Nov 8). A bone
@@ -346,9 +444,9 @@ namespace kamite::mot
         std::vector<Rec> out;
         bool placed = false;
         const auto place = [&] {
-            out.push_back(encode(static_cast<uint8_t>(bone), 3, xs, every, loop != 0));
-            out.push_back(encode(static_cast<uint8_t>(bone), 4, ys, every, loop != 0));
-            out.push_back(encode(static_cast<uint8_t>(bone), 5, zs, every, loop != 0));
+            out.push_back(encode(static_cast<uint8_t>(bone), 3, xs, every, loop != 0, &ins[0], &outs[0]));
+            out.push_back(encode(static_cast<uint8_t>(bone), 4, ys, every, loop != 0, &ins[1], &outs[1]));
+            out.push_back(encode(static_cast<uint8_t>(bone), 5, zs, every, loop != 0, &ins[2], &outs[2]));
             placed = true;
         };
         const bool hasRotation = comp[0] || comp[1] || comp[2];

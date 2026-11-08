@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 8, 2026
 
+- Buck Breaker: Gene's re-posed arms no longer twitch for a frame at 60 FPS (the edited motions hold the intended pose on every frame in between).
 - Buck Breaker: Spanking human Elvis and the other big fat men: Gene's holding arm lies stretched across the back, palm down, holding on (it was lifted off it, then twisted).
 - Buck Breaker: an enemy whose skeleton isn't listed gets the fits of a listed body with the same body bones (unmatched skeletons are logged).
 - Buck Breaker: the casino's men get the men's fits (their models were missing from the model list).
