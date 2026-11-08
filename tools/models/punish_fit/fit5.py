@@ -54,8 +54,13 @@ def pre_rsh(O): return mm(rz(-O[:,11]),ry(-O[:,12]))
 def pre_lel(O): return ry(O[:,10])
 def pre_rel(O): return ry(-O[:,13])
 
-def gene_xform(d,O):
-    """Gene's adjusted points (d: per-point frame data)."""
+def rot_x(t):
+    t=np.atleast_1d(np.asarray(t,float)); c,s_=np.cos(t),np.sin(t)
+    R=np.zeros((len(t),3,3)); R[:,0,0]=1; R[:,1,1]=c; R[:,1,2]=-s_; R[:,2,1]=s_; R[:,2,2]=c
+    return R
+def gene_xform(d,O,twist=None):
+    """Gene's adjusted points (d: per-point frame data). twist: the left forearm about its length (radians, per point or
+    one value; the runtime's 13th value: half on bone 15, half on the hand 16, as post-rotations)."""
     p=d['g0'].copy()
     Rt=mm(mm(d['W0'],pre_torso(O)),tr(d['W0']))   # world rotation about P1
     up=d['up'][:,None]>0
@@ -70,6 +75,14 @@ def gene_xform(d,O):
         Pel3=rot(Pel2,Psh2,Rs); Wsh3=mm(mm(Rs,Rt),Wsh)
         Re=mm(mm(Wsh3,pel),tr(Wsh3))
         p=np.where(fore[:,None]>0,rot(p,Pel3,Re),p)
+        if side=='L' and twist is not None:
+            n=len(p); Rx=rot_x(np.broadcast_to(np.asarray(twist,float)*0.5,(n,)))
+            chain=lambda P: rot(rot(rot(P,d['P1'],Rt),Psh2,Rs),Pel3,Re)
+            Rall=mm(Re,mm(Rs,Rt))
+            W15=mm(Rall,d['W15']); P15=chain(d['P15']); T15=mm(mm(W15,Rx),tr(W15))
+            p=np.where((d['lb15']+d['lb16'])[:,None]>0,rot(p,P15,T15),p)
+            W16=mm(T15,mm(Rall,d['W16'])); P16=rot(chain(d['P16']),P15,T15); T16=mm(mm(W16,Rx),tr(W16))
+            p=np.where(d['lb16'][:,None]>0,rot(p,P16,T16),p)
     p[:,1]+=O[:,3]*d['wg']
     c,s=np.cos(O[:,2]),np.sin(O[:,2]); q=p-d['gpos']
     G=np.stack([q[:,0]*c+q[:,2]*s,q[:,1],-q[:,0]*s+q[:,2]*c],1)+d['gpos']
@@ -92,8 +105,9 @@ def gene_frame_data(fr,gd,I,G):
     d['up']=np.isin(gb,list(UPPER)).astype(float)
     d['larm']=np.isin(gb,LARM).astype(float); d['lfore']=np.isin(gb,LFORE).astype(float)
     d['rarm']=np.isin(gb,RARM).astype(float); d['rfore']=np.isin(gb,RFORE).astype(float)
-    for b in (1,5,7,8,11,13,14): d['P%d'%b]=np.array([fr[i]['gP'][b] for i in I])
-    for b in (0,5,7,11,13): d['W%d'%b]=np.array([fr[i]['gW'][b] for i in I])
+    for b in (1,5,7,8,11,13,14,15,16): d['P%d'%b]=np.array([fr[i]['gP'][b] for i in I])
+    for b in (0,5,7,11,13,15,16): d['W%d'%b]=np.array([fr[i]['gW'][b] for i in I])
+    d['lb15']=(gb==15).astype(float); d['lb16']=(gb==16).astype(float)
     d['gpos']=np.array([fr[i]['gpos'] for i in I]); d['gyaw']=np.array([fr[i]['gyaw'] for i in I])
     d['vpos']=np.array([fr[i]['vpos'] for i in I])
     d['vpiv']=np.array([fr[i]['vP'][1] for i in I]); d['vax']=np.array([fr[i]['vW1'][:,0] for i in I])

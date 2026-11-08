@@ -304,11 +304,12 @@ namespace kamite::mot
         return a;
     }
 
-    void preRotate(std::vector<uint8_t> &m, int bone, const std::vector<Mat> &pre, int every)
+    void preRotate(std::vector<uint8_t> &m, int bone, const std::vector<Mat> &pre, int every, const std::vector<Mat> &post)
     {
         std::vector<Rec> recs;
-        if (pre.empty() || !parse(m, recs))
+        if ((pre.empty() && post.empty()) || !parse(m, recs))
             return;
+        const Mat identity = rotX(0.0f);
         uint16_t frames;
         std::memcpy(&frames, m.data() + 4, 2);
         const uint8_t loop = m[7];
@@ -325,7 +326,10 @@ namespace kamite::mot
             // Of the two Euler triples of the new rotation, the one nearest the motion's own at this frame (its winding
             // and branch: a small pre-rotation stays a small change of each curve).
             float x, y, z;
-            toEuler(mul(pre[std::min<size_t>(f, pre.size() - 1)], euler(a[0], a[1], a[2])), x, y, z);
+            Mat r = mul(pre.empty() ? identity : pre[std::min<size_t>(f, pre.size() - 1)], euler(a[0], a[1], a[2]));
+            if (!post.empty())
+                r = mul(r, post[std::min<size_t>(f, post.size() - 1)]);
+            toEuler(r, x, y, z);
             constexpr float pi = 3.14159265358979f;
             const float p[3] = {nearAngle(x, a[0]), nearAngle(y, a[1]), nearAngle(z, a[2])};
             const float q[3] = {nearAngle(x + pi, a[0]), nearAngle(pi - y, a[1]), nearAngle(z + pi, a[2])};

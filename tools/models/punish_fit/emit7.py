@@ -18,16 +18,19 @@ def verdict(m):
     else: v='off'
     if v=='fitted' and clip>0.03 and m['group']!=10: v='questionable'
     return v,clip
-def tracks(name,X,ks):
+def tracks(name,X,ks,twist=0.0):
+    """twist: Gene's left forearm about its length (deg), eased with the left arm's raise (spank_fat2's held pose)."""
     from fk import Motion
-    out=[]; o=0
+    out=[]; o=0; wmax=np.abs(X[:,8]).max()
     for si,stg in enumerate(PUNISH[name]):
         fs=ks[si]; K=X[o:o+len(fs)]; o+=len(fs)
         items=[]
         for j,f in enumerate(fs):
             g='%d:%.3f,%.3f,%.2f,%.3f'%(f,K[j,0],K[j,1],np.degrees(K[j,2]),K[j,3])
             pose=np.degrees(K[j,6:14])
-            if np.any(np.abs(pose)>=0.05): g+=','+','.join('%.1f'%a for a in pose)
+            if np.any(np.abs(pose)>=0.05):
+                g+=','+','.join('%.1f'%a for a in pose)
+                if twist and wmax>0: g+=',%.1f'%(twist*abs(K[j,8])/wmax)
             items.append(g)
         out.append('gene %d %s'%(stg['g'][0],' '.join(items)))
         vm=stg['v'][0]; L=Motion(vm).frames
@@ -39,7 +42,7 @@ def main(path):
     lines=['# Kamite punish fits for Buck Breaker (tools/models/punish_fit fit7.py + fit_pose.py + emit7.py; claude/punish-fit-offline.md).',
            '# fit <punish> <body (skeleton hash)>[,<body>...] [off] [gorilla] scale=<enemy size> size=<victim size change>',
            '#   gene <motion> <frame>:<forward m>,<side m>,<turn deg>,<height m>[,<torso x>,<torso z>,<L raise>,<L swing>,<L elbow>,',
-           '#       <R raise>,<R swing>,<R elbow> (deg)] ...   (placement scaled by the enemy\'s size)',
+           '#       <R raise>,<R swing>,<R elbow>[,<L forearm twist>] (deg)] ...   (placement scaled by the enemy\'s size)',
            '#   victim <motion> <frame>:<height m>,<waist bend deg> ...',
            '# off = doesn\'t fit: Buck Breaker keeps the enemy\'s own punish for that pick.',
            '# gorilla (on a Suplex fit) = a Suplex pick plays the Gorilla Suplex on that body (its GorillaSuplex fit applies).',
@@ -76,7 +79,7 @@ def main(path):
                 lines.append('fit Spanking %s scale=1.00 size=1.000   # %s: the game\'s own placement (K: the fat man hides the arm)%s'%(
                     keys,file,'; Gene\'s left arm raised onto the back (spank_fat2.py)' if (name,g,1.0) in fits else ''))
                 if (name,g,1.0) in fits:
-                    m,npy=fits[(name,g,1.0)]; lines+=tracks(name,np.load(npy),m['ks'])
+                    m,npy=fits[(name,g,1.0)]; lines+=tracks(name,np.load(npy),m['ks'],m.get('ltwist',0.0))
                 summary.append((name,g,file,t,1.0,'own placement',None)); continue
             off10=False
             for s in (1.0,1.15,1.3):

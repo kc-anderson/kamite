@@ -112,13 +112,13 @@ namespace kamite::punish_fit
         constexpr uint32_t kNumber = 0x564u, kScaleX = 0x110u, kScaleY = 0x114u, kScaleZ = 0x118u, kCaught = 0x694u;
         constexpr int kRampVblanks = 12; // the size changes ease in (and out) over this many vblanks (K: quick)
         constexpr float kMaxStep = 1.12f; // each of the two changes size by at most this factor (K: 12%, for the stage 1 demon)
-        constexpr int kValues = 12;
+        constexpr int kValues = 13;
         constexpr uint32_t kParts = 0x144u, kPartCount = 0x2B4u, kPartOffset = 0xE0u, kPartParent = 0x148u;
         constexpr uint32_t kMotionPlaying = 0x428u, kMotionFrame = 0x430u;
 
         // A curve: keys (frame, values). Gene: forward (m), side (m), turn (degrees), height (m), torso x, torso z,
-        // left raise, left swing, left elbow, right raise, right swing, right elbow (degrees); victim: height (m), bend
-        // (degrees).
+        // left raise, left swing, left elbow, right raise, right swing, right elbow, left forearm twist (degrees);
+        // victim: height (m), bend (degrees).
         struct Key
         {
             float frame = 0.0f;
@@ -616,7 +616,8 @@ namespace kamite::punish_fit
             // Gene's pose: the torso (bone 1), upper arms (13 left, 7 right), their helpers (12, 6: half), forearms (14, 8).
             constexpr int kPoseBones[7] = {1, 13, 12, 7, 6, 14, 8};
             std::vector<mot::Mat> pose[7];
-            bool anyHeight = false, anyBend = false, anyPose = false;
+            std::vector<mot::Mat> twist; // the left forearm about its length: half on bone 15, half on the hand (16)
+            bool anyHeight = false, anyBend = false, anyPose = false, anyTwist = false;
             for (int f = 0; f < frames; ++f)
             {
                 float v[kValues];
@@ -640,8 +641,10 @@ namespace kamite::punish_fit
                 pose[4].push_back(mot::mul(mot::rotZ(-a[5] * 0.5f), mot::rotY(-a[6] * 0.5f)));
                 pose[5].push_back(mot::rotY(a[4]));
                 pose[6].push_back(mot::rotY(-a[7]));
+                twist.push_back(mot::rotX(v[12] * kDegrees * 0.5f));
+                anyTwist = anyTwist || v[12] != 0.0f;
             }
-            if (!anyHeight && !anyBend && !anyPose)
+            if (!anyHeight && !anyBend && !anyPose && !anyTwist)
             {
                 g_copies[key] = 0u;
                 return 0u;
@@ -653,6 +656,9 @@ namespace kamite::punish_fit
             if (anyPose)
                 for (int i = 0; i < 7; ++i)
                     mot::preRotate(m, kPoseBones[i], pose[i], 1);
+            if (anyTwist)
+                for (int bone : {15, 16})
+                    mot::preRotate(m, bone, {}, 1, twist);
             const uint32_t size = (static_cast<uint32_t>(m.size()) + 0x3Fu) & ~0x3Fu;
             if (size > kRewriteAreaEnd - kRewriteArea)
                 return 0u;

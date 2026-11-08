@@ -45,6 +45,8 @@ namespace kamite::mot
     void toEuler(const Mat &r, float &x, float &y, float &z);
     float nearAngle(float a, float ref); // a moved by whole turns to within half a turn of ref
     // The bone's rotation becomes pre[f] * its own (pre in its parent's space) at every frame f (the last repeats when
-    // pre is shorter); its x, y, z curves are resampled (`every` as encode's).
-    void preRotate(std::vector<uint8_t> &m, int bone, const std::vector<Mat> &pre, int every = 0);
+    // pre is shorter); its x, y, z curves are resampled (`every` as encode's). With `post`: pre[f] * its own * post[f]
+    // (post in the bone's own space, e.g. a twist about its length); pre may then be empty.
+    void preRotate(std::vector<uint8_t> &m, int bone, const std::vector<Mat> &pre, int every = 0,
+                   const std::vector<Mat> &post = {});
 }

@@ -11,6 +11,8 @@ from fit_pose import OUT, path_of, save, TYPES
 D=np.radians
 K_EXTRA_RAISE=np.radians(10.0)   # on top of em18's fit, K's eye (Nov 8)
 STRAIGHT=(0.0,45.0)   # the other fat bodies: swing, elbow opening (deg); K: "stretched out and across the back"
+TWIST=80.0   # and their forearm turned about its length (deg; runtime: half on bone 15, half on the hand 16), K (769ab5b):
+             # the palm faced the camera ("limp"), it "should point down and a little inward, like he's holding the enemy"
 def key_weights(P):
     w=[]
     for si,fs in enumerate(P['ks']):
@@ -76,7 +78,8 @@ def job(g):
         th=np.array([D(r),swing,elbow])
     Xb=X.copy(); Xb[:,8:11]=th[None]*W[:,None]
     rep=g==fit_pose.REP['fat']; tag=('rep_Spanking_fat_1.00') if rep else ('g_Spanking_%02d_1.00'%g)
-    m=save(tag,P,Xb,1.0,dict(name='Spanking',type='fat',group=g,scale=1.0,rep=rep,pose_from='own (K: the left arm on the back, held)'))
+    m=save(tag,P,Xb,1.0,dict(name='Spanking',type='fat',group=g,scale=1.0,rep=rep,pose_from='own (K: the left arm on the back, held)',
+                             ltwist=0.0 if rep else TWIST))
     m0=fit7.parts_excess(P,X,1.0)
     return 'Spanking fat g%02d: raise %.0f swing %.0f elbow %.0f deg; L arm deeper than the original %.1f -> %.1f cm max (%.1f -> %.1f mean)'%(
         g,*np.degrees(th),m0['L arm'][1]*100,m['clip1']['L arm'][1]*100,m0['L arm'][0]*100,m['clip1']['L arm'][0]*100)
