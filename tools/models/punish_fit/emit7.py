@@ -59,7 +59,10 @@ def main(path):
             if name=='Spanking' and t=='fat':
                 # K (Nov 8, with a clip of the original game): the fat man's bulk hides Gene's clipping arm, so it plays
                 # with the game's own placement (an empty fit at 1.0: other sizes scale the pair to it)
-                lines.append('fit Spanking %s scale=1.00 size=1.000   # %s: the game\'s own placement (K: the fat man hides the arm)'%(keys,file))
+                lines.append('fit Spanking %s scale=1.00 size=1.000   # %s: the game\'s own placement (K: the fat man hides the arm)%s'%(
+                    keys,file,'; Gene\'s left arm raised onto the back (spank_fat.py)' if (name,g,1.0) in fits else ''))
+                if (name,g,1.0) in fits:
+                    m,npy=fits[(name,g,1.0)]; lines+=tracks(name,np.load(npy),m['ks'])
                 summary.append((name,g,file,t,1.0,'own placement',None)); continue
             off10=False
             for s in (1.0,1.15,1.3):

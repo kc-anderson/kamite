@@ -32,3 +32,8 @@ gorilla_elbows.py (K, Nov 8): the Gorilla Suplex on the fat men with Gene's orig
 his elbows sit at Gene's (to frame 34, eased out by 46), Gene's arm touches on the victim's shoulders / upper arms moved
 to his elbows, placement and the rest fitted with that height held (fit5 P['fixvh']). emit7 also writes the body
 lines (skeleton -> type) the enemy labels show.
+
+spank_fat2.py (K, Nov 8): Spanking on the fat men keeps the game's placement; Gene's holding (left) arm gets one raise /
+swing / elbow per body, held through the hold and the spanks (eased in over the grab's first 8 frames, out from frame
+12 of the finish to the launch), fitted against the victim's mesh (1 cm) and the hand's touch spots on the back. A
+per-key fit (spank_fat.py) made the arm flail.
