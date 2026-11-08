@@ -336,7 +336,9 @@ namespace kamite::mot
             ys[f] = pick[1];
             zs[f] = pick[2];
         }
-        // The bone's rotation records replaced, in (bone, channel) order.
+        // The bone's rotation records replaced where they were (records keep the motion's own order: root motion,
+        // bone 255, comes first; a motion whose records go out of that order breaks in the game, Nov 8). A bone
+        // without rotation records gets them after its other records, or before the next bone up.
         std::vector<Rec> out;
         bool placed = false;
         const auto place = [&] {
@@ -345,14 +347,26 @@ namespace kamite::mot
             out.push_back(encode(static_cast<uint8_t>(bone), 5, zs, every, loop != 0));
             placed = true;
         };
-        for (const Rec &r : recs)
+        const bool hasRotation = comp[0] || comp[1] || comp[2];
+        int lastOfBone = -1;
+        for (size_t i = 0; i < recs.size(); ++i)
+            if (recs[i].bone == bone)
+                lastOfBone = static_cast<int>(i);
+        for (size_t i = 0; i < recs.size(); ++i)
         {
+            const Rec &r = recs[i];
             const int ch = r.channel & 0x0F;
             if (r.bone == bone && ch >= 3 && ch <= 5)
+            {
+                if (!placed)
+                    place();
                 continue;
-            if (!placed && (r.bone > bone || (r.bone == bone && ch > 5)))
+            }
+            if (!placed && !hasRotation && lastOfBone < 0 && r.bone > bone && r.bone != 255)
                 place();
             out.push_back(r);
+            if (!placed && !hasRotation && static_cast<int>(i) == lastOfBone)
+                place();
         }
         if (!placed)
             place();
