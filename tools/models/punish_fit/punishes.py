@@ -5,6 +5,7 @@
 import math
 PUNISH={
  'Suplex':  [dict(label='the throw',g=[333],v=[329],align=(-0.5842,0.1376,0,0.0,'unscaled'),touch=(0,38))],
+ 'Gorilla': [dict(label='the throw',g=[3840],v=[3838],align=(-0.519,0.0427,0,0.0),touch=(0,49))],
  'Stinger': [dict(label='grab',g=[811],v=[805],align=(-0.182,1.179,0,0.0),touch=(0,9)),
              dict(label='the knees (mash loop)',g=[813],v=[807],align=(-0.234,1.215,1,0.0),touch=(0,20)),
              dict(label='the slam',g=[815],v=[809],align=(-0.254,1.169,1,0.0),touch=(0,35))],

@@ -20,6 +20,7 @@ namespace kamite::punish_fit
         Stinger,
         CobraTwist,
         Spanking,
+        GorillaSuplex, // not a pick: a Suplex pick plays it on the bodies marked for it (the fat and wide men)
         kPunishCount
     };
 
@@ -33,4 +34,6 @@ namespace kamite::punish_fit
 
     // EE thread: this enemy's body is marked "doesn't fit" for the punish (Buck Breaker then keeps its own punish).
     [[nodiscard]] bool doesntFit(const uint8_t *rdram, uint32_t enemy, int punish);
+    // EE thread: a Suplex pick plays the Gorilla Suplex on this enemy's body (its Suplex fit says "gorilla").
+    [[nodiscard]] bool suplexAsGorilla(const uint8_t *rdram, uint32_t enemy);
 }

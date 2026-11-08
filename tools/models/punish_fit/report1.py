@@ -6,7 +6,8 @@ from PIL import Image, ImageDraw
 REF={'Suplex':('em00','a thug (em00, the standard man\'s skeleton)'),
      'Stinger':('em18','a fat man (em18, the fat men\'s skeleton)'),
      'Cobra':('em07','a big man (em07, the tall men\'s skeleton)'),
-     'Spanking':('em16','a woman (em16, the women\'s skeleton)')}
+     'Spanking':('em16','a woman (em16, the women\'s skeleton)'),
+     'Gorilla':('em79','a gorilla (em79, the gorillas\' skeleton)')}
 from punishes import PUNISH
 STAGES={k:[s['label'] for s in v] for k,v in PUNISH.items()}
 MAIN_G={'R hand','L hand','R forearm','L forearm','R upper arm','L upper arm','R shin/knee','L shin/knee','R thigh','L thigh','R foot','L foot','chest','belly','hips','head'}

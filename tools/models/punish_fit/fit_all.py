@@ -17,7 +17,9 @@ def job(args):
     return name,gi,rep,m['e0'],m['e1']
 if __name__=='__main__':
     bodies=json.load(open('bodies.json'))
-    jobs=[(n,gi,b['files'][0]) for n in ('Stinger','Cobra','Spanking','Suplex') for gi,b in enumerate(bodies)]
+    which=sys.argv[1:] or ['Stinger','Cobra','Spanking','Suplex']
+    groups={'Gorilla':[2,3,7,8,20]}
+    jobs=[(n,gi,b['files'][0]) for n in which for gi,b in enumerate(bodies) if gi in groups.get(n,range(len(bodies)))]
     t0=time.time()
     with Pool(4) as p:
         for res in p.imap_unordered(job,jobs):

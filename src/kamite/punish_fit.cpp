@@ -73,6 +73,7 @@ namespace kamite::punish_fit
             {{811, 813, 815, 0}, {805, 807, 809, 0}},
             {{1551, 1553, 1557, 1555}, {1543, 1545, 1549, 1547}},
             {{1337, 1339, 1341, 0}, {1327, 1329, 1331, 0}},
+            {{3840, 0, 0, 0}, {3838, 0, 0, 0}},
         };
         // func_001299F0's calls by the four punishes, by return address, and the Gene motion each one starts.
         struct Call
@@ -82,10 +83,11 @@ namespace kamite::punish_fit
             uint16_t geneMotion;
         };
         constexpr Call kCalls[] = {{0x0011770Cu, Suplex, 333},     {0x00117AC8u, Stinger, 811}, {0x00117B90u, Stinger, 813},
-                                   {0x00117E40u, Stinger, 815},    {0x0011825Cu, CobraTwist, 1551}, {0x00118790u, Spanking, 1337}};
-        constexpr uint8_t kGenePhase[kPunishCount] = {57u, 59u, 61u, 62u};
-        const char *const kNames[kPunishCount] = {"Suplex", "Stinger", "Cobra Twist", "Spanking"};
-        const char *const kFileNames[kPunishCount] = {"Suplex", "Stinger", "CobraTwist", "Spanking"};
+                                   {0x00117E40u, Stinger, 815},    {0x0011825Cu, CobraTwist, 1551}, {0x00118790u, Spanking, 1337},
+                                   {0x0011806Cu, GorillaSuplex, 3840}};
+        constexpr uint8_t kGenePhase[kPunishCount] = {57u, 59u, 61u, 62u, 60u};
+        const char *const kNames[kPunishCount] = {"Suplex", "Stinger", "Cobra Twist", "Spanking", "Gorilla Suplex"};
+        const char *const kFileNames[kPunishCount] = {"Suplex", "Stinger", "CobraTwist", "Spanking", "GorillaSuplex"};
 
         constexpr uint32_t kNumber = 0x564u, kScaleX = 0x110u, kScaleZ = 0x118u, kCaught = 0x694u;
         constexpr uint32_t kParts = 0x144u, kPartCount = 0x2B4u, kPartOffset = 0xE0u, kPartParent = 0x148u;
@@ -131,6 +133,7 @@ namespace kamite::punish_fit
         struct Fit
         {
             bool off = false;
+            bool gorilla = false; // a Suplex fit: the Suplex pick plays the Gorilla Suplex on this body
             std::vector<Track> tracks;
             const Track *find(uint16_t motion, bool gene) const
             {
@@ -451,7 +454,8 @@ namespace kamite::punish_fit
         }
 
         // punish_fit.txt:
-        //   fit <Suplex|Stinger|CobraTwist|Spanking> <body hex> [off]   (the lines after it, until the next fit, are its)
+        //   fit <Suplex|Stinger|CobraTwist|Spanking|GorillaSuplex> <body hex> [off|gorilla]   (the lines after it, until the
+        //   next fit, are its; gorilla on a Suplex fit: that body plays the Gorilla Suplex for a Suplex pick)
         //   gene <motion> <frame>:<forward>,<side>,<turn>,<height> ...
         //   victim <motion> <frame>:<height>,<bend> ...
         void load()
@@ -481,7 +485,10 @@ namespace kamite::punish_fit
                     const uint32_t key = static_cast<uint32_t>(std::strtoul(body.c_str(), nullptr, 16));
                     fit = punish >= 0 && key ? &g_fits[fitKey(punish, key)] : nullptr;
                     if (fit)
+                    {
                         fit->off = flag == "off";
+                        fit->gorilla = flag == "gorilla";
+                    }
                 }
                 else if (fit && (kind == "gene" || kind == "victim"))
                 {
@@ -528,6 +535,14 @@ namespace kamite::punish_fit
             return false;
         const Fit *fit = fitFor(punish, bodyOf(rdram, enemy & 0x1FFFFFFu));
         return fit && fit->off;
+    }
+
+    bool suplexAsGorilla(const uint8_t *rdram, uint32_t enemy)
+    {
+        if (!g_on || !inRam(enemy, 0x700u))
+            return false;
+        const Fit *fit = fitFor(Suplex, bodyOf(rdram, enemy & 0x1FFFFFFu));
+        return fit && fit->gorilla;
     }
 
     void install(PS2Runtime &runtime, const fs::path &exeDir)

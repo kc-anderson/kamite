@@ -107,9 +107,13 @@ namespace kamite::buck_breaker
             std::vector<uint32_t> at;        // each entry's offset in the area
             std::vector<uint8_t> bytes;      // the area's contents (64-byte aligned entries)
         };
-        MotionSet g_sets[kPickCount];
+        // One set per pick, and one more: the Gorilla Suplex (victim 3838-3839, Gene 3840-3841), which a Suplex pick
+        // plays on the bodies punish_fit marks for it (the fat and wide men: the regular one cannot fit their girth).
+        constexpr int kGorillaSet = kPickCount, kSets = kPickCount + 1;
+        const char *const kSetNames[kSets] = {"Normal", "Pummel", "Spanking", "Suplex", "Stinger", "Cobra Twist", "Gorilla Suplex"};
+        MotionSet g_sets[kSets];
         bool g_keptLogged[0x80] = {}; // enemy numbers 0x200.. already logged as keeping their punish
-        uint32_t g_filledPack[kPickCount] = {}; // the last table filled per pick (the log)
+        uint32_t g_filledPack[kSets] = {}; // the last table filled per set (the log)
 
         std::vector<uint16_t> range(uint16_t first, uint16_t last)
         {
@@ -128,6 +132,7 @@ namespace kamite::buck_breaker
             g_sets[Stinger].entries = range(805, 816);
             g_sets[CobraTwist].entries = range(1543, 1558);
             g_sets[Spanking].entries = range(1327, 1342);
+            g_sets[kGorillaSet].entries = range(3838, 3841);
             // Places fixed for good (a save state keeps a table pointing at them): +0x0..0x7000 is the first build's
             // Spanking (without the launch), not reused.
             const uint32_t places[kPickCount][2] = {
@@ -137,7 +142,9 @@ namespace kamite::buck_breaker
                 g_sets[p].area = kMotionArea + places[p][0];
                 g_sets[p].room = places[p][1];
             }
-            static_assert(kMotionArea + 0x21000u + 0x9000u <= kMotionAreaEnd, "the punishes' motions fit");
+            g_sets[kGorillaSet].area = kMotionArea + 0x2A000u;
+            g_sets[kGorillaSet].room = 0x6000u;
+            static_assert(kMotionArea + 0x2A000u + 0x6000u <= kMotionAreaEnd, "the punishes' motions fit");
             const auto file = disc_files::open() ? disc_files::find("em/em00.dat") : std::nullopt;
             std::vector<uint8_t> dat;
             if (!file || !disc_files::read(*file, dat) || dat.size() < 4u + 8u * kEm00Entries)
@@ -155,7 +162,7 @@ namespace kamite::buck_breaker
                 KM_WARN(Game, "buck breaker: em/em00.dat is not the one known (" << u32(0) << " entries)");
                 return;
             }
-            for (int p = Spanking; p < kPickCount; ++p)
+            for (int p = Spanking; p < kSets; ++p)
             {
                 MotionSet &set = g_sets[p];
                 std::vector<uint8_t> bytes;
@@ -181,7 +188,7 @@ namespace kamite::buck_breaker
                 }
                 if (!ok || bytes.size() > set.room)
                 {
-                    KM_WARN(Game, "buck breaker: " << kPickNames[p] << "'s motions not as expected in em00.dat; it works only where the room has them");
+                    KM_WARN(Game, "buck breaker: " << kSetNames[p] << "'s motions not as expected in em00.dat; it works only where the room has them");
                     continue;
                 }
                 set.at = std::move(at);
@@ -189,7 +196,8 @@ namespace kamite::buck_breaker
             }
         }
 
-        // The pick's motions in this enemy's table (filled in when the room lacks them); false: keep its own punish.
+        // The pick's (or kGorillaSet's) motions in this enemy's table (filled in when the room lacks them); false: keep
+        // its own punish.
         bool ensureMotions(uint8_t *rdram, uint32_t enemy, int pick)
         {
             if (pick == Pummel)
@@ -219,7 +227,7 @@ namespace kamite::buck_breaker
             if (g_filledPack[pick] != pack)
             {
                 g_filledPack[pick] = pack;
-                KM_INFO(Game, "buck breaker: " << kPickNames[pick] << "'s motions added to the room's enemy motions (table 0x"
+                KM_INFO(Game, "buck breaker: " << kSetNames[pick] << "'s motions added to the room's enemy motions (table 0x"
                                                << std::hex << pack << std::dec << ")");
             }
             return true;
@@ -243,21 +251,41 @@ namespace kamite::buck_breaker
             }
         }
 
+        // Set by punishCase when a Suplex pick goes to the Gorilla Suplex's case; cActionButton_set (func_001F7858, a1 =
+        // the prompt id 0xA, a2 = the word) then shows SUPLEX (0xD) instead of GORILLA SUPLEX (0x26), like the menu.
+        bool g_gorillaPrompt = false;
+        void onPromptSet(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            if (!g_gorillaPrompt)
+                return;
+            g_gorillaPrompt = false;
+            if (GPR_U32(ctx, 5) == 0xAu && GPR_U32(ctx, 6) == 0x26u)
+                SET_GPR_U32(ctx, 6, 0xDu);
+        }
+
         // Replaces sltiu v1,a0,0x7A at 0x2DD02C (func_002DCD50; a0 = enemy number - 0x205, s1 = the enemy): a generic
         // punish goes to the picked one's case.
         void punishCase(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
+            g_gorillaPrompt = false;
             uint32_t index = GPR_U32(ctx, 4);
             const int pick = g_pick.load(std::memory_order_relaxed);
             if (pick > Normal && pick < kPickCount && tableOk(rdram))
             {
                 const uint32_t was = index < kCases ? ram32(rdram, kCaseTable + 4u * index) : kSuplexCase;
                 const uint32_t enemy = GPR_U32(ctx, 17);
-                // F2 > Debug > Punish fit: a body marked "doesn't fit" for the pick keeps its own punish.
+                // punish_fit: a body marked "doesn't fit" for the pick keeps its own punish; a Suplex on a body marked
+                // for it plays the Gorilla Suplex (case 0x2DD128, reached by 0x278), its prompt still reading SUPLEX.
                 const int fit = fitPunish(pick);
-                if (genericCase(was) && !(fit >= 0 && punish_fit::doesntFit(rdram, enemy, fit)))
+                const bool gorilla = pick == Suplex && punish_fit::suplexAsGorilla(rdram, enemy);
+                if (genericCase(was) && !(fit >= 0 && !gorilla && punish_fit::doesntFit(rdram, enemy, fit)))
                 {
-                    if (ensureMotions(rdram, enemy, pick))
+                    if (gorilla && ensureMotions(rdram, enemy, kGorillaSet))
+                    {
+                        index = 0x278u - 0x205u;
+                        g_gorillaPrompt = true;
+                    }
+                    else if (ensureMotions(rdram, enemy, pick))
                         index = kPickIndex[pick];
                     else if (const uint32_t number = index + 0x205u - 0x200u; number < 0x80u && !g_keptLogged[number])
                     {
@@ -835,6 +863,7 @@ namespace kamite::buck_breaker
         hooks.observeEntry(0x16C730u, "cSubScrWaza update (Buck Breaker)", &onWazaUpdate);
         hooks.observeEntry(0x16DF38u, "cSubScrWaza input (Buck Breaker)", &onWazaInput);
         hooks.observeEntry(0x2AAA40u, "cIDBase_move (Buck Breaker)", &onLayoutMove);
+        hooks.observeEntry(0x1F7858u, "cActionButton_set (Buck Breaker: SUPLEX over a Gorilla Suplex)", &onPromptSet);
         KM_INFO(Game, "buck breaker: on (punish slot on the Techniques screen)");
     }
 }

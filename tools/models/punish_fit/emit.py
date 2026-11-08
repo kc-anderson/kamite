@@ -1,9 +1,10 @@
-import json, glob, os, numpy as np, sys
+import json, glob, numpy as np, sys
 sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
 from punishes import PUNISH
 from common import EX, skeleton, runtime_key
-FILE={'Suplex':'Suplex','Stinger':'Stinger','Cobra':'CobraTwist','Spanking':'Spanking'}
-REFGROUP={'Suplex':0,'Stinger':2,'Cobra':11,'Spanking':1}
+FILE={'Suplex':'Suplex','Stinger':'Stinger','Cobra':'CobraTwist','Spanking':'Spanking','Gorilla':'GorillaSuplex'}
+GORILLA_GROUPS={2,3,7,8,20,21}  # the fat and wide men: a Suplex pick plays the Gorilla Suplex (K, Nov 8)
+REFGROUP={'Suplex':0,'Stinger':2,'Cobra':11,'Spanking':1,'Gorilla':21}
 def verdict(m):
     if m['e0']<0.04: return 'fine'
     if m['e1']<0.07 and m['e1p90']<0.13: return 'fitted'
@@ -31,7 +32,8 @@ def main(path):
            '# fit <punish> <body (skeleton hash)> [off]   then its curves until the next fit line:',
            '#   gene <motion> <frame>:<forward m>,<side m>,<turn deg>,<height m> ...   (placement scaled by the enemy\'s size)',
            '#   victim <motion> <frame>:<height m>,<waist bend deg> ...',
-           '# off = doesn\'t fit: Buck Breaker keeps the enemy\'s own punish for that pick.']
+           '# off = doesn\'t fit: Buck Breaker keeps the enemy\'s own punish for that pick.',
+           '# gorilla (on a Suplex fit) = a Suplex pick plays the Gorilla Suplex on that body (its GorillaSuplex fit applies).']
     summary=[]
     for f in sorted(glob.glob('fits/*.json')):
         m=json.load(open(f)); name=m['name']; g=m['group']
@@ -40,8 +42,10 @@ def main(path):
         keys=B[g]['keys']
         tr=tracks(name,X,m['ks'])
         summary.append((name,g,B[g]['files'][0],v,m['e0'],m['e1']))
+        flag=' off' if v=='off' else ''
+        if name=='Suplex' and g in GORILLA_GROUPS: flag=' gorilla'; v='as the Gorilla Suplex'
         for k in keys:
-            lines.append('fit %s %s%s   # %s, %s: %.0f -> %.0f cm'%(FILE[name],k,' off' if v=='off' else '',B[g]['files'][0],v,m['e0']*100,m['e1']*100))
+            lines.append('fit %s %s%s   # %s, %s: %.0f -> %.0f cm'%(FILE[name],k,flag,B[g]['files'][0],v,m['e0']*100,m['e1']*100))
             for who,mot,kk in tr:
                 if who=='gene': items=' '.join('%d:%.3f,%.3f,%.2f,%.3f'%(int(fr),a,b,c,d) for fr,a,b,c,d in kk)
                 else: items=' '.join('%d:%.3f,%.2f'%(int(fr),a,b) for fr,a,b in kk)

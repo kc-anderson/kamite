@@ -4,7 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 8, 2026
 
-- Buck Breaker: Spanking ends with its launch again; each punish is fitted to every body (Gene's placement, both fighters' height, the victim's waist bend; resources/punish_fit.txt), and bodies it cannot fit keep their own punish.
+- Buck Breaker: Spanking ends with its launch again; each punish is fitted to every body (Gene's placement, both fighters' height, the victim's waist bend; resources/punish_fit.txt), and bodies it cannot fit keep their own punish; on the fat and wide men a Suplex pick plays the Gorilla Suplex (the prompt still reads SUPLEX).
 
 ## November 7, 2026
 
