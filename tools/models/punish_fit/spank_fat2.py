@@ -42,10 +42,12 @@ def job(g):
         O=np.zeros((len(sel),fit5.NP)); O[:,8:11]=th[None]*wsel[:,None]
         c_+=np.mean(np.sum((gene_xform(ds,O)-victim_xform(ds,O,1.0))**2,1))/0.0009
         return c_+0.3*np.sum((th/D(30))**2)
-    lo=np.array([D(-20),D(-60),D(-70)]); hi=np.array([D(80),D(60),D(60)])
+    # K (Nov 8, in play): the first fit swung the arm forward (-60 deg) so it lay ALONG the back and showed more;
+    # it should rotate up and round, ACROSS the back: the swing kept near 0 (negative = forward), raise and elbow free
+    lo=np.array([D(-20),D(-5),D(-70)]); hi=np.array([D(80),D(30),D(60)])
     best=None
     for r in (0,30,60):
-        for s_ in (-30,0,30):
+        for s_ in (0,15,30):
             for e in (-40,0,30):
                 th=D(np.array([r,s_,e],float)); v=cost(th)
                 if best is None or v<best[0]: best=(v,th)

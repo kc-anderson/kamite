@@ -37,6 +37,7 @@ def simulate(name, victim_path, vscale=1.0, fits=None, keep_mesh=False, every=1)
             tw=stg.get('touch'); rec['touch']=bool(tw and tw[0]<=k<=tw[1])
             rec['gP']=np.array([gene.world(p) for p in Pg]); rec['vP']=np.array([vic.world(p) for p in Pv])
             Ry=roty(vic.yaw); rec['vW1']=Ry@Wv[1]; rec['vscale']=vic.scale
+            Rg=roty(gene.yaw); rec['gW']=np.array([Rg@w for w in Wg])
             rec['vlegs']=[(gene_or(vic,Pv,a),np.linalg.norm(vic.skel['bones'][a+1]['t'])+np.linalg.norm(vic.skel['bones'][a+2]['t']),vic.world(np.array([vt.cur()[0].get(a+2,c,vt.cur()[1]) for c in range(3)]))) for a in (18,22)]
             rec['glegs']=[(gene_or(gene,Pg,a),np.linalg.norm(gene.skel['bones'][a+1]['t'])+np.linalg.norm(gene.skel['bones'][a+2]['t']),gene.world(np.array([gt.cur()[0].get(a+2,c,gt.cur()[1]) for c in range(3)]))) for a in (18,22)]
             if keep_mesh:
