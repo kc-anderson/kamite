@@ -2465,6 +2465,15 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_grab_toggle_s0", &toggleLoad<16, 0x15B4u, 2>);
         ps2xRegisterHostHook("km_fps60_grab_toggle_s1", &toggleLoad<17, 0x15B4u, 2>);
         ps2xRegisterHostHook("km_fps60_countdown_pl15b4_s0", &countdownLoad<16, 0x15B4u>);
+        // Gene's state timers the Oct 31 census left (pl00 states; kamite.toml "Gene's state timers").
+        ps2xRegisterHostHook("km_fps60_countdown_pl15b4_s1", &countdownLoad<17, 0x15B4u>);
+        ps2xRegisterHostHook("km_fps60_countdown_pl15b0_s1_once", &countdownLoad<17, 0x15B0u>);
+        ps2xRegisterHostHook("km_fps60_countdown_pl15b0_s0_once", &countdownLoad<16, 0x15B0u>);
+        ps2xRegisterHostHook("km_fps60_countdown_pl15b0_s1_a0", &countdownLoadAny<17, 0x15B0u, 4, 4>);
+        ps2xRegisterHostHook("km_fps60_countdown_pl15b0_s3", &countdownLoadExact<19, 0x15B0u, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_countdown_pl15b0_s0_v1", &countdownLoadExact<16, 0x15B0u, 3, 4>);
+        ps2xRegisterHostHook("km_fps60_countdown_pl15bc", &countdownLoad<17, 0x15BCu>);
+        ps2xRegisterHostHook("km_fps60_countdown_pl15bc_exact", &countdownLoadExact<17, 0x15BCu, 2, 4>);
         ps2xRegisterHostHook("km_fps60_countup_self", &countupSelf);
         // The 1 -> 0 step's guards (countdownGuard): the signed test loads in front of hooked decrements.
         ps2xRegisterHostHook("km_fps60_cd_guard_s1_568", &countdownGuard<17, 0x568u, 2, 2, 1>);

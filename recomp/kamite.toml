@@ -1447,6 +1447,93 @@ hook = "km_fps60_countdown_pl15b4_s0"
 flag = "fps60"
 replace = true
 
+# Gene's state timers the Oct 31 census left (Nov 8; countdown_census.py --range 0x108000 0x128000 after T1's Elvis grab
+# case, where the demon's finisher killed at motion frame 19 at 60 instead of 39: state 28's 40-frame wait). Counted
+# down a game frame, so at 60 each ran in half the time. Load-raise (family 1): a one-shot test of the new value after the
+# decrement -> countdownLoad (_once); `if (n) n--; else act` or a window that acts while n > 0 -> the 1 -> 0 step too
+# (countdownLoadExact: km_fps60_countdown_pl15b0, _s3, _s0_v1, _pl15bc_exact). Not hooked: the mash level's raises and
+# drops (+0x15B4 at 0x10FD34, 0x120268, ...: per press, not per frame) and the idle state's +0x15B0 (0x10C2A0, 90 frames
+# while an enemy is near: no reader found).
+[[patches.hooks]] # mode 1 state 3 (knocked down, func_0011ADD8): the press buffer +0x15B4 (10 after a press; > 0 when he lands = quick get-up)
+address = "0x0011B044"
+hook = "km_fps60_countdown_pl15b4_s1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # mode 1 state 6 (func_0011B5F8, mash out): lw a0,0x15B0(s1); +0x15B0 = a0 - 1, a0 - 6 on a press; out at <= 0
+address = "0x0011B860"
+hook = "km_fps60_countdown_pl15b0_s1_a0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # mode 1 state 8 (func_0011BAF8): +0x15B0 runs out -> level points -320, the down / death branch
+address = "0x0011BD54"
+hook = "km_fps60_countdown_pl15b0_s1_once"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # mode 1 state 9 (func_0011BF20): the same
+address = "0x0011C17C"
+hook = "km_fps60_countdown_pl15b0_s1_once"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # mode 1 state 11 (func_0011C608): 5 frames after the motion ends, the holder's blow (+0x76C x 10)
+address = "0x0011C804"
+hook = "km_fps60_countdown_pl15b0_s0_once"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # mode 1 state 12 (func_0011C988): the holder's blow every 11 frames (`if (n) n--; else { n = 10; hit }`)
+address = "0x0011CCC4"
+hook = "km_fps60_countdown_pl15b0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # mode 1 state 12: tension drained by +0x15C0 a frame (cHeatSys_SubHeatGage f12): halved (family 3)
+address = "0x0011CCB8"
+hook = "km_fps60_tension_drain"
+flag = "fps60"
+[[patches.hooks]] # mode 1 state 20 (func_0011ECB0): bite interval +0x15B4 (5 frames, as state 17)
+address = "0x0011EFC0"
+hook = "km_fps60_countdown_pl15b4_s1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # mode 1 state 28 (func_00120E00) step 5: the demon Elvis' finisher, 40 frames then HP 0 and the death demo
+address = "0x0012113C"
+hook = "km_fps60_countdown_pl15b0_s0_once"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00122D18 (a death sequence): 130 frames, then 0x747A24 |= 8 every frame
+address = "0x00122E04"
+hook = "km_fps60_countdown_pl15b0_s3"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # func_00122E90 (a death sequence): 40 frames, then the same
+address = "0x001230D4"
+hook = "km_fps60_countdown_pl15b0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # mode 0 state 5 (the dodge, UpdateStatePhase2F6_10CC58): turns toward the lock target (SetTgtTurn pi/16) for 16 frames
+address = "0x0010CCD0"
+hook = "km_fps60_countdown_pl15b0_s0_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # mode 0 state 11 (charged attacks, func_0010D3A8): +0x15F4 |= 0x800 while +0x56A > 0: the guard's lh
+address = "0x0010D624"
+hook = "km_fps60_cd_guard_s1_56a"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ... and its addiu v1,v1,-1
+address = "0x0010D634"
+hook = "km_fps60_countdown_v1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # mode 0 state 12 (func_0010DE70): func_0010A438 (the attack's hit) each frame while +0x15BC > 0 (999, cut to 2)
+address = "0x0010E1E0"
+hook = "km_fps60_countdown_pl15bc_exact"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # mode 0 state 17 (func_0010F720, a mash state): +0x15BC 90 frames, then sound 0xDA
+address = "0x0010FDBC"
+hook = "km_fps60_countdown_pl15bc"
+flag = "fps60"
+replace = true
+
 # The casino's Chihuahua race (DogRace, claude/rng-notes.md): each dog's start delay (+0xC of its record, counted down
 # a game frame in func_001EBB78 before it runs) and the race's own waits (+0x10: after the first dog crosses, before
 # the fade, on the result screen) are counted in game frames, so at 60 FPS the starts were half as long while the
