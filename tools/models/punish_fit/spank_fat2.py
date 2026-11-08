@@ -9,7 +9,8 @@ from scipy.optimize import minimize
 import fit_pose
 from fit_pose import OUT, path_of, save, TYPES
 D=np.radians
-K_EXTRA_RAISE=np.radians(10.0)   # on top of the fit, K's eye (Nov 8)
+K_EXTRA_RAISE=np.radians(10.0)   # on top of em18's fit, K's eye (Nov 8)
+STRAIGHT=(0.0,45.0)   # the other fat bodies: swing, elbow opening (deg); K: "stretched out and across the back"
 def key_weights(P):
     w=[]
     for si,fs in enumerate(P['ks']):
@@ -58,11 +59,11 @@ def job(g):
         th=np.clip(res.x,lo,hi)
         th[0]=min(th[0]+K_EXTRA_RAISE,D(85))
     else:
-        # K (Nov 8, human Elvis): the other bodies' own fits lifted the arm entirely off the back (70-85 deg, elbow
-        # straightened). Now em18's shape (its swing and elbow) on every fat body, raised to the lowest angle where
-        # Gene's forearm clears the back (its deepest point <= 0.3 cm, median over the held frames; em18's fit clears
-        # at its own 31 deg), + K_EXTRA_RAISE as on em18.
-        rep=np.load(os.path.join(OUT,'rep_Spanking_fat_1.00.npy')); th_rep=rep[np.argmax(np.abs(rep[:,8])),8:11]
+        # K (Nov 8, human Elvis): the bodies' own fits lifted the arm off the back (70-85 deg, elbow straightened);
+        # em18's bent shape raised until it cleared (7f3a7f9) twisted the shoulder with the elbow bent at an awkward
+        # angle. K: "his arm simply stretched out and across the back". So: swing 0, the elbow opened 45 deg (from the
+        # motion's ~-70), raised to the lowest angle where Gene's forearm clears the back (its deepest point <= 0.3 cm,
+        # median over the held frames). Rendered from behind the victim (yaw 175, pitch 8: matches K's screenshots).
         held=[(i,c) for i,c in frames if W[c['k0']]*(1-c['a'])+W[c['k1']]*c['a']>=1.0]
         def forearm(th):
             out=[]
@@ -70,8 +71,9 @@ def job(g):
                 ids,dd=c['cps']['L arm']; m=dd['lfore']>0.5
                 if m.any(): out.append(c['grid'](gene_xform(dd,np.repeat(pose(th,1.0)[None],len(ids),0)))[m].max())
             return np.median(out)
-        r=next((r for r in np.arange(0.0,86.0) if forearm(np.array([D(r),th_rep[1],th_rep[2]]))<=0.003),85.0)
-        th=np.array([min(D(r)+K_EXTRA_RAISE,D(85)),th_rep[1],th_rep[2]])
+        swing,elbow=D(STRAIGHT[0]),D(STRAIGHT[1])
+        r=next((r for r in np.arange(0.0,86.0) if forearm(np.array([D(r),swing,elbow]))<=0.003),85.0)
+        th=np.array([D(r),swing,elbow])
     Xb=X.copy(); Xb[:,8:11]=th[None]*W[:,None]
     rep=g==fit_pose.REP['fat']; tag=('rep_Spanking_fat_1.00') if rep else ('g_Spanking_%02d_1.00'%g)
     m=save(tag,P,Xb,1.0,dict(name='Spanking',type='fat',group=g,scale=1.0,rep=rep,pose_from='own (K: the left arm on the back, held)'))
