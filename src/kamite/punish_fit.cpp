@@ -29,12 +29,16 @@
 // every frame (mot_edit preRotate); the shoulder helpers 12 / 6, which follow the upper arms at about half in the game's
 // motions, get half. Offline the same pre-rotations are measured (fit5.py gene_xform).
 //
-// Size. Each fit is for an enemy size (scale=, the enemy's +0x114 at the catch); between two the values are
-// interpolated, past the ends held; a body whose smallest fit is above 1.0 (the original pairing, fitted only when
-// scaled up) is unchanged at 1.0 and blends in above it. A fit marked off at a size: from halfway there the pairing
-// doesn't fit (Buck Breaker keeps the enemy's own punish), and below that it is left out of the blend. size= is the victim's own size change for the pairing
-// (0.95..1.05, K: unnoticed in play): the enemy's scale (+0x110 / +0x114 / +0x118) eases to it over a third of a
-// second after the catch and back after the punish; the game's placement calls see the enemy's own scale.
+// Size (K, Nov 8). Enemies of one model come in many sizes (stage 1: 1.03, 1.05, 1.07 ... 1.10), so a pair is not
+// fitted per size: it is scaled. Every actor's model, root travel (cObjBase_addNullSpeed: the motion's delta x +0x110 /
+// +0x114 / +0x118) and the pair's placement (x enemy +0x110 / +0x118) scale with it, so Gene and the enemy scaled by
+// one factor are the fitted pair, uniformly bigger or smaller. Each fit is for an enemy size (scale=: 1.0, 1.3); a
+// body whose fits are all larger also has the game's own pairing at 1.0. At the catch the fit whose size needs the
+// least change is taken (sizes marked off are not), and Gene and the enemy meet halfway: both by k = sqrt(fit size /
+// the enemy's size), Gene up, the enemy down (or the reverse), easing in over kRampVblanks and back after the punish.
+// Each changes by at most 6%: past that a Buck Breaker pick doesn't fit (the enemy keeps its own punish), and the
+// enemy's own punish plays with k held at 6%. The game's placement calls run with the enemy at the fit's size x k.
+// size= is the fit's own victim size change (0.95..1.05), on top. Bodies with no fits (other skeletons) are untouched.
 //
 // The body: the enemy's skeleton (its cModel's parts, list at +0x144, count at +0x2B4; each part's offset +0xE0 and
 // parent +0x148), hashed from the parts after the root: recolours share it. Hashed at every use (an enemy number does
@@ -106,7 +110,8 @@ namespace kamite::punish_fit
         const char *const kFileNames[kPunishCount] = {"Suplex", "Stinger", "CobraTwist", "Spanking", "GorillaSuplex"};
 
         constexpr uint32_t kNumber = 0x564u, kScaleX = 0x110u, kScaleY = 0x114u, kScaleZ = 0x118u, kCaught = 0x694u;
-        constexpr int kRampVblanks = 20; // the victim's size change eases in (and out) over this many vblanks
+        constexpr int kRampVblanks = 12; // the size changes ease in (and out) over this many vblanks (K: quick)
+        constexpr float kMaxStep = 1.06f; // each of the two changes size by at most this factor
         constexpr int kValues = 12;
         constexpr uint32_t kParts = 0x144u, kPartCount = 0x2B4u, kPartOffset = 0xE0u, kPartParent = 0x148u;
         constexpr uint32_t kMotionPlaying = 0x428u, kMotionFrame = 0x430u;
@@ -167,68 +172,40 @@ namespace kamite::punish_fit
 
         using Fits = std::vector<std::shared_ptr<Fit>>; // one body's fits for one punish, by enemy size
 
-        // Whether the pairing fits at enemy size s: the fit nearest that size decides (a body whose fits are all for
-        // larger sizes is unchanged at 1.0, which fits).
-        bool offAt(const Fits &fits, float s)
+        // The fit a pair plays at enemy size s (see the top): fit nullptr = the game's own pairing at 1.0.
+        struct Anchor
         {
-            const Fit *best = nullptr;
-            float d = fits.front()->scale > 1.0f ? std::fabs(s - 1.0f) : 1e9f;
-            for (const auto &f : fits)
-                if (std::fabs(f->scale - s) < d)
+            bool any = false;    // a fit (or the game's own) to scale to
+            bool within = false; // reached with each of the two changing by at most kMaxStep
+            const Fit *fit = nullptr;
+            float scale = 1.0f; // the fit's enemy size
+            float k = 1.0f;     // Gene's factor; the enemy's: scale x k / s
+        };
+        Anchor anchorFor(const Fits &fits, float s)
+        {
+            Anchor best;
+            float bestD = 1e9f;
+            const auto consider = [&](const Fit *f, float a) {
+                const float d = std::fabs(std::log(s / a));
+                if (d < bestD)
                 {
-                    d = std::fabs(f->scale - s);
-                    best = f.get();
+                    bestD = d;
+                    best.any = true;
+                    best.fit = f;
+                    best.scale = a;
                 }
-            return best && best->off;
-        }
-
-        // The fits at enemy size s (see the top); the sizes marked off are left out.
-        Fit blend(const Fits &all, float s)
-        {
-            static const Fit none;
-            Fits fits;
-            for (const auto &f : all)
-                if (!f->off)
-                    fits.push_back(f);
-            if (fits.empty())
-                return none;
-            const Fit *lo = nullptr, *hi = nullptr;
+            };
             if (fits.front()->scale > 1.0f)
-            {
-                if (s <= 1.0f)
-                    return none; // the original pairing at its own size: unchanged
-                lo = &none;
-            }
+                consider(nullptr, 1.0f);
             for (const auto &f : fits)
+                if (!f->off)
+                    consider(f.get(), f->scale);
+            if (best.any)
             {
-                if (f->scale <= s)
-                    lo = f.get();
-                if (f->scale >= s && !hi)
-                    hi = f.get();
+                best.within = bestD <= 2.0f * std::log(kMaxStep) + 1e-4f;
+                best.k = std::clamp(std::sqrt(s / best.scale), 1.0f / kMaxStep, kMaxStep);
             }
-            if (!lo)
-                return *fits.front();
-            if (!hi)
-                return *fits.back();
-            if (lo == hi || hi->scale <= lo->scale)
-                return *hi;
-            const float t = (s - lo->scale) / (hi->scale - lo->scale);
-            Fit out = *hi;
-            out.scale = s;
-            out.size = lo->size + (hi->size - lo->size) * t;
-            for (Track &track : out.tracks)
-            {
-                const Track *a = lo->find(track.motion, track.gene);
-                for (Key &k : track.keys)
-                {
-                    float va[kValues] = {};
-                    if (a)
-                        a->at(k.frame, va);
-                    for (int c = 0; c < kValues; ++c)
-                        k.v[c] = va[c] + (k.v[c] - va[c]) * t;
-                }
-            }
-            return out;
+            return best;
         }
 
         // The pair playing (EE thread only).
@@ -236,20 +213,20 @@ namespace kamite::punish_fit
         {
             int punish = -1;
             uint32_t gene = 0, enemy = 0, body = 0;
-            Fit own;                // the body's fit at the enemy's size
-            const Fit *fit = nullptr; // &own while fitted
-            int sizeKey = 100;      // the enemy's size x 100 (the copies are per size)
-            float baseScale[3] = {1.0f, 1.0f, 1.0f};
+            const Fit *fit = nullptr; // the fit played (nullptr: the game's own pairing, scaled, or no fit)
+            int sizeKey = 100;        // the fit's size x 100 (the copies are per fit)
+            float baseScale[3] = {1.0f, 1.0f, 1.0f};  // the enemy's own
+            float placeScale[3] = {1.0f, 1.0f, 1.0f}; // the enemy at the fit's size x k: what placement scales by
             bool live = false;
             uint32_t geneMotionPtr = 0; // the pointer Gene's current punish motion was started with (ours or the game's)
             const Track *geneTrack = nullptr;
             float applied[3] = {}; // forward, side, turn (radians) put in so far
         };
 
-        // The victim's size change, easing in while the pair plays and out after it (EE thread only).
+        // An actor's size change (Gene's, the victim's), easing in while the pair plays and out after it (EE thread only).
         struct Resize
         {
-            uint32_t enemy = 0, number = 0;
+            uint32_t actor = 0, number = 0;
             float base[3] = {1.0f, 1.0f, 1.0f};
             float now = 1.0f, target = 1.0f, written = 0.0f;
             bool active = false;
@@ -262,7 +239,7 @@ namespace kamite::punish_fit
         std::map<uint64_t, Fits> g_fits; // punish << 32 | body, by size; read at start, then only read
         std::map<uint32_t, std::string> g_bodyNames; // body -> its type ("men", ...), punish_fit.txt's body lines
         Pair g_pair;
-        Resize g_resize;
+        Resize g_resize[2]; // the victim, Gene
         std::map<std::tuple<uint32_t, int, uint16_t, bool, int>, uint32_t> g_copies; // (body, punish, motion, gene, size) -> copy
         uint32_t g_areaAt = kRewriteArea;
         std::set<uint64_t> g_logged;
@@ -402,67 +379,88 @@ namespace kamite::punish_fit
                 wrF(rdram, gene + 0x104u, wrap(rdF(rdram, gene + 0x104u) + turn));
         }
 
-        void writeScale(uint8_t *rdram, uint32_t enemy, const float base[3], float f)
+        void writeScale(uint8_t *rdram, uint32_t actor, const float base[3], float f)
         {
             for (uint32_t i = 0; i < 3; ++i)
-                wrF(rdram, enemy + kScaleX + 4u * i, base[i] * f);
+                wrF(rdram, actor + kScaleX + 4u * i, base[i] * f);
         }
-        // The size change's enemy still there, its scale still what we last wrote.
-        bool resizeOurs(const uint8_t *rdram)
+        // The size change's actor still there, its scale still what we last wrote.
+        bool resizeOurs(const uint8_t *rdram, const Resize &r)
         {
-            const Resize &r = g_resize;
-            return inRam(r.enemy, 0x700u) && rd32(rdram, r.enemy + kNumber) == r.number && rdF(rdram, r.enemy + kScaleY) == r.written;
+            return inRam(r.actor, 0x700u) && rd32(rdram, r.actor + kNumber) == r.number && rdF(rdram, r.actor + kScaleY) == r.written;
         }
-        void finishResize(uint8_t *rdram)
+        void finishResizes(uint8_t *rdram)
         {
-            if (g_resize.active && resizeOurs(rdram))
-                writeScale(rdram, g_resize.enemy, g_resize.base, 1.0f);
-            g_resize.active = false;
-        }
-        void stepResize()
-        {
-            Resize &r = g_resize;
-            if (!r.active)
-                return;
-            if (!resizeOurs(g_ram))
+            for (Resize &r : g_resize)
             {
+                if (r.active && resizeOurs(rdram, r))
+                    writeScale(rdram, r.actor, r.base, 1.0f);
                 r.active = false;
-                return;
             }
-            const float target = g_pair.live && g_pair.enemy == r.enemy ? r.target : 1.0f;
-            const float step = std::fabs(r.target - 1.0f) / kRampVblanks;
-            r.now = r.now < target ? std::min(target, r.now + step) : std::max(target, r.now - step);
-            writeScale(g_ram, r.enemy, r.base, r.now);
-            r.written = rdF(g_ram, r.enemy + kScaleY);
-            if (target == 1.0f && r.now == 1.0f)
-                r.active = false;
         }
-        // The enemy's own size: its scale, or what it was before our size change.
-        void ownScale(const uint8_t *rdram, uint32_t enemy, float out[3])
+        void startResize(uint8_t *rdram, Resize &r, uint32_t actor, const float base[3], float target)
         {
+            r = Resize{};
+            if (target == 1.0f)
+                return;
+            r.actor = actor;
+            r.number = rd32(rdram, actor + kNumber);
+            std::memcpy(r.base, base, sizeof(r.base));
+            r.target = target;
+            r.written = rdF(rdram, actor + kScaleY);
+            r.active = true;
+        }
+        void stepResizes()
+        {
+            for (Resize &r : g_resize)
+            {
+                if (!r.active)
+                    continue;
+                if (!resizeOurs(g_ram, r))
+                {
+                    r.active = false;
+                    continue;
+                }
+                const float target = g_pair.live && (r.actor == g_pair.enemy || r.actor == g_pair.gene) ? r.target : 1.0f;
+                const float step = std::fabs(r.target - 1.0f) / kRampVblanks;
+                r.now = r.now < target ? std::min(target, r.now + step) : std::max(target, r.now - step);
+                writeScale(g_ram, r.actor, r.base, r.now);
+                r.written = rdF(g_ram, r.actor + kScaleY);
+                if (target == 1.0f && r.now == 1.0f)
+                    r.active = false;
+            }
+        }
+        // The actor's own size: its scale, or what it was before our size change.
+        void ownScale(const uint8_t *rdram, uint32_t actor, float out[3])
+        {
+            const Resize *mine = nullptr;
+            for (const Resize &r : g_resize)
+                if (r.active && r.actor == actor)
+                    mine = &r;
             for (uint32_t i = 0; i < 3; ++i)
-                out[i] = g_resize.active && g_resize.enemy == enemy ? g_resize.base[i] : rdF(rdram, enemy + kScaleX + 4u * i);
+                out[i] = mine ? mine->base[i] : rdF(rdram, actor + kScaleX + 4u * i);
         }
         int sizeKeyOf(float s) { return static_cast<int>(std::lround(s * 100.0f)); }
 
-        // The fit for the enemy's punish at its size: the pair's, or blended for a motion started before the pair's
+        // The fit for the enemy's punish at its size: the pair's, or its anchor's for a motion started before the pair's
         // placement call; nullptr when there is none (or it doesn't fit).
         const Fit *fitNow(const uint8_t *rdram, uint32_t enemy, int punish, int &sizeKey)
         {
-            if (g_pair.fit && g_pair.enemy == enemy && g_pair.punish == punish)
+            if (g_pair.enemy == enemy && g_pair.punish == punish && g_pair.live)
             {
                 sizeKey = g_pair.sizeKey;
                 return g_pair.fit;
             }
             const Fits *fits = fitsFor(punish, bodyOf(rdram, enemy));
+            if (!fits)
+                return nullptr;
             float scale[3];
             ownScale(rdram, enemy, scale);
-            if (!fits || offAt(*fits, scale[1]))
+            const Anchor an = anchorFor(*fits, scale[1]);
+            if (!an.any)
                 return nullptr;
-            static Fit scratch;
-            scratch = blend(*fits, scale[1]);
-            sizeKey = sizeKeyOf(scale[1]);
-            return &scratch;
+            sizeKey = sizeKeyOf(an.scale);
+            return an.fit;
         }
 
         // func_001299F0, wrapped.
@@ -483,32 +481,37 @@ namespace kamite::punish_fit
             const bool first = call->geneMotion == kMotions[call->punish].gene[0];
             if (first || g_pair.enemy != enemy || g_pair.punish != call->punish || g_pair.gene != gene)
             {
-                // A new pair: the fit at the enemy's own size (a size change still easing out ends first).
-                finishResize(rdram);
+                // A new pair: the fit whose size needs the least change, Gene and the enemy scaled to meet it (any size
+                // change still easing out ends first).
+                finishResizes(rdram);
                 ownScale(rdram, enemy, g_pair.baseScale);
+                std::memcpy(g_pair.placeScale, g_pair.baseScale, sizeof(g_pair.placeScale));
                 const Fits *fits = fitsFor(call->punish, body);
-                const bool off = fits && offAt(*fits, g_pair.baseScale[1]);
-                g_pair.fit = nullptr;
-                if (fits && !off)
+                const Anchor an = fits ? anchorFor(*fits, g_pair.baseScale[1]) : Anchor{};
+                g_pair.fit = an.fit;
+                g_pair.sizeKey = sizeKeyOf(an.scale);
+                g_pair.live = an.any;
+                if (an.any)
                 {
-                    g_pair.own = blend(*fits, g_pair.baseScale[1]);
-                    g_pair.fit = &g_pair.own;
+                    const float e = an.scale * an.k / g_pair.baseScale[1]; // the enemy's factor (before the fit's size=)
+                    for (int i = 0; i < 3; ++i)
+                        g_pair.placeScale[i] = g_pair.baseScale[i] * e;
+                    startResize(rdram, g_resize[0], enemy, g_pair.baseScale, e * (an.fit ? an.fit->size : 1.0f));
+                    float geneBase[3];
+                    ownScale(rdram, gene, geneBase);
+                    startResize(rdram, g_resize[1], gene, geneBase, an.k);
                 }
-                g_pair.sizeKey = sizeKeyOf(g_pair.baseScale[1]);
                 if (first)
-                    logPair(call->punish, body, enemy,
-                            !fits ? "no fit (the game's own placement)" : off ? "doesn't fit at this size"
-                            : g_pair.own.tracks.empty() ? "unchanged at this size" : "fitted",
-                            g_pair.baseScale[1]);
-                if (g_pair.fit && g_pair.fit->size != 1.0f)
                 {
-                    g_resize = Resize{};
-                    g_resize.enemy = enemy;
-                    g_resize.number = rd32(rdram, enemy + kNumber);
-                    std::memcpy(g_resize.base, g_pair.baseScale, sizeof(g_resize.base));
-                    g_resize.target = g_pair.fit->size;
-                    g_resize.written = rdF(rdram, enemy + kScaleY);
-                    g_resize.active = true;
+                    char what[96];
+                    if (!an.any)
+                        std::snprintf(what, sizeof(what), "%s", fits ? "doesn't fit" : "no fit (the game's own placement)");
+                    else
+                        std::snprintf(what, sizeof(what), "%s at %.2f%s, Gene x%.3f, enemy x%.3f",
+                                      an.fit ? "fitted" : "the game's own pairing", an.scale,
+                                      an.within ? "" : " (past 6%: held there)", an.k,
+                                      an.scale * an.k / g_pair.baseScale[1] * (an.fit ? an.fit->size : 1.0f));
+                    logPair(call->punish, body, enemy, what, g_pair.baseScale[1]);
                 }
             }
             const Fit *fit = g_pair.fit;
@@ -525,21 +528,23 @@ namespace kamite::punish_fit
             }
             else
                 ctx->f[12] += turn;
-            // The game's placement with the enemy's own size (not our size change).
-            const bool resized = g_resize.active && g_resize.enemy == enemy && resizeOurs(rdram);
-            if (resized)
-                writeScale(rdram, enemy, g_resize.base, 1.0f);
+            // The game's placement with the enemy at the fit's size x k (not its own, nor mid-ease).
+            float held[3];
+            for (uint32_t i = 0; i < 3; ++i)
+                held[i] = rdF(rdram, enemy + kScaleX + 4u * i);
+            const float one = 1.0f;
+            if (g_pair.live)
+                writeScale(rdram, enemy, g_pair.placeScale, one);
             g_align(rdram, ctx, runtime);
-            if (resized)
-                writeScale(rdram, enemy, g_resize.base, g_resize.now);
+            if (g_pair.live)
+                writeScale(rdram, enemy, held, one);
             const float facing = wrap(rdF(rdram, gene + 0x104u) - (mode == 1u ? 0.0f : turn));
-            moveGene(rdram, gene, g_pair.baseScale, v[1], v[0], mode == 1u ? turn : 0.0f, facing);
+            moveGene(rdram, gene, g_pair.placeScale, v[1], v[0], mode == 1u ? turn : 0.0f, facing);
 
             g_pair.punish = call->punish;
             g_pair.gene = gene;
             g_pair.enemy = enemy;
             g_pair.body = body;
-            g_pair.live = fit != nullptr;
             g_pair.geneTrack = track;
             g_pair.geneMotionPtr = 0u;
             g_pair.applied[0] = v[0];
@@ -663,7 +668,7 @@ namespace kamite::punish_fit
         {
             if (!g_ram)
                 return;
-            stepResize();
+            stepResizes();
             if (!g_pair.live)
                 return;
             const uint32_t gene = player(g_ram);
@@ -682,7 +687,7 @@ namespace kamite::punish_fit
             if (want[0] == g_pair.applied[0] && want[1] == g_pair.applied[1] && want[2] == g_pair.applied[2])
                 return;
             const float facing = wrap(rdF(g_ram, gene + 0x104u) - g_pair.applied[2]);
-            moveGene(g_ram, gene, g_pair.baseScale, want[1] - g_pair.applied[1], want[0] - g_pair.applied[0],
+            moveGene(g_ram, gene, g_pair.placeScale, want[1] - g_pair.applied[1], want[0] - g_pair.applied[0],
                      want[2] - g_pair.applied[2], facing);
             std::memcpy(g_pair.applied, want, sizeof(want));
         }
@@ -804,7 +809,7 @@ namespace kamite::punish_fit
             return false;
         float scale[3];
         ownScale(rdram, enemy & 0x1FFFFFFu, scale);
-        return offAt(*fits, scale[1]);
+        return !anchorFor(*fits, scale[1]).within;
     }
 
     bool suplexAsGorilla(const uint8_t *rdram, uint32_t enemy)
@@ -839,11 +844,13 @@ namespace kamite::punish_fit
             if (phase == kGenePhase[p])
             {
                 const Fits *fits = g_on ? fitsFor(p, body) : nullptr;
-                const char *what = !fits ? "no fit (the game's placement)"
-                                   : offAt(*fits, scale[1]) ? "doesn't fit"
-                                   : g_pair.fit && g_pair.enemy == enemy && g_pair.punish == p
-                                       ? (g_pair.fit->tracks.empty() ? "unchanged at this size" : "fitted")
-                                       : "fitted";
+                const Anchor an = fits ? anchorFor(*fits, scale[1]) : Anchor{};
+                char what[96];
+                if (!an.any)
+                    std::snprintf(what, sizeof(what), "%s", fits ? "doesn't fit" : "no fit (the game's placement)");
+                else
+                    std::snprintf(what, sizeof(what), "%s %.2f, pair x%.3f%s", an.fit ? "fit" : "game's own at", an.scale,
+                                  an.k, an.within ? "" : " (held at 6%)");
                 status = std::string(kNames[p]) + ": " + what;
                 return;
             }
