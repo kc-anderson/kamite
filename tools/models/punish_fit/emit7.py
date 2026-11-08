@@ -57,7 +57,10 @@ def main(path):
                 lines.append('fit Suplex %s %s   # %s: %s'%(keys,flag,file,'as the Gorilla Suplex' if flag=='gorilla' else 'doesn\'t fit (own punish)'))
                 summary.append((name,g,file,t,1.0,flag,None)); continue
             if name=='Spanking' and t=='fat':
-                lines.append('fit Spanking %s off   # %s: doesn\'t fit (own punish)'%(keys,file)); summary.append((name,g,file,t,1.0,'off',None)); continue
+                # K (Nov 8, with a clip of the original game): the fat man's bulk hides Gene's clipping arm, so it plays
+                # with the game's own placement (an empty fit at 1.0: other sizes scale the pair to it)
+                lines.append('fit Spanking %s scale=1.00 size=1.000   # %s: the game\'s own placement (K: the fat man hides the arm)'%(keys,file))
+                summary.append((name,g,file,t,1.0,'own placement',None)); continue
             off10=False
             for s in (1.0,1.15,1.3):
                 if (name,g,s) not in fits: continue
