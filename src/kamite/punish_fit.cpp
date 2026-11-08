@@ -289,20 +289,26 @@ namespace kamite::punish_fit
         // The enemy's skeleton hashed (FNV-1a): part count, then each part after the root: its parent's index and its
         // offset's bits (tools/models/punish_fit/common.py runtime_key computes the same from the file). 0 when it
         // cannot be read.
-        uint32_t skeletonHash(const uint8_t *rdram, uint32_t enemy)
+        // The enemy's parts (root first); their count, 0 if they can't be read.
+        int readParts(const uint8_t *rdram, uint32_t enemy, uint32_t parts[64])
         {
             const int n = rdram[(enemy + kPartCount) & (PS2_RAM_SIZE - 1u)];
             if (n < 2 || n > 64)
-                return 0u;
-            uint32_t parts[64];
+                return 0;
             uint32_t p = rd32(rdram, enemy + kParts);
             for (int i = 0; i < n; ++i)
             {
                 if (!inRam(p, 0x150u))
-                    return 0u;
+                    return 0;
                 parts[i] = p & 0x1FFFFFFu;
                 p = rd32(rdram, p + kParts);
             }
+            return n;
+        }
+
+        // The hash of the first n parts (common.runtime_key offline).
+        uint32_t hashParts(const uint8_t *rdram, const uint32_t *parts, int n)
+        {
             uint32_t h = 2166136261u;
             const auto mix = [&h](const void *data, size_t size) {
                 const auto *b = static_cast<const uint8_t *>(data);
@@ -312,8 +318,8 @@ namespace kamite::punish_fit
             mix(&n, sizeof(n));
             for (int i = 1; i < n; ++i)
             {
-                const uint32_t parent = rd32(rdram, parts[i] + kPartParent) & 0x1FFFFFFu;
                 int8_t index = -1;
+                const uint32_t parent = rd32(rdram, parts[i] + kPartParent) & 0x1FFFFFFu;
                 for (int j = 0; j < n; ++j)
                     if (parts[j] == parent && j != i)
                         index = static_cast<int8_t>(j);
@@ -323,10 +329,51 @@ namespace kamite::punish_fit
             return h ? h : 1u;
         }
 
+        // The body. A skeleton in no body line whose body bones (parts 0-25) match a known body's plays that body's
+        // fits: the head's extra bones (26..) vary between identical bodies (punish_fit.txt's core lines). A body
+        // still unknown is logged once with its parts (parent: offset), so it can be added offline.
+        constexpr int kCoreParts = 26;
+        std::map<uint32_t, uint32_t> g_core; // hash of parts 0-25 -> a body with fits
+        std::set<uint32_t> g_seenBodies;
         uint32_t bodyOf(const uint8_t *rdram, uint32_t enemy)
         {
-            const uint32_t body = skeletonHash(rdram, enemy);
-            return body ? body : 0x80000000u | (rd32(rdram, enemy + kNumber) & 0xFFFFu);
+            uint32_t parts[64];
+            const int n = readParts(rdram, enemy, parts);
+            if (!n)
+                return 0x80000000u | (rd32(rdram, enemy + kNumber) & 0xFFFFu);
+            const uint32_t body = hashParts(rdram, parts, n);
+            if (g_bodyNames.empty() || g_bodyNames.count(body))
+                return body;
+            const uint32_t core = n >= kCoreParts ? hashParts(rdram, parts, kCoreParts) : 0u;
+            const auto it = g_core.find(core);
+            const uint32_t alias = it != g_core.end() ? it->second : 0u;
+            if (g_seenBodies.insert(body).second)
+            {
+                std::ostringstream text;
+                text << "punish fit: body " << std::hex << body << " (" << enemyName(rdram, enemy) << ", " << std::dec << n
+                     << " parts, core " << std::hex << core << std::dec << ") ";
+                if (alias)
+                    text << "plays body " << std::hex << alias << std::dec << "'s fits";
+                else
+                {
+                    text << "unknown:";
+                    for (int i = 1; i < n; ++i)
+                    {
+                        const uint32_t parent = rd32(rdram, parts[i] + kPartParent) & 0x1FFFFFFu;
+                        int index = -1;
+                        for (int j = 0; j < n; ++j)
+                            if (parts[j] == parent && j != i)
+                                index = j;
+                        float t[3];
+                        std::memcpy(t, rdram + parts[i] + kPartOffset, sizeof(t));
+                        char item[64];
+                        std::snprintf(item, sizeof(item), " %d:%d:%.4f,%.4f,%.4f", i, index, t[0], t[1], t[2]);
+                        text << item;
+                    }
+                }
+                KM_INFO(Game, text.str());
+            }
+            return alias ? alias : body;
         }
 
         const Fits *fitsFor(int punish, uint32_t body)
@@ -758,6 +805,15 @@ namespace kamite::punish_fit
                         if (const uint32_t key = static_cast<uint32_t>(std::strtoul(body.c_str(), nullptr, 16)))
                             g_bodyNames[key] = name;
                 }
+                else if (kind == "core")
+                {
+                    std::string core, body;
+                    fields >> core >> body;
+                    const auto key = static_cast<uint32_t>(std::strtoul(core.c_str(), nullptr, 16));
+                    const auto to = static_cast<uint32_t>(std::strtoul(body.c_str(), nullptr, 16));
+                    if (key && to)
+                        g_core[key] = to;
+                }
                 else if (fit && (kind == "gene" || kind == "victim"))
                 {
                     Track track;
@@ -829,7 +885,7 @@ namespace kamite::punish_fit
             return;
         float scale[3];
         ownScale(rdram, enemy, scale);
-        const uint32_t body = skeletonHash(rdram, enemy);
+        const uint32_t body = bodyOf(rdram, enemy);
         const auto name = g_bodyNames.find(body);
         char text[64];
         std::snprintf(text, sizeof(text), "%s | %s | %.2f", enemyName(rdram, enemy).c_str(),

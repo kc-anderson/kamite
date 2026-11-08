@@ -2,10 +2,11 @@
 every runtime key of the group. Verdicts from the touch error (as emit.py's) at each size; a larger size's fit is
 off when it can't be made to work (the runtime: own punish from halfway to that size); a body off at 1.0 is off at
 every size."""
+from common import EX, skeleton, runtime_key
 import sys, os, json, glob, numpy as np
 HERE=os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0,HERE)
 from punishes import PUNISH
-from fit_pose import B, TYPES, REFGROUP, OUT as FITS, type_of
+from fit_pose import B, TYPES, REP, REFGROUP, OUT as FITS, type_of
 FILE={'Suplex':'Suplex','Stinger':'Stinger','Cobra':'CobraTwist','Spanking':'Spanking','Gorilla':'GorillaSuplex'}
 GORILLA_GROUPS={2,3,7,8,20,21}
 def verdict(m):
@@ -45,6 +46,19 @@ def main(path):
            '# Between two sizes the runtime interpolates; a body with only a 1.3 fit (the original pairing) is unchanged at 1.0.']
     lines.append('# body <body>[,<body>...] <type>   (the enemy labels\' body type: F2 > Debug > Enemy labels)')
     for g in range(len(B)): lines.append('body %s %s'%(','.join(B[g]['keys']),type_of(g)))
+    # K (Nov 8): Mr. Gold / Mr. Silver played unfitted. A skeleton in no body line whose body bones (0-25) match a
+    # group's plays that group's fits; the head's extra bones (26..) vary between identical bodies. Same bones in two
+    # groups: the type's representative wins, else the first.
+    lines.append('# core <hash of bones 0-25> <body>   (a skeleton in no body line with these body bones plays <body>\'s fits)')
+    core={}
+    for g in range(len(B)):
+        for f in B[g]['files']:
+            sk=skeleton(os.path.join(EX,'em',f+'.dat'))
+            if not sk or len(sk['bones'])<26: continue
+            c=runtime_key(sk['bones'][:26]); o=core.get(c)
+            if o is not None and o!=g and type_of(o)!=type_of(g): print('core %08x in groups %d and %d (different types)'%(c,o,g))
+            if o is None or (g in REP.values() and o not in REP.values()): core[c]=g
+    for c,g in sorted(core.items()): lines.append('core %08x %s   # %s'%(c,B[g]['keys'][0],B[g]['files'][0]))
     summary=[]
     fits={}
     for f in sorted(glob.glob(os.path.join(FITS,'*.json'))):

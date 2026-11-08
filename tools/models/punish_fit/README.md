@@ -47,3 +47,6 @@ bodies.json is kept by hand. The ema* files (ema0, ema2-ema9, emad) were missing
 and emad matched groups already, the rest have a known group's body bones (0-25) and differ only in the head's extra
 bones 26 and 29, so they joined that group (ema2/4/5/7/8/9 -> group 0 men, ema0 -> group 1 women) with their own keys.
 A new model: compare bones 0-25 (parents and offsets) with the groups; identical -> add its file and key there.
+emit7 also writes core lines (hash of bones 0-25 -> a body): the runtime gives a skeleton in no body line the fits of the
+body with the same body bones, and logs a still-unknown skeleton once ("punish fit: body ... unknown: part:parent:x,y,z").
++0x2FE is not the model file: every enemy in the casino case reads 0x2a5 (men of two skeletons and women alike).

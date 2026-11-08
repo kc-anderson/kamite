@@ -4,12 +4,13 @@ Newest first, one line per change; the code comments say how.
 
 ## November 8, 2026
 
+- Buck Breaker: an enemy whose skeleton isn't listed gets the fits of a listed body with the same body bones (unmatched skeletons are logged).
+- Buck Breaker: the casino's men get the men's fits (their models were missing from the model list).
 - 60 FPS: the world lights blend between areas, flicker and turn at the PS2's speed (twice as fast before; the demon rooms' flickering lights, timed light changes).
 - 60 FPS: Gene's state timers run at the PS2's speed: the demon Elvis' finisher (it killed in half the time), the quick get-up press window, mashing out of a stun, the squeezing grabs' hits and tension drain, the down and death waits, the dodge's turn toward the target, a charged attack's window.
 - 60 FPS: grabs that bite or squeeze while they last (the demon Elvis' grab and three other grabs) hit as often as on the PS2 (at 60 they hit up to half again as often).
 - 60 FPS: Demon Shannon's familiar moves and attacks at the right speed (its volleys lasted twice as long, with twice the shots).
 - 60 FPS: the casino's Chihuahua race keeps the PS2's start delays and pauses (starts were half as long).
-- Buck Breaker: Mr. Gold, Mr. Silver and the other ema* enemies get the fits for their body type (they were missing from the model list).
 - Buck Breaker: the fat men can be spanked (the game's own placement, Gene's holding arm raised onto their back).
 - Buck Breaker: a pair with an enemy of any size plays the fitted pair: Gene and the enemy each ease up to 12% toward the fitted size for the punish (no more blending between fitted sizes).
 - Debug menu: enemy labels (model file, body type, size; in a punish, the punish and what its fit does) for naming enemies in feedback.
