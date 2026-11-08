@@ -46,6 +46,7 @@ set(KAMITE_HOST_SOURCES
     kamite/prompt_hd.cpp
     kamite/style_presets.cpp
     kamite/buck_breaker.cpp
+    kamite/punish_fit.cpp
     kamite/texture_slots.cpp
     kamite/jukebox.cpp
     kamite/widescreen.cpp

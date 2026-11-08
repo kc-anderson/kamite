@@ -42,6 +42,7 @@
 #include "kamite/debug_tools.h"
 #include "kamite/disc_files.h"
 #include "kamite/hitbox_overlay.h"
+#include "kamite/punish_fit.h"
 #include "kamite/game_layout.h"
 #include "kamite/npc_tools.h"
 #include "kamite/modern_controls.h"
@@ -754,6 +755,8 @@ namespace kamite::debug_tools
                               hk::text(hk::binding(hk::Action::FrameStep)).c_str());
                 ui->text_disabled(keys);
             }
+
+            punish_fit::drawPanel(ui);
 
             hitbox_overlay::drawPanel(ui);
 

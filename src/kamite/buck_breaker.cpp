@@ -6,6 +6,7 @@
 #include "kamite/function_hooks.h"
 #include "kamite/game_layout.h"
 #include "kamite/log.h"
+#include "kamite/punish_fit.h"
 #include "kamite/style_presets.h"
 #include "runtime/ee_scheduler.h"
 #include "runtime/ps2_pnach.h"
@@ -224,6 +225,24 @@ namespace kamite::buck_breaker
             return true;
         }
 
+        // The pick's punish in punish_fit's list (-1: Pummel, which does not place Gene).
+        int fitPunish(int pick)
+        {
+            switch (pick)
+            {
+            case Suplex:
+                return punish_fit::Suplex;
+            case Stinger:
+                return punish_fit::Stinger;
+            case CobraTwist:
+                return punish_fit::CobraTwist;
+            case Spanking:
+                return punish_fit::Spanking;
+            default:
+                return -1;
+            }
+        }
+
         // Replaces sltiu v1,a0,0x7A at 0x2DD02C (func_002DCD50; a0 = enemy number - 0x205, s1 = the enemy): a generic
         // punish goes to the picked one's case.
         void punishCase(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
@@ -234,7 +253,9 @@ namespace kamite::buck_breaker
             {
                 const uint32_t was = index < kCases ? ram32(rdram, kCaseTable + 4u * index) : kSuplexCase;
                 const uint32_t enemy = GPR_U32(ctx, 17);
-                if (genericCase(was))
+                // F2 > Debug > Punish fit: a body marked "doesn't fit" for the pick keeps its own punish.
+                const int fit = fitPunish(pick);
+                if (genericCase(was) && !(fit >= 0 && punish_fit::doesntFit(rdram, enemy, fit)))
                 {
                     if (ensureMotions(rdram, enemy, pick))
                         index = kPickIndex[pick];

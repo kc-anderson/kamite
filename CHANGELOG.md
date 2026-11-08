@@ -2,6 +2,10 @@
 
 Newest first, one line per change; the code comments say how.
 
+## November 8, 2026
+
+- Buck Breaker: Spanking ends with its launch again; per-body punish fits (Forward / Side / Turn, "Doesn't fit") in F2 > Debug, saved in punish_fit.txt.
+
 ## November 7, 2026
 
 - Buck Breaker (launcher: Gameplay): pick the punish for stunned enemies (Pummel, Spanking, Suplex, Stinger, Cobra Twist) in a new slot on the Techniques screen; per style with Style switching.
