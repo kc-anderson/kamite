@@ -10,6 +10,7 @@
 #include "kamite/style_presets.h"
 #include "runtime/ee_scheduler.h"
 #include "runtime/ps2_pnach.h"
+#include "runtime/ps2_save_state.h"
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
 
@@ -797,8 +798,8 @@ namespace kamite::buck_breaker
                 wr32(entries + i * ent::kSize + ent::kFlags, flags[i]);
         }
 
-        // Each vblank (EE thread): the pick in force, and the slot let go when the screen is not browsing.
-        void onVblank()
+        // The pick in force: the save's (a save state brings its own back).
+        void refreshPick()
         {
             const uint32_t data = dataPointer();
             int pick = Normal;
@@ -809,6 +810,12 @@ namespace kamite::buck_breaker
                 pick = block.pick[position()];
             }
             g_pick.store(pick, std::memory_order_relaxed);
+        }
+
+        // Each vblank (EE thread): the pick in force, and the slot let go when the screen is not browsing.
+        void onVblank()
+        {
+            refreshPick();
             if (g_onSlot || g_hidInfo)
             {
                 const uint32_t waza = techniquesScreen();
@@ -859,6 +866,7 @@ namespace kamite::buck_breaker
         }
         loadMotionSets();
         ps2x::pnach::addFrameHook(&onVblank);
+        ps2x::savestate::onLoaded(&refreshPick); // before the game's first frame after a load
         FunctionHooks &hooks = FunctionHooks::instance();
         hooks.observeEntry(0x16C730u, "cSubScrWaza update (Buck Breaker)", &onWazaUpdate);
         hooks.observeEntry(0x16DF38u, "cSubScrWaza input (Buck Breaker)", &onWazaInput);

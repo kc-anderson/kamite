@@ -20,7 +20,7 @@
 // punish's motions (pointers from the caught enemy's table, +0x694 -> +0x304) or the caught enemy one of its own,
 // the motion is copied into kRewriteArea with bone 0's height (Gene / victim) and bone 1's x rotation (the victim's
 // waist) changed by the curve (mot_edit addCurve, npc_poses' way), and started from there. Copies are kept per
-// (body, punish, motion) and reused; the area starts over when full.
+// (body, punish, motion) and reused; the area starts over when full, the list after a save state load (saveState).
 //
 // Gene's pose (K, Nov 8: his arms through the victim where the original keeps clear; Cobra Twist's arms round the
 // neck on women and fat men; Gorilla Suplex's arms folded too far in on the fat men): Gene's tracks also carry his torso
@@ -54,6 +54,7 @@
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/ps2_pnach.h"
+#include "runtime/ps2_save_state.h"
 
 #include <cmath>
 #include <cstdio>
@@ -716,6 +717,90 @@ namespace kamite::punish_fit
             }
         }
 
+        // Save states (K, Nov 8: a state loaded after playing other punishes played wrong motions in wrong places). The
+        // copies live in guest RAM, which a load puts back as it was when the state was saved, so the copy list made
+        // since pointed at whatever the state holds there. A state keeps the area's fill point and the pair in play (a
+        // state saved mid-punish goes on with it); after every load the list starts empty and each copy is made again
+        // past the state's own. A state without them (older builds): the area from its start, no pair.
+        struct SavedPair
+        {
+            int32_t punish = -1, fitIndex = -1, sizeKey = 100;
+            uint32_t gene = 0, enemy = 0, body = 0, geneMotionPtr = 0;
+            float baseScale[3] = {}, placeScale[3] = {}, applied[3] = {};
+            uint16_t trackMotion = 0;
+            uint8_t live = 0, hasTrack = 0;
+        };
+        bool g_stateLoaded = false; // the state carried ours (until the load's end)
+
+        void saveState(ps2x::state::Writer &out)
+        {
+            uint32_t version = 1u, areaAt = g_areaAt;
+            SavedPair s;
+            s.punish = g_pair.punish;
+            s.gene = g_pair.gene;
+            s.enemy = g_pair.enemy;
+            s.body = g_pair.body;
+            s.sizeKey = g_pair.sizeKey;
+            s.geneMotionPtr = g_pair.geneMotionPtr;
+            std::memcpy(s.baseScale, g_pair.baseScale, sizeof(s.baseScale));
+            std::memcpy(s.placeScale, g_pair.placeScale, sizeof(s.placeScale));
+            std::memcpy(s.applied, g_pair.applied, sizeof(s.applied));
+            s.live = g_pair.live ? 1u : 0u;
+            if (const Fits *fits = g_pair.punish >= 0 ? fitsFor(g_pair.punish, g_pair.body) : nullptr)
+                for (size_t i = 0; i < fits->size(); ++i)
+                    if ((*fits)[i].get() == g_pair.fit)
+                        s.fitIndex = static_cast<int32_t>(i);
+            if (g_pair.geneTrack)
+            {
+                s.hasTrack = 1u;
+                s.trackMotion = g_pair.geneTrack->motion;
+            }
+            ps2x::state::fields(out, version, areaAt, s, g_resize[0], g_resize[1]);
+        }
+
+        void loadState(ps2x::state::Reader &in)
+        {
+            uint32_t version = 0u, areaAt = kRewriteArea;
+            SavedPair s;
+            Resize resize[2];
+            ps2x::state::fields(in, version, areaAt, s, resize[0], resize[1]);
+            g_copies.clear();
+            g_areaAt = areaAt >= kRewriteArea && areaAt <= kRewriteAreaEnd ? areaAt : kRewriteArea;
+            g_pair = Pair{};
+            g_pair.punish = s.punish;
+            g_pair.gene = s.gene;
+            g_pair.enemy = s.enemy;
+            g_pair.body = s.body;
+            g_pair.sizeKey = s.sizeKey;
+            g_pair.geneMotionPtr = s.geneMotionPtr;
+            std::memcpy(g_pair.baseScale, s.baseScale, sizeof(s.baseScale));
+            std::memcpy(g_pair.placeScale, s.placeScale, sizeof(s.placeScale));
+            std::memcpy(g_pair.applied, s.applied, sizeof(s.applied));
+            const Fits *fits = s.punish >= 0 && s.punish < kPunishCount ? fitsFor(s.punish, s.body) : nullptr;
+            const bool fitOk = s.fitIndex < 0 || (fits && static_cast<size_t>(s.fitIndex) < fits->size());
+            if (fits && s.fitIndex >= 0 && fitOk)
+                g_pair.fit = (*fits)[static_cast<size_t>(s.fitIndex)].get();
+            if (g_pair.fit && s.hasTrack)
+                g_pair.geneTrack = g_pair.fit->find(s.trackMotion, true);
+            g_pair.live = s.live && fitOk && s.punish >= 0 && s.punish < kPunishCount;
+            g_resize[0] = resize[0];
+            g_resize[1] = resize[1];
+            g_stateLoaded = true;
+        }
+
+        void afterLoad()
+        {
+            if (!g_stateLoaded)
+            {
+                g_copies.clear();
+                g_areaAt = kRewriteArea;
+                g_pair = Pair{};
+                g_resize[0] = Resize{};
+                g_resize[1] = Resize{};
+            }
+            g_stateLoaded = false;
+        }
+
         // EE thread, each vblank: Gene follows his placement curve while the punish plays.
         void onVblank()
         {
@@ -938,5 +1023,7 @@ namespace kamite::punish_fit
             KM_WARN(Game, "punish fit: func_002A8578 is not hookable; placement only, no heights or bend");
         load();
         ps2x::pnach::addFrameHook(&onVblank);
+        ps2x::savestate::registerExtension("kamite.punish_fit", &saveState, &loadState);
+        ps2x::savestate::onLoaded(&afterLoad);
     }
 }
