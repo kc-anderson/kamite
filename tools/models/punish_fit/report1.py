@@ -7,8 +7,8 @@ REF={'Suplex':('em00','a thug (em00, the standard man\'s skeleton)'),
      'Stinger':('em18','a fat man (em18, the fat men\'s skeleton)'),
      'Cobra':('em07','a big man (em07, the tall men\'s skeleton)'),
      'Spanking':('em16','a woman (em16, the women\'s skeleton)')}
-STAGES={'Suplex':['the throw'],'Stinger':['grab','the knees (mash loop)','the slam'],
-        'Cobra':['grab','the twist (mash loop)','release'],'Spanking':['over the knee','the spanks (mash loop)','finish and launch']}
+from punishes import PUNISH
+STAGES={k:[s['label'] for s in v] for k,v in PUNISH.items()}
 MAIN_G={'R hand','L hand','R forearm','L forearm','R upper arm','L upper arm','R shin/knee','L shin/knee','R thigh','L thigh','R foot','L foot','chest','belly','hips','head'}
 LIMB={'R hand','L hand','R forearm','L forearm','R upper arm','L upper arm','R shin/knee','L shin/knee','R thigh','L thigh','R foot','L foot'}
 OUT=os.environ.get('PUNISH_FIT_OUT','out1'); os.makedirs(OUT,exist_ok=True)
@@ -19,7 +19,7 @@ def run(name):
     gd=dominant(g.mesh); vd=dominant(v.mesh)
     per=[]; ev={}
     for k,f in enumerate(fr):
-        c={key:val for key,val in frame_contacts(f,gd,vd).items() if val[0]<(0.05 if 'knee' in key[0] or 'foot' in key[0] else 0.03) and key[0] in MAIN_G}
+        c={} if not f['touch'] else {key:val for key,val in frame_contacts(f,gd,vd).items() if val[0]<(0.05 if 'knee' in key[0] or 'foot' in key[0] else 0.03) and key[0] in MAIN_G}
         per.append(c)
         for key in c: ev.setdefault((f['stage'],key),[]).append(f['t'])
     # touch list per stage

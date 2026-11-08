@@ -18,14 +18,15 @@ class Motion:
         return r.sample(t) if r else default
     def has(self,bone,comp): return (bone,comp) in self.ch
 
-def pose(skel, mot, t, ik=True):
+def pose(skel, mot, t, ik=True, hip_dy=0.0, bend=0.0):
     """World (model-space) matrices and positions per bone at motion time t. Model space: the object's own (before yaw/scale/pos)."""
     bones=skel['bones']; n=len(bones)
     W=[None]*n; P=[None]*n
     for i,b in enumerate(bones):
         e=[mot.get(i,3+c,t) for c in range(3)]
+        if i==1: e[0]+=bend
         if i==0:
-            tr=np.array([mot.get(0,c,t,b['t'][c]) for c in range(3)])
+            tr=np.array([mot.get(0,c,t,b['t'][c]) for c in range(3)]); tr[1]+=hip_dy
         else:
             tr=np.array(b['t'],float)
         R=rot(e)
