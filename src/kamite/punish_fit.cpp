@@ -1,39 +1,42 @@
 // Buck Breaker's punish fits (K, Nov 8): a punish made for one body leaves Gene too far from (or into) another, e.g.
-// Stinger, made for the fat men, leaves a gap on a thug. Per punish and per body: Forward / Side / Turn for Gene.
+// Stinger, made for the fat men, leaves a gap on a thug whose bent-over head is also 15-20 cm lower. Each body is
+// fitted offline to the original's touch points (tools/models/punish_fit, claude/punish-fit-offline.md): per punish
+// and body, curves over the punish's motions of Gene's placement (forward, side, turn), Gene's height and the
+// victim's height (the hips up or down; the game's leg IK bends the knees, the feet stay put) and waist bend.
 //
-// Where the distance comes from. Each paired punish places Gene once at its start (Stinger again at two later stages)
-// with func_001299F0(a0 = Gene, a1 = the enemy, a2 = &vec{x, 0, z, 1} on the caller's stack, a3 = mode, f12 = yaw):
-// mode 0 turns Gene to face the enemy, the enemy's heading (+0x104) = Gene's + pi, then Gene's += f12; mode 1 only sets
-// the enemy's heading = Gene's + pi. Then Gene's position = enemy.pos + RotY(enemy heading) . (x * enemy +0x110, 0,
-// z * enemy +0x118) (the enemy's size). After that each of the two moves by its own motion's root travel
-// (func_0014F928 / 0014F9F0: their own +0x330 / +0x360 into their own position), never by the other's position, so
-// Gene moved in the middle of the punish stays moved: a slider changed while it plays moves him at once.
+// Placement. Each paired punish places Gene with func_001299F0(a0 = Gene, a1 = the enemy, a2 = &vec{x, 0, z, 1} on the
+// caller's stack, a3 = mode, f12 = yaw): mode 0 turns Gene to face the enemy, the enemy's heading (+0x104) = Gene's +
+// pi, then Gene's += f12; mode 1 only sets the enemy's heading = Gene's + pi. Then Gene = enemy.pos + RotY(enemy
+// heading) . (x * enemy +0x110, 0, z * enemy +0x118). After that each of the two moves by its own motion's root
+// travel, never by the other's position, so Gene moved in the middle of the punish stays moved. The wrapper
+// (FunctionHooks::replace on 0x1299F0, only the four punishes' calls, by return address) puts the curve's first
+// values in: Turn in f12 (mode 0), or for mode 1 off Gene's heading for the call and back after; then Gene is moved
+// by RotY(his facing without Turn) . (Side * enemy +0x110, 0, Forward * enemy +0x118); RotY as the game's
+// (sceVu0RotMatrixY): x' = x cos + z sin, z' = -x sin + z cos; +z forward, +x the left. Each vblank while the punish
+// plays, Gene's motion (+0x428) and frame (+0x430, half steps at 60 FPS) give the curve's values, and Gene moves by
+// the difference from what was applied.
 //
-// The wrapper (FunctionHooks::replace on 0x1299F0, only for the calls of the four punishes, by their return address):
-// Turn goes in f12 (mode 0), or for mode 1 is taken off Gene's heading for the call and put back after (the enemy's
-// heading stays relative to Gene's facing without it); then Gene is moved by RotY(his facing without Turn) .
-// (Side * enemy +0x110, 0, Forward * enemy +0x118). RotY as the game's (sceVu0RotMatrixY, func_0030A7B8):
-// x' = x cos + z sin, z' = -x sin + z cos; +z = forward, +x = to the left (npc_poses' sliders), + yaw = turning left.
+// Heights and bend. func_002A8578 (actor, motion, events, ...) starts every motion. When Gene starts one of the
+// punish's motions (pointers from the caught enemy's table, +0x694 -> +0x304) or the caught enemy one of its own,
+// the motion is copied into kRewriteArea with bone 0's height (Gene / victim) and bone 1's x rotation (the victim's
+// waist) changed by the curve (mot_edit addCurve, npc_poses' way), and started from there. Copies are kept per
+// (body, punish, motion) and reused; the area starts over when full.
 //
 // The body: the enemy's skeleton (its cModel's parts, list at +0x144, count at +0x2B4; each part's offset +0xE0 and
-// parent +0x148, as npc_poses reads them), hashed from the parts after the root (the root's offset is the motion's
-// hip): recolors share it, and a bigger copy of the same skeleton too (the values are scaled by the enemy's size like
-// the game's own). Hashed at each prompt and placement; the file keeps which enemies were seen with each body.
-//
-// "Doesn't fit": Buck Breaker's case hook asks doesntFit() and keeps the enemy's own punish for that pick and body.
+// parent +0x148), hashed from the parts after the root: recolours share it. Hashed at every use (an enemy number does
+// not fix its model). Values in the file are at size 1; placement is scaled by the enemy's size, heights are the
+// model's own (the actor's scale applies).
 
 #include "kamite/punish_fit.h"
 
 #include "kamite/function_hooks.h"
 #include "kamite/game_layout.h"
 #include "kamite/log.h"
+#include "kamite/mot_edit.h"
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/ps2_pnach.h"
-#include "runtime/ps2_time_control.h"
-#include "pcsx2gs_api.h"
 
-#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -41,10 +44,11 @@
 #include <fstream>
 #include <map>
 #include <mutex>
-#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
+#include <tuple>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -54,60 +58,110 @@ namespace kamite::punish_fit
     {
         namespace work = game::GameWork;
 
-        constexpr uint32_t kAlign = 0x001299F0u;
+        constexpr uint32_t kAlign = 0x001299F0u, kStartMotion = 0x002A8578u;
         constexpr float kPi = 3.14159265358979f, kDegrees = kPi / 180.0f;
+        constexpr uint32_t kEm00Entries = 3998u;
 
-        // The four punishes' calls of func_001299F0, by return address (Gene's phases 57 / 59 / 61 / 62).
+        // The punishes' motions (em00 entries; Gene's come from the caught enemy's table, cEm00_GetPlMotion).
+        struct Motions
+        {
+            uint16_t gene[4];
+            uint16_t victim[4];
+        };
+        constexpr Motions kMotions[kPunishCount] = {
+            {{333, 0, 0, 0}, {329, 331, 0, 0}},
+            {{811, 813, 815, 0}, {805, 807, 809, 0}},
+            {{1551, 1553, 1557, 1555}, {1543, 1545, 1549, 1547}},
+            {{1337, 1339, 1341, 0}, {1327, 1329, 1331, 0}},
+        };
+        // func_001299F0's calls by the four punishes, by return address, and the Gene motion each one starts.
         struct Call
         {
             uint32_t ra;
             Punish punish;
+            uint16_t geneMotion;
         };
-        constexpr Call kCalls[] = {{0x0011770Cu, Suplex},     {0x00117AC8u, Stinger}, {0x00117B90u, Stinger},
-                                   {0x00117E40u, Stinger},    {0x0011825Cu, CobraTwist}, {0x00118790u, Spanking}};
+        constexpr Call kCalls[] = {{0x0011770Cu, Suplex, 333},     {0x00117AC8u, Stinger, 811}, {0x00117B90u, Stinger, 813},
+                                   {0x00117E40u, Stinger, 815},    {0x0011825Cu, CobraTwist, 1551}, {0x00118790u, Spanking, 1337}};
         constexpr uint8_t kGenePhase[kPunishCount] = {57u, 59u, 61u, 62u};
         const char *const kNames[kPunishCount] = {"Suplex", "Stinger", "Cobra Twist", "Spanking"};
         const char *const kFileNames[kPunishCount] = {"Suplex", "Stinger", "CobraTwist", "Spanking"};
 
-        // func_002DCD50's switch (buck_breaker.cpp): the enemy's own punish, to tell the game's own pairs.
-        constexpr uint32_t kCaseTable = 0x0044D430u, kCases = 0x7Au, kSuplexCase = 0x002DD050u;
-
         constexpr uint32_t kNumber = 0x564u, kScaleX = 0x110u, kScaleZ = 0x118u, kCaught = 0x694u;
         constexpr uint32_t kParts = 0x144u, kPartCount = 0x2B4u, kPartOffset = 0xE0u, kPartParent = 0x148u;
+        constexpr uint32_t kMotionPlaying = 0x428u, kMotionFrame = 0x430u;
 
+        // A curve: keys (frame, values). Gene: forward (m), side (m), turn (degrees), height (m); victim: height (m),
+        // bend (degrees).
+        struct Key
+        {
+            float frame = 0.0f;
+            float v[4] = {};
+        };
+        struct Track
+        {
+            uint16_t motion = 0;
+            bool gene = false;
+            std::vector<Key> keys;
+            void at(float frame, float out[4]) const
+            {
+                for (int i = 0; i < 4; ++i)
+                    out[i] = 0.0f;
+                if (keys.empty())
+                    return;
+                if (frame <= keys.front().frame || keys.size() == 1)
+                {
+                    std::memcpy(out, keys.front().v, sizeof(Key::v));
+                    return;
+                }
+                if (frame >= keys.back().frame)
+                {
+                    std::memcpy(out, keys.back().v, sizeof(Key::v));
+                    return;
+                }
+                size_t i = 1;
+                while (keys[i].frame < frame)
+                    ++i;
+                const Key &a = keys[i - 1], &b = keys[i];
+                const float t = (frame - a.frame) / (b.frame - a.frame);
+                for (int c = 0; c < 4; ++c)
+                    out[c] = a.v[c] + (b.v[c] - a.v[c]) * t;
+            }
+        };
         struct Fit
         {
-            float forward = 0.0f; // metres (at size 1), + = Gene steps in
-            float side = 0.0f;    // metres, + = to Gene's left
-            float turn = 0.0f;    // degrees, + = Gene turns to his left
-            bool off = false;     // doesn't fit: Buck Breaker keeps the enemy's own punish
-            [[nodiscard]] bool empty() const { return forward == 0.0f && side == 0.0f && turn == 0.0f && !off; }
+            bool off = false;
+            std::vector<Track> tracks;
+            const Track *find(uint16_t motion, bool gene) const
+            {
+                for (const Track &t : tracks)
+                    if (t.motion == motion && t.gene == gene)
+                        return &t;
+                return nullptr;
+            }
         };
 
+        // The pair playing (EE thread only).
         struct Pair
         {
             int punish = -1;
             uint32_t gene = 0, enemy = 0, body = 0;
-            uint16_t number = 0;
-            bool native = false; // the enemy's own punish
-            bool live = false;   // still playing
-            Fit applied;         // what Gene was placed with (live changes move him by the difference)
+            const Fit *fit = nullptr;
+            bool live = false;
+            uint32_t geneMotionPtr = 0; // the pointer Gene's current punish motion was started with (ours or the game's)
+            const Track *geneTrack = nullptr;
+            float applied[3] = {}; // forward, side, turn (radians) put in so far
         };
 
         uint8_t *g_ram = nullptr;
         bool g_on = false;
         PS2Runtime::RecompiledFunction g_align = nullptr;
         fs::path g_file, g_shippedFile;
-
-        std::mutex g_mutex; // the fits, the bodies seen and the pair (EE thread and the menu)
-        std::map<uint64_t, Fit> g_fits;                   // punish << 32 | body
-        std::map<uint32_t, std::set<uint16_t>> g_seen;    // body -> enemy numbers met with it
+        std::map<uint64_t, Fit> g_fits; // punish << 32 | body; read at start, then only read
         Pair g_pair;
-
-        // The menu's slider state (menu thread).
-        bool g_dragging = false;
-        std::optional<std::chrono::steady_clock::time_point> g_stepCommit;
-        std::string g_status;
+        std::map<std::tuple<uint32_t, int, uint16_t, bool>, uint32_t> g_copies; // (body, punish, motion, gene) -> copy
+        uint32_t g_areaAt = kRewriteArea;
+        std::set<uint64_t> g_logged;
 
         uint64_t fitKey(int punish, uint32_t body) { return (static_cast<uint64_t>(punish) << 32) | body; }
 
@@ -147,7 +201,8 @@ namespace kamite::punish_fit
         }
 
         // The enemy's skeleton hashed (FNV-1a): part count, then each part after the root: its parent's index and its
-        // offset's bits. 0 when it cannot be read.
+        // offset's bits (tools/models/punish_fit/common.py runtime_key computes the same from the file). 0 when it
+        // cannot be read.
         uint32_t skeletonHash(const uint8_t *rdram, uint32_t enemy)
         {
             const int n = rdram[(enemy + kPartCount) & (PS2_RAM_SIZE - 1u)];
@@ -182,37 +237,37 @@ namespace kamite::punish_fit
             return h ? h : 1u;
         }
 
-        // EE thread, g_mutex held. The enemy's body, noted as seen with its number. Not cached by number: the model an
-        // enemy number loads is not known to be fixed (the em files do not follow the numbers: em1b.dat holds a man
-        // while 0x21B is one of the women), and the hash is cheap (asked at a prompt and at a placement only).
-        uint32_t bodyOf(const uint8_t *rdram, uint32_t enemy, uint16_t &number)
+        uint32_t bodyOf(const uint8_t *rdram, uint32_t enemy)
         {
-            number = static_cast<uint16_t>(rd32(rdram, enemy + kNumber));
-            uint32_t body = skeletonHash(rdram, enemy);
-            if (!body)
-                body = 0x80000000u | number; // no skeleton to read: the enemy on its own
-            g_seen[body].insert(number);
-            return body;
+            const uint32_t body = skeletonHash(rdram, enemy);
+            return body ? body : 0x80000000u | (rd32(rdram, enemy + kNumber) & 0xFFFFu);
         }
 
-        int ownPunish(const uint8_t *rdram, uint16_t number)
+        const Fit *fitFor(int punish, uint32_t body)
         {
-            const uint32_t index = static_cast<uint32_t>(number) - 0x205u;
-            const uint32_t target = index < kCases ? rd32(rdram, kCaseTable + 4u * index) : kSuplexCase;
-            switch (target)
-            {
-            case kSuplexCase:
-            case 0x002DD17Cu: // the coin flip: Suplex or Pummel
-                return Suplex;
-            case 0x002DD090u:
-                return Stinger;
-            case 0x002DD22Cu:
-                return CobraTwist;
-            case 0x002DD148u:
-                return Spanking;
-            default:
-                return -1;
-            }
+            const auto it = g_fits.find(fitKey(punish, body));
+            return it == g_fits.end() ? nullptr : &it->second;
+        }
+
+        // The motion `index` of an enemy's em00-style table (pack + its offset, u32 wrap like the game), 0 if none.
+        uint32_t entry(const uint8_t *rdram, uint32_t enemy, uint16_t index)
+        {
+            const uint32_t pack = rd32(rdram, enemy + game::GameObj::kMotionData) & 0x1FFFFFFu;
+            if (!inRam(pack, 4u + 4u * kEm00Entries) || rd32(rdram, pack) != kEm00Entries)
+                return 0u;
+            const uint32_t offset = rd32(rdram, pack + 4u + 4u * index);
+            return offset ? (pack + offset) & 0x1FFFFFFu : 0u;
+        }
+
+        uint32_t player(const uint8_t *rdram) { return rd32(rdram, work::address(work::kPlayerObj)) & 0x1FFFFFFu; }
+
+        void logPair(int punish, uint32_t body, uint32_t enemy, const Fit *fit)
+        {
+            if (!g_logged.insert(fitKey(punish, body)).second)
+                return;
+            KM_INFO(Game, "punish fit: " << kNames[punish] << " on body " << std::hex << body << std::dec << " ("
+                                         << enemyName(static_cast<uint16_t>(rd32(g_ram, enemy + kNumber))) << "): "
+                                         << (!fit ? "no fit (the game's own placement)" : fit->off ? "doesn't fit" : "fitted"));
         }
 
         // Moves Gene by (side, forward) in his facing without Turn (scaled by the enemy's size) and turns him.
@@ -236,27 +291,24 @@ namespace kamite::punish_fit
         void alignHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const uint32_t ra = GPR_U32(ctx, 31);
-            int punish = -1;
-            for (const Call &call : kCalls)
-                if (call.ra == ra)
-                    punish = call.punish;
+            const Call *call = nullptr;
+            for (const Call &c : kCalls)
+                if (c.ra == ra)
+                    call = &c;
             const uint32_t gene = GPR_U32(ctx, 4) & 0x1FFFFFFu, enemy = GPR_U32(ctx, 5) & 0x1FFFFFFu;
-            if (punish < 0 || !inRam(gene, 0x700u) || !inRam(enemy, 0x700u))
+            if (!call || !inRam(gene, 0x700u) || !inRam(enemy, 0x700u))
             {
                 g_align(rdram, ctx, runtime);
                 return;
             }
+            const uint32_t body = bodyOf(rdram, enemy);
+            const Fit *fit = fitFor(call->punish, body);
+            const Track *track = fit && !fit->off ? fit->find(call->geneMotion, true) : nullptr;
+            float v[4] = {};
+            if (track)
+                track->at(0.0f, v);
             const uint32_t mode = GPR_U32(ctx, 7);
-            Fit fit;
-            uint32_t body;
-            uint16_t number;
-            {
-                std::lock_guard<std::mutex> lock(g_mutex);
-                body = bodyOf(rdram, enemy, number);
-                if (const auto it = g_fits.find(fitKey(punish, body)); it != g_fits.end())
-                    fit = it->second;
-            }
-            const float turn = fit.turn * kDegrees;
+            const float turn = v[2] * kDegrees;
             if (mode == 1u)
             {
                 if (turn != 0.0f)
@@ -266,26 +318,118 @@ namespace kamite::punish_fit
                 ctx->f[12] += turn;
             g_align(rdram, ctx, runtime);
             const float facing = wrap(rdF(rdram, gene + 0x104u) - (mode == 1u ? 0.0f : turn));
-            moveGene(rdram, gene, enemy, fit.side, fit.forward, mode == 1u ? turn : 0.0f, facing);
+            moveGene(rdram, gene, enemy, v[1], v[0], mode == 1u ? turn : 0.0f, facing);
 
-            std::lock_guard<std::mutex> lock(g_mutex);
-            const bool same = g_pair.live && g_pair.gene == gene && g_pair.enemy == enemy && g_pair.punish == punish;
-            if (!same)
-                KM_INFO(Game, "punish fit: " << kNames[punish] << " on body " << std::hex << body << std::dec << " ("
-                                             << enemyName(number) << "): forward " << fit.forward << " side " << fit.side
-                                             << " turn " << fit.turn);
-            g_pair = Pair{punish, gene, enemy, body, number, ownPunish(rdram, number) == punish, true, fit};
+            if (call->geneMotion == kMotions[call->punish].gene[0])
+                logPair(call->punish, body, enemy, fit);
+            g_pair.punish = call->punish;
+            g_pair.gene = gene;
+            g_pair.enemy = enemy;
+            g_pair.body = body;
+            g_pair.fit = fit && !fit->off ? fit : nullptr;
+            g_pair.live = g_pair.fit != nullptr;
+            g_pair.geneTrack = track;
+            g_pair.geneMotionPtr = 0u;
+            g_pair.applied[0] = v[0];
+            g_pair.applied[1] = v[1];
+            g_pair.applied[2] = turn;
         }
 
-        // EE thread, each vblank: a fit changed while its punish plays moves Gene by the difference.
+        // A copy of the motion at `motion` with the track's heights (and the victim's bend), in kRewriteArea; 0 if
+        // nothing changes or it does not fit.
+        uint32_t rewrite(uint8_t *rdram, uint32_t motion, const Track &track, uint32_t body, int punish)
+        {
+            const auto key = std::make_tuple(body, punish, track.motion, track.gene);
+            if (const auto it = g_copies.find(key); it != g_copies.end())
+                return it->second;
+            const uint32_t length = mot::motionLength(rdram + motion, PS2_RAM_SIZE - motion);
+            if (length == 0u || length > 0x10000u)
+                return 0u;
+            std::vector<uint8_t> m(rdram + motion, rdram + motion + length);
+            uint16_t frames;
+            std::memcpy(&frames, m.data() + 4, 2);
+            std::vector<float> height(frames), bend(frames);
+            bool anyHeight = false, anyBend = false;
+            for (int f = 0; f < frames; ++f)
+            {
+                float v[4];
+                track.at(static_cast<float>(f), v);
+                height[f] = track.gene ? v[3] : v[0];
+                bend[f] = track.gene ? 0.0f : v[1] * kDegrees;
+                anyHeight = anyHeight || height[f] != 0.0f;
+                anyBend = anyBend || bend[f] != 0.0f;
+            }
+            if (!anyHeight && !anyBend)
+            {
+                g_copies[key] = 0u;
+                return 0u;
+            }
+            if (anyHeight)
+                mot::addCurve(m, 0, 1, height, 1);
+            if (anyBend)
+                mot::addCurve(m, 1, 3, bend, 1);
+            const uint32_t size = (static_cast<uint32_t>(m.size()) + 0x3Fu) & ~0x3Fu;
+            if (size > kRewriteAreaEnd - kRewriteArea)
+                return 0u;
+            if (g_areaAt + size > kRewriteAreaEnd)
+            {
+                g_copies.clear(); // start over (the motions of an earlier pair are not playing any more)
+                g_areaAt = kRewriteArea;
+            }
+            const uint32_t at = g_areaAt;
+            std::memcpy(rdram + at, m.data(), m.size());
+            g_areaAt += size;
+            g_copies[key] = at;
+            return at;
+        }
+
+        // func_002A8578 (a0 = the actor, a1 = its motion, a2 = the motion's events): the pair's punish motions start
+        // from their rewritten copies.
+        void onStartMotion(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t actor = GPR_U32(ctx, 4) & 0x1FFFFFFu, motion = GPR_U32(ctx, 5) & 0x1FFFFFFu;
+            if (!inRam(actor, 0x700u) || !inRam(motion, 8u))
+                return;
+            const uint32_t gene = player(rdram);
+            if (!inRam(gene, 0x700u))
+                return;
+            const bool isGene = actor == gene;
+            const uint32_t enemy = isGene ? rd32(rdram, gene + kCaught) & 0x1FFFFFFu : actor;
+            if (!inRam(enemy, 0x700u) || (!isGene && (rd32(rdram, gene + kCaught) & 0x1FFFFFFu) != actor))
+                return;
+            for (int p = 0; p < kPunishCount; ++p)
+            {
+                const uint16_t *list = isGene ? kMotions[p].gene : kMotions[p].victim;
+                for (int i = 0; i < 4 && list[i]; ++i)
+                {
+                    if (entry(rdram, enemy, list[i]) != motion)
+                        continue;
+                    const uint32_t body = bodyOf(rdram, enemy);
+                    const Fit *fit = fitFor(p, body);
+                    const Track *track = fit && !fit->off ? fit->find(list[i], isGene) : nullptr;
+                    uint32_t started = motion;
+                    if (track)
+                        if (const uint32_t copy = rewrite(rdram, motion, *track, body, p))
+                        {
+                            started = copy;
+                            SET_GPR_U32(ctx, 5, copy);
+                        }
+                    if (isGene && g_pair.live && g_pair.enemy == enemy && g_pair.punish == p)
+                    {
+                        g_pair.geneTrack = track;
+                        g_pair.geneMotionPtr = started;
+                    }
+                    return;
+                }
+            }
+        }
+
+        // EE thread, each vblank: Gene follows his placement curve while the punish plays.
         void onVblank()
         {
-            if (!g_ram)
+            if (!g_ram || !g_pair.live)
                 return;
-            std::lock_guard<std::mutex> lock(g_mutex);
-            if (!g_pair.live)
-                return;
-            const uint32_t gene = rd32(g_ram, work::address(work::kPlayerObj)) & 0x1FFFFFFu;
+            const uint32_t gene = player(g_ram);
             if (gene != g_pair.gene || !inRam(gene, 0x700u) || g_ram[gene + game::GameObj::kMode] != 0u ||
                 g_ram[gene + game::GameObj::kMode + 1u] != kGenePhase[g_pair.punish] ||
                 (rd32(g_ram, gene + kCaught) & 0x1FFFFFFu) != g_pair.enemy)
@@ -293,95 +437,82 @@ namespace kamite::punish_fit
                 g_pair.live = false;
                 return;
             }
-            Fit now;
-            if (const auto it = g_fits.find(fitKey(g_pair.punish, g_pair.body)); it != g_fits.end())
-                now = it->second;
-            const Fit &was = g_pair.applied;
-            if (now.forward == was.forward && now.side == was.side && now.turn == was.turn)
+            if (!g_pair.geneTrack || (rd32(g_ram, gene + kMotionPlaying) & 0x1FFFFFFu) != g_pair.geneMotionPtr)
                 return;
-            const float facing = wrap(rdF(g_ram, gene + 0x104u) - was.turn * kDegrees);
-            moveGene(g_ram, gene, g_pair.enemy, now.side - was.side, now.forward - was.forward,
-                     (now.turn - was.turn) * kDegrees, facing);
-            g_pair.applied = now;
+            float v[4];
+            g_pair.geneTrack->at(rdF(g_ram, gene + kMotionFrame), v);
+            const float want[3] = {v[0], v[1], v[2] * kDegrees};
+            if (want[0] == g_pair.applied[0] && want[1] == g_pair.applied[1] && want[2] == g_pair.applied[2])
+                return;
+            const float facing = wrap(rdF(g_ram, gene + 0x104u) - g_pair.applied[2]);
+            moveGene(g_ram, gene, g_pair.enemy, want[1] - g_pair.applied[1], want[0] - g_pair.applied[0],
+                     want[2] - g_pair.applied[2], facing);
+            std::memcpy(g_pair.applied, want, sizeof(want));
         }
 
+        // punish_fit.txt:
+        //   fit <Suplex|Stinger|CobraTwist|Spanking> <body hex> [off]   (the lines after it, until the next fit, are its)
+        //   gene <motion> <frame>:<forward>,<side>,<turn>,<height> ...
+        //   victim <motion> <frame>:<height>,<bend> ...
         void load()
         {
-            std::lock_guard<std::mutex> lock(g_mutex);
-            g_fits.clear();
-            g_seen.clear();
-            // The player's own file; without one, the fits the port ships. Save writes the player's file.
             std::error_code error;
             const fs::path &file = fs::exists(g_file, error) ? g_file : g_shippedFile;
             std::ifstream in(file);
             std::string line;
+            Fit *fit = nullptr;
             while (std::getline(in, line))
             {
+                if (!line.empty() && line.back() == '\r')
+                    line.pop_back();
                 if (line.empty() || line[0] == '#')
                     continue;
                 std::istringstream fields(line);
-                std::string kind, body;
-                if (!(fields >> kind >> body))
-                    continue;
-                const uint32_t key = static_cast<uint32_t>(std::strtoul(body.c_str(), nullptr, 16));
-                if (!key)
-                    continue;
-                if (kind == "body")
+                std::string kind;
+                fields >> kind;
+                if (kind == "fit")
                 {
-                    std::string name;
-                    auto &seen = g_seen[key];
-                    while (fields >> name)
-                        if (name.size() == 4 && name.compare(0, 2, "em") == 0)
-                            seen.insert(static_cast<uint16_t>(0x200u + std::strtoul(name.c_str() + 2, nullptr, 16)));
-                }
-                else
-                {
+                    std::string name, body, flag;
+                    fields >> name >> body >> flag;
                     int punish = -1;
                     for (int i = 0; i < kPunishCount; ++i)
-                        if (kind == kFileNames[i])
+                        if (name == kFileNames[i])
                             punish = i;
-                    Fit fit;
-                    int off = 0;
-                    if (punish < 0 || !(fields >> fit.forward >> fit.side >> fit.turn >> off))
-                        continue;
-                    fit.off = off != 0;
-                    g_fits[fitKey(punish, key)] = fit;
+                    const uint32_t key = static_cast<uint32_t>(std::strtoul(body.c_str(), nullptr, 16));
+                    fit = punish >= 0 && key ? &g_fits[fitKey(punish, key)] : nullptr;
+                    if (fit)
+                        fit->off = flag == "off";
+                }
+                else if (fit && (kind == "gene" || kind == "victim"))
+                {
+                    Track track;
+                    track.gene = kind == "gene";
+                    unsigned motion = 0;
+                    fields >> motion;
+                    track.motion = static_cast<uint16_t>(motion);
+                    std::string item;
+                    while (fields >> item)
+                    {
+                        Key k;
+                        const size_t colon = item.find(':');
+                        if (colon == std::string::npos)
+                            continue;
+                        k.frame = std::strtof(item.c_str(), nullptr);
+                        const char *at = item.c_str() + colon + 1;
+                        for (int c = 0; c < 4 && *at; ++c)
+                        {
+                            char *end = nullptr;
+                            k.v[c] = std::strtof(at, &end);
+                            at = *end == ',' ? end + 1 : end;
+                        }
+                        track.keys.push_back(k);
+                    }
+                    if (!track.keys.empty())
+                        fit->tracks.push_back(std::move(track));
                 }
             }
-            if (!g_fits.empty())
-                KM_INFO(Game, "punish fit: " << g_fits.size() << " fits from " << file.filename().string()
-                                             << (file == g_shippedFile ? " (shipped)" : ""));
-        }
-
-        bool save()
-        {
-            std::lock_guard<std::mutex> lock(g_mutex);
-            std::ofstream out(g_file, std::ios::binary | std::ios::trunc);
-            if (!out)
-                return false;
-            out << "# Kamite's punish fits for Buck Breaker (F2 > Debug > Punish fit writes this file).\r\n"
-                   "# body <skeleton> <enemies met with it>\r\n"
-                   "# <punish> <skeleton> forward (m, + = Gene steps in) side (m, + = his left) turn (degrees, + = to his\r\n"
-                   "# left) doesn't fit (1 = Buck Breaker keeps the enemy's own punish). Metres at size 1 (scaled by the\r\n"
-                   "# enemy's size like the game's own placement).\r\n";
-            char text[160];
-            for (const auto &[body, numbers] : g_seen)
-            {
-                std::snprintf(text, sizeof(text), "body %08x", body);
-                out << text;
-                for (uint16_t number : numbers)
-                    out << ' ' << enemyName(number);
-                out << "\r\n";
-            }
-            for (const auto &[key, fit] : g_fits)
-            {
-                if (fit.empty())
-                    continue;
-                std::snprintf(text, sizeof(text), "%s %08x %.3f %.3f %.1f %d\r\n", kFileNames[key >> 32],
-                              static_cast<uint32_t>(key), fit.forward, fit.side, fit.turn, fit.off ? 1 : 0);
-                out << text;
-            }
-            return static_cast<bool>(out);
+            KM_INFO(Game, "punish fit: " << g_fits.size() << " fits from " << file.filename().string()
+                                         << (file == g_shippedFile ? " (shipped)" : " (yours, next to the exe)"));
         }
 
         bool envOn(const char *name)
@@ -395,102 +526,8 @@ namespace kamite::punish_fit
     {
         if (!g_on || punish < 0 || punish >= kPunishCount || !inRam(enemy, 0x700u))
             return false;
-        std::lock_guard<std::mutex> lock(g_mutex);
-        uint16_t number;
-        const uint32_t body = bodyOf(rdram, enemy & 0x1FFFFFFu, number);
-        const auto it = g_fits.find(fitKey(punish, body));
-        return it != g_fits.end() && it->second.off;
-    }
-
-    void drawPanel(const Pcsx2GsUi *ui)
-    {
-        ui->separator_text("Punish fit (Buck Breaker)");
-        if (!g_on)
-        {
-            ui->text_disabled("Buck Breaker is off (launcher: Gameplay).");
-            return;
-        }
-        Pair pair;
-        Fit fit;
-        std::string enemies;
-        {
-            std::lock_guard<std::mutex> lock(g_mutex);
-            pair = g_pair;
-            if (pair.punish >= 0)
-            {
-                if (const auto it = g_fits.find(fitKey(pair.punish, pair.body)); it != g_fits.end())
-                    fit = it->second;
-                for (uint16_t number : g_seen[pair.body])
-                    enemies += (enemies.empty() ? "" : ", ") + enemyName(number);
-            }
-        }
-        if (pair.punish < 0)
-        {
-            ui->text_disabled("Do a Suplex, Stinger, Cobra Twist or Spanking: its sliders show here.");
-            return;
-        }
-        char line[256];
-        std::snprintf(line, sizeof(line), "%s on body %08x (%s)%s", kNames[pair.punish], pair.body, enemies.c_str(),
-                      pair.live ? ": playing" : "");
-        ui->text(line);
-
-        bool changed = false, dragging = false, stepped = false;
-        const auto slider = [&](const char *label, float &value, float low, float high, const char *format) {
-            ui->set_next_width(340.0f);
-            if (ui->slider_float(label, &value, low, high, format))
-            {
-                changed = true;
-                if (!ui->is_item_active())
-                    stepped = true; // a step from the keys / wheel (or typed)
-            }
-            if (ui->is_item_active())
-                dragging = true;
-        };
-        slider("Forward (+ = Gene steps in)##fitfwd", fit.forward, -1.0f, 1.0f, "%.3f m");
-        slider("Side (+ = to Gene's left)##fitside", fit.side, -1.0f, 1.0f, "%.3f m");
-        slider("Turn (+ = Gene turns left)##fitturn", fit.turn, -45.0f, 45.0f, "%.1f deg");
-        ui->begin_disabled(pair.native);
-        int off = fit.off ? 1 : 0;
-        if (ui->checkbox(pair.native ? "Doesn't fit (this is the enemy's own punish)##fitoff" : "Doesn't fit (keep this body's own punish when picked)##fitoff", &off))
-        {
-            fit.off = off != 0;
-            changed = true;
-        }
-        ui->end_disabled();
-        if (ui->button("Reset##fitreset"))
-        {
-            fit = Fit{};
-            changed = true;
-            stepped = true;
-        }
-        ui->same_line();
-        if (ui->button("Save##fitsave"))
-            g_status = save() ? "Saved." : "Could not write punish_fit.txt.";
-        if (!g_status.empty())
-        {
-            ui->same_line();
-            ui->text(g_status.c_str());
-        }
-        if (changed)
-        {
-            std::lock_guard<std::mutex> lock(g_mutex);
-            g_fits[fitKey(pair.punish, pair.body)] = fit;
-            g_status.clear();
-        }
-        // Paused, a finished change steps one frame so it shows (steps from the keys count as done after half a second).
-        const auto now = std::chrono::steady_clock::now();
-        if (stepped)
-            g_stepCommit = now + std::chrono::milliseconds(500);
-        const bool stepsDone = g_stepCommit && now >= *g_stepCommit;
-        if (stepsDone)
-            g_stepCommit.reset();
-        const bool released = (g_dragging && !dragging) || stepsDone;
-        g_dragging = dragging;
-        if (released && pair.live && ps2x::timecontrol::paused())
-            ps2x::timecontrol::step();
-        ui->text_disabled("Changes move Gene at once while the punish plays; paused, letting go of a slider steps one "
-                          "frame. F5 before pressing the button, F9 to play it again. Recolors share a body; values scale "
-                          "with the enemy's size. Save keeps them in punish_fit.txt.");
+        const Fit *fit = fitFor(punish, bodyOf(rdram, enemy & 0x1FFFFFFu));
+        return fit && fit->off;
     }
 
     void install(PS2Runtime &runtime, const fs::path &exeDir)
@@ -509,6 +546,8 @@ namespace kamite::punish_fit
             KM_WARN(Game, "punish fit: func_001299F0 is not hookable; no punish fits");
             return;
         }
+        if (!FunctionHooks::instance().observeEntry(kStartMotion, "punish fit: motion start", &onStartMotion))
+            KM_WARN(Game, "punish fit: func_002A8578 is not hookable; placement only, no heights or bend");
         load();
         ps2x::pnach::addFrameHook(&onVblank);
     }

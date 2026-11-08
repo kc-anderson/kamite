@@ -35,6 +35,17 @@ def prepare(name, touches, path):
         rows.append(dict(k0=offs[t['stage']]+j,k1=offs[t['stage']]+min(j+1,len(fs)-1),a=a,g0=f['gV'][t['gi']],wg=lift_w(int(gd[t['gi']])),
                          gpos=f['gpos'],gyaw=f['gyaw'],v0=f['vV'][vj],wv=lift_w(b)*f['vscale'],bend=float(b in UPPER),piv=f['vP'][1],ax=f['vW1'][:,0],
                          stage=t['stage'],t=t['t'],gp=t['gp'],vp=t['vp']))
+    hold=[]  # (key, gene heights forced to 0, victim height and bend forced to 0)
+    SUPPORT=(0,2,17,19,23)
+    last_stage=len(ks)-1
+    for si,fs in enumerate(ks):
+        tw=PUNISH[name][si].get('touch')
+        for jj,fk in enumerate(fs):
+            i=idx.get((si,fk)); f=fr[i]
+            zg=f['gP'][list(SUPPORT)][:,1].min()<0.3; zv=f['vP'][list(SUPPORT)][:,1].min()<0.3
+            if tw is None or fk>tw[1]+6: zg=zv=True
+            if (si==last_stage and jj==len(fs)-1) or (si==0 and jj==0): zg=zv=True
+            hold.append((offs[si]+jj,zg,zv))
     legs=[]
     for si,fs in enumerate(ks):
         for jj,fk in enumerate(fs):
@@ -43,7 +54,7 @@ def prepare(name, touches, path):
             f=fr[i]
             for side_,(lst,par) in enumerate(((f['vlegs'],4),(f['glegs'],3))):
                 for hip,L,tgt in lst: legs.append((offs[si]+jj,par,hip,L,tgt))
-    return dict(fr=fr,ks=ks,offs=offs,n=n,rows=rows,legs=legs,idx=idx,name=name)
+    return dict(fr=fr,ks=ks,offs=offs,n=n,rows=rows,legs=legs,hold=hold,idx=idx,name=name)
 
 def model(P, X):
     R=P['rows']
@@ -108,7 +119,11 @@ def solve(P, use=(1,1,1,1,1,1), lam=(0.5,1.5), mu=4.0, ridge=(0.5,0.5,0.5,2.0,2.
         for j in range(L):
             for p in range(NP): mark(row,[o+j]); row+=1
     assert row==m,(row,m)
-    lo=np.tile(LO[free],n); hi=np.tile(HI[free],n)
+    LOk=np.tile(LO,(n,1)); HIk=np.tile(HI,(n,1))
+    for kk,zg,zv in P['hold']:
+        if zg: LOk[kk,3]=-1e-6; HIk[kk,3]=1e-6
+        if zv: LOk[kk,4]=LOk[kk,5]=-1e-6; HIk[kk,4]=HIk[kk,5]=1e-6
+    lo=LOk[:,free].ravel(); hi=HIk[:,free].ravel()
     sol=least_squares(residuals,x0,jac_sparsity=S,bounds=(lo,hi),loss='soft_l1',f_scale=0.03,max_nfev=400,method='trf')
     X=full(sol.x)
     G0,V0=model(P,np.zeros((n,NP))); G1,V1=model(P,X)

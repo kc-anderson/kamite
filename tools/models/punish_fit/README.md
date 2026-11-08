@@ -12,3 +12,8 @@ Needs numpy, scipy and Pillow. What it draws is the game's art: keep the output 
 fit3.py fits a body to the original's touch points: per stage, keys every 4 frames of Gene's placement (forward,
 side, turn), Gene's and the victim's hip height (the legs bend by the IK, feet stay put) and the victim's waist bend,
 with smoothness, loop and stage-continuity terms. compare.py draws original / no fit / placement only / full fit.
+
+Fitting every body (Nov 8): fit_all.py runs fit3 for every skeleton group of bodies.json (humanoid skeletons of
+em00..em7f, by bones 0..29) and the four punishes into fits/; emit.py writes resources/punish_fit.txt (one fit block per
+runtime body key, verdict by the touch error: off when 12 cm or more); review2.py <punish> <group> <file> <tag>
+draws a review card (original / no fit / fitted, and a GIF of the fitted pair).
