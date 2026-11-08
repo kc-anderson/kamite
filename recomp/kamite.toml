@@ -1417,6 +1417,36 @@ hook = "km_fps60_countdown_hitstop"
 flag = "fps60"
 replace = true
 
+# Gene's grabbed states (mode 1; Nov 8, T1's "Elvis grab munch munch" case, room 0x504): while the grab's SEQ window is
+# open a toggle (+0x15B4) bites every other game frame; at 60 it flipped every vblank and bit every 30 FPS frame (three
+# bites for two). The toggle's load is replaced (toggleLoad, family 20). State 17 bites when its own countdown of +0x15B4
+# (5 frames, counted down a game frame) runs out: family 1, load-raise.
+[[patches.hooks]] # state 21 (func_0011F0D0): bite toggle
+address = "0x0011F280"
+hook = "km_fps60_grab_toggle_s0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # state 24 (func_0011FD10): reaction toggle (its damage countdown +0x56A is hooked at 0x120068)
+address = "0x0012003C"
+hook = "km_fps60_grab_toggle_s0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # state 25 (func_001205D8): bite toggle
+address = "0x00120764"
+hook = "km_fps60_grab_toggle_s1"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # state 28 (func_00120E00): bite toggle (the demon Elvis' grab)
+address = "0x0012107C"
+hook = "km_fps60_grab_toggle_s0"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # state 17 (func_0011DE30): lw v0,0x15B4(s0); blez; addiu v0,v0,-1 (delay slot); sw
+address = "0x0011E014"
+hook = "km_fps60_countdown_pl15b4_s0"
+flag = "fps60"
+replace = true
+
 # The casino's Chihuahua race (DogRace, claude/rng-notes.md): each dog's start delay (+0xC of its record, counted down
 # a game frame in func_001EBB78 before it runs) and the race's own waits (+0x10: after the first dog crosses, before
 # the fade, on the result screen) are counted in game frames, so at 60 FPS the starts were half as long while the

@@ -1251,8 +1251,15 @@ namespace kamite
         // which stays the 30 FPS value; the mode 1 grab reactions 0x25C1FC.. copy Gene's; objects not checked).
         constexpr uint32_t kMotionStepRateSites[] = {
             0x22C984u, 0x22D3E0u, 0x2385A4u, 0x2385BCu, 0x2452A4u, 0x278B48u, // the enemy's +0x5A8 x a factor
-            0x27BBCCu, 0x27E0ECu, 0x27F1F0u, 0x280900u, 0x2819A8u, 0x282BD8u, // GetSpeedRate (cEm63 / 66 / 6b / 6c)
         };
+        // Nov 8 (T1's Demon Shannon case, room 0x602): cEmManage_GetSpeedRate is the halved rate for every caller, so
+        // these are doubled whether or not the object is in cEmManage's list. Shannon's familiar (kind 0x263, update
+        // func_0027BB78) is not in the list: it takes its owner's (+0x1580) +0x5A8, else GetSpeedRate, and its motion
+        // ran at a quarter of the PS2's speed (motion frames 15 a second at 60), so its volley's fire window (seq bit 0,
+        // a shot every 6 / rate frames) lasted twice as long: twice the projectiles. 0x280900 / 0x282BD8 (the sync states
+        // func_002808D8 / 00282BB0) are gone from the list: they copy Gene's +0x5A8, which is the 30 FPS value.
+        constexpr uint32_t kMotionStepGetSpeedRateSites[] = {0x27E0ECu, 0x27F1F0u, 0x2819A8u};
+        constexpr uint32_t kMotionStepOwnerRateSite = 0x27BBCCu, kMotionStepOwnerOffset = 0x1580u;
         // Objects (Nov 6, T1's "Conchita and possibly whip ladies broken whip physics"): the weapons cOmWeapon (the whip
         // ladies' whips: object em +0x6F0, state 6) set their motion step from cEmManage_GetSpeedRate (0.5 at 60) or
         // copy their holder's +0x5A8: the whip's motion ran at +0x444 0.5 at 60 (1.0 at 30), so it unfolded and folded
@@ -1284,6 +1291,20 @@ namespace kamite
                 inEnemyList(rdram, GPR_U32(ctx, 4)))
             {
                 ctx->f[12] *= 2.0f;
+                return;
+            }
+            if (std::find(std::begin(kMotionStepGetSpeedRateSites), std::end(kMotionStepGetSpeedRateSites), site) !=
+                std::end(kMotionStepGetSpeedRateSites))
+            {
+                ctx->f[12] *= 2.0f;
+                return;
+            }
+            if (site == kMotionStepOwnerRateSite)
+            {
+                uint32_t owner = 0;
+                std::memcpy(&owner, &ram8(rdram, GPR_U32(ctx, 4) + kMotionStepOwnerOffset), sizeof(owner));
+                if (owner == 0u || inEnemyList(rdram, owner))
+                    ctx->f[12] *= 2.0f;
                 return;
             }
             for (const MotionStepObjectSite &s : kMotionStepObjectSites)
@@ -2144,6 +2165,55 @@ namespace kamite
             SET_GPR_S32(ctx, Dst, value);
         }
 
+        // A toggle flipped every game frame while a SEQ window is open (Nov 8, T1's "Elvis grab munch munch" case, room
+        // 0x504: the demon's bite in Gene's grabbed state, mode 1 phase 28): `if (seq & 1) { if (n) { n = 0; act } else
+        // n = 1; } else n = 1` acts every other game frame while the window lasts (bites on motion frames 7 and 9 at
+        // 30). At 60 it flipped every vblank, so it acted every 30 FPS frame (7, 8 and 9: three bites for two). Replaces
+        // the `lw Dst,Offset(Base)` of n inside the window: on a second half the code sees 0 (it stores 1 and does not
+        // act) and the value n had is noted; the next tick sees the noted value, so n flips once a 30 FPS frame. A tick
+        // with the window closed never reaches the load and stores 1 as the PS2 does. Gene's grabbed states 21, 24, 25
+        // and 28 (claude/fps60-notes.md family 20).
+        struct ToggleNotes
+        {
+            uint32_t frame = 0xFFFFFFFFu, count = 0;
+            uint32_t addr[16], value[16];
+        };
+        ToggleNotes g_toggleNotes;
+        template <int Base, uint32_t Offset, int Dst>
+        void toggleLoad(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t addr = (GPR_U32(ctx, Base) + Offset) & 0x01FFFFFFu;
+            uint32_t value = 0;
+            std::memcpy(&value, rdram + addr, 4);
+            const uint32_t now = gameFrames(rdram);
+            if (!skipFrame(rdram))
+            {
+                if (g_toggleNotes.frame + 1u == now)
+                    for (uint32_t i = 0; i < g_toggleNotes.count; ++i)
+                        if (g_toggleNotes.addr[i] == addr)
+                        {
+                            value = g_toggleNotes.value[i];
+                            break;
+                        }
+                SET_GPR_U32(ctx, Dst, value);
+                return;
+            }
+            if (g_toggleNotes.frame != now)
+            {
+                g_toggleNotes.frame = now;
+                g_toggleNotes.count = 0;
+            }
+            bool noted = false;
+            for (uint32_t i = 0; i < g_toggleNotes.count && !noted; ++i)
+                noted = g_toggleNotes.addr[i] == addr;
+            if (!noted && g_toggleNotes.count < 16u)
+            {
+                g_toggleNotes.addr[g_toggleNotes.count] = addr;
+                g_toggleNotes.value[g_toggleNotes.count++] = value;
+            }
+            SET_GPR_U32(ctx, Dst, 0u);
+        }
+
         // Scripted waits (task family, Nov 2): cTaskWork_sleep(task, frames) (0x2D5AA0) stores the game frames a script
         // task sleeps (task +0xE, `sh a1,0xE(a0)` at 0x2D5AAC); cTaskWork_step (0x2D5838) counts it down once a game
         // frame and wakes the task on the frame it reaches 0. Room scripts, soft events and the scenario wait this way
@@ -2391,6 +2461,10 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_cloth_spring_f2", &clothSpring<2>);
         ps2xRegisterHostHook("km_fps60_cloth_spring_f1", &clothSpring<1>);
         ps2xRegisterHostHook("km_fps60_countdown_pl15b8_s0", &countdownLoad<16, 0x15B8u>); // the same in func_0011FD10 (s0)
+        // Gene's grabbed states: the bite toggles (family 20) and state 17's bite interval (+0x15B4, 5 frames).
+        ps2xRegisterHostHook("km_fps60_grab_toggle_s0", &toggleLoad<16, 0x15B4u, 2>);
+        ps2xRegisterHostHook("km_fps60_grab_toggle_s1", &toggleLoad<17, 0x15B4u, 2>);
+        ps2xRegisterHostHook("km_fps60_countdown_pl15b4_s0", &countdownLoad<16, 0x15B4u>);
         ps2xRegisterHostHook("km_fps60_countup_self", &countupSelf);
         // The 1 -> 0 step's guards (countdownGuard): the signed test loads in front of hooked decrements.
         ps2xRegisterHostHook("km_fps60_cd_guard_s1_568", &countdownGuard<17, 0x568u, 2, 2, 1>);

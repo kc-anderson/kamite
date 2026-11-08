@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## November 8, 2026
 
+- 60 FPS: grabs that bite or squeeze while they last (the demon Elvis' grab and three other grabs) hit as often as on the PS2 (they hit up to half as often again).
+- 60 FPS: Demon Shannon's familiar moves and attacks at the right speed (its volleys lasted twice as long, with twice the shots).
 - 60 FPS: the casino's Chihuahua race keeps the PS2's start delays and pauses (starts were half as long).
 - Buck Breaker: Mr. Gold, Mr. Silver and the other ema* enemies get the fits for their body type (they were missing from the model list).
 - Buck Breaker: the fat men can be spanked (the game's own placement, Gene's holding arm raised onto their back).
