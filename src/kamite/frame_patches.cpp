@@ -2051,6 +2051,15 @@ namespace kamite
             const int32_t value = GPR_S32(ctx, 2);
             SET_GPR_S32(ctx, 2, skipFrame(rdram) ? value : value + 1);
         }
+        // addu Dst,A,B where B is a whole per-frame step (an integer phase): the tick adds B - B/2, the second half B/2,
+        // so a 30 FPS frame adds B as on the PS2 and the phase still moves every vblank (the world lights' rotation
+        // byte, cWorldLight_Move 0x2D7DF4). For k: B split into k parts.
+        template <int Dst, int A, int B>
+        void stepSplit(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const int32_t step = GPR_S32(ctx, B), half = step / 2;
+            SET_GPR_S32(ctx, Dst, GPR_S32(ctx, A) + (skipFrame(rdram) ? half : step - half));
+        }
         // `lw v0,X(base)` before a countdown whose `addiu v0,v0,-1` sits in a branch delay slot (no hook there): on the
         // skipped frames the loaded value is raised by one and the decrement stores it back unchanged (the zero test
         // is not affected: a non-zero value stays non-zero). Gene's +0x5F8 (0x108D08), cEmManage +0x510/+0x514/+0x530, the
@@ -2474,6 +2483,9 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_countdown_pl15b0_s0_v1", &countdownLoadExact<16, 0x15B0u, 3, 4>);
         ps2xRegisterHostHook("km_fps60_countdown_pl15bc", &countdownLoad<17, 0x15BCu>);
         ps2xRegisterHostHook("km_fps60_countdown_pl15bc_exact", &countdownLoadExact<17, 0x15BCu, 2, 4>);
+        // The world lights (cWorldLight_Move; kamite.toml "World lights").
+        ps2xRegisterHostHook("km_fps60_light_flicker_cd", &countdownLoadAny<16, 0x12u, 2, 1>);
+        ps2xRegisterHostHook("km_fps60_light_phase_split", &stepSplit<3, 3, 2>);
         ps2xRegisterHostHook("km_fps60_countup_self", &countupSelf);
         // The 1 -> 0 step's guards (countdownGuard): the signed test loads in front of hooked decrements.
         ps2xRegisterHostHook("km_fps60_cd_guard_s1_568", &countdownGuard<17, 0x568u, 2, 2, 1>);

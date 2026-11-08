@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 8, 2026
 
+- 60 FPS: the world lights blend between areas, flicker and turn at the PS2's speed (twice as fast before; the demon rooms' flickering lights, timed light changes).
 - 60 FPS: Gene's state timers run at the PS2's speed: the demon Elvis' finisher (it killed in half the time), the quick get-up press window, mashing out of a stun, the squeezing grabs' hits and tension drain, the down and death waits, the dodge's turn toward the target, a charged attack's window.
 - 60 FPS: grabs that bite or squeeze while they last (the demon Elvis' grab and three other grabs) hit as often as on the PS2 (at 60 they hit up to half again as often).
 - 60 FPS: Demon Shannon's familiar moves and attacks at the right speed (its volleys lasted twice as long, with twice the shots).

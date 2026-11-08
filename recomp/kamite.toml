@@ -1447,6 +1447,60 @@ hook = "km_fps60_countdown_pl15b4_s0"
 flag = "fps60"
 replace = true
 
+# World lights (cWorldLight_Move 0x2D7560, once a game frame from Move; Nov 8, the roll flags of K's replays: its
+# flicker rolls 4.3 a second at 30, 9.0 at 60 in the demon Elvis' room). Visual only, all stepped once a game frame,
+# so at 60 the lights blended, flickered and turned twice as fast. The area blend (5 fog / light values eased
+# x 0.96 + target x 0.04 a frame) and the flicker's ease toward its target (x 0.05 a frame) take the k-th root:
+# 0.96 -> sqrt(0.96) = 0.979796 and 0.04 -> 1 - that (two vblanks give 0.96 / 0.04 again), 0.05 -> 1 - sqrt(0.95)
+# (family 3). The flicker's countdown byte +0x12 (20 frames, then two fRand1_1 for a new target), the timed lights'
+# +0x84 (the record's timer: at 0 the light is removed) and the light-set transition's frame count +0x6280 count every
+# other vblank (family 1). The rotation byte +0x10 += the speed (degrees a frame x 256/360, truncated) is split: the
+# tick adds the step less half of it, the second half the rest.
+[[patches.conditional]] # lui at,0x3D23 (0.04): 0.0202041 = 1 - sqrt(0.96)
+address = "0x002D76C4"
+value = "0x3C013CA5"
+flag = "fps60"
+[[patches.conditional]] # ori at,at,0xD70A
+address = "0x002D76C8"
+value = "0x34218319"
+flag = "fps60"
+[[patches.conditional]] # lui at,0x3F75 (0.96): 0.9797959 = sqrt(0.96)
+address = "0x002D76D0"
+value = "0x3C013F7A"
+flag = "fps60"
+[[patches.conditional]] # ori at,at,0xC28F
+address = "0x002D76D4"
+value = "0x3421D3E7"
+flag = "fps60"
+[[patches.conditional]] # lui at,0x3D4C (0.05, f24): 0.0253206 = 1 - sqrt(0.95)
+address = "0x002D7C78"
+value = "0x3C013CCF"
+flag = "fps60"
+[[patches.conditional]] # ori at,at,0xCCCD
+address = "0x002D7C7C"
+value = "0x34216D13"
+flag = "fps60"
+[[patches.hooks]] # timed lights: lw v0,0x84(v1); beqz; ...; addiu v0,v0,-1 (here); bnez v0 (removal at 0)
+address = "0x002D7A38"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # light-set transition: +0x6280 frames done (lhu; addiu v0,v0,1 here; sh), progress = done / +0x6282
+address = "0x002D7BE8"
+hook = "km_fps60_countup_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # flicker: lbu v0,0x12(s0); addiu v0,v0,-1; sb; at 0 a new target
+address = "0x002D7CF4"
+hook = "km_fps60_light_flicker_cd"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # rotation: addu v1,v1,v0 (the phase byte +0x10 + the step)
+address = "0x002D7DF4"
+hook = "km_fps60_light_phase_split"
+flag = "fps60"
+replace = true
+
 # Gene's state timers the Oct 31 census left (Nov 8; countdown_census.py --range 0x108000 0x128000 after T1's Elvis grab
 # case, where the demon's finisher killed at motion frame 19 at 60 instead of 39: state 28's 40-frame wait). Counted
 # down a game frame, so at 60 each ran in half the time. Load-raise (family 1): a one-shot test of the new value after the
