@@ -1412,6 +1412,179 @@ namespace kamite
             }
         }
 
+        // 60 FPS half-frame poses (Nov 8; Buck Breaker's checks: Gene's elbow in the Stinger's slam, em00 motion 815
+        // bone 14 at frame 54.5, 31.6 deg off its path). The motions key each bone as three Euler angles (R = Rz Ry
+        // Rx) with Hermite curves fitted only at whole frames: near y = +-90 deg x and z swing by tens of degrees
+        // in opposite directions and agree only at whole frames (815 bone 14: x + z = 2 deg at frames 54 and 55, 34
+        // at 54.5). The PS2 at 30 samples whole frames only; at 60 every other vblank is a half frame. Gene's own
+        // motions (pl00): 161 of 205 wobble > 10 deg somewhere, the worst 77. func_00158328 (moveMotion's pose of the
+        // motion at +0x430 into the parts' Euler +0x100..+0x108) is run at the two whole frames around a fractional
+        // frame too, and each part's rotation that strays more than 2 deg from the arc between them (quaternion
+        // slerp) is eased onto it (fully past 6 deg), written back as the Euler nearest the game's. Last, the pose at
+        // the real frame, so root motion, translations, scales and the decode caches are the game's. Not touched:
+        // whole frames, frame steps over 120 deg (spins: the arc could take the other way round), a motion's last
+        // frame, the root's rotation. KAMITE_MOTION_SMOOTH=0 turns it off (to compare).
+        GuestFunction g_origMotionPose = nullptr;
+        constexpr uint32_t kMotionPose = 0x158328u;
+        const bool g_motionSmooth = [] {
+            const char *setting = std::getenv("KAMITE_MOTION_SMOOTH");
+            return !setting || std::string_view(setting) != "0";
+        }();
+
+        struct Quat
+        {
+            float w, x, y, z;
+        };
+        void eulerMatrix(const float e[3], float r[3][3]) // Rz Ry Rx
+        {
+            const float cx = std::cos(e[0]), sx = std::sin(e[0]), cy = std::cos(e[1]), sy = std::sin(e[1]),
+                        cz = std::cos(e[2]), sz = std::sin(e[2]);
+            r[0][0] = cy * cz, r[0][1] = sx * sy * cz - cx * sz, r[0][2] = cx * sy * cz + sx * sz;
+            r[1][0] = cy * sz, r[1][1] = sx * sy * sz + cx * cz, r[1][2] = cx * sy * sz - sx * cz;
+            r[2][0] = -sy, r[2][1] = sx * cy, r[2][2] = cx * cy;
+        }
+        Quat matrixQuat(const float r[3][3])
+        {
+            Quat q;
+            q.w = std::sqrt(std::max(0.0f, 1.0f + r[0][0] + r[1][1] + r[2][2])) * 0.5f;
+            q.x = std::copysign(std::sqrt(std::max(0.0f, 1.0f + r[0][0] - r[1][1] - r[2][2])) * 0.5f, r[2][1] - r[1][2]);
+            q.y = std::copysign(std::sqrt(std::max(0.0f, 1.0f - r[0][0] + r[1][1] - r[2][2])) * 0.5f, r[0][2] - r[2][0]);
+            q.z = std::copysign(std::sqrt(std::max(0.0f, 1.0f - r[0][0] - r[1][1] + r[2][2])) * 0.5f, r[1][0] - r[0][1]);
+            const float n = std::sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
+            return n > 0.0f ? Quat{q.w / n, q.x / n, q.y / n, q.z / n} : Quat{1.0f, 0.0f, 0.0f, 0.0f};
+        }
+        void quatMatrix(const Quat &q, float r[3][3])
+        {
+            const float w = q.w, x = q.x, y = q.y, z = q.z;
+            r[0][0] = 1 - 2 * (y * y + z * z), r[0][1] = 2 * (x * y - w * z), r[0][2] = 2 * (x * z + w * y);
+            r[1][0] = 2 * (x * y + w * z), r[1][1] = 1 - 2 * (x * x + z * z), r[1][2] = 2 * (y * z - w * x);
+            r[2][0] = 2 * (x * z - w * y), r[2][1] = 2 * (y * z + w * x), r[2][2] = 1 - 2 * (x * x + y * y);
+        }
+        float quatDot(const Quat &a, const Quat &b) { return a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z; }
+        float quatAngleDeg(const Quat &a, const Quat &b)
+        {
+            return 2.0f * std::acos(std::min(1.0f, std::fabs(quatDot(a, b)))) * 57.29578f;
+        }
+        Quat quatSlerp(const Quat &a, Quat b, float u)
+        {
+            float d = quatDot(a, b);
+            if (d < 0.0f)
+                b = {-b.w, -b.x, -b.y, -b.z}, d = -d;
+            float ka = 1.0f - u, kb = u;
+            if (d < 0.9995f)
+            {
+                const float th = std::acos(d), s = std::sin(th);
+                ka = std::sin((1.0f - u) * th) / s, kb = std::sin(u * th) / s;
+            }
+            Quat q{ka * a.w + kb * b.w, ka * a.x + kb * b.x, ka * a.y + kb * b.y, ka * a.z + kb * b.z};
+            const float n = std::sqrt(quatDot(q, q));
+            return Quat{q.w / n, q.x / n, q.y / n, q.z / n};
+        }
+        float windNear(float a, float near)
+        {
+            constexpr float kTurn = 6.2831853f;
+            return a + kTurn * std::round((near - a) / kTurn);
+        }
+        // The Euler angles (Rz Ry Rx) of r nearest `near` (each angle wound within half a turn of it); false if none
+        // rebuilds r.
+        bool eulerNear(const float r[3][3], const float near[3], float out[3])
+        {
+            const float x0 = std::atan2(r[2][1], r[2][2]);
+            const float xs[3] = {x0, x0 + 3.14159265f, near[0]}; // the two branches; at y = +-90 deg any x
+            float best = 1e30f;
+            for (const float x : xs)
+            {
+                const float c = std::cos(x), s = std::sin(x);
+                // r Rx(-x) = Rz Ry: y and z from it
+                const float p01 = r[0][1] * c - r[0][2] * s, p11 = r[1][1] * c - r[1][2] * s;
+                const float p20 = r[2][0], p22 = r[2][1] * s + r[2][2] * c;
+                const float e[3] = {windNear(x, near[0]), windNear(std::atan2(-p20, p22), near[1]),
+                                    windNear(std::atan2(-p01, p11), near[2])};
+                float check[3][3];
+                eulerMatrix(e, check);
+                float err = 0.0f;
+                for (int i = 0; i < 3; ++i)
+                    for (int j = 0; j < 3; ++j)
+                        err = std::max(err, std::fabs(check[i][j] - r[i][j]));
+                const float distance = std::fabs(e[0] - near[0]) + std::fabs(e[1] - near[1]) + std::fabs(e[2] - near[2]);
+                if (err < 1e-3f && distance < best)
+                {
+                    best = distance;
+                    std::copy(e, e + 3, out);
+                }
+            }
+            return best < 1e30f;
+        }
+
+        void motionPoseSmooth(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            constexpr uint32_t kMaxParts = 256u;
+            const uint32_t obj = GPR_U32(ctx, 4);
+            auto inRam = [](uint32_t a, uint32_t size) { return a >= 0x100000u && a + size <= 0x2000000u; };
+            if (!g_fps60 || !g_motionSmooth || ctx->pc != kMotionPose || !inRam(obj, 0x440u))
+                return g_origMotionPose(rdram, ctx, runtime);
+            const float t = ramF32(rdram, obj + 0x430u);
+            auto rd32 = [rdram](uint32_t a) {
+                uint32_t v = 0;
+                std::memcpy(&v, &ram8(rdram, a), sizeof(v));
+                return v;
+            };
+            const uint32_t mot = rd32(obj + 0x428u), parts = rd32(obj + 0x278u);
+            const uint32_t count = rdram[obj + 0x2B4u];
+            if (!(t > 0.0f) || !inRam(mot, 8u) || std::memcmp(rdram + mot, "mtb3", 4) != 0 || count == 0u ||
+                !inRam(parts, 4u * count))
+                return g_origMotionPose(rdram, ctx, runtime);
+            uint16_t frames = 0;
+            std::memcpy(&frames, rdram + mot + 4u, sizeof(frames));
+            const float f0 = std::floor(t), u = t - f0;
+            if (u < 0.01f || u > 0.99f || f0 + 1.0f > static_cast<float>(frames) - 1.0f)
+                return g_origMotionPose(rdram, ctx, runtime);
+            uint32_t part[kMaxParts];
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                part[i] = rd32(parts + 4u * i);
+                if (!inRam(part[i], 0x10Cu))
+                    return g_origMotionPose(rdram, ctx, runtime);
+            }
+            static float whole[2][kMaxParts][3];
+            const R5900Context saved = *ctx;
+            EeScheduler &scheduler = runtime->eeScheduler();
+            scheduler.beginHostCall(); // the three calls run to their end (a thread switch can't unwind between them)
+            for (int k = 0; k < 2; ++k)
+            {
+                setRamF32(rdram, obj + 0x430u, f0 + static_cast<float>(k));
+                g_origMotionPose(rdram, ctx, runtime);
+                for (uint32_t i = 0; i < count; ++i)
+                    std::memcpy(whole[k][i], &ram8(rdram, part[i] + 0x100u), 12);
+                *ctx = saved;
+            }
+            setRamF32(rdram, obj + 0x430u, t);
+            g_origMotionPose(rdram, ctx, runtime); // the game's pose, root motion and caches at the real frame
+            scheduler.endHostCall();
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                float e[3];
+                std::memcpy(e, &ram8(rdram, part[i] + 0x100u), 12);
+                if (!std::isfinite(e[0]) || !std::isfinite(e[1]) || !std::isfinite(e[2]))
+                    continue;
+                float r0[3][3], r1[3][3], rh[3][3];
+                eulerMatrix(whole[0][i], r0);
+                eulerMatrix(whole[1][i], r1);
+                eulerMatrix(e, rh);
+                const Quat q0 = matrixQuat(r0), q1 = matrixQuat(r1), qh = matrixQuat(rh);
+                if (quatAngleDeg(q0, q1) > 120.0f)
+                    continue;
+                const Quat arc = quatSlerp(q0, q1, u);
+                const float off = quatAngleDeg(qh, arc);
+                if (!(off > 2.0f))
+                    continue;
+                float rc[3][3], ec[3];
+                quatMatrix(quatSlerp(qh, arc, std::min(1.0f, (off - 2.0f) / 4.0f)), rc);
+                if (eulerNear(rc, e, ec))
+                    std::memcpy(&ram8(rdram, part[i] + 0x100u), ec, 12);
+            }
+        }
+
         void installFrame30State()
         {
             ps2x::savestate::registerExtension(
@@ -2571,6 +2744,15 @@ namespace kamite
         {
             g_origChkHit = nullptr;
             KM_WARN(Game, "fps60: cCollisionSolidManage_ChkHit is not hookable");
+        }
+        // Half-frame poses on the arc between whole frames (motionPoseSmooth). Chains with game_options' wrapper of the
+        // same function (the roulette's replayed opening), whichever installs first.
+        if (!runtime.hasFunction(kMotionPose) || !(g_origMotionPose = runtime.lookupFunction(kMotionPose)) ||
+            !FunctionHooks::instance().replace(kMotionPose, "motion pose (60 FPS half frames)", &motionPoseSmooth,
+                                               ReplacementStatus::Native, "60 FPS: half-frame poses on the whole frames' arc"))
+        {
+            g_origMotionPose = nullptr;
+            KM_WARN(Game, "fps60: func_00158328 (motion pose) is not hookable");
         }
         g_rdram = runtime.memory().getRDRAM();
         installFrame30State();
