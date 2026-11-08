@@ -17,7 +17,7 @@ namespace kamite::buck_breaker
     // Guest memory for the punishes' motions a room did not load (the DLL slot hole's free top: function_hooks.cpp
     // keeps its guard off this range).
     inline constexpr uint32_t kMotionArea = 0x007E0000u;
-    inline constexpr uint32_t kMotionAreaEnd = 0x00808000u;
+    inline constexpr uint32_t kMotionAreaEnd = 0x00810000u;
 
     // Before the game starts: the gameplay hook, the Techniques screen's slot, the per-vblank pick.
     void install(PS2Runtime &runtime);

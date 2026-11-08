@@ -121,21 +121,22 @@ namespace kamite::buck_breaker
         // At start (Buck Breaker on): the four punishes' entries from the disc's em/em00.dat.
         void loadMotionSets()
         {
-            g_sets[Suplex].entries = range(329, 334);   // victim 329-332, Gene 333-334
-            g_sets[Stinger].entries = range(805, 816);  // victim 805-810, Gene 811-816
+            // victim 329-332, Gene 333-334 | victim 805-810, Gene 811-816 | victim 1543-1550, Gene 1551-1558 | victim
+            // 1327-1332, the launch after it (mode 1 phase 35) 1333-1336, Gene 1337-1342.
+            g_sets[Suplex].entries = range(329, 334);
+            g_sets[Stinger].entries = range(805, 816);
             g_sets[CobraTwist].entries = range(1543, 1558);
-            g_sets[Spanking].entries = range(1327, 1332);
-            for (uint16_t i : range(1337, 1342))
-                g_sets[Spanking].entries.push_back(i);
-            const uint32_t rooms[kPickCount] = {0u, 0u, 0x7000u, 0x8000u, 0x9000u, 0x9000u};
-            uint32_t area = kMotionArea;
+            g_sets[Spanking].entries = range(1327, 1342);
+            // Places fixed for good (a save state keeps a table pointing at them): +0x0..0x7000 is the first build's
+            // Spanking (without the launch), not reused.
+            const uint32_t places[kPickCount][2] = {
+                {}, {}, {0x21000u, 0x9000u}, {0x7000u, 0x8000u}, {0xF000u, 0x9000u}, {0x18000u, 0x9000u}};
             for (int p = Spanking; p < kPickCount; ++p)
             {
-                g_sets[p].area = area;
-                g_sets[p].room = rooms[p];
-                area += rooms[p];
+                g_sets[p].area = kMotionArea + places[p][0];
+                g_sets[p].room = places[p][1];
             }
-            static_assert(kMotionArea + 0x7000u + 0x8000u + 0x9000u + 0x9000u <= kMotionAreaEnd, "the punishes' motions fit");
+            static_assert(kMotionArea + 0x21000u + 0x9000u <= kMotionAreaEnd, "the punishes' motions fit");
             const auto file = disc_files::open() ? disc_files::find("em/em00.dat") : std::nullopt;
             std::vector<uint8_t> dat;
             if (!file || !disc_files::read(*file, dat) || dat.size() < 4u + 8u * kEm00Entries)
