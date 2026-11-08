@@ -37,3 +37,8 @@ spank_fat2.py (K, Nov 8): Spanking on the fat men keeps the game's placement; Ge
 swing / elbow per body, held through the hold and the spanks (eased in over the grab's first 8 frames, out from frame
 12 of the finish to the launch), fitted against the victim's mesh (1 cm) and the hand's touch spots on the back. A
 per-key fit (spank_fat.py) made the arm flail.
+
+fits7/ holds every fit7 result (rep_<punish>_<type>_<size>.npy / .json = the type's representative, g_<punish>_<group>_
+<size> = the other bodies; X = keys x 14 values, json = metrics, keys, size=). emit7.py rebuilds resources/
+punish_fit.txt from it: change one fit by re-running its job (fit_pose rep_job / group_job / fix_job, gorilla_elbows,
+spank_fat2) and emitting again. find_model_field.py probes a case's RAM for the enemy's model-file field (not found yet).
