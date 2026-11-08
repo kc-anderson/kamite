@@ -2276,6 +2276,9 @@ namespace kamite
         ps2xRegisterHostHook("km_fps60_r040_youwin_tick", &tickOnlyGate<16, 4u>);
         ps2xRegisterHostHook("km_fps60_r040_timeup_tick", &tickOnlyGate<16, 8u>);
         ps2xRegisterHostHook("km_fps60_r305_cd_s0_c", &countdownLoadExact<16, 0xCu, 2, 4>);
+        // The casino's Chihuahua race (main ELF): each dog's start delay and the race's waits.
+        ps2xRegisterHostHook("km_fps60_dograce_cd_s0_c", &countdownLoadExact<16, 0xCu, 2, 4>);
+        ps2xRegisterHostHook("km_fps60_dograce_cd_s1_10", &countdownLoadExact<17, 0x10u, 2, 4>);
         ps2xRegisterHostHook("km_fps60_r505_cd_s2_0", &countdownLoadAll<18, 0x0u>); // raised at 0 too
         ps2xRegisterHostHook("km_fps60_r501_cd_s1_18", &countdownLoadExact<17, 0x18u, 2, 4>);
         ps2xRegisterHostHook("km_fps60_r501_cd_s0_70", &countdownLoadExact<16, 0x70u, 2, 4>);

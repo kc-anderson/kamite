@@ -1417,6 +1417,32 @@ hook = "km_fps60_countdown_hitstop"
 flag = "fps60"
 replace = true
 
+# The casino's Chihuahua race (DogRace, claude/rng-notes.md): each dog's start delay (+0xC of its record, counted down
+# a game frame in func_001EBB78 before it runs) and the race's own waits (+0x10: after the first dog crosses, before
+# the fade, on the result screen) are counted in game frames, so at 60 FPS the starts were half as long while the
+# running kept its 30 FPS pace (moveMotion halves the step): bad starts cost half and the result drifted from the
+# PS2's. Family 1, load-raise with the 1 -> 0 step (the zero side starts the dog / the next state).
+[[patches.hooks]] # start delay: lw v0,0xC(s0); beqz; addiu v0,v0,-1 (delay slot)
+address = "0x001EBBA4"
+hook = "km_fps60_dograce_cd_s0_c"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # race wait after the first dog crosses
+address = "0x001EAC04"
+hook = "km_fps60_dograce_cd_s1_10"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # race wait before the fade
+address = "0x001EAC44"
+hook = "km_fps60_dograce_cd_s1_10"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # result screen wait
+address = "0x001EB490"
+hook = "km_fps60_dograce_cd_s1_10"
+flag = "fps60"
+replace = true
+
 # Button-mash meter, eleven pl00 states (func_0010F720, 001162C0, 00116A88, 001179C8, 00118158, 00118690, 00118B68,
 # 001191A0, 00119750, 00119BF0, 0011FD10): each direction press (GameWork pressed & 0xF0) raises the level (+0x15B4)
 # when the game frames since the last one (+0x15B0, +1 a frame) are under the level's limit (the jump tables' case
