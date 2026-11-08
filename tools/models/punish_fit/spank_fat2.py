@@ -9,6 +9,7 @@ from scipy.optimize import minimize
 import fit_pose
 from fit_pose import OUT, path_of, save, TYPES
 D=np.radians
+K_EXTRA_RAISE=np.radians(10.0)   # on top of the fit, K's eye (Nov 8)
 def key_weights(P):
     w=[]
     for si,fs in enumerate(P['ks']):
@@ -52,7 +53,9 @@ def job(g):
                 th=D(np.array([r,s_,e],float)); v=cost(th)
                 if best is None or v<best[0]: best=(v,th)
     res=minimize(cost,best[1],method='Powell',bounds=list(zip(lo,hi)),options=dict(maxiter=2000,xtol=1e-3,ftol=1e-5))
-    th=np.clip(res.x,lo,hi); Xb=X.copy(); Xb[:,8:11]=th[None]*W[:,None]
+    th=np.clip(res.x,lo,hi)
+    th[0]=min(th[0]+K_EXTRA_RAISE,D(85))   # K in play (0976373): "almost perfect, just needs to come up a little bit more"
+    Xb=X.copy(); Xb[:,8:11]=th[None]*W[:,None]
     rep=g==fit_pose.REP['fat']; tag=('rep_Spanking_fat_1.00') if rep else ('g_Spanking_%02d_1.00'%g)
     m=save(tag,P,Xb,1.0,dict(name='Spanking',type='fat',group=g,scale=1.0,rep=rep,pose_from='own (K: the left arm on the back, held)'))
     m0=fit7.parts_excess(P,X,1.0)
