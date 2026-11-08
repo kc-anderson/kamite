@@ -36,8 +36,8 @@
 // body whose fits are all larger also has the game's own pairing at 1.0. At the catch the fit whose size needs the
 // least change is taken (sizes marked off are not), and Gene and the enemy meet halfway: both by k = sqrt(fit size /
 // the enemy's size), Gene up, the enemy down (or the reverse), easing in over kRampVblanks and back after the punish.
-// Each changes by at most 6%: past that a Buck Breaker pick doesn't fit (the enemy keeps its own punish), and the
-// enemy's own punish plays with k held at 6%. The game's placement calls run with the enemy at the fit's size x k.
+// Each changes by at most 12% (K, Nov 8: 6% at first; 12% lets Gene spank the stage 1 demon, size 1.20): past that a
+// Buck Breaker pick doesn't fit (the enemy keeps its own punish), and the enemy's own punish plays with k held there. The game's placement calls run with the enemy at the fit's size x k.
 // size= is the fit's own victim size change (0.95..1.05), on top. Bodies with no fits (other skeletons) are untouched.
 //
 // The body: the enemy's skeleton (its cModel's parts, list at +0x144, count at +0x2B4; each part's offset +0xE0 and
@@ -111,7 +111,7 @@ namespace kamite::punish_fit
 
         constexpr uint32_t kNumber = 0x564u, kScaleX = 0x110u, kScaleY = 0x114u, kScaleZ = 0x118u, kCaught = 0x694u;
         constexpr int kRampVblanks = 12; // the size changes ease in (and out) over this many vblanks (K: quick)
-        constexpr float kMaxStep = 1.06f; // each of the two changes size by at most this factor
+        constexpr float kMaxStep = 1.12f; // each of the two changes size by at most this factor (K: 12%, for the stage 1 demon)
         constexpr int kValues = 12;
         constexpr uint32_t kParts = 0x144u, kPartCount = 0x2B4u, kPartOffset = 0xE0u, kPartParent = 0x148u;
         constexpr uint32_t kMotionPlaying = 0x428u, kMotionFrame = 0x430u;
@@ -509,7 +509,7 @@ namespace kamite::punish_fit
                     else
                         std::snprintf(what, sizeof(what), "%s at %.2f%s, Gene x%.3f, enemy x%.3f",
                                       an.fit ? "fitted" : "the game's own pairing", an.scale,
-                                      an.within ? "" : " (past 6%: held there)", an.k,
+                                      an.within ? "" : " (past the cap: held there)", an.k,
                                       an.scale * an.k / g_pair.baseScale[1] * (an.fit ? an.fit->size : 1.0f));
                     logPair(call->punish, body, enemy, what, g_pair.baseScale[1]);
                 }
@@ -850,7 +850,7 @@ namespace kamite::punish_fit
                     std::snprintf(what, sizeof(what), "%s", fits ? "doesn't fit" : "no fit (the game's placement)");
                 else
                     std::snprintf(what, sizeof(what), "%s %.2f, pair x%.3f%s", an.fit ? "fit" : "game's own at", an.scale,
-                                  an.k, an.within ? "" : " (held at 6%)");
+                                  an.k, an.within ? "" : " (held at the cap)");
                 status = std::string(kNames[p]) + ": " + what;
                 return;
             }

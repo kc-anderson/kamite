@@ -4,7 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 8, 2026
 
-- Buck Breaker: a pair with an enemy of any size plays the fitted pair: Gene and the enemy each ease up to 6% toward the fitted size for the punish (no more blending between fitted sizes).
+- Buck Breaker: a pair with an enemy of any size plays the fitted pair: Gene and the enemy each ease up to 12% toward the fitted size for the punish (no more blending between fitted sizes).
 - Debug menu: enemy labels (model file, body type, size; in a punish, the punish and what its fit does) for naming enemies in feedback.
 - Buck Breaker: the Gorilla Suplex on the fat men keeps Gene's own arms; the fat man stands taller so they close round his elbows.
 - Buck Breaker: Gene's torso and arms posed per body type (his arms no deeper in the victim than in the original pair; Cobra Twist's arms round the neck on women and fat men; Gorilla Suplex's arms folded in less), fits for scaled-up enemies, and the victim resized by up to 5% for the pairing.
