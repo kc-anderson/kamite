@@ -13,6 +13,8 @@ def verdict(m):
     clip=max(v[1] for v in m['clip1'].values())
     if m['name']=='Gorilla':      # its arms are kept out of the victim on purpose (K): the hands leave the original's spots
         v='fitted' if m['e1']<0.18 else 'questionable' if m['e1']<0.22 else 'off'
+    elif m.get('clasp'):          # cobra_clasp: the hands clasped, not the original's spots; K judges it in play
+        v='questionable'
     elif m['e1']<0.07 and m['e1p90']<0.13: v='fitted'
     elif m['e1']<0.12: v='questionable'
     else: v='off'
@@ -88,7 +90,7 @@ def main(path):
                 off=v=='off' or off10        # a size that can't be made to work: own punish from halfway there
                 if s==1.0: off10=off
                 lines.append('fit %s %s%s scale=%.2f size=%.3f   # %s (%s%s), %s: touch %.0f -> %.0f cm, clip +%.1f cm'%(
-                    FILE[name],keys,' off' if off else '',s,m['size'],file,t,', pose from the representative' if not m['rep'] and m.get('pose_from')!='original' else '',
+                    FILE[name],keys,' off' if off else '',s,m['size'],file,t,', hands clasped' if m.get('clasp') else ', pose from the representative' if not m['rep'] and m.get('pose_from')!='original' else '',
                     v,m['e0']*100,m['e1']*100,clip*100))
                 if not off: lines+=tracks(name,X,m['ks'])
                 summary.append((name,g,file,t,s,v,m))
