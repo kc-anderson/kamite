@@ -18,7 +18,7 @@
 // The body: the enemy's skeleton (its cModel's parts, list at +0x144, count at +0x2B4; each part's offset +0xE0 and
 // parent +0x148, as npc_poses reads them), hashed from the parts after the root (the root's offset is the motion's
 // hip): recolors share it, and a bigger copy of the same skeleton too (the values are scaled by the enemy's size like
-// the game's own). Cached per enemy number at first sight; the file keeps which enemies were seen with each body.
+// the game's own). Hashed at each prompt and placement; the file keeps which enemies were seen with each body.
 //
 // "Doesn't fit": Buck Breaker's case hook asks doesntFit() and keeps the enemy's own punish for that pick and body.
 
@@ -33,7 +33,6 @@
 #include "runtime/ps2_time_control.h"
 #include "pcsx2gs_api.h"
 
-#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -103,7 +102,6 @@ namespace kamite::punish_fit
         std::mutex g_mutex; // the fits, the bodies seen and the pair (EE thread and the menu)
         std::map<uint64_t, Fit> g_fits;                   // punish << 32 | body
         std::map<uint32_t, std::set<uint16_t>> g_seen;    // body -> enemy numbers met with it
-        std::array<uint32_t, 0x80> g_numberBody{};        // enemy number - 0x200 -> body (0 = not yet)
         Pair g_pair;
 
         // The menu's slider state (menu thread).
@@ -184,20 +182,15 @@ namespace kamite::punish_fit
             return h ? h : 1u;
         }
 
-        // EE thread, g_mutex held. The enemy's body (its number's, cached), noted as seen.
+        // EE thread, g_mutex held. The enemy's body, noted as seen with its number. Not cached by number: the model an
+        // enemy number loads is not known to be fixed (the em files do not follow the numbers: em1b.dat holds a man
+        // while 0x21B is one of the women), and the hash is cheap (asked at a prompt and at a placement only).
         uint32_t bodyOf(const uint8_t *rdram, uint32_t enemy, uint16_t &number)
         {
             number = static_cast<uint16_t>(rd32(rdram, enemy + kNumber));
-            const bool known = number >= 0x200u && number < 0x280u;
-            uint32_t body = known ? g_numberBody[number - 0x200u] : 0u;
+            uint32_t body = skeletonHash(rdram, enemy);
             if (!body)
-            {
-                body = skeletonHash(rdram, enemy);
-                if (!body)
-                    body = 0x80000000u | number; // no skeleton to read: the enemy on its own
-                if (known)
-                    g_numberBody[number - 0x200u] = body;
-            }
+                body = 0x80000000u | number; // no skeleton to read: the enemy on its own
             g_seen[body].insert(number);
             return body;
         }
