@@ -30,6 +30,10 @@ namespace pcsx2gs
     // world-to-screen matrix's output, XYOFFSET included), a colour per line (R in the low byte). count 0 clears.
     // ImGuiManager::RenderOSD draws them at each present, mapped through the scene's XYOFFSET and the present rect.
     void SetOverlay(const float *lines, const uint32_t *colors, uint32_t count);
+    // Overlay labels (pcsx2gs_set_overlay_text; thread-safe): an x y anchor per label in the same GS pixel coordinates,
+    // a colour per label, the texts packed one after another, each ending with its 0. Drawn centred on the anchor,
+    // with a dark shadow. count 0 clears.
+    void SetOverlayText(const float *xy, const uint32_t *colors, const char *texts, uint32_t count);
     // GSRendererHW (GS thread): the XYOFFSET (pixels) of the scene's depth-tested triangle draws, for that mapping.
     void SetSceneOffset(float ox, float oy);
     // GSRenderer::VSync (GS thread): where the frame went in the window (client pixels) and its size in GS pixels.

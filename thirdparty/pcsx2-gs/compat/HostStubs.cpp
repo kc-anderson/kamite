@@ -70,6 +70,9 @@ namespace
     std::mutex g_overlayMutex;
     std::vector<float> g_overlayLines;      // x0 y0 x1 y1 per line, GS pixels
     std::vector<uint32_t> g_overlayColors;  // per line, R in the low byte
+    std::vector<float> g_overlayTextXY;     // x y per label, GS pixels (guarded by g_overlayMutex too)
+    std::vector<uint32_t> g_overlayTextColors;
+    std::vector<std::string> g_overlayTexts;
     float g_sceneOffset[2] = {2048.0f - 320.0f, 2048.0f - 224.0f}; // GS thread: the scene draws' XYOFFSET, pixels
     float g_presentRect[4] = {};             // GS thread: the frame's place in the window at the last present
     float g_presentSize[2] = {640.0f, 448.0f}; // GS thread: the frame's size in GS pixels
@@ -311,6 +314,24 @@ void pcsx2gs::SetOverlay(const float *lines, const uint32_t *colors, uint32_t co
     count = std::min(count, 65536u);
     g_overlayLines.assign(lines, lines + 4u * count);
     g_overlayColors.assign(colors, colors + count);
+}
+
+void pcsx2gs::SetOverlayText(const float *xy, const uint32_t *colors, const char *texts, uint32_t count)
+{
+    std::lock_guard<std::mutex> lock(g_overlayMutex);
+    g_overlayTextXY.clear();
+    g_overlayTextColors.clear();
+    g_overlayTexts.clear();
+    if (!xy || !colors || !texts || count == 0u)
+        return;
+    count = std::min(count, 256u);
+    g_overlayTextXY.assign(xy, xy + 2u * count);
+    g_overlayTextColors.assign(colors, colors + count);
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        g_overlayTexts.emplace_back(texts);
+        texts += g_overlayTexts.back().size() + 1u;
+    }
 }
 
 void pcsx2gs::SetSceneOffset(float ox, float oy)
@@ -690,10 +711,10 @@ void ImGuiManager::RenderOSD()
 
     {
         std::lock_guard<std::mutex> lock(g_overlayMutex);
+        const float width = g_presentRect[2] - g_presentRect[0], height = g_presentRect[3] - g_presentRect[1];
         if (!g_overlayColors.empty())
         {
             ImDrawList *list = ImGui::GetBackgroundDrawList();
-            const float width = g_presentRect[2] - g_presentRect[0], height = g_presentRect[3] - g_presentRect[1];
             if (width > 1.0f && height > 1.0f)
             {
                 const float sx = width / g_presentSize[0], sy = height / g_presentSize[1];
@@ -708,6 +729,23 @@ void ImGuiManager::RenderOSD()
                 }
                 list->PopClipRect();
             }
+        }
+        // the labels over the lines
+        if (!g_overlayTexts.empty() && width > 1.0f && height > 1.0f)
+        {
+            ImDrawList *list = ImGui::GetBackgroundDrawList();
+            const float sx = width / g_presentSize[0], sy = height / g_presentSize[1];
+            list->PushClipRect(ImVec2(g_presentRect[0], g_presentRect[1]), ImVec2(g_presentRect[2], g_presentRect[3]), true);
+            for (size_t i = 0; i < g_overlayTexts.size(); ++i)
+            {
+                const char *text = g_overlayTexts[i].c_str();
+                const ImVec2 size = ImGui::CalcTextSize(text);
+                const ImVec2 at(g_presentRect[0] + (g_overlayTextXY[2 * i] - g_sceneOffset[0]) * sx - size.x * 0.5f,
+                                g_presentRect[1] + (g_overlayTextXY[2 * i + 1] - g_sceneOffset[1]) * sy - size.y);
+                list->AddRectFilled(ImVec2(at.x - 3.0f, at.y - 1.0f), ImVec2(at.x + size.x + 3.0f, at.y + size.y + 1.0f), 0xA0000000u, 3.0f);
+                list->AddText(at, g_overlayTextColors[i], text);
+            }
+            list->PopClipRect();
         }
     }
 

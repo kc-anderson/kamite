@@ -40,6 +40,7 @@
 #include "kamite/log.h"
 #include "kamite/sprint_traversal.h"
 #include "kamite/debug_tools.h"
+#include "kamite/punish_fit.h"
 #include "runtime/ps2_memory.h"
 #include "runtime/gs/gs_pcsx2_backend.h"
 
@@ -121,6 +122,15 @@ namespace kamite::hitbox_overlay
         std::vector<std::pair<int, bool>> g_toggles; // GS thread -> game thread: switch group i on / off
         std::vector<int16_t> g_polyGroup;           // game thread: polygon -> its named group (-1 none)
         uint64_t g_collSignature = 0;               // game thread: the room the table above was built for
+
+        // Enemy labels (K, Nov 8: naming enemies in punish feedback): above each live enemy its model file, body type
+        // and size (punish_fit::describe), the one in Gene's punish also the punish and what its fit does (yellow).
+        constexpr uint32_t kEnemyList = 0x5864F0u + 0x500u; // cEmManage: the first used slot ({+4 next, +8 object})
+        std::atomic<bool> g_labels{false};
+        std::vector<float> g_labelXY;     // game thread
+        std::vector<uint32_t> g_labelColors;
+        std::string g_labelTexts;
+        bool g_sentNoLabels = true;       // game thread: the DLL holds no labels
 
         bool g_sentClear = true; // game thread: the DLL holds no lines
         bool g_collected = false; // game thread: collect() ran since the last frame start
@@ -269,6 +279,14 @@ namespace kamite::hitbox_overlay
         }
 
         // After func_002B9D58 (the collision manager's update) in Move(): the shapes as the game just tested them.
+        void clearLabels()
+        {
+            if (!g_sentNoLabels)
+            {
+                GSPcsx2Backend::SetOverlayText(nullptr, nullptr, nullptr, 0u);
+                g_sentNoLabels = true;
+            }
+        }
         void clear()
         {
             if (!g_sentClear)
@@ -276,6 +294,7 @@ namespace kamite::hitbox_overlay
                 GSPcsx2Backend::SetOverlay(nullptr, nullptr, 0u);
                 g_sentClear = true;
             }
+            clearLabels();
         }
 
         // A game menu (pause, save/load, shop) is open: the shapes stay in the pool but are not drawn over it.
@@ -676,19 +695,69 @@ namespace kamite::hitbox_overlay
             g_groupsShared.swap(groups);
         }
 
+        void gatherLabels(const uint8_t *rdram)
+        {
+            g_labelXY.clear();
+            g_labelColors.clear();
+            g_labelTexts.clear();
+            std::string label, status;
+            uint32_t slot = rd32(rdram, kEnemyList);
+            for (int guard = 0; guard < 64 && inRam(slot, 16u); ++guard)
+            {
+                const uint32_t em = rd32(rdram, slot + 8u) & 0x01FFFFFFu;
+                slot = rd32(rdram, slot + 4u);
+                if (!inRam(em, 0x700u))
+                    continue;
+                const uint16_t kind = rd16(rdram, em + 0x2FEu);
+                const int16_t hp = static_cast<int16_t>(rd16(rdram, em + 0x54Au)); // cGameObj HP (short)
+                if (kind < 0x200u || kind >= 0x280u || hp <= 0 || static_cast<int32_t>(rd32(rdram, em + 0x250u)) < 0)
+                    continue;
+                const uint32_t pos = rd32(rdram, em + game::GameObj::kPos);
+                if (!inRam(pos, 12u))
+                    continue;
+                const Vec3 p = rdv(rdram, pos);
+                const Clip c = project(g_matrix, {p.x, p.y + 2.05f * rdf(rdram, em + 0x114u), p.z});
+                if (!finite(p) || c.w < kNearW)
+                    continue;
+                punish_fit::describe(rdram, em, label, status);
+                if (label.empty())
+                    continue;
+                const bool caught = !status.empty();
+                if (caught)
+                    label += " | " + status;
+                g_labelXY.insert(g_labelXY.end(), {c.x / c.w, c.y / c.w});
+                g_labelColors.push_back(caught ? 0xFF40E0FFu : 0xFFFFFFFFu);
+                g_labelTexts.append(label);
+                g_labelTexts.push_back('\0');
+            }
+            if (g_labelColors.empty())
+            {
+                clearLabels();
+                return;
+            }
+            GSPcsx2Backend::SetOverlayText(g_labelXY.data(), g_labelColors.data(), g_labelTexts.data(),
+                                           static_cast<uint32_t>(g_labelColors.size()));
+            g_sentNoLabels = false;
+        }
+
         void collect(uint8_t *rdram, R5900Context *, PS2Runtime *)
         {
             g_collected = true;
             applyToggles(rdram);
             const bool hitboxes = g_enabled.load(std::memory_order_relaxed);
             const bool collision = g_collEnabled.load(std::memory_order_relaxed);
-            if ((!hitboxes && !collision) || menuOpen(rdram))
+            const bool labels = g_labels.load(std::memory_order_relaxed);
+            if ((!hitboxes && !collision && !labels) || menuOpen(rdram))
             {
                 clear();
                 return;
             }
             if (!g_haveMatrix.load(std::memory_order_relaxed))
                 return;
+            if (labels)
+                gatherLabels(rdram);
+            else
+                clearLabels();
             g_lines.clear();
             g_colors.clear();
             if (hitboxes)
@@ -755,6 +824,11 @@ namespace kamite::hitbox_overlay
             else if (!g_haveMatrix.load())
                 ui->text_disabled("Waiting for the game's camera.");
         }
+
+        ui->separator_text("Enemy labels");
+        toggle("Show enemy labels: model file | body type | size; yellow = the enemy in Gene's punish, with the punish and "
+               "what its fit does (name enemies by the em number in punish feedback)##enemylabels",
+               g_labels);
 
         ui->separator_text("Stage collision");
         toggle("Show stage collision near Gene (orange walls, green floors, cyan named groups, grey switched off, magenta "

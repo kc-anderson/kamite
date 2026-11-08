@@ -27,3 +27,8 @@ points no deeper in the victim than the original pair at that frame + 1 cm, the 
 it per punish x body type (the type's representative) at enemy sizes 1.0 and 1.3 into fits7/, then every other body
 of the type with the representative's pose held (--fix: bodies still past 2.5 cm get their own pose). emit7.py
 writes resources/punish_fit.txt; review3.py + page3.py the review page (site3/).
+
+gorilla_elbows.py (K, Nov 8): the Gorilla Suplex on the fat men with Gene's original arms; the victim raised per key so
+his elbows sit at Gene's (to frame 34, eased out by 46), Gene's arm touches on the victim's shoulders / upper arms moved
+to his elbows, placement and the rest fitted with that height held (fit5 P['fixvh']). emit7 also writes the body
+lines (skeleton -> type) the enemy labels show.

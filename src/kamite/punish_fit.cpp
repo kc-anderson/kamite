@@ -260,6 +260,7 @@ namespace kamite::punish_fit
         PS2Runtime::RecompiledFunction g_align = nullptr;
         fs::path g_file, g_shippedFile;
         std::map<uint64_t, Fits> g_fits; // punish << 32 | body, by size; read at start, then only read
+        std::map<uint32_t, std::string> g_bodyNames; // body -> its type ("men", ...), punish_fit.txt's body lines
         Pair g_pair;
         Resize g_resize;
         std::map<std::tuple<uint32_t, int, uint16_t, bool, int>, uint32_t> g_copies; // (body, punish, motion, gene, size) -> copy
@@ -296,10 +297,15 @@ namespace kamite::punish_fit
             return a;
         }
 
-        std::string enemyName(uint16_t number)
+        // The enemy's model file: +0x2FE's low byte (func_002CFE68 builds "em%02x" from it; the kind +0x564 does not fix
+        // the model).
+        constexpr uint32_t kModelId = 0x2FEu;
+        std::string enemyName(const uint8_t *rdram, uint32_t enemy)
         {
+            uint16_t id;
+            std::memcpy(&id, rdram + ((enemy + kModelId) & (PS2_RAM_SIZE - 1u)), sizeof(id));
             char text[8];
-            std::snprintf(text, sizeof(text), "em%02x", number & 0xFFu);
+            std::snprintf(text, sizeof(text), "em%02x", id & 0xFFu);
             return text;
         }
 
@@ -375,7 +381,7 @@ namespace kamite::punish_fit
             if (!g_logged.insert(fitKey(punish, body) ^ (static_cast<uint64_t>(sizeKey & 0xFFFF) << 40)).second)
                 return;
             KM_INFO(Game, "punish fit: " << kNames[punish] << " on body " << std::hex << body << std::dec << " ("
-                                         << enemyName(static_cast<uint16_t>(rd32(g_ram, enemy + kNumber))) << ", size "
+                                         << enemyName(g_ram, enemy) << ", size "
                                          << size << "): " << what);
         }
 
@@ -688,6 +694,7 @@ namespace kamite::punish_fit
         //   gene <motion> <frame>:<forward>,<side>,<turn>,<height>[,<torso x>,<torso z>,<left raise>,<left swing>,
         //       <left elbow>,<right raise>,<right swing>,<right elbow>] ...
         //   victim <motion> <frame>:<height>,<bend> ...
+        //   body <body hex>[,<body hex>...] <type>   (the enemy labels' body type)
         void load()
         {
             std::error_code error;
@@ -735,6 +742,16 @@ namespace kamite::punish_fit
                             fit = made.get();
                         }
                     count += fit != nullptr;
+                }
+                else if (kind == "body")
+                {
+                    std::string bodies, name;
+                    fields >> bodies >> name;
+                    std::istringstream keys(bodies);
+                    std::string body;
+                    while (std::getline(keys, body, ','))
+                        if (const uint32_t key = static_cast<uint32_t>(std::strtoul(body.c_str(), nullptr, 16)))
+                            g_bodyNames[key] = name;
                 }
                 else if (fit && (kind == "gene" || kind == "victim"))
                 {
@@ -796,6 +813,40 @@ namespace kamite::punish_fit
             return false;
         const Fit *fit = fitFor(Suplex, bodyOf(rdram, enemy & 0x1FFFFFFu));
         return fit && fit->gorilla;
+    }
+
+    void describe(const uint8_t *rdram, uint32_t enemy, std::string &label, std::string &status)
+    {
+        label.clear();
+        status.clear();
+        enemy &= 0x1FFFFFFu;
+        if (!inRam(enemy, 0x700u))
+            return;
+        float scale[3];
+        ownScale(rdram, enemy, scale);
+        const uint32_t body = skeletonHash(rdram, enemy);
+        const auto name = g_bodyNames.find(body);
+        char text[64];
+        std::snprintf(text, sizeof(text), "%s | %s | %.2f", enemyName(rdram, enemy).c_str(),
+                      name != g_bodyNames.end() ? name->second.c_str() : "?", scale[1]);
+        label = text;
+        // In Gene's punish: which one, and what the fit does.
+        const uint32_t gene = player(rdram);
+        if (!inRam(gene, 0x700u) || (rd32(rdram, gene + kCaught) & 0x1FFFFFFu) != enemy || rdram[gene + game::GameObj::kMode] != 0u)
+            return;
+        const uint8_t phase = rdram[gene + game::GameObj::kMode + 1u];
+        for (int p = 0; p < kPunishCount; ++p)
+            if (phase == kGenePhase[p])
+            {
+                const Fits *fits = g_on ? fitsFor(p, body) : nullptr;
+                const char *what = !fits ? "no fit (the game's placement)"
+                                   : offAt(*fits, scale[1]) ? "doesn't fit"
+                                   : g_pair.fit && g_pair.enemy == enemy && g_pair.punish == p
+                                       ? (g_pair.fit->tracks.empty() ? "unchanged at this size" : "fitted")
+                                       : "fitted";
+                status = std::string(kNames[p]) + ": " + what;
+                return;
+            }
     }
 
     void install(PS2Runtime &runtime, const fs::path &exeDir)

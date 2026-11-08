@@ -288,6 +288,8 @@ def solve(P, lam=(0.5,1.5), mu=4.0, ridge=None, wcoll=4.0, x0=None, use_size=Tru
         if za: LOk[kk,6:]=-1e-6; HIk[kk,6:]=1e-6
     if P.get('fixpose') is not None:           # another body's pose track (same keys): held exactly
         LOk[:,6:]=P['fixpose']-1e-6; HIk[:,6:]=P['fixpose']+1e-6
+    if P.get('fixvh') is not None:             # the victim's height given per key (Gorilla on the fat men: elbows to Gene's arms)
+        LOk[:,4]=P['fixvh']-1e-6; HIk[:,4]=P['fixvh']+1e-6
     lo=np.append(LOk.ravel(),-0.05 if use_size else -1e-6); hi=np.append(HIk.ravel(),0.05 if use_size else 1e-6)
     x0=np.clip(x0,lo,hi)
     sol=least_squares(residuals,x0,jac_sparsity=S,bounds=(lo,hi),loss='soft_l1',f_scale=0.03,max_nfev=max_nfev,method='trf')

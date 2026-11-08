@@ -43,6 +43,8 @@ def main(path):
            '# off = doesn\'t fit: Buck Breaker keeps the enemy\'s own punish for that pick.',
            '# gorilla (on a Suplex fit) = a Suplex pick plays the Gorilla Suplex on that body (its GorillaSuplex fit applies).',
            '# Between two sizes the runtime interpolates; a body with only a 1.3 fit (the original pairing) is unchanged at 1.0.']
+    lines.append('# body <body>[,<body>...] <type>   (the enemy labels\' body type: F2 > Debug > Enemy labels)')
+    for g in range(len(B)): lines.append('body %s %s'%(','.join(B[g]['keys']),type_of(g)))
     summary=[]
     fits={}
     for f in sorted(glob.glob(os.path.join(FITS,'*.json'))):
