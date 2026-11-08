@@ -42,3 +42,8 @@ fits7/ holds every fit7 result (rep_<punish>_<type>_<size>.npy / .json = the typ
 <size> = the other bodies; X = keys x 14 values, json = metrics, keys, size=). emit7.py rebuilds resources/
 punish_fit.txt from it: change one fit by re-running its job (fit_pose rep_job / group_job / fix_job, gorilla_elbows,
 spank_fat2) and emitting again. find_model_field.py probes a case's RAM for the enemy's model-file field (not found yet).
+
+bodies.json is kept by hand. The ema* files (ema0, ema2-ema9, emad) were missing from the first extract; ema3, ema6
+and emad matched groups already, the rest have a known group's body bones (0-25) and differ only in the head's extra
+bones 26 and 29, so they joined that group (ema2/4/5/7/8/9 -> group 0 men, ema0 -> group 1 women) with their own keys.
+A new model: compare bones 0-25 (parents and offsets) with the groups; identical -> add its file and key there.

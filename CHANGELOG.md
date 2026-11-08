@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 8, 2026
 
+- Buck Breaker: Mr. Gold, Mr. Silver and the other ema* enemies get the fits for their body type (they were missing from the model list).
 - Buck Breaker: the fat men can be spanked (the game's own placement, Gene's holding arm raised onto their back).
 - Buck Breaker: a pair with an enemy of any size plays the fitted pair: Gene and the enemy each ease up to 12% toward the fitted size for the punish (no more blending between fitted sizes).
 - Debug menu: enemy labels (model file, body type, size; in a punish, the punish and what its fit does) for naming enemies in feedback.
