@@ -4,6 +4,7 @@
 // encode values as a curve, serialize, add a per-frame delta to a channel. Shared by npc_poses (NPC poses) and
 // punish_fit (the punishes' heights and bend), from npc_poses' own code (Nov 8).
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -33,4 +34,17 @@ namespace kamite::mot
     // record becomes a curve.
     // `every` as encode's (0: its default spacing; 1: a key every frame, the curve kept to the 8-bit steps).
     void addCurve(std::vector<uint8_t> &m, int bone, int component, const std::vector<float> &delta, int every = 0);
+
+    // Rotations (row-major 3x3) in the game's order (mot.py, pose.rot 'XYZ'): R = Rz * Ry * Rx.
+    using Mat = std::array<float, 9>;
+    Mat mul(const Mat &a, const Mat &b);
+    Mat rotX(float a);
+    Mat rotY(float a);
+    Mat rotZ(float a);
+    Mat euler(float x, float y, float z);
+    void toEuler(const Mat &r, float &x, float &y, float &z);
+    float nearAngle(float a, float ref); // a moved by whole turns to within half a turn of ref
+    // The bone's rotation becomes pre[f] * its own (pre in its parent's space) at every frame f (the last repeats when
+    // pre is shorter); its x, y, z curves are resampled (`every` as encode's).
+    void preRotate(std::vector<uint8_t> &m, int bone, const std::vector<Mat> &pre, int every = 0);
 }

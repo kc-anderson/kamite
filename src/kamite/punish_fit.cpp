@@ -22,6 +22,20 @@
 // waist) changed by the curve (mot_edit addCurve, npc_poses' way), and started from there. Copies are kept per
 // (body, punish, motion) and reused; the area starts over when full.
 //
+// Gene's pose (K, Nov 8: his arms through the victim where the original keeps clear; Cobra Twist's arms round the
+// neck on women and fat men; Gorilla Suplex's arms folded too far in on the fat men): Gene's tracks also carry his torso
+// (bone 1 turned in bone 0's space: x, z) and each arm (the upper arm, 13 / 7, turned in the clavicle's space: raise
+// about z, swing about y; the forearm, 14 / 8, about y in the upper arm's), put in front of the motion's own rotation
+// every frame (mot_edit preRotate); the shoulder helpers 12 / 6, which follow the upper arms at about half in the game's
+// motions, get half. Offline the same pre-rotations are measured (fit5.py gene_xform).
+//
+// Size. Each fit is for an enemy size (scale=, the enemy's +0x114 at the catch); between two the values are
+// interpolated, past the ends held; a body whose smallest fit is above 1.0 (the original pairing, fitted only when
+// scaled up) is unchanged at 1.0 and blends in above it. A fit marked off at a size: from halfway there the pairing
+// doesn't fit (Buck Breaker keeps the enemy's own punish), and below that it is left out of the blend. size= is the victim's own size change for the pairing
+// (0.95..1.05, K: unnoticed in play): the enemy's scale (+0x110 / +0x114 / +0x118) eases to it over a third of a
+// second after the catch and back after the punish; the game's placement calls see the enemy's own scale.
+//
 // The body: the enemy's skeleton (its cModel's parts, list at +0x144, count at +0x2B4; each part's offset +0xE0 and
 // parent +0x148), hashed from the parts after the root: recolours share it. Hashed at every use (an enemy number does
 // not fix its model). Values in the file are at size 1; placement is scaled by the enemy's size, heights are the
@@ -42,7 +56,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <algorithm>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <sstream>
@@ -89,25 +105,28 @@ namespace kamite::punish_fit
         const char *const kNames[kPunishCount] = {"Suplex", "Stinger", "Cobra Twist", "Spanking", "Gorilla Suplex"};
         const char *const kFileNames[kPunishCount] = {"Suplex", "Stinger", "CobraTwist", "Spanking", "GorillaSuplex"};
 
-        constexpr uint32_t kNumber = 0x564u, kScaleX = 0x110u, kScaleZ = 0x118u, kCaught = 0x694u;
+        constexpr uint32_t kNumber = 0x564u, kScaleX = 0x110u, kScaleY = 0x114u, kScaleZ = 0x118u, kCaught = 0x694u;
+        constexpr int kRampVblanks = 20; // the victim's size change eases in (and out) over this many vblanks
+        constexpr int kValues = 12;
         constexpr uint32_t kParts = 0x144u, kPartCount = 0x2B4u, kPartOffset = 0xE0u, kPartParent = 0x148u;
         constexpr uint32_t kMotionPlaying = 0x428u, kMotionFrame = 0x430u;
 
-        // A curve: keys (frame, values). Gene: forward (m), side (m), turn (degrees), height (m); victim: height (m),
-        // bend (degrees).
+        // A curve: keys (frame, values). Gene: forward (m), side (m), turn (degrees), height (m), torso x, torso z,
+        // left raise, left swing, left elbow, right raise, right swing, right elbow (degrees); victim: height (m), bend
+        // (degrees).
         struct Key
         {
             float frame = 0.0f;
-            float v[4] = {};
+            float v[kValues] = {};
         };
         struct Track
         {
             uint16_t motion = 0;
             bool gene = false;
             std::vector<Key> keys;
-            void at(float frame, float out[4]) const
+            void at(float frame, float out[kValues]) const
             {
-                for (int i = 0; i < 4; ++i)
+                for (int i = 0; i < kValues; ++i)
                     out[i] = 0.0f;
                 if (keys.empty())
                     return;
@@ -126,7 +145,7 @@ namespace kamite::punish_fit
                     ++i;
                 const Key &a = keys[i - 1], &b = keys[i];
                 const float t = (frame - a.frame) / (b.frame - a.frame);
-                for (int c = 0; c < 4; ++c)
+                for (int c = 0; c < kValues; ++c)
                     out[c] = a.v[c] + (b.v[c] - a.v[c]) * t;
             }
         };
@@ -134,6 +153,8 @@ namespace kamite::punish_fit
         {
             bool off = false;
             bool gorilla = false; // a Suplex fit: the Suplex pick plays the Gorilla Suplex on this body
+            float scale = 1.0f;   // the enemy size it was fitted at
+            float size = 1.0f;    // the victim's size change for the pairing
             std::vector<Track> tracks;
             const Track *find(uint16_t motion, bool gene) const
             {
@@ -144,25 +165,104 @@ namespace kamite::punish_fit
             }
         };
 
+        using Fits = std::vector<std::shared_ptr<Fit>>; // one body's fits for one punish, by enemy size
+
+        // Whether the pairing fits at enemy size s: the fit nearest that size decides (a body whose fits are all for
+        // larger sizes is unchanged at 1.0, which fits).
+        bool offAt(const Fits &fits, float s)
+        {
+            const Fit *best = nullptr;
+            float d = fits.front()->scale > 1.0f ? std::fabs(s - 1.0f) : 1e9f;
+            for (const auto &f : fits)
+                if (std::fabs(f->scale - s) < d)
+                {
+                    d = std::fabs(f->scale - s);
+                    best = f.get();
+                }
+            return best && best->off;
+        }
+
+        // The fits at enemy size s (see the top); the sizes marked off are left out.
+        Fit blend(const Fits &all, float s)
+        {
+            static const Fit none;
+            Fits fits;
+            for (const auto &f : all)
+                if (!f->off)
+                    fits.push_back(f);
+            if (fits.empty())
+                return none;
+            const Fit *lo = nullptr, *hi = nullptr;
+            if (fits.front()->scale > 1.0f)
+            {
+                if (s <= 1.0f)
+                    return none; // the original pairing at its own size: unchanged
+                lo = &none;
+            }
+            for (const auto &f : fits)
+            {
+                if (f->scale <= s)
+                    lo = f.get();
+                if (f->scale >= s && !hi)
+                    hi = f.get();
+            }
+            if (!lo)
+                return *fits.front();
+            if (!hi)
+                return *fits.back();
+            if (lo == hi || hi->scale <= lo->scale)
+                return *hi;
+            const float t = (s - lo->scale) / (hi->scale - lo->scale);
+            Fit out = *hi;
+            out.scale = s;
+            out.size = lo->size + (hi->size - lo->size) * t;
+            for (Track &track : out.tracks)
+            {
+                const Track *a = lo->find(track.motion, track.gene);
+                for (Key &k : track.keys)
+                {
+                    float va[kValues] = {};
+                    if (a)
+                        a->at(k.frame, va);
+                    for (int c = 0; c < kValues; ++c)
+                        k.v[c] = va[c] + (k.v[c] - va[c]) * t;
+                }
+            }
+            return out;
+        }
+
         // The pair playing (EE thread only).
         struct Pair
         {
             int punish = -1;
             uint32_t gene = 0, enemy = 0, body = 0;
-            const Fit *fit = nullptr;
+            Fit own;                // the body's fit at the enemy's size
+            const Fit *fit = nullptr; // &own while fitted
+            int sizeKey = 100;      // the enemy's size x 100 (the copies are per size)
+            float baseScale[3] = {1.0f, 1.0f, 1.0f};
             bool live = false;
             uint32_t geneMotionPtr = 0; // the pointer Gene's current punish motion was started with (ours or the game's)
             const Track *geneTrack = nullptr;
             float applied[3] = {}; // forward, side, turn (radians) put in so far
         };
 
+        // The victim's size change, easing in while the pair plays and out after it (EE thread only).
+        struct Resize
+        {
+            uint32_t enemy = 0, number = 0;
+            float base[3] = {1.0f, 1.0f, 1.0f};
+            float now = 1.0f, target = 1.0f, written = 0.0f;
+            bool active = false;
+        };
+
         uint8_t *g_ram = nullptr;
         bool g_on = false;
         PS2Runtime::RecompiledFunction g_align = nullptr;
         fs::path g_file, g_shippedFile;
-        std::map<uint64_t, Fit> g_fits; // punish << 32 | body; read at start, then only read
+        std::map<uint64_t, Fits> g_fits; // punish << 32 | body, by size; read at start, then only read
         Pair g_pair;
-        std::map<std::tuple<uint32_t, int, uint16_t, bool>, uint32_t> g_copies; // (body, punish, motion, gene) -> copy
+        Resize g_resize;
+        std::map<std::tuple<uint32_t, int, uint16_t, bool, int>, uint32_t> g_copies; // (body, punish, motion, gene, size) -> copy
         uint32_t g_areaAt = kRewriteArea;
         std::set<uint64_t> g_logged;
 
@@ -246,10 +346,15 @@ namespace kamite::punish_fit
             return body ? body : 0x80000000u | (rd32(rdram, enemy + kNumber) & 0xFFFFu);
         }
 
-        const Fit *fitFor(int punish, uint32_t body)
+        const Fits *fitsFor(int punish, uint32_t body)
         {
             const auto it = g_fits.find(fitKey(punish, body));
-            return it == g_fits.end() ? nullptr : &it->second;
+            return it == g_fits.end() || it->second.empty() ? nullptr : &it->second;
+        }
+        const Fit *fitFor(int punish, uint32_t body) // its flags (off, gorilla)
+        {
+            const Fits *fits = fitsFor(punish, body);
+            return fits ? fits->front().get() : nullptr;
         }
 
         // The motion `index` of an enemy's em00-style table (pack + its offset, u32 wrap like the game), 0 if none.
@@ -264,22 +369,23 @@ namespace kamite::punish_fit
 
         uint32_t player(const uint8_t *rdram) { return rd32(rdram, work::address(work::kPlayerObj)) & 0x1FFFFFFu; }
 
-        void logPair(int punish, uint32_t body, uint32_t enemy, const Fit *fit)
+        void logPair(int punish, uint32_t body, uint32_t enemy, const char *what, float size)
         {
-            if (!g_logged.insert(fitKey(punish, body)).second)
+            const int sizeKey = static_cast<int>(std::lround(size * 100.0f));
+            if (!g_logged.insert(fitKey(punish, body) ^ (static_cast<uint64_t>(sizeKey & 0xFFFF) << 40)).second)
                 return;
             KM_INFO(Game, "punish fit: " << kNames[punish] << " on body " << std::hex << body << std::dec << " ("
-                                         << enemyName(static_cast<uint16_t>(rd32(g_ram, enemy + kNumber))) << "): "
-                                         << (!fit ? "no fit (the game's own placement)" : fit->off ? "doesn't fit" : "fitted"));
+                                         << enemyName(static_cast<uint16_t>(rd32(g_ram, enemy + kNumber))) << ", size "
+                                         << size << "): " << what);
         }
 
-        // Moves Gene by (side, forward) in his facing without Turn (scaled by the enemy's size) and turns him.
-        void moveGene(uint8_t *rdram, uint32_t gene, uint32_t enemy, float side, float forward, float turn, float facing)
+        // Moves Gene by (side, forward) in his facing without Turn (scaled by the enemy's own size) and turns him.
+        void moveGene(uint8_t *rdram, uint32_t gene, const float scale[3], float side, float forward, float turn, float facing)
         {
             const uint32_t pos = rd32(rdram, gene + game::GameObj::kPos);
             if (!inRam(pos, 12u))
                 return;
-            const float x = side * rdF(rdram, enemy + kScaleX), z = forward * rdF(rdram, enemy + kScaleZ);
+            const float x = side * scale[0], z = forward * scale[2];
             const float c = std::cos(facing), s = std::sin(facing);
             if (x != 0.0f || z != 0.0f)
             {
@@ -288,6 +394,69 @@ namespace kamite::punish_fit
             }
             if (turn != 0.0f)
                 wrF(rdram, gene + 0x104u, wrap(rdF(rdram, gene + 0x104u) + turn));
+        }
+
+        void writeScale(uint8_t *rdram, uint32_t enemy, const float base[3], float f)
+        {
+            for (uint32_t i = 0; i < 3; ++i)
+                wrF(rdram, enemy + kScaleX + 4u * i, base[i] * f);
+        }
+        // The size change's enemy still there, its scale still what we last wrote.
+        bool resizeOurs(const uint8_t *rdram)
+        {
+            const Resize &r = g_resize;
+            return inRam(r.enemy, 0x700u) && rd32(rdram, r.enemy + kNumber) == r.number && rdF(rdram, r.enemy + kScaleY) == r.written;
+        }
+        void finishResize(uint8_t *rdram)
+        {
+            if (g_resize.active && resizeOurs(rdram))
+                writeScale(rdram, g_resize.enemy, g_resize.base, 1.0f);
+            g_resize.active = false;
+        }
+        void stepResize()
+        {
+            Resize &r = g_resize;
+            if (!r.active)
+                return;
+            if (!resizeOurs(g_ram))
+            {
+                r.active = false;
+                return;
+            }
+            const float target = g_pair.live && g_pair.enemy == r.enemy ? r.target : 1.0f;
+            const float step = std::fabs(r.target - 1.0f) / kRampVblanks;
+            r.now = r.now < target ? std::min(target, r.now + step) : std::max(target, r.now - step);
+            writeScale(g_ram, r.enemy, r.base, r.now);
+            r.written = rdF(g_ram, r.enemy + kScaleY);
+            if (target == 1.0f && r.now == 1.0f)
+                r.active = false;
+        }
+        // The enemy's own size: its scale, or what it was before our size change.
+        void ownScale(const uint8_t *rdram, uint32_t enemy, float out[3])
+        {
+            for (uint32_t i = 0; i < 3; ++i)
+                out[i] = g_resize.active && g_resize.enemy == enemy ? g_resize.base[i] : rdF(rdram, enemy + kScaleX + 4u * i);
+        }
+        int sizeKeyOf(float s) { return static_cast<int>(std::lround(s * 100.0f)); }
+
+        // The fit for the enemy's punish at its size: the pair's, or blended for a motion started before the pair's
+        // placement call; nullptr when there is none (or it doesn't fit).
+        const Fit *fitNow(const uint8_t *rdram, uint32_t enemy, int punish, int &sizeKey)
+        {
+            if (g_pair.fit && g_pair.enemy == enemy && g_pair.punish == punish)
+            {
+                sizeKey = g_pair.sizeKey;
+                return g_pair.fit;
+            }
+            const Fits *fits = fitsFor(punish, bodyOf(rdram, enemy));
+            float scale[3];
+            ownScale(rdram, enemy, scale);
+            if (!fits || offAt(*fits, scale[1]))
+                return nullptr;
+            static Fit scratch;
+            scratch = blend(*fits, scale[1]);
+            sizeKey = sizeKeyOf(scale[1]);
+            return &scratch;
         }
 
         // func_001299F0, wrapped.
@@ -305,9 +474,40 @@ namespace kamite::punish_fit
                 return;
             }
             const uint32_t body = bodyOf(rdram, enemy);
-            const Fit *fit = fitFor(call->punish, body);
-            const Track *track = fit && !fit->off ? fit->find(call->geneMotion, true) : nullptr;
-            float v[4] = {};
+            const bool first = call->geneMotion == kMotions[call->punish].gene[0];
+            if (first || g_pair.enemy != enemy || g_pair.punish != call->punish || g_pair.gene != gene)
+            {
+                // A new pair: the fit at the enemy's own size (a size change still easing out ends first).
+                finishResize(rdram);
+                ownScale(rdram, enemy, g_pair.baseScale);
+                const Fits *fits = fitsFor(call->punish, body);
+                const bool off = fits && offAt(*fits, g_pair.baseScale[1]);
+                g_pair.fit = nullptr;
+                if (fits && !off)
+                {
+                    g_pair.own = blend(*fits, g_pair.baseScale[1]);
+                    g_pair.fit = &g_pair.own;
+                }
+                g_pair.sizeKey = sizeKeyOf(g_pair.baseScale[1]);
+                if (first)
+                    logPair(call->punish, body, enemy,
+                            !fits ? "no fit (the game's own placement)" : off ? "doesn't fit at this size"
+                            : g_pair.own.tracks.empty() ? "unchanged at this size" : "fitted",
+                            g_pair.baseScale[1]);
+                if (g_pair.fit && g_pair.fit->size != 1.0f)
+                {
+                    g_resize = Resize{};
+                    g_resize.enemy = enemy;
+                    g_resize.number = rd32(rdram, enemy + kNumber);
+                    std::memcpy(g_resize.base, g_pair.baseScale, sizeof(g_resize.base));
+                    g_resize.target = g_pair.fit->size;
+                    g_resize.written = rdF(rdram, enemy + kScaleY);
+                    g_resize.active = true;
+                }
+            }
+            const Fit *fit = g_pair.fit;
+            const Track *track = fit ? fit->find(call->geneMotion, true) : nullptr;
+            float v[kValues] = {};
             if (track)
                 track->at(0.0f, v);
             const uint32_t mode = GPR_U32(ctx, 7);
@@ -319,18 +519,21 @@ namespace kamite::punish_fit
             }
             else
                 ctx->f[12] += turn;
+            // The game's placement with the enemy's own size (not our size change).
+            const bool resized = g_resize.active && g_resize.enemy == enemy && resizeOurs(rdram);
+            if (resized)
+                writeScale(rdram, enemy, g_resize.base, 1.0f);
             g_align(rdram, ctx, runtime);
+            if (resized)
+                writeScale(rdram, enemy, g_resize.base, g_resize.now);
             const float facing = wrap(rdF(rdram, gene + 0x104u) - (mode == 1u ? 0.0f : turn));
-            moveGene(rdram, gene, enemy, v[1], v[0], mode == 1u ? turn : 0.0f, facing);
+            moveGene(rdram, gene, g_pair.baseScale, v[1], v[0], mode == 1u ? turn : 0.0f, facing);
 
-            if (call->geneMotion == kMotions[call->punish].gene[0])
-                logPair(call->punish, body, enemy, fit);
             g_pair.punish = call->punish;
             g_pair.gene = gene;
             g_pair.enemy = enemy;
             g_pair.body = body;
-            g_pair.fit = fit && !fit->off ? fit : nullptr;
-            g_pair.live = g_pair.fit != nullptr;
+            g_pair.live = fit != nullptr;
             g_pair.geneTrack = track;
             g_pair.geneMotionPtr = 0u;
             g_pair.applied[0] = v[0];
@@ -340,9 +543,9 @@ namespace kamite::punish_fit
 
         // A copy of the motion at `motion` with the track's heights (and the victim's bend), in kRewriteArea; 0 if
         // nothing changes or it does not fit.
-        uint32_t rewrite(uint8_t *rdram, uint32_t motion, const Track &track, uint32_t body, int punish)
+        uint32_t rewrite(uint8_t *rdram, uint32_t motion, const Track &track, uint32_t body, int punish, int sizeKey)
         {
-            const auto key = std::make_tuple(body, punish, track.motion, track.gene);
+            const auto key = std::make_tuple(body, punish, track.motion, track.gene, sizeKey);
             if (const auto it = g_copies.find(key); it != g_copies.end())
                 return it->second;
             const uint32_t length = mot::motionLength(rdram + motion, PS2_RAM_SIZE - motion);
@@ -352,17 +555,35 @@ namespace kamite::punish_fit
             uint16_t frames;
             std::memcpy(&frames, m.data() + 4, 2);
             std::vector<float> height(frames), bend(frames);
-            bool anyHeight = false, anyBend = false;
+            // Gene's pose: the torso (bone 1), upper arms (13 left, 7 right), their helpers (12, 6: half), forearms (14, 8).
+            constexpr int kPoseBones[7] = {1, 13, 12, 7, 6, 14, 8};
+            std::vector<mot::Mat> pose[7];
+            bool anyHeight = false, anyBend = false, anyPose = false;
             for (int f = 0; f < frames; ++f)
             {
-                float v[4];
+                float v[kValues];
                 track.at(static_cast<float>(f), v);
                 height[f] = track.gene ? v[3] : v[0];
                 bend[f] = track.gene ? 0.0f : v[1] * kDegrees;
                 anyHeight = anyHeight || height[f] != 0.0f;
                 anyBend = anyBend || bend[f] != 0.0f;
+                if (!track.gene)
+                    continue;
+                float a[8];
+                for (int i = 0; i < 8; ++i)
+                {
+                    a[i] = v[4 + i] * kDegrees;
+                    anyPose = anyPose || a[i] != 0.0f;
+                }
+                pose[0].push_back(mot::mul(mot::rotZ(a[1]), mot::rotX(a[0])));
+                pose[1].push_back(mot::mul(mot::rotZ(a[2]), mot::rotY(a[3])));
+                pose[2].push_back(mot::mul(mot::rotZ(a[2] * 0.5f), mot::rotY(a[3] * 0.5f)));
+                pose[3].push_back(mot::mul(mot::rotZ(-a[5]), mot::rotY(-a[6])));
+                pose[4].push_back(mot::mul(mot::rotZ(-a[5] * 0.5f), mot::rotY(-a[6] * 0.5f)));
+                pose[5].push_back(mot::rotY(a[4]));
+                pose[6].push_back(mot::rotY(-a[7]));
             }
-            if (!anyHeight && !anyBend)
+            if (!anyHeight && !anyBend && !anyPose)
             {
                 g_copies[key] = 0u;
                 return 0u;
@@ -371,6 +592,9 @@ namespace kamite::punish_fit
                 mot::addCurve(m, 0, 1, height, 1);
             if (anyBend)
                 mot::addCurve(m, 1, 3, bend, 1);
+            if (anyPose)
+                for (int i = 0; i < 7; ++i)
+                    mot::preRotate(m, kPoseBones[i], pose[i], 1);
             const uint32_t size = (static_cast<uint32_t>(m.size()) + 0x3Fu) & ~0x3Fu;
             if (size > kRewriteAreaEnd - kRewriteArea)
                 return 0u;
@@ -408,11 +632,12 @@ namespace kamite::punish_fit
                     if (entry(rdram, enemy, list[i]) != motion)
                         continue;
                     const uint32_t body = bodyOf(rdram, enemy);
-                    const Fit *fit = fitFor(p, body);
-                    const Track *track = fit && !fit->off ? fit->find(list[i], isGene) : nullptr;
+                    int sizeKey = 100;
+                    const Fit *fit = fitNow(rdram, enemy, p, sizeKey);
+                    const Track *track = fit ? fit->find(list[i], isGene) : nullptr;
                     uint32_t started = motion;
                     if (track)
-                        if (const uint32_t copy = rewrite(rdram, motion, *track, body, p))
+                        if (const uint32_t copy = rewrite(rdram, motion, *track, body, p, sizeKey))
                         {
                             started = copy;
                             SET_GPR_U32(ctx, 5, copy);
@@ -430,7 +655,10 @@ namespace kamite::punish_fit
         // EE thread, each vblank: Gene follows his placement curve while the punish plays.
         void onVblank()
         {
-            if (!g_ram || !g_pair.live)
+            if (!g_ram)
+                return;
+            stepResize();
+            if (!g_pair.live)
                 return;
             const uint32_t gene = player(g_ram);
             if (gene != g_pair.gene || !inRam(gene, 0x700u) || g_ram[gene + game::GameObj::kMode] != 0u ||
@@ -442,21 +670,23 @@ namespace kamite::punish_fit
             }
             if (!g_pair.geneTrack || (rd32(g_ram, gene + kMotionPlaying) & 0x1FFFFFFu) != g_pair.geneMotionPtr)
                 return;
-            float v[4];
+            float v[kValues];
             g_pair.geneTrack->at(rdF(g_ram, gene + kMotionFrame), v);
             const float want[3] = {v[0], v[1], v[2] * kDegrees};
             if (want[0] == g_pair.applied[0] && want[1] == g_pair.applied[1] && want[2] == g_pair.applied[2])
                 return;
             const float facing = wrap(rdF(g_ram, gene + 0x104u) - g_pair.applied[2]);
-            moveGene(g_ram, gene, g_pair.enemy, want[1] - g_pair.applied[1], want[0] - g_pair.applied[0],
+            moveGene(g_ram, gene, g_pair.baseScale, want[1] - g_pair.applied[1], want[0] - g_pair.applied[0],
                      want[2] - g_pair.applied[2], facing);
             std::memcpy(g_pair.applied, want, sizeof(want));
         }
 
         // punish_fit.txt:
-        //   fit <Suplex|Stinger|CobraTwist|Spanking|GorillaSuplex> <body hex> [off|gorilla]   (the lines after it, until the
-        //   next fit, are its; gorilla on a Suplex fit: that body plays the Gorilla Suplex for a Suplex pick)
-        //   gene <motion> <frame>:<forward>,<side>,<turn>,<height> ...
+        //   fit <Suplex|Stinger|CobraTwist|Spanking|GorillaSuplex> <body hex>[,<body hex>...] [off] [gorilla] [scale=<s>]
+        //       [size=<s>]   (the lines after it, until the next fit, are its; gorilla on a Suplex fit: that body plays
+        //       the Gorilla Suplex for a Suplex pick; scale: the enemy size it is for, 1 if not given)
+        //   gene <motion> <frame>:<forward>,<side>,<turn>,<height>[,<torso x>,<torso z>,<left raise>,<left swing>,
+        //       <left elbow>,<right raise>,<right swing>,<right elbow>] ...
         //   victim <motion> <frame>:<height>,<bend> ...
         void load()
         {
@@ -465,6 +695,7 @@ namespace kamite::punish_fit
             std::ifstream in(file);
             std::string line;
             Fit *fit = nullptr;
+            size_t count = 0;
             while (std::getline(in, line))
             {
                 if (!line.empty() && line.back() == '\r')
@@ -476,19 +707,34 @@ namespace kamite::punish_fit
                 fields >> kind;
                 if (kind == "fit")
                 {
-                    std::string name, body, flag;
-                    fields >> name >> body >> flag;
+                    std::string name, bodies, token;
+                    fields >> name >> bodies;
                     int punish = -1;
                     for (int i = 0; i < kPunishCount; ++i)
                         if (name == kFileNames[i])
                             punish = i;
-                    const uint32_t key = static_cast<uint32_t>(std::strtoul(body.c_str(), nullptr, 16));
-                    fit = punish >= 0 && key ? &g_fits[fitKey(punish, key)] : nullptr;
-                    if (fit)
+                    auto made = std::make_shared<Fit>();
+                    while (fields >> token && token[0] != '#')
                     {
-                        fit->off = flag == "off";
-                        fit->gorilla = flag == "gorilla";
+                        if (token == "off")
+                            made->off = true;
+                        else if (token == "gorilla")
+                            made->gorilla = true;
+                        else if (token.rfind("scale=", 0) == 0)
+                            made->scale = std::strtof(token.c_str() + 6, nullptr);
+                        else if (token.rfind("size=", 0) == 0)
+                            made->size = std::clamp(std::strtof(token.c_str() + 5, nullptr), 0.9f, 1.1f);
                     }
+                    fit = nullptr;
+                    std::istringstream keys(bodies);
+                    std::string body;
+                    while (punish >= 0 && std::getline(keys, body, ','))
+                        if (const uint32_t key = static_cast<uint32_t>(std::strtoul(body.c_str(), nullptr, 16)))
+                        {
+                            g_fits[fitKey(punish, key)].push_back(made);
+                            fit = made.get();
+                        }
+                    count += fit != nullptr;
                 }
                 else if (fit && (kind == "gene" || kind == "victim"))
                 {
@@ -506,7 +752,7 @@ namespace kamite::punish_fit
                             continue;
                         k.frame = std::strtof(item.c_str(), nullptr);
                         const char *at = item.c_str() + colon + 1;
-                        for (int c = 0; c < 4 && *at; ++c)
+                        for (int c = 0; c < kValues && *at; ++c)
                         {
                             char *end = nullptr;
                             k.v[c] = std::strtof(at, &end);
@@ -518,7 +764,10 @@ namespace kamite::punish_fit
                         fit->tracks.push_back(std::move(track));
                 }
             }
-            KM_INFO(Game, "punish fit: " << g_fits.size() << " fits from " << file.filename().string()
+            for (auto &[key, fits] : g_fits)
+                std::stable_sort(fits.begin(), fits.end(), [](const auto &a, const auto &b) { return a->scale < b->scale; });
+            KM_INFO(Game, "punish fit: " << count << " fits for " << g_fits.size() << " bodies and punishes from "
+                                         << file.filename().string()
                                          << (file == g_shippedFile ? " (shipped)" : " (yours, next to the exe)"));
         }
 
@@ -533,8 +782,12 @@ namespace kamite::punish_fit
     {
         if (!g_on || punish < 0 || punish >= kPunishCount || !inRam(enemy, 0x700u))
             return false;
-        const Fit *fit = fitFor(punish, bodyOf(rdram, enemy & 0x1FFFFFFu));
-        return fit && fit->off;
+        const Fits *fits = fitsFor(punish, bodyOf(rdram, enemy & 0x1FFFFFFu));
+        if (!fits)
+            return false;
+        float scale[3];
+        ownScale(rdram, enemy & 0x1FFFFFFu, scale);
+        return offAt(*fits, scale[1]);
     }
 
     bool suplexAsGorilla(const uint8_t *rdram, uint32_t enemy)

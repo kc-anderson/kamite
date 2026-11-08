@@ -275,4 +275,88 @@ namespace kamite::mot
             out.push_back(encode(static_cast<uint8_t>(bone), static_cast<uint8_t>(component), v, every, loop != 0));
         if (out.size() < 254)
             m = serialize(frames, loop, out);
-    }}
+    }
+    Mat mul(const Mat &a, const Mat &b)
+    {
+        Mat r{};
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j)
+                r[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j];
+        return r;
+    }
+    Mat rotX(float a) { const float c = std::cos(a), s = std::sin(a); return {1, 0, 0, 0, c, -s, 0, s, c}; }
+    Mat rotY(float a) { const float c = std::cos(a), s = std::sin(a); return {c, 0, s, 0, 1, 0, -s, 0, c}; }
+    Mat rotZ(float a) { const float c = std::cos(a), s = std::sin(a); return {c, -s, 0, s, c, 0, 0, 0, 1}; }
+    Mat euler(float x, float y, float z) { return mul(rotZ(z), mul(rotY(y), rotX(x))); }
+    void toEuler(const Mat &r, float &x, float &y, float &z)
+    {
+        y = std::asin(std::clamp(-r[6], -1.0f, 1.0f));
+        x = std::atan2(r[7], r[8]);
+        z = std::atan2(r[3], r[0]);
+    }
+    float nearAngle(float a, float ref)
+    {
+        constexpr float tau = 6.28318530718f;
+        while (a - ref > 3.14159265f)
+            a -= tau;
+        while (a - ref < -3.14159265f)
+            a += tau;
+        return a;
+    }
+
+    void preRotate(std::vector<uint8_t> &m, int bone, const std::vector<Mat> &pre, int every)
+    {
+        std::vector<Rec> recs;
+        if (pre.empty() || !parse(m, recs))
+            return;
+        uint16_t frames;
+        std::memcpy(&frames, m.data() + 4, 2);
+        const uint8_t loop = m[7];
+        const Rec *comp[3] = {};
+        for (const Rec &r : recs)
+            if (r.bone == bone && (r.channel & 0x0F) >= 3 && (r.channel & 0x0F) <= 5)
+                comp[(r.channel & 0x0F) - 3] = &r;
+        std::vector<float> xs(frames), ys(frames), zs(frames);
+        for (int f = 0; f < frames; ++f)
+        {
+            float a[3];
+            for (int c = 0; c < 3; ++c)
+                a[c] = comp[c] ? sample(*comp[c], static_cast<float>(f)) : 0.0f;
+            // Of the two Euler triples of the new rotation, the one nearest the motion's own at this frame (its winding
+            // and branch: a small pre-rotation stays a small change of each curve).
+            float x, y, z;
+            toEuler(mul(pre[std::min<size_t>(f, pre.size() - 1)], euler(a[0], a[1], a[2])), x, y, z);
+            constexpr float pi = 3.14159265358979f;
+            const float p[3] = {nearAngle(x, a[0]), nearAngle(y, a[1]), nearAngle(z, a[2])};
+            const float q[3] = {nearAngle(x + pi, a[0]), nearAngle(pi - y, a[1]), nearAngle(z + pi, a[2])};
+            const float dp = std::fabs(p[0] - a[0]) + std::fabs(p[1] - a[1]) + std::fabs(p[2] - a[2]);
+            const float dq = std::fabs(q[0] - a[0]) + std::fabs(q[1] - a[1]) + std::fabs(q[2] - a[2]);
+            const float *pick = dq < dp ? q : p;
+            xs[f] = pick[0];
+            ys[f] = pick[1];
+            zs[f] = pick[2];
+        }
+        // The bone's rotation records replaced, in (bone, channel) order.
+        std::vector<Rec> out;
+        bool placed = false;
+        const auto place = [&] {
+            out.push_back(encode(static_cast<uint8_t>(bone), 3, xs, every, loop != 0));
+            out.push_back(encode(static_cast<uint8_t>(bone), 4, ys, every, loop != 0));
+            out.push_back(encode(static_cast<uint8_t>(bone), 5, zs, every, loop != 0));
+            placed = true;
+        };
+        for (const Rec &r : recs)
+        {
+            const int ch = r.channel & 0x0F;
+            if (r.bone == bone && ch >= 3 && ch <= 5)
+                continue;
+            if (!placed && (r.bone > bone || (r.bone == bone && ch > 5)))
+                place();
+            out.push_back(r);
+        }
+        if (!placed)
+            place();
+        if (out.size() < 254)
+            m = serialize(frames, loop, out);
+    }
+}

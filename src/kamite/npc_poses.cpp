@@ -289,91 +289,17 @@ namespace kamite::npc_poses
         // ---- resampling a bone's rotation (for the head, arm and elbow adjustments: a rotation put in front of the
         // motion's own, which no single Euler curve can carry) ----
 
-        using Mat = std::array<float, 9>; // row-major
-        Mat mul(const Mat &a, const Mat &b)
-        {
-            Mat r{};
-            for (int i = 0; i < 3; ++i)
-                for (int j = 0; j < 3; ++j)
-                    r[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j];
-            return r;
-        }
-        Mat rotX(float a) { const float c = std::cos(a), s = std::sin(a); return {1, 0, 0, 0, c, -s, 0, s, c}; }
-        Mat rotY(float a) { const float c = std::cos(a), s = std::sin(a); return {c, 0, s, 0, 1, 0, -s, 0, c}; }
-        Mat rotZ(float a) { const float c = std::cos(a), s = std::sin(a); return {c, -s, 0, s, c, 0, 0, 0, 1}; }
-        // The game's order (mot.py, pose.rot 'XYZ'): R = Rz * Ry * Rx.
-        Mat euler(float x, float y, float z) { return mul(rotZ(z), mul(rotY(y), rotX(x))); }
-        void toEuler(const Mat &r, float &x, float &y, float &z)
-        {
-            y = std::asin(std::clamp(-r[6], -1.0f, 1.0f));
-            x = std::atan2(r[7], r[8]);
-            z = std::atan2(r[3], r[0]);
-        }
-        float near(float a, float ref)
-        {
-            constexpr float tau = 6.28318530718f;
-            while (a - ref > 3.14159265f) a -= tau;
-            while (a - ref < -3.14159265f) a += tau;
-            return a;
-        }
+        using mot::euler;
+        using mot::Mat;
+        using mot::mul;
+        using mot::rotX;
+        using mot::rotY;
+        using mot::rotZ;
+        using mot::toEuler;
+        float near(float a, float ref) { return mot::nearAngle(a, ref); }
 
         // The bone's rotation becomes pre * its own (pre in its parent's space), every frame.
-        void preRotate(std::vector<uint8_t> &m, int bone, const Mat &pre)
-        {
-            std::vector<Rec> recs;
-            if (!parse(m, recs))
-                return;
-            uint16_t frames;
-            std::memcpy(&frames, m.data() + 4, 2);
-            const uint8_t loop = m[7];
-            const Rec *comp[3] = {};
-            size_t where = recs.size();
-            for (size_t i = 0; i < recs.size(); ++i)
-                if (recs[i].bone == bone && (recs[i].channel & 0x0F) >= 3 && (recs[i].channel & 0x0F) <= 5)
-                {
-                    comp[(recs[i].channel & 0x0F) - 3] = &recs[i];
-                    where = std::min(where, i);
-                }
-            std::vector<float> xs(frames), ys(frames), zs(frames);
-            for (int f = 0; f < frames; ++f)
-            {
-                float a[3];
-                for (int c = 0; c < 3; ++c)
-                    a[c] = comp[c] ? sample(*comp[c], static_cast<float>(f)) : 0.0f;
-                float x, y, z;
-                toEuler(mul(pre, euler(a[0], a[1], a[2])), x, y, z);
-                if (f > 0)
-                {
-                    x = near(x, xs[f - 1]);
-                    y = near(y, ys[f - 1]);
-                    z = near(z, zs[f - 1]);
-                }
-                xs[f] = x;
-                ys[f] = y;
-                zs[f] = z;
-            }
-            std::vector<Rec> out;
-            for (size_t i = 0; i < recs.size(); ++i)
-            {
-                if (i == where)
-                {
-                    out.push_back(encode(static_cast<uint8_t>(bone), 3, xs));
-                    out.push_back(encode(static_cast<uint8_t>(bone), 4, ys));
-                    out.push_back(encode(static_cast<uint8_t>(bone), 5, zs));
-                }
-                const Rec &r = recs[i];
-                if (!(r.bone == bone && (r.channel & 0x0F) >= 3 && (r.channel & 0x0F) <= 5))
-                    out.push_back(r);
-            }
-            if (where == recs.size())
-            {
-                out.push_back(encode(static_cast<uint8_t>(bone), 3, xs));
-                out.push_back(encode(static_cast<uint8_t>(bone), 4, ys));
-                out.push_back(encode(static_cast<uint8_t>(bone), 5, zs));
-            }
-            if (out.size() < 254)
-                m = serialize(frames, loop, out);
-        }
+        void preRotate(std::vector<uint8_t> &m, int bone, const Mat &pre) { mot::preRotate(m, bone, {pre}); }
 
         // The rail idle's pelvis (bone 17) rotations round their first key, one cycle of 71 frames (radians x, y, z):
         // the "butt wiggle" every motion can have added.

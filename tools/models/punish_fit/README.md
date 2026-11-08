@@ -17,3 +17,13 @@ Fitting every body (Nov 8): fit_all.py runs fit3 for every skeleton group of bod
 em00..em7f, by bones 0..29) and the four punishes into fits/; emit.py writes resources/punish_fit.txt (one fit block per
 runtime body key, verdict by the touch error: off when 12 cm or more); review2.py <punish> <group> <file> <tag>
 draws a review card (original / no fit / fitted, and a GIF of the fitted pair).
+
+Gene's pose (Nov 8, step 3): fit5.py adds Gene's torso (bone 1 pre-rotated in bone 0's space: x, z) and arms (upper
+arm 13 / 7 in the clavicle's space: raise about z, swing about y; forearm 14 / 8 about y) and the victim's size
+(0.95..1.05) to fit3's values, as the runtime applies them (mot_edit preRotate). fit7.py solves it in two steps: A
+(placement, heights, bend, size; Gene's torso pushed out of the victim) and a per-key refine of the 8 pose angles
+against a signed-distance grid of the victim (libigl: pip install libigl) over every frame the key shapes: Gene's
+points no deeper in the victim than the original pair at that frame + 1 cm, the arm touches kept. fit_pose.py runs
+it per punish x body type (the type's representative) at enemy sizes 1.0 and 1.3 into fits7/, then every other body
+of the type with the representative's pose held (--fix: bodies still past 2.5 cm get their own pose). emit7.py
+writes resources/punish_fit.txt; review3.py + page3.py the review page (site3/).

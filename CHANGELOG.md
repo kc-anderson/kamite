@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 8, 2026
 
+- Buck Breaker: Gene's torso and arms posed per body type (his arms no deeper in the victim than in the original pair; Cobra Twist's arms round the neck on women and fat men; Gorilla Suplex's arms folded in less), fits for scaled-up enemies, and the victim resized by up to 5% for the pairing.
 - Buck Breaker: Spanking ends with its launch again; each punish is fitted to every body (Gene's placement, both fighters' height, the victim's waist bend; resources/punish_fit.txt), and bodies it cannot fit keep their own punish; on the fat and wide men a Suplex pick plays the Gorilla Suplex (the prompt still reads SUPLEX).
 
 ## November 7, 2026
