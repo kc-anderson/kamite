@@ -230,8 +230,12 @@ namespace kamite::launcher
             Result result = Result::Quit;
             ImFont *font = nullptr;
             float unit = 1.0f; // UI scale: window height / 720
-            Texture2D logo{};  // resources/images/logo.png when present (the KAMITE wordmark; it stays still)
-            Texture2D kana{};  // resources/images/kana.png: the painted kana over the wordmark's top right
+            // The logo's layers (tools/logo/export_launcher_logo.py), all the same canvas, drawn into one rectangle:
+            Texture2D logo{};        // resources/images/logo.png: GOD HAND and its shadow (it stays still)
+            Texture2D kana{};        // resources/images/kana.png: the flat kana behind it (moves a little with the cursor)
+            Texture2D rearmed{};     // resources/images/rearmed.png: the REARMED plate without its letters
+            Texture2D rearmedText{}; // resources/images/rearmed_text.png: its letters, white (tinted gold / hot)
+            Texture2D rearmedGlow{}; // resources/images/rearmed_glow.png: the letters blurred, for the hot glow
             Texture2D burst{}; // resources/images/burst.png: the speed lines behind the logo
             Texture2D background{};   // resources/images/background.png: the desert (the gradient without it)
             Shader backgroundShader{}; // kBackgroundShader: heat haze, depth of field, clouds (none: the plain image)
@@ -244,14 +248,19 @@ namespace kamite::launcher
             ImVec2 parallax{0.0f, 0.0f}; // -1..1 each way; 0 while the cursor is away
             float burstShown = 0.0f;     // fades the burst in on the screens with the logo, out on the others
             bool logoPlaced = false;     // logoMin/logoMax hold last frame's logo rectangle (without the parallax shift)
+            bool logoThisFrame = false;  // title() laid the logo out this frame (drawLogo draws it after ImGui)
             ImVec2 logoMin{}, logoMax{};
+            float playTime = -1.0f;      // seconds since Play was pressed (the plate's animation, the fade); -1: not yet
         };
 
-        // The wordmark's centre inside logo.png (tools/logo/build_logo.py prints it); the burst is centred there.
-        constexpr float kLogoCentreX = 0.480f, kLogoCentreY = 0.737f;
-        // Where kana.png sits over logo.png: left, top, right, bottom as fractions of logo.png (printed by the same
-        // script).
-        constexpr float kKanaRect[4] = {0.3655f, 0.0159f, 0.9936f, 0.7332f};
+        // GOD HAND's centre in the logo's canvas (tools/logo/export_launcher_logo.py prints it); the burst is centred
+        // there. kRearmedRect: the REARMED plate (left, top, right, bottom as fractions of the canvas, same script).
+        constexpr float kLogoCentreX = 0.5048f, kLogoCentreY = 0.5197f;
+        constexpr float kRearmedRect[4] = {0.3110f, 0.7152f, 0.6961f, 0.8930f};
+        // Play: the plate's animation, taken from the game's roulette pick (K's capture at 1/8 speed): the letters
+        // light up, the plate smears out both ways into a yellow bar, the bar thins to streaks, all gone at 0.28 s;
+        // the rest of the launcher fades to black meanwhile and the game starts at kPlayLength.
+        constexpr float kPlayLength = 0.34f;
 
         void updateMotion(State &state, Screen screen)
         {
@@ -477,7 +486,7 @@ void main()
                 size *= logoWidth * 0.40f / measured.x;
             size *= 1.0f + 0.05f * std::fabs(std::sin(state.time * 3.14159265f)); // the pulse, once a second
             const Vector2 box = MeasureTextEx(state.splashFont, text, size, 0.0f);
-            const Vector2 at{state.logoMin.x + logoWidth * 0.93f, state.logoMin.y + logoHeight * 0.97f};
+            const Vector2 at{state.logoMin.x + logoWidth * 0.93f, state.logoMin.y + logoHeight * 0.80f};
             const Vector2 origin{box.x * 0.5f, box.y * 0.5f};
             const float shadow = size * 0.085f;
             const unsigned char alpha = static_cast<unsigned char>(255.0f * std::clamp(state.burstShown, 0.0f, 1.0f));
@@ -520,32 +529,135 @@ void main()
             return clicked;
         }
 
+        void drawLayer(const Texture2D &texture, const ImVec2 &min, const ImVec2 &max, Color tint)
+        {
+            if (texture.id == 0u || tint.a == 0)
+                return;
+            DrawTexturePro(texture, Rectangle{0.0f, 0.0f, static_cast<float>(texture.width), static_cast<float>(texture.height)},
+                           Rectangle{min.x, min.y, max.x - min.x, max.y - min.y}, Vector2{0.0f, 0.0f}, 0.0f, tint);
+        }
+
+        unsigned char alphaOf(float a) { return static_cast<unsigned char>(std::clamp(a, 0.0f, 1.0f) * 255.0f); }
+
+        float ramp(float t, float a, float b) { return std::clamp((t - a) / (b - a), 0.0f, 1.0f); }
+
+        // A horizontal band from (x0) fading to nothing at (x1), either way.
+        void band(float x0, float x1, float y, float h, Color c)
+        {
+            Color clear = c;
+            clear.a = 0;
+            if (x1 >= x0)
+                DrawRectangleGradientH(static_cast<int>(x0), static_cast<int>(y), static_cast<int>(x1 - x0) + 1,
+                                       std::max(1, static_cast<int>(h)), c, clear);
+            else
+                DrawRectangleGradientH(static_cast<int>(x1), static_cast<int>(y), static_cast<int>(x0 - x1) + 1,
+                                       std::max(1, static_cast<int>(h)), clear, c);
+        }
+
+        // The REARMED plate. t < 0: at rest; t >= 0: seconds since Play (the roulette pick, both ways from the plate).
+        void drawPlate(const State &state, float t)
+        {
+            const ImVec2 min = state.logoMin, max = state.logoMax;
+            const float w = max.x - min.x, h = max.y - min.y;
+            const Color gold{240, 206, 90, 255};
+            if (t < 0.0f)
+            {
+                drawLayer(state.rearmed, min, max, WHITE);
+                drawLayer(state.rearmedText, min, max, gold);
+                return;
+            }
+            const float px = min.x + w * kRearmedRect[0], py = min.y + h * kRearmedRect[1];
+            const float pw = w * (kRearmedRect[2] - kRearmedRect[0]), ph = h * (kRearmedRect[3] - kRearmedRect[1]);
+            const float cx = px + pw * 0.5f, screen = static_cast<float>(GetScreenWidth());
+            const float reach = std::max(cx, screen - cx); // from the plate's centre to the farther screen edge
+            const float glow = ramp(t, 0.055f, 0.07f), smear = ramp(t, 0.07f, 0.12f);
+            const float bar = ramp(t, 0.11f, 0.13f) * (1.0f - ramp(t, 0.17f, 0.2f));
+            const float streak = ramp(t, 0.17f, 0.19f) * (1.0f - ramp(t, 0.24f, 0.275f));
+            const float live = 1.0f - ramp(t, 0.255f, 0.28f), body = 1.0f - ramp(t, 0.075f, 0.11f);
+            drawLayer(state.rearmed, min, max, Color{255, 255, 255, alphaOf(body)});
+            // The plate smeared out both ways (three stretched copies, a cheap blur), fading as the bar comes in.
+            if (smear > 0.0f && bar < 1.0f && state.rearmed.id != 0u)
+            {
+                const Rectangle source{static_cast<float>(state.rearmed.width) * kRearmedRect[0],
+                                       static_cast<float>(state.rearmed.height) * kRearmedRect[1],
+                                       static_cast<float>(state.rearmed.width) * (kRearmedRect[2] - kRearmedRect[0]),
+                                       static_cast<float>(state.rearmed.height) * (kRearmedRect[3] - kRearmedRect[1])};
+                for (const float part : {0.55f, 0.8f, 1.0f})
+                {
+                    const float stretch = smear * reach * part;
+                    DrawTexturePro(state.rearmed, source, Rectangle{px - stretch, py, pw + stretch * 2.0f, ph},
+                                   Vector2{0.0f, 0.0f}, 0.0f, Color{255, 255, 255, alphaOf(0.2f * (1.0f - bar) * live)});
+                }
+            }
+            if (bar > 0.0f)
+            {
+                const float y0 = py + ph * 0.18f, bh = ph * 0.64f, a = bar * live;
+                for (const float side : {-1.0f, 1.0f})
+                {
+                    band(cx, cx + side * reach, y0, bh, Color{255, 226, 90, alphaOf(0.9f * a)});
+                    band(cx, cx + side * reach * 0.7f, y0 + bh * 0.1f, bh * 0.8f, Color{255, 250, 215, alphaOf(0.6f * a)});
+                }
+            }
+            if (streak > 0.0f || (smear > 0.0f && bar < 1.0f))
+            {
+                const float k = std::max(streak, smear * (1.0f - bar)) * live, thick = std::max(1.0f, ph / 45.0f);
+                const float lines[5][3] = {{0.38f, 0.95f, 3.0f}, {0.5f, 0.7f, 2.0f}, {0.62f, 1.0f, 3.0f},
+                                           {0.45f, 0.5f, 2.0f}, {0.56f, 0.85f, 2.0f}};
+                for (const auto &line : lines)
+                    for (const float side : {-1.0f, 1.0f})
+                    {
+                        const float y = py + ph * line[0], th = thick * line[2];
+                        band(cx, cx + side * reach * line[1], y - th, th * 2.0f, Color{255, 170, 40, alphaOf(k)});
+                        band(cx, cx + side * reach * line[1], y - th * 0.4f, th * 0.8f, Color{255, 245, 190, alphaOf(0.7f * k)});
+                    }
+            }
+            // The letters: gold, then hot orange with a glow.
+            drawLayer(state.rearmedText, min, max, Color{gold.r, gold.g, gold.b, alphaOf((1.0f - glow) * live)});
+            if (glow > 0.0f)
+            {
+                BeginBlendMode(BLEND_ADDITIVE);
+                drawLayer(state.rearmedGlow, min, max, Color{255, 100, 10, alphaOf(0.95f * glow * live)});
+                EndBlendMode();
+                drawLayer(state.rearmedText, min, max, Color{255, 190, 60, alphaOf(glow * live)});
+                BeginBlendMode(BLEND_ADDITIVE);
+                drawLayer(state.rearmedText, min, max, Color{160, 140, 100, alphaOf(0.7f * glow * live)});
+                EndBlendMode();
+            }
+        }
+
+        // The logo, after ImGui laid it out: the kana behind (moved a little with the cursor), GOD HAND, the plate.
+        // While Play's animation runs the plate is drawn later, over the fade.
+        void drawLogo(const State &state)
+        {
+            if (!state.logoThisFrame)
+                return;
+            const ImVec2 shift(state.parallax.x * fontSize(state, 10.0f), state.parallax.y * fontSize(state, 7.0f));
+            drawLayer(state.kana, ImVec2(state.logoMin.x + shift.x, state.logoMin.y + shift.y),
+                      ImVec2(state.logoMax.x + shift.x, state.logoMax.y + shift.y), WHITE);
+            drawLayer(state.logo, state.logoMin, state.logoMax, WHITE);
+            if (state.playTime < 0.0f)
+                drawPlate(state, -1.0f);
+        }
+
         void title(State &state)
         {
             if (state.logo.id != 0u && state.logo.height > 0)
             {
                 ImGui::Dummy(ImVec2(0.0f, fontSize(state, 24.0f)));
-                // Big: as wide as fits, at most 44% of the window's height.
+                // Big: as wide as fits, at most half the window's height. Only laid out here: drawLogo draws the
+                // layers after ImGui (tints, the additive glow and the Play animation need raylib).
                 const float aspect = static_cast<float>(state.logo.height) / static_cast<float>(state.logo.width);
-                const float width = std::min({ImGui::GetWindowWidth() * 0.92f, fontSize(state, 1150.0f),
-                                              ImGui::GetWindowHeight() * 0.44f / aspect});
+                const float width = std::min({ImGui::GetWindowWidth() * 0.92f, fontSize(state, 1300.0f),
+                                              ImGui::GetWindowHeight() * 0.50f / aspect});
                 const float height = width * aspect;
                 const ImVec2 start((ImGui::GetWindowWidth() - width) * 0.5f, ImGui::GetCursorPosY());
                 ImGui::SetCursorPos(start);
                 const ImVec2 screenStart = ImGui::GetCursorScreenPos();
-                rlImGuiImageSize(&state.logo, static_cast<int>(width), static_cast<int>(height));
+                ImGui::Dummy(ImVec2(width, height));
                 state.logoMin = screenStart;
                 state.logoMax = ImVec2(screenStart.x + width, screenStart.y + height);
                 state.logoPlaced = true;
-                if (state.kana.id != 0u)
-                {
-                    // The kana over the wordmark, moved a little with the cursor (the wordmark stays put).
-                    const ImVec2 shift(state.parallax.x * fontSize(state, 10.0f), state.parallax.y * fontSize(state, 7.0f));
-                    ImGui::SetCursorPos(ImVec2(start.x + width * kKanaRect[0] + shift.x,
-                                               start.y + height * kKanaRect[1] + shift.y));
-                    rlImGuiImageSize(&state.kana, static_cast<int>(std::round(width * (kKanaRect[2] - kKanaRect[0]))),
-                                     static_cast<int>(std::round(height * (kKanaRect[3] - kKanaRect[1]))));
-                }
+                state.logoThisFrame = true;
                 ImGui::SetCursorPos(ImVec2(0.0f, start.y + height));
                 ImGui::Dummy(ImVec2(0.0f, fontSize(state, 6.0f)));
             }
@@ -553,7 +665,7 @@ void main()
             {
                 ImGui::Dummy(ImVec2(0.0f, fontSize(state, 70.0f)));
                 pushSize(state, 92.0f);
-                centeredText("K A M I T E", ImVec4(1.0f, 0.62f, 0.30f, 1.0f));
+                centeredText("GOD HAND: REARMED", ImVec4(1.0f, 0.62f, 0.30f, 1.0f));
                 ImGui::PopFont();
             }
             pushSize(state, 22.0f);
@@ -620,11 +732,8 @@ void main()
                     ImGui::SetKeyboardFocusHere();
                     ImGui::SetNavCursorVisible(true);
                 }
-                if (bigButton(state, "Play", buttonWidth, true))
-                {
-                    state.result = Result::Play;
-                    state.done = true;
-                }
+                if (bigButton(state, "Play", buttonWidth, true) && state.playTime < 0.0f)
+                    state.playTime = 0.0f; // the plate's animation and the fade; the main loop starts the game after
                 if (bigButton(state, "Options", buttonWidth, false))
                 {
                     state.screen = Screen::Options;
@@ -1807,26 +1916,23 @@ void main()
         if (fs::is_regular_file(fontPath, error))
             state.font = io.Fonts->AddFontFromFileTTF(utf8(fontPath).c_str(), 20.0f);
         applyStyle();
-        const fs::path logoPath = context.exeDir / "resources" / "images" / "logo.png";
-        if (fs::is_regular_file(logoPath, error))
+        const auto loadImage = [&](Texture2D &texture, const char *name)
         {
-            state.logo = LoadTexture(utf8(logoPath).c_str());
-            if (state.logo.id != 0u)
+            const fs::path path = context.exeDir / "resources" / "images" / name;
+            if (!fs::is_regular_file(path, error))
+                return;
+            texture = LoadTexture(utf8(path).c_str());
+            if (texture.id != 0u)
             {
-                GenTextureMipmaps(&state.logo);
-                SetTextureFilter(state.logo, TEXTURE_FILTER_TRILINEAR);
+                GenTextureMipmaps(&texture);
+                SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR);
             }
-        }
-        const fs::path kanaPath = context.exeDir / "resources" / "images" / "kana.png";
-        if (fs::is_regular_file(kanaPath, error))
-        {
-            state.kana = LoadTexture(utf8(kanaPath).c_str());
-            if (state.kana.id != 0u)
-            {
-                GenTextureMipmaps(&state.kana);
-                SetTextureFilter(state.kana, TEXTURE_FILTER_TRILINEAR);
-            }
-        }
+        };
+        loadImage(state.logo, "logo.png");
+        loadImage(state.kana, "kana.png");
+        loadImage(state.rearmed, "rearmed.png");
+        loadImage(state.rearmedText, "rearmed_text.png");
+        loadImage(state.rearmedGlow, "rearmed_glow.png");
         const fs::path burstPath = context.exeDir / "resources" / "images" / "burst.png";
         if (fs::is_regular_file(burstPath, error))
         {
@@ -1873,6 +1979,17 @@ void main()
             state.unit = std::clamp(static_cast<float>(GetScreenHeight()) / 900.0f, 0.55f, 3.0f);
             feedGamepads(io);
             updateMotion(state, state.screen);
+            state.logoThisFrame = false;
+            if (state.playTime >= 0.0f)
+            {
+                state.playTime += std::min(GetFrameTime(), 0.05f);
+                if (state.playTime >= kPlayLength)
+                {
+                    state.result = Result::Play;
+                    state.done = true;
+                }
+            }
+            const bool playing = state.playTime >= 0.0f;
             BeginDrawing();
             if (!drawDesert(state))
                 drawBackground();
@@ -1884,6 +2001,12 @@ void main()
                              ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                                  ImGuiWindowFlags_NoBringToFrontOnFocus))
             {
+                // While Play's animation runs nothing takes input (and nothing greys out: it is fading anyway).
+                if (playing)
+                {
+                    ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha, 1.0f);
+                    ImGui::BeginDisabled();
+                }
                 switch (state.screen)
                 {
                 case Screen::Home:
@@ -1896,18 +2019,32 @@ void main()
                     drawOptions(state);
                     break;
                 }
+                if (playing)
+                {
+                    ImGui::EndDisabled();
+                    ImGui::PopStyleVar();
+                }
             }
             ImGui::End();
             rlImGuiEnd();
+            drawLogo(state);
             drawSplash(state);
+            if (playing)
+            {
+                DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(),
+                              Color{0, 0, 0, alphaOf(state.playTime / (kPlayLength - 0.02f))});
+                if (state.logoThisFrame)
+                    drawPlate(state, state.playTime);
+            }
             EndDrawing();
         }
         state.ini.save();
         saveControls();
         if (state.logo.id != 0u)
             UnloadTexture(state.logo);
-        if (state.kana.id != 0u)
-            UnloadTexture(state.kana);
+        for (Texture2D *texture : {&state.kana, &state.rearmed, &state.rearmedText, &state.rearmedGlow})
+            if (texture->id != 0u)
+                UnloadTexture(*texture);
         if (state.burst.id != 0u)
             UnloadTexture(state.burst);
         if (state.background.id != 0u)

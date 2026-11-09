@@ -1,5 +1,4 @@
-<!-- Logo: drop the image at assets/logo.png and uncomment the next line. -->
-<!-- ![God Hand: Rearmed](assets/logo.png) -->
+![God Hand: Rearmed](assets/logo.png)
 
 # God Hand: Rearmed
 

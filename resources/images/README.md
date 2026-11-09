@@ -1,15 +1,24 @@
 # Launcher images
 
-`logo.png`: the KAMITE wordmark the launcher draws at the top of its Home and Install screens (any size; as wide as
-fits, at most 44% of the window's height, trilinear filtered). It stays still. Without it the launcher writes the name
-in text.
+The logo is five layers with the same canvas, drawn into one rectangle at the top of the Home and Install screens
+(as wide as fits, at most half the window's height, trilinear filtered), in this order:
 
-`kana.png`: the painted kana (with their shadow and splatter) drawn over the wordmark at `kKanaRect` (fractions of
-logo.png, in src/kamite/launcher.cpp) and shifted a little with the mouse.
+- `kana.png`: the flat turquoise kana behind everything, shifted a little with the mouse.
+- `logo.png`: GOD HAND and its shadow. It stays still. Without it the launcher writes the name in text.
+- `rearmed.png`: the REARMED plate without its letters.
+- `rearmed_text.png`: the plate's letters, white with a slight shade; the launcher tints them gold.
+- `rearmed_glow.png`: the letters blurred, white; the hot glow when Play is pressed (the plate then plays the game's
+  roulette pick: the letters light up, the plate smears out both ways into a yellow bar that thins to streaks, while
+  the rest fades to black).
+
+They come from K's layered GHR_logo.psd through `tools/logo/export_launcher_logo.py --psd GHR_logo.psd --readme
+assets/logo.png`, which also prints `kLogoCentreX/Y` (GOD HAND's centre) and `kRearmedRect` (the plate) for
+src/kamite/launcher.cpp. GOD HAND itself is rendered by `tools/logo/render_wordmark.py` from K's letter SVG and his
+hand-painted crack PSD; K's own effects pass is on top of that.
 
 `burst.png`: the speed lines behind the logo (square, centred; turquoise with the line strength in alpha, fading to
-nothing at the circle's edge). The launcher draws it twice, turning and pulsing, squashed to 3/4 height, centred on the
-wordmark (`kLogoCentreX/Y` in src/kamite/launcher.cpp: 0.480, 0.737 of logo.png), and shifts it with the mouse.
+nothing at the circle's edge). The launcher draws it twice, turning and pulsing, squashed to 3/4 height, centred on
+GOD HAND (`kLogoCentreX/Y`), and shifts it with the mouse.
 
 `background.png`: the desert behind everything (K's own art, widened to 2600x941 with sand and sky taken from its own
 empty left side). It fits the window's height up to 2.76:1 (wider windows crop it vertically), anchored right so the
@@ -18,7 +27,5 @@ fake depth of field, procedural clouds (masked to blue sky pixels, so they pass 
 towards the bottom with a vignette so the text reads; its `kHorizon` (0.625) is the horizon's height in this image.
 Without the file the launcher draws its brown gradient.
 
-The logo images are built by `tools/logo/build_logo.py --wordmark <render.png> --kana <kana.png> [--psd layers.psd]`, or
-from that PSD again with `--layers layers.psd`; the script prints the wordmark's centre for `kLogoCentreX/Y` and the
-kana's rectangle for `kKanaRect` if the layout changes. The whole `resources/` folder is copied next
-to GHR.exe at build time.
+`tools/logo/build_logo.py` built the old KAMITE logo (wordmark + kana over it); kept for its burst.png step. The whole
+`resources/` folder is copied next to GHR.exe at build time.
