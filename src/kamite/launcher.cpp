@@ -38,11 +38,11 @@ namespace kamite::launcher
         namespace fs = std::filesystem;
 
         // Items whose activation makes the cursor's tick, not the confirm sound (boxes, dropdowns, radio buttons, folds:
-        // K), and the Back buttons (their screens play cancel; the confirm on press made both sound). Refilled each
-        // frame by the widgets right after they are drawn; read by frameSounds.
-        std::vector<ImGuiID> g_tickItems, g_cancelItems;
+        // K), and the buttons that play their own sound when let go (Back: cancel, Play: Play's; a confirm on the press
+        // made both sound). Refilled each frame by the widgets right after they are drawn; read by frameSounds.
+        std::vector<ImGuiID> g_tickItems, g_ownSoundItems;
         void tickItem() { g_tickItems.push_back(ImGui::GetItemID()); }
-        void cancelItem() { g_cancelItems.push_back(ImGui::GetItemID()); }
+        void ownSoundItem() { g_ownSoundItems.push_back(ImGui::GetItemID()); }
 
         // ---- choices ------------------------------------------------------------------------------------------------
         struct Choice
@@ -427,7 +427,7 @@ namespace kamite::launcher
                         playMenuSound(state, kTick);
                         state.quietFrames = 2; // the dropdown's list opening moves the cursor
                     }
-                    else if (!listed(g_cancelItems)) // Back plays cancel itself when it is let go
+                    else if (!listed(g_ownSoundItems)) // Back / Play play their own sound when let go
                         menuSound(state, kConfirm);
                 }
                 else if (g.NavId != state.lastNavId && state.lastNavId != 0 && g.NavId != 0 && g.NavCursorVisible &&
@@ -969,7 +969,9 @@ void main()
                     ImGui::SetKeyboardFocusHere();
                     ImGui::SetNavCursorVisible(true);
                 }
-                if (bigButton(state, "Play", buttonWidth, true) && state.playTime < 0.0f)
+                const bool play = bigButton(state, "Play", buttonWidth, true);
+                ownSoundItem();
+                if (play && state.playTime < 0.0f)
                 {
                     state.playTime = 0.0f; // the plate's animation and the fade; the main loop starts the game after
                     state.soundThisFrame = true; // Play's own sound, next frame
@@ -1071,7 +1073,7 @@ void main()
             ImGui::Spacing();
             const bool leave = ImGui::Button(state.installed ? "Continue" : "Back");
             if (!state.installed)
-                cancelItem();
+                ownSoundItem();
             if (leave)
             {
                 if (!state.installed)
@@ -2111,7 +2113,7 @@ void main()
             const float backWidth = fontSize(state, 200.0f);
             ImGui::SetCursorPosX((ImGui::GetWindowWidth() - backWidth) * 0.5f);
             const bool back = ImGui::Button("Back", ImVec2(backWidth, 0.0f));
-            cancelItem();
+            ownSoundItem();
             if (state.focusFirst)
                 ImGui::SetItemDefaultFocus();
             const bool cancel = !g_captureFrame && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId) &&
@@ -2258,7 +2260,7 @@ void main()
             state.logoThisFrame = false;
             state.soundThisFrame = false;
             g_tickItems.clear();
-            g_cancelItems.clear();
+            g_ownSoundItems.clear();
             if (state.playTime >= 0.0f)
             {
                 if (state.playTime == 0.0f)
