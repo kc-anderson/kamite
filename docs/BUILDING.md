@@ -17,8 +17,8 @@ How to build God Hand: Rearmed (codename Kamite) from source, play it, and work 
 Open a terminal (PowerShell) and run these one at a time:
 
 ```powershell
-git clone https://github.com/kris-c-anderson/kamite.git
-cd kamite
+git clone https://github.com/God-Hand-Rearmed/God-Hand-Rearmed.git
+cd God-Hand-Rearmed
 copy "D:\path\to\your-disc.iso" game\
 python -I build.py generate
 python -I tools\snr2\snr2.py --iso "game\your-disc.iso" extract
