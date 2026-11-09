@@ -37,6 +37,13 @@ namespace kamite::launcher
     {
         namespace fs = std::filesystem;
 
+        // Items whose activation makes the cursor's tick, not the confirm sound (boxes, dropdowns, radio buttons, folds:
+        // K), and the Back buttons (their screens play cancel; the confirm on press made both sound). Refilled each
+        // frame by the widgets right after they are drawn; read by frameSounds.
+        std::vector<ImGuiID> g_tickItems, g_cancelItems;
+        void tickItem() { g_tickItems.push_back(ImGui::GetItemID()); }
+        void cancelItem() { g_cancelItems.push_back(ImGui::GetItemID()); }
+
         // ---- choices ------------------------------------------------------------------------------------------------
         struct Choice
         {
@@ -102,7 +109,9 @@ namespace kamite::launcher
             }
             int picked = current;
             ImGui::SetNextItemWidth(-1.0f);
-            if (!ImGui::Combo(id, &picked, labels.data(), static_cast<int>(labels.size())) || picked == current || picked >= static_cast<int>(N))
+            const bool changed = ImGui::Combo(id, &picked, labels.data(), static_cast<int>(labels.size()));
+            tickItem();
+            if (!changed || picked == current || picked >= static_cast<int>(N))
                 return false;
             value = choices[picked].value;
             return true;
@@ -408,7 +417,19 @@ namespace kamite::launcher
                 if (state.popupWasOpen && !popupOpen && backKey)
                     menuSound(state, kCancel);
                 else if (g.ActiveIdIsJustActivated && g.ActiveId != 0 && g.ActiveId != state.volumeSliderId)
-                    menuSound(state, kConfirm);
+                {
+                    const auto listed = [&](const std::vector<ImGuiID> &items) {
+                        return std::find(items.begin(), items.end(), g.ActiveId) != items.end();
+                    };
+                    const bool inPopup = g.ActiveIdWindow != nullptr && (g.ActiveIdWindow->Flags & ImGuiWindowFlags_Popup) != 0;
+                    if (listed(g_tickItems) || inPopup) // a box, a dropdown or a pick from its list
+                    {
+                        playMenuSound(state, kTick);
+                        state.quietFrames = 2; // the dropdown's list opening moves the cursor
+                    }
+                    else if (!listed(g_cancelItems)) // Back plays cancel itself when it is let go
+                        menuSound(state, kConfirm);
+                }
                 else if (g.NavId != state.lastNavId && state.lastNavId != 0 && g.NavId != 0 && g.NavCursorVisible &&
                          state.quietFrames == 0 && state.soundScreen == state.screen)
                     playMenuSound(state, kTick);
@@ -966,7 +987,9 @@ void main()
                 ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize(label).x - ImGui::GetFrameHeight() -
                                       ImGui::GetStyle().ItemInnerSpacing.x) *
                                      0.5f);
-                if (ImGui::Checkbox(label, &hide))
+                const bool toggled = ImGui::Checkbox(label, &hide);
+                tickItem();
+                if (toggled)
                 {
                     state.ini.setBool("Launcher", "Show", !hide);
                     state.ini.save();
@@ -1046,7 +1069,10 @@ void main()
                 ImGui::TextColored(ImVec4(0.55f, 0.9f, 0.45f, 1.0f), "Installed. Your disc image checks out.");
             }
             ImGui::Spacing();
-            if (ImGui::Button(state.installed ? "Continue" : "Back"))
+            const bool leave = ImGui::Button(state.installed ? "Continue" : "Back");
+            if (!state.installed)
+                cancelItem();
+            if (leave)
             {
                 if (!state.installed)
                     menuSound(state, kCancel);
@@ -1159,6 +1185,7 @@ void main()
             ImGui::SetNextItemOpen(open, ImGuiCond_Always);
             ImGui::PushStyleColor(ImGuiCol_Text, kHeading);
             open = ImGui::TreeNodeEx(title, ImGuiTreeNodeFlags_NoTreePushOnOpen);
+            tickItem();
             ImGui::PopStyleColor();
             const ImGuiStyle &style = ImGui::GetStyle();
             const float x0 = start.x + ImGui::GetTreeNodeToLabelSpacing() + ImGui::CalcTextSize(title, nullptr, true).x +
@@ -1183,7 +1210,9 @@ void main()
         void iniCheckbox(State &state, const char *id, const char *section, const char *key, bool fallback)
         {
             bool value = state.ini.getBool(section, key, fallback);
-            if (ImGui::Checkbox(id, &value))
+            const bool toggled = ImGui::Checkbox(id, &value);
+            tickItem();
+            if (toggled)
                 state.ini.setBool(section, key, value);
         }
 
@@ -1207,7 +1236,9 @@ void main()
                     current = static_cast<int>(i);
             }
             ImGui::SetNextItemWidth(-1.0f);
-            if (ImGui::BeginCombo("##camera", current >= 0 ? kCameraPresets[current].name : "Custom"))
+            const bool comboOpen = ImGui::BeginCombo("##camera", current >= 0 ? kCameraPresets[current].name : "Custom");
+            tickItem();
+            if (comboOpen)
             {
                 for (size_t i = 0; i < std::size(kCameraPresets); ++i)
                 {
@@ -1662,8 +1693,10 @@ void main()
             ImGui::TextUnformatted("Bindings for");
             ImGui::SameLine();
             ImGui::RadioButton("Keyboard & mouse", &device, 0);
+            tickItem();
             ImGui::SameLine();
             ImGui::RadioButton("Controller", &device, 1);
+            tickItem();
             const bool controller = device == 1;
             ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
             ImGui::TextWrapped("%s", controller ? "Click a button, then press the controller button or move the stick or "
@@ -2037,7 +2070,9 @@ void main()
                                 picked = static_cast<int>(i);
                         }
                         ImGui::SetNextItemWidth(-1.0f);
-                        if (ImGui::Combo("##character", &picked, names.data(), static_cast<int>(names.size())))
+                        const bool pickedNew = ImGui::Combo("##character", &picked, names.data(), static_cast<int>(names.size()));
+                        tickItem();
+                        if (pickedNew)
                             state.ini.set("Mods", "Character", list[static_cast<size_t>(picked)].id);
                         if (!list[static_cast<size_t>(picked)].credit.empty())
                             ImGui::TextColored(kTextDim, "%s", list[static_cast<size_t>(picked)].credit.c_str());
@@ -2076,6 +2111,7 @@ void main()
             const float backWidth = fontSize(state, 200.0f);
             ImGui::SetCursorPosX((ImGui::GetWindowWidth() - backWidth) * 0.5f);
             const bool back = ImGui::Button("Back", ImVec2(backWidth, 0.0f));
+            cancelItem();
             if (state.focusFirst)
                 ImGui::SetItemDefaultFocus();
             const bool cancel = !g_captureFrame && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId) &&
@@ -2221,6 +2257,8 @@ void main()
             updateMotion(state, state.screen);
             state.logoThisFrame = false;
             state.soundThisFrame = false;
+            g_tickItems.clear();
+            g_cancelItems.clear();
             if (state.playTime >= 0.0f)
             {
                 if (state.playTime == 0.0f)
