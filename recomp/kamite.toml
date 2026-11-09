@@ -200,6 +200,66 @@ address = "0x001426C0"
 value = "0x34213176"
 flag = "fps60"
 
+# The health bars (Nov 9, decomp cIDLifeBar.h): Gene's (func_0013F5D0), the boss bar (cCockBossBar, func_0013C950), the
+# last boss's two-segment bar (cIDLifeBar, func_0013E970) and the enemies' (func_0028F108 / func_0028F5B0, the lag
+# +0x630) ease the drawn value 0.07 of the gap a frame (lui / ori at 0x3D8F5C29): 1 - 0.93^0.5 = 0.0356 at 60
+# (0x3D11F5ED). The first three hold the old value 40 frames first (+0xB4 / +0xBE / the entry's u16): every other frame.
+[[patches.conditional]]
+address = "0x0013CD68"
+value = "0x3C013D11"
+flag = "fps60"
+[[patches.conditional]]
+address = "0x0013CD6C"
+value = "0x3421F5ED"
+flag = "fps60"
+[[patches.conditional]]
+address = "0x0013EA80"
+value = "0x3C013D11"
+flag = "fps60"
+[[patches.conditional]]
+address = "0x0013EA84"
+value = "0x3421F5ED"
+flag = "fps60"
+[[patches.conditional]]
+address = "0x001402BC"
+value = "0x3C013D11"
+flag = "fps60"
+[[patches.conditional]]
+address = "0x001402C0"
+value = "0x3421F5ED"
+flag = "fps60"
+[[patches.conditional]]
+address = "0x0028F44C"
+value = "0x3C013D11"
+flag = "fps60"
+[[patches.conditional]]
+address = "0x0028F450"
+value = "0x3421F5ED"
+flag = "fps60"
+[[patches.conditional]]
+address = "0x0028F944"
+value = "0x3C013D11"
+flag = "fps60"
+[[patches.conditional]]
+address = "0x0028F948"
+value = "0x3421F5ED"
+flag = "fps60"
+[[patches.hooks]] # cCockBossBar +0xB4 (the bnez's delay slot)
+address = "0x0013CD5C"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # cIDLifeBar +0xBE
+address = "0x0013EAA4"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # Gene's bar, the entry's hold (the bnez's delay slot)
+address = "0x001402B4"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+
 # (The pnach's "Unleash gauge drain" patch at 0x10D694, Gene's speed rate 0.5 in func_0010D3A8, is gone: Gene's rate
 # stays the 30 FPS value, which SetMotionStep needs, and its per-frame readers are halved: the God Hand drain 0x12354C,
 # the post-hit guard 0x1FD4F8, the spin mash state. claude/fps60-notes.md family 2.)
@@ -1579,6 +1639,11 @@ flag = "fps60"
 replace = true
 [[patches.hooks]] # mode 0 state 12 (func_0010DE70): func_0010A438 (the attack's hit) each frame while +0x15BC > 0 (999, cut to 2)
 address = "0x0010E1E0"
+hook = "km_fps60_countdown_pl15bc_exact"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ... its copy in the delay slot of the b at 0x10DED8 (the step's other path; dupload.py, Nov 9)
+address = "0x0010DEDC"
 hook = "km_fps60_countdown_pl15bc_exact"
 flag = "fps60"
 replace = true

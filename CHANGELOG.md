@@ -2,6 +2,11 @@
 
 Newest first, one line per change; the code comments say how.
 
+## November 9, 2026
+
+- 60 FPS: the boss, mid-boss, last boss and enemy health bars drain at their normal speed (they emptied twice as fast).
+- 60 FPS: one more path of a Gene attack's hit window ran at double speed.
+
 ## November 8, 2026
 
 - Buck Breaker: loading a save state after playing other punishes no longer plays wrong animations in wrong places.

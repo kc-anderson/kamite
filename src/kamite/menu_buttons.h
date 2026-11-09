@@ -11,7 +11,7 @@
 // How: the game keeps two readings of the pad (game work block 0x7474A0). Play reads the raw button word (+0 held,
 // +8 pressed; the pad's two button bytes high-to-low, so 0x10 triangle, 0x20 circle, 0x40 cross, 0x80 square and the
 // d-pad at 0x1000..0x8000), in the player code alone. The menus, the dialogs and the title screen read a 64-bit
-// "command" word (+0x1A0 pressed, +0x1B0 repeated) that func_0031AFE0 builds from the raw word through a 64-entry table
+// "command" word (+0x1A0 pressed, +0x1B0 repeated) that func_0031AFE0 (PadRec_update) builds from the raw word through a 64-entry table
 // of raw masks (0x3C3D50, or 0x3C3E50 for the US release): command bit 28 is the menus' OK, bit 29 their Cancel
 // (entries 24-27 are the d-pad, 32-35 the four face buttons one by one). Modern sets OK = cross and Cancel = circle
 // in both tables. Menus that ask for one face button by name (the shop's orb tiers, the casino's bets) keep the game's

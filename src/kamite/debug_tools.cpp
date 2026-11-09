@@ -36,7 +36,7 @@
 // position (metres), heading (radians when it fits -PI..PI, else degrees: cRoomJump_setNextPos) and the developers'
 // Shift-JIS name. The jump is the game's forced door jump func_001FFF30 (cScenario_beginRoomJumpForce's body:
 // a0 = the door D_00583EC0, a1 = the room id, a2 = the landing position, f12 = the heading, a3 = arg, t0 = the fade
-// (1 white, 2 black), t1 = doorArg), the one func_002BF568 uses to restart a room where Gene stands. Only rooms whose
+// (1 white, 2 black), t1 = doorArg), the one func_002BF568 (ScenarioStep_runJumpKind) uses to restart a room where Gene stands. Only rooms whose
 // module is on the retail disc are listed (the table also has the developers' test rooms). The landing point's story
 // flags are not set: saving after a jump can leave the save in a state the game never makes.
 #include "kamite/debug_tools.h"
