@@ -129,7 +129,7 @@ namespace kamite::dev_menu
         {
             ui->separator_text("At start");
             launcherOnly(ui, "Renderer", env("PS2X_GS_RENDERER", "pcsx2"));
-            launcherOnly(ui, "Graphics API", env("PS2X_PCSX2_API", "dx11") == "vulkan" ? "Vulkan" : "Direct3D 11");
+            launcherOnly(ui, "Graphics API", env("PS2X_PCSX2_API", "vulkan") != "dx11" ? "Vulkan" : "Direct3D 11");
             launcherOnly(ui, "Internal resolution", env("PS2X_GS_SCALE", "3") + "x");
             launcherOnly(ui, "Post effects", env("PS2X_PCSX2_NATIVE_SCALING", "ps2"));
             launcherOnly(ui, "HD textures", envOn("PS2X_PCSX2_TEXTURES", true) ? "on, " + env("PS2X_PCSX2_TEXTURE_DIR", "textures/SLUS-21503") : "off");
@@ -147,7 +147,7 @@ namespace kamite::dev_menu
                               "into the mode set here. Known differences at 60: enemy backflips are faster, texture "
                               "animations run 2x.");
             int dash = l3Dash() ? 1 : 0;
-            if (ui->checkbox("L3 dash: holding L3 pushes the left stick fully forward##l3dash", &dash))
+            if (ui->checkbox("Click-Stick Dash: holding L3 pushes the left stick fully forward##l3dash", &dash))
                 setL3Dash(dash != 0);
             static const char *const kTimer[] = {"Normal: the PS2's roulette time", "Double: twice the time to choose"};
             int timer = rouletteTimerDouble() ? 1 : 0;
@@ -155,17 +155,17 @@ namespace kamite::dev_menu
             if (ui->combo("Roulette timer##roulette", &timer, kTimer, 2))
                 setRouletteTimerDouble(timer == 1);
             int cycle = rouletteTargetCycle() ? 1 : 0;
-            if (ui->checkbox("Cycle Roulette Target: the right stick moves the wheel's target##roulettecycle", &cycle))
+            if (ui->checkbox("Target Select: the right stick moves the wheel's target##roulettecycle", &cycle))
                 setRouletteTargetCycle(cycle != 0);
 
             ui->separator_text("Sound");
             int mute = muteMusic() ? 1 : 0;
-            if (ui->checkbox("Mute music##mutemusic", &mute))
+            if (ui->checkbox("Mute Music##mutemusic", &mute))
                 setMuteMusic(mute != 0);
             ui->text_disabled("Takes effect at the music's next volume change (a room or a track change). Cutscene "
                               "streams keep playing: their voices are in the same stream.");
 
-            ui->separator_text("Experimental");
+            ui->separator_text("Fightin' Excitement");
             int placable = tensionPlacable() ? 1 : 0;
             if (ui->checkbox("Tension is Placable: R2 again ends the God Hand, the tension left stays##placable", &placable))
                 setTensionPlacable(placable != 0);
@@ -183,9 +183,9 @@ namespace kamite::dev_menu
                 setSwayBar(sway != 0);
 
             ui->separator_text("At start");
-            launcherOnly(ui, "Style switching", envOn("KAMITE_STYLE_SWITCHING", false) ? "on" : "off");
+            launcherOnly(ui, "Moveset Presets", envOn("KAMITE_STYLE_SWITCHING", false) ? "on" : "off");
             launcherOnly(ui, "Buck Breaker", envOn("KAMITE_BUCK_BREAKER", false) ? "on" : "off");
-            launcherOnly(ui, "Better shop & casino poses", envOn("KAMITE_NPC_POSES", false) ? "on" : "off");
+            launcherOnly(ui, "Better Shop & Casino Poses", envOn("KAMITE_NPC_POSES", false) ? "on" : "off");
             launcherOnly(ui, "Busta-Chan Jive", envOn("KAMITE_SPRINT_TRAVERSAL", false) ? "on" : "off");
 
             ui->separator_text("kamite.ini");

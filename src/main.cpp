@@ -831,7 +831,7 @@ int main(int argc, char *argv[])
 #if KAMITE_HAS_LAUNCHER
         kamite::installWidescreen(); // the window's shape, as the game will have it
         ps2_host_display::setStartMaximized(envFlag("KAMITE_START_MAXIMIZED", false));
-        ps2_host_display::setStartFullscreen(envFlag("KAMITE_START_FULLSCREEN", false));
+        ps2_host_display::setStartFullscreen(envFlag("KAMITE_START_FULLSCREEN", true));
         const kamite::launcher::Result result =
             kamite::launcher::run(kamite::launcher::Context{exeDir, exeDir / "kamite.ini", cacheDir, iso, message});
         if (result == kamite::launcher::Result::Quit)
@@ -988,7 +988,7 @@ int main(int argc, char *argv[])
         ps2_host_display::setStartMaximized(!headless && envFlag("KAMITE_START_MAXIMIZED", false));
         kamite::installWidescreen(); // the picture's shape: before the window is made
         kamite::installNearGeometry(); // VU1 hooks: before the first microcode upload
-        ps2_host_display::setStartFullscreen(!headless && envFlag("KAMITE_START_FULLSCREEN", false));
+        ps2_host_display::setStartFullscreen(!headless && envFlag("KAMITE_START_FULLSCREEN", true));
         if (!runtime.initialize(kamite::kWindowTitle))
         {
             KM_ERROR(Boot, "runtime initialization failed");

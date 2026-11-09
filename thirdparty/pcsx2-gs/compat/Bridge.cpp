@@ -87,7 +87,7 @@ namespace
 
     // Pcsx2GsOpenParams::options: "key=value;key=value".
     float g_customAspect = 0.0f; // options "aspect=<width/height>": the image shown in that shape (0 = the open's choice)
-    GSRendererType g_graphicsApi = GSRendererType::DX11; // options "api=dx11|vulkan" ([Video] GraphicsAPI)
+    GSRendererType g_graphicsApi = GSRendererType::VK; // options "api=vulkan|dx11" ([Video] GraphicsAPI; Vulkan by default)
 
     void ApplyOptions(Pcsx2Config::GSOptions &options, const char *text)
     {
@@ -229,7 +229,7 @@ namespace
         options.AspectRatio = params->stretch ? AspectRatioType::Stretch : AspectRatioType::R4_3;
         ApplyGameFixes(options);
         g_customAspect = 0.0f;
-        g_graphicsApi = GSRendererType::DX11;
+        g_graphicsApi = GSRendererType::VK;
         ApplyOptions(options, params->options);
         options.Renderer = g_graphicsApi;
         if (g_customAspect > 0.0f && !params->stretch)

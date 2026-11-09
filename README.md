@@ -25,7 +25,7 @@ game's own code rebuilt as a Windows program, with PCSX2's hardware renderer for
   PS2, and enemies whose sense of "in front of Gene" widens with the picture.
 - **HD texture packs** in PCSX2's format, their alpha kept to the game's own levels so nothing turns see-through.
 - **A launcher:** install (pick and check your disc image), play, and every option in one place.
-- **Quality of life:** L3 dash, d-pad scrolling in the God Reel, a double-time roulette timer, Hard unlocked from the
+- **Quality of life:** Click-Stick Dash, d-pad scrolling in the God Reel, a double-time roulette timer, Hard unlocked from the
   start, music mute, the blur effects at full resolution.
 - **Controls:** keyboard, mouse and controllers, rebindable in game (F1). Button prompts show the keys and buttons you
   use at full resolution (Xbox 360, Steam Deck, Switch or keyboard art, picked from your controller or set in the

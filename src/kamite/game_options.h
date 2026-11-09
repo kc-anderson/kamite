@@ -13,13 +13,13 @@ namespace kamite
     //                                     roulette camera).
     //   Dead Pan (always): the Japanese free roulette move, earned by a Kick Me Sign clear (or F2's every reel owned).
     //   LiftChairs (KAMITE_LIFT_CHAIRS)  stage 1's chairs, bar stools and pub sign are built as crate-class objects: picked up, carried,
-    //                                     thrown and smashed like the crates (launcher: Experimental, Wild Curry Funk).
+    //                                     thrown and smashed like the crates (launcher: Gameplay, Wild Curry Funk).
     //   TensionPlacable (KAMITE_TENSION_PLACABLE)  R2 while the God Hand is unleashed ends it and keeps the tension
-    //                                     left (launcher: Experimental, Tension is Placable).
+    //                                     left (launcher: Gameplay, Tension is Placable).
     //   OffTheCuff (KAMITE_OFF_THE_CUFF)  with TensionPlacable: R2 unleashes with any tension, not only a full meter.
     //   BallBusterWomen (KAMITE_BALL_BUSTER_WOMEN)  Ball Buster stuns female enemies as it does men (launcher:
-    //                                     Experimental, Cunt Punter).
-    //   SwayBar (KAMITE_SWAY_BAR)        a stun gauge under each enemy's health bar (launcher: Experimental, Sway Bar).
+    //                                     Gameplay, Cunt Punter).
+    //   SwayBar (KAMITE_SWAY_BAR)        a stun gauge under each enemy's health bar (launcher: Gameplay, Sway Bar).
     //   MuteMusic  (KAMITE_MUTE_MUSIC)   the game's music streams (cSndBgmNode) play at volume 0; voices, sound
     //                                     effects and movies are unchanged.
     void installGameOptions(PS2Runtime &runtime);

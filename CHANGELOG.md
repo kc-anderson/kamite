@@ -4,6 +4,10 @@ Newest first, one line per change; the code comments say how.
 
 ## November 9, 2026
 
+- Launcher: every tab's options grouped under titled categories; the Experimental tab is gone (its options are in Display and Gameplay), replacement textures moved to Mods, hotkeys folded away by default.
+- Launcher: options renamed (Display Mode, Camera & FOV, Click-Stick Dash, Moveset Presets, Target Select, Dry Spinning, Intro Skipper, Hard-On) and names in title case.
+- Vulkan is the default graphics API.
+- New installs start in borderless fullscreen; Window Size is greyed out unless the game opens in a window.
 - 60 FPS: the boss, mid-boss, last boss and enemy health bars drain at their normal speed (they emptied twice as fast).
 - 60 FPS: one more path of a Gene attack's hit window ran at double speed.
 

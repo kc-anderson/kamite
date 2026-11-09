@@ -47,7 +47,7 @@
 // (getGodItemNum at 0x125B44 / 0x125B58; a 1-orb reel was never checked: the entry needed an orb), so at 0x125B84,
 // where every reel's check ends, an empty first slot greys the entry (+8 = 1) too, except the free Dead Pan (0xB).
 //
-// TensionPlacable / OffTheCuff (launcher: Experimental, "Tension is Placable" / its sub-option "Off the Cuff"): the
+// TensionPlacable / OffTheCuff (launcher: Gameplay, "Tension is Placable" / its sub-option "Off the Cuff"): the
 // tension gauge is cHeatSys at 0x5CB000 (+0 max 120, +4 the gauge, +8 the floor SubHeatGage stops at, +0xC the full
 // mark, +0x10 the mode byte: 1 while the God Hand is unleashed). Gene's action chooser func_00123938 starts the unleash
 // on an R2 press (GameWork +8 & 2 at 0x123AE0) when the mode is 0 and cHeatSys_GetHeatLv (0x2A9BC0: gauge >= full) says
@@ -63,7 +63,7 @@
 // it) and that read (lbu at 0x109398) sees 0 for it: no invulnerability (K: only a full gauge's unleash gives it). Case 2026-11-04_11-50-15 (an unleash run
 // down: phase 8 at 1.2 s, the gauge 120 -> 0 at 12 a second, phase 9 at 12.3 s).
 //
-// BallBusterWomen (launcher: Experimental, "Cunt Punter"): Ball Buster (roulette) works on female enemies as on men.
+// BallBusterWomen (launcher: Gameplay, "Cunt Punter"): Ball Buster (roulette) works on female enemies as on men.
 // Its hit is damage type 0x22 (the damage record *(enemy +0x698) +0x46; 50 damage at +0x4C). The enemy damage handler
 // func_0020A178 switches on the enemy number (+0x564) for that type at 0x20A9EC (table 0x430D00, from 0x215): the
 // women (0x215, 0x21A-0x21E, 0x225, 0x22C-0x22F, 0x248, 0x249, 0x24C-0x24E, 0x252, 0x25A) go to 0x20AA14, which puts
@@ -82,7 +82,7 @@
 // set at cActionButton_setCommandList (before the wheel draws) and each frame after (target changes), the disc's
 // pixels back otherwise. Only a plate holding one of the two known pictures is touched.
 //
-// SwayBar (launcher: Experimental, "Sway Bar"): a stun gauge under each enemy's health bar. The health bar is the
+// SwayBar (launcher: Gameplay, "Sway Bar"): a stun gauge under each enemy's health bar. The health bar is the
 // enemy's own cIDBase layout at +0x660, drawn by func_0028F108 (or func_0028F5B0 when +0x614 is set: a flash entry
 // more) from the enemy's draw (func_0028EDD0) as a 3D panel above the head: cIDBase_move, then cIDBase_trans. Its
 // entries (kind 3, panels; texture bank 1 no. 6, 64x32): the root (id 0, not drawn), a tick (id -1, 2x10 at the left
@@ -99,7 +99,7 @@
 // draining fill; after the stun it shrinks to the left (0.08 of the width a call, like the game's own lag, per draw)
 // and the background shows again (K, Nov 5). Display only.
 //
-// RouletteTargetCycle (launcher: Gameplay, "Cycle Roulette Target"): while the roulette wheel runs (Gene mode 0
+// RouletteTargetCycle (launcher: Gameplay, "Target Select"): while the roulette wheel runs (Gene mode 0
 // phase 0x2B step 1, func_00114608), a right-stick flick left / right moves Gene's target (+0x640) to the next enemy
 // on that side of the screen, wrapping round at the edge. Roulette step 0 picks the target (func_00124540 mode 3);
 // step 1 keeps it (+0x648 = 20, func_0012CC70 links it each frame) and builds the move list once, greying moves by

@@ -47,11 +47,11 @@ Your settings are in `build\port\bin\kamite.ini` (every launcher option is a lin
 
 | Where | What |
 |---|---|
-| Display | Aspect ratio, HUD layout (16:9 edges or 4:3), menu layout (4:3 or stretched), camera (presets; with "Show advanced settings": field of view, in fights, distance, tilt, enemies following the view), see-through walls, window / full screen, window size |
-| Graphics | Internal resolution (1x–8x), post effects (PS2 resolution or upscaled), HD texture pack and its folder |
-| Gameplay | 60 FPS, L3 dash, control style (classic / modern with mouse camera, work in progress), roulette timer (normal / double), Unlock Hard, mute music |
-| Mods | Character: Gene or Xavier |
-| Controls | Every key, mouse button and controller button (also F1 in game) |
+| Display | Game Window: display mode (fullscreen, maximized window or window) and window size, aspect ratio. Camera: Camera & FOV (presets; with "Show advanced settings": field of view, in fights, distance, tilt, enemies following the view), Steady Idle Camera, See Through. Interface: HUD layout (16:9 edges or 4:3), menu width (4:3 or stretched) |
+| Graphics | Renderer: graphics API (Vulkan or Direct3D 11), internal resolution (1x–8x). Effects: post effects (PS2 resolution or upscaled), depth of field |
+| Gameplay | 60 FPS; Click-Stick Dash, control style (classic / modern with mouse camera), Busta-Chan Jive; Moveset Presets, Buck Breaker; Cunt Punter, Sway Bar, Tension is Placable (and Off the Cuff), Wild Curry Funk; roulette timer, Target Select, Dry Spinning; Intro Skipper, Hard-On, Mute Music; Better Shop & Casino Poses |
+| Controls | Menu controls, button prompts, every key, mouse button and controller button (also F1 in game), the port's hotkeys |
+| Mods | Character: Gene or Xavier; HD texture pack and its folder |
 
 In game: **F1** controls, **F2** the dev menu (display, graphics, gameplay, camera, controls, NPCs, debug; options tuned live), **F5** / **F9** save / load state, **F7** HUD layout, **F11** full screen, **F12** debugger. All but F1 are rebindable (kamite.ini [Hotkeys]; the launcher's and the F2 menu's Controls tabs).
 
