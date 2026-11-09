@@ -138,30 +138,30 @@ namespace kamite
                     std::vector<std::wstring> data;
                     std::wstring time;
                     parseEvent(xml, data, time);
-                    if (data.empty() || _wcsicmp(data[0].c_str(), L"kamite.exe") != 0)
+                    if (data.empty() || _wcsicmp(data[0].c_str(), L"GHR.exe") != 0)
                         continue;
                     ++reported;
                     const bool hang = xml.find(L"Application Hang") != std::wstring::npos;
                     if (hang || data.size() < 8)
                     {
-                        KM_INFO(Boot, "crash history: " << narrow(time) << " UTC kamite.exe "
+                        KM_INFO(Boot, "crash history: " << narrow(time) << " UTC GHR.exe "
                                                         << (hang ? "stopped responding and was closed" : "ended (no details)"));
                         continue;
                     }
                     const unsigned long code = std::wcstoul(data[6].c_str(), nullptr, 16);
                     const unsigned long long offset = std::wcstoull(data[7].c_str(), nullptr, 16);
-                    const std::string where = _wcsicmp(data[3].c_str(), L"kamite.exe") == 0 &&
+                    const std::string where = _wcsicmp(data[3].c_str(), L"GHR.exe") == 0 &&
                                                       std::wcstoul(data[5].c_str(), nullptr, 16) == imageTimeStamp(GetModuleHandleW(nullptr))
                                                   ? "(this build)"
                                                   : "(another build)";
-                    KM_INFO(Boot, "crash history: " << narrow(time) << " UTC kamite.exe crashed: exception 0x" << std::hex << code
+                    KM_INFO(Boot, "crash history: " << narrow(time) << " UTC GHR.exe crashed: exception 0x" << std::hex << code
                                                     << std::dec << " " << codeMeaning(code) << " in " << narrow(data[3]) << "+0x"
                                                     << std::hex << offset << std::dec << " " << where);
                 }
             }
             EvtClose(results);
             if (reported == 0)
-                KM_INFO(Boot, "crash history: no crash of kamite.exe in the last three days");
+                KM_INFO(Boot, "crash history: no crash of GHR.exe in the last three days");
         }
 
         LONG CALLBACK fatalExceptionHandler(EXCEPTION_POINTERS *info)

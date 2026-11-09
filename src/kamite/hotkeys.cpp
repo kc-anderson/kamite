@@ -1,4 +1,4 @@
-// The port's shortcut keys in kamite.ini and in the F2 menu. See hotkeys.h.
+// The port's shortcut keys in GHR.ini and in the F2 menu. See hotkeys.h.
 #include "kamite/hotkeys.h"
 #include "kamite/ini_file.h"
 #include "kamite/log.h"
@@ -54,7 +54,7 @@ namespace kamite::hotkeys
                                                      << rt::text(info.def) << " kept");
         }
         if (read)
-            KM_INFO(Game, "hotkeys: " << read << " binding(s) from kamite.ini [Hotkeys]");
+            KM_INFO(Game, "hotkeys: " << read << " binding(s) from GHR.ini [Hotkeys]");
     }
 
     bool save(std::string &status)
@@ -62,7 +62,7 @@ namespace kamite::hotkeys
         IniFile ini;
         if (g_iniPath.empty() || !ini.load(g_iniPath))
         {
-            status = "Could not read kamite.ini.";
+            status = "Could not read GHR.ini.";
             return false;
         }
         for (int i = 0; i < kCount; ++i)
@@ -71,7 +71,7 @@ namespace kamite::hotkeys
             ini.set("Hotkeys", rt::info(action(i)).id, binding.bound() ? rt::text(binding) : "none");
         }
         const bool saved = ini.save();
-        status = saved ? "Hotkeys saved to kamite.ini." : "Could not write kamite.ini.";
+        status = saved ? "Hotkeys saved to GHR.ini." : "Could not write GHR.ini.";
         return saved;
     }
 

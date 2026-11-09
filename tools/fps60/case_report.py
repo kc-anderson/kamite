@@ -448,9 +448,9 @@ def main(argv):
     # columns cannot be held against a replay's, so only Gene's are.
     faith_enemies = enemies if meta.get("enemyorder") == "near" else 0
     verdict = faithful(live, same_rate, rec_div, faith_enemies) if same_rate else "no replay at the case's rate yet"
-    # Same build? (kamite.exe next to cases\, where Replay-Cases.cmd runs this.)
+    # Same build? (GHR.exe next to cases\, where Replay-Cases.cmd runs this.)
     recorded = meta.get("build", "")
-    exe = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(path))), "kamite.exe")
+    exe = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(path))), "GHR.exe")
     same_build = None
     if recorded and os.path.exists(exe):
         size = recorded.split(":")[0]

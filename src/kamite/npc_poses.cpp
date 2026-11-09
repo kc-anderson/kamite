@@ -995,7 +995,7 @@ namespace kamite::npc_poses
             std::ofstream out(g_file, std::ios::binary | std::ios::trunc);
             if (!out)
                 return false;
-            out << "# Kamite's NPC poses (the F2 menu's NPCs tab writes this file).\r\n"
+            out << "# God Hand: Rearmed's NPC poses (the F2 menu's NPCs tab writes this file).\r\n"
                    "# room (hex), where the NPC stands (x z, cm), lean (0/1), bend at the waist (degrees), hip sway (%),\r\n"
                    "# height (m), forward (m), sideways (m, + = her left), turn (degrees, + = to her left), motion,\r\n"
                    "# head pitch and turn, arms raised, elbows bent, bottom out (degrees), amount of movement (%),\r\n"

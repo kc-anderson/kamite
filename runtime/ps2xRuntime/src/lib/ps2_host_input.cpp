@@ -783,7 +783,7 @@ namespace ps2_host_input
             if (const std::string_view preamble = trimTrailingBlank(model.preamble); !preamble.empty())
                 out << preamble << '\n'; // the file's own header (and the player's notes in it), as written
             else
-                out << "# Kamite controls (kamite.exe). F1 in the game opens the Controls screen, which edits and saves this file.\n"
+                out << "# God Hand: Rearmed controls (GHR.exe). F1 in the game opens the Controls screen, which edits and saves this file.\n"
                    "# PCSX2 syntax, one binding per line: <Key> = Keyboard/<key> | Pointer-0/LeftButton, RightButton, MiddleButton |\n"
                    "#   SDL-<n>/<button> (controller n: FaceSouth FaceEast FaceWest FaceNorth Back Start LeftStick RightStick\n"
                    "#   LeftShoulder RightShoulder DPadUp DPadDown DPadLeft DPadRight) | SDL-<n>/+<axis> or -<axis> (LeftX LeftY\n"
@@ -1828,7 +1828,7 @@ namespace ps2_host_input
             std::abort();
         }
 
-        // Review 2026-10-18: kamite.exe is a console program and Start-Kamite.cmd runs it in the minimized "Kamite
+        // Review 2026-10-18: GHR.exe is a console program and Start-GHR.cmd runs it in the minimized "Kamite
         // log" console. Closing that window (or Ctrl+C / Ctrl+Break in it) ends the process through ExitProcess: no
         // atexit, no end of the run loop, so the hotkeys stayed off until sign-out. Runs on a thread of its own; FALSE
         // lets the default handling (the exit) go on.
@@ -2089,7 +2089,7 @@ namespace ps2_host_input
             std::error_code error;
             if (!std::filesystem::exists(path, error))
             {
-                // First run: the PS2X_PAD<n>=1 / PS2X_PAD<n>_<KEY>=a;b lines kamite.ini used to carry, else the defaults.
+                // First run: the PS2X_PAD<n>=1 / PS2X_PAD<n>_<KEY>=a;b lines GHR.ini used to carry, else the defaults.
                 constexpr std::string_view kSettingKeys[] = {"Type", "Deadzone", "AxisScale", "ButtonDeadzone",
                                                              "LargeMotorScale", "SmallMotorScale", "InvertL", "InvertR",
                                                              "LargeMotor", "SmallMotor"};
@@ -2120,7 +2120,7 @@ namespace ps2_host_input
                 }
                 std::string message;
                 if (writeControlsFile(g_model, message))
-                    std::cerr << "[controls] wrote " << path << (fromLegacy ? " from the kamite.ini PS2X_PAD lines" : " with the default layout") << std::endl;
+                    std::cerr << "[controls] wrote " << path << (fromLegacy ? " from the GHR.ini PS2X_PAD lines" : " with the default layout") << std::endl;
                 else
                     std::cerr << "[controls] " << message << "; using that layout without a file" << std::endl;
             }
@@ -2550,7 +2550,7 @@ namespace ps2_host_input
             {"SmallMotorScale", "1"},
         };
         const std::string sdl = "SDL-" + std::to_string(pad) + "/";
-        // Player 1 also has the keyboard. The layout (2026-10-17, the kamite.ini PS2X_PAD1_* lines it replaces): D-pad
+        // Player 1 also has the keyboard. The layout (2026-10-17, the GHR.ini PS2X_PAD1_* lines it replaces): D-pad
         // on the arrow keys (menus move with the D-pad), face buttons on I/L/K/J, left stick on WASD, Start = Return,
         // Select = Backspace, L1/R1 = Q/E, L2/R2 = 1/3, L3/R3 = F/G (R3 also the middle mouse button); the right stick (evade) has no keys by default.
         const bool keyboard = pad == 0u;

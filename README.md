@@ -1,14 +1,14 @@
-<!-- Logo: drop the image at assets/kamite-logo.png and uncomment the next line. -->
-<!-- ![Kamite](assets/kamite-logo.png) -->
+<!-- Logo: drop the image at assets/logo.png and uncomment the next line. -->
+<!-- ![God Hand: Rearmed](assets/logo.png) -->
 
-# God Hand: Rearmed (Project Kamite)
+# God Hand: Rearmed
 
-**Kamite** is an unofficial native PC port of **God Hand** (PlayStation 2, 2006), built by static recompilation: the
-game's own code rebuilt as a Windows program, with PCSX2's hardware renderer for the graphics.
+**God Hand: Rearmed** is an unofficial, fan-made native PC port of **God Hand** (PlayStation 2, 2006), built by static
+recompilation: the game's own code rebuilt as a Windows program, with PCSX2's hardware renderer for the graphics. Its
+codename, Kamite, is the name the code and its folders use.
 
 > [!WARNING]
-> **Under construction.** Kamite plays from the start of the game into stage 3; the later stages, the ending and the
-> extras have not been played through on it yet. Expect bugs.
+> **Under construction.** The game plays from start to credits, but the port is still being tested. Expect bugs.
 
 > **No game files are included.** You need your own disc image of the game (USA, serial SLUS-21503; see
 > [DISC_HASHES.md](DISC_HASHES.md)). Building and playing: [docs/BUILDING.md](docs/BUILDING.md).
@@ -51,7 +51,7 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed and when.
 
 ## Credits
 
-- [LasVola/godhand-recomp](https://github.com/LasVola/godhand-recomp): the recompilation Kamite started from (the
+- [LasVola/godhand-recomp](https://github.com/LasVola/godhand-recomp): the recompilation God Hand: Rearmed started from (the
   running game, the SNR2 overlay loader, the button prompts, the first fixes), built on
   [PS2Recomp](https://github.com/ran-j/PS2Recomp) by ran-j and contributors, the
   [sotc-port runtime fork](https://github.com/LightVelox/PS2Recomp) by LightVelox, and the
@@ -76,7 +76,7 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed and when.
   (Apache-2.0).
 - Xavier and *Xavier: Renegade Angel* belong to Adult Swim. The Xavier mod is a fan-made example of the character
   system and is not affiliated with or endorsed by Adult Swim.
-- Kamite is directed, play-tested and written by K, built with AI assistance (Claude by Anthropic), with ideas and
+- God Hand: Rearmed is directed, play-tested and written by K, built with AI assistance (Claude by Anthropic), with ideas and
   testing from his friends.
 
 ## Legal

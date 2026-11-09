@@ -99,7 +99,7 @@ namespace kamite::test_mode
         constexpr double kSaveTimeoutSeconds = 10.0;
         constexpr uint32_t kMaxCaseVblanks = 60u * 120u;      // a case stops itself after 2 minutes
         constexpr uint32_t kDefaultEnemies = 4u;
-        // kamite.ini settings (as their variables) that change the game's logic, kept in a case's meta.
+        // GHR.ini settings (as their variables) that change the game's logic, kept in a case's meta.
         constexpr const char *kCaseSettings[] = {"KAMITE_ASPECT", "PS2X_WINDOW_SIZE", "KAMITE_FOV", "KAMITE_FIGHT_FOV",
                                                  "KAMITE_CAMERA_DISTANCE", "KAMITE_CAMERA_ZOOM_OUT", "KAMITE_CAMERA_TILT",
                                                  "KAMITE_STEADY_IDLE_CAMERA", "KAMITE_ENEMY_VIEW", "KAMITE_CONTROL_STYLE",
@@ -109,8 +109,8 @@ namespace kamite::test_mode
                                                  "KAMITE_TENSION_PLACABLE", "KAMITE_OFF_THE_CUFF",
                                                  "KAMITE_BALL_BUSTER_WOMEN", "KAMITE_ROULETTE_CYCLE",
                                                  "KAMITE_BUCK_BREAKER"};
-        // The game's own value of the gameplay settings above when nothing sets them (kamite.ini's defaults). A case
-        // without one (the recorder's kamite.ini had no such line, or the option is newer than the case) ran with this
+        // The game's own value of the gameplay settings above when nothing sets them (GHR.ini's defaults). A case
+        // without one (the recorder's GHR.ini had no such line, or the option is newer than the case) ran with this
         // value, so its replay does too instead of taking the replaying machine's (Nov 6: T1's Elvis case replayed
         // with K's Busta-Chan Jive, chairs, Tension is Placable and Cunt Punter on). Camera and window keys: not forced.
         struct CaseDefault
@@ -847,7 +847,7 @@ namespace kamite::test_mode
             fs::path output;          // the pad file (record) or the CSV (play)
             fs::path csv;
             bool withShapes = true;
-            int fps60 = -1;           // -1: kamite.ini's
+            int fps60 = -1;           // -1: GHR.ini's
             uint32_t vblanks = 0;     // the length in vblanks (real time x 60)
             uint32_t enemies = kDefaultEnemies;
             Recording rec;            // play: the recording; record: filled as it runs
@@ -1475,7 +1475,7 @@ namespace kamite::test_mode
             c.meta += "\nenemies=" + std::to_string(kDefaultEnemies) + "\n";
             c.meta += "enemyorder=near\n"; // the em<i> columns hold the nearest enemies (nearestEnemies), not the list's first
             // The settings that change what the game does (the camera's reach, the enemies' view, the controls): the replay
-            // runs with the recorder's (applyCaseSettings), not the replaying machine's kamite.ini.
+            // runs with the recorder's (applyCaseSettings), not the replaying machine's GHR.ini.
             for (const char *name : kCaseSettings)
             {
                 const char *value = std::getenv(name);
@@ -1485,11 +1485,11 @@ namespace kamite::test_mode
                     c.meta += std::string("env.") + name + "=" + value + "\n";
             }
             c.meta += "cheats=" + rec.cheats + "\n"; // God mode etc.: the replay sets the same (readCaseForReplay)
-            // The build that recorded it (kamite.exe's size and time): a replay with another build may differ from the
+            // The build that recorded it (GHR.exe's size and time): a replay with another build may differ from the
             // live log where a fix changed the game, and the report says so.
             {
                 std::error_code buildError;
-                const fs::path exe = g_exeDir / "kamite.exe";
+                const fs::path exe = g_exeDir / "GHR.exe";
                 const auto size = fs::file_size(exe, buildError);
                 const auto time = fs::last_write_time(exe, buildError);
                 if (!buildError)

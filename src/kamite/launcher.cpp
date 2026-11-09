@@ -659,7 +659,7 @@ void main()
             {
                 pushSize(state, 16.0f);
                 const char *lines[] = {"God Hand\u2122 is a trademark of CAPCOM CO., LTD. All rights to the game belong to Capcom.",
-                                       "Kamite is a fan-made project, not affiliated with or endorsed by Capcom or Clover Studio. "
+                                       "God Hand: Rearmed is an unofficial fan-made project, not affiliated with or endorsed by Capcom or Clover Studio. "
                                        "It contains no game data: play your own damn copy!"};
                 const float lineHeight = ImGui::GetTextLineHeightWithSpacing();
                 const float y = ImGui::GetWindowHeight() - lineHeight * 2.0f - fontSize(state, 18.0f);
@@ -1139,7 +1139,7 @@ void main()
             ImGui::PopID();
         }
 
-        // The port's shortcut keys (runtime/ps2_hotkeys.h): kamite.ini [Hotkeys], one line per action. The runtime's
+        // The port's shortcut keys (runtime/ps2_hotkeys.h): GHR.ini [Hotkeys], one line per action. The runtime's
         // table is set too, so a key bound here is live when the game starts from this launcher.
         namespace hk = ps2x::hotkeys;
         int g_hotkeyCapture = -1;
@@ -1796,7 +1796,7 @@ void main()
             state.screen = Screen::Install;
         }
 
-        ps2_host_display::openHostWindow("Kamite");
+        ps2_host_display::openHostWindow(kWindowTitle);
         if (!ps2_host_display::vsyncEnabled())
             SetTargetFPS(60);
         rlImGuiSetup(true);

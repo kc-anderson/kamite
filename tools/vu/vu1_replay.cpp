@@ -4,7 +4,7 @@
 #include "ps2_vu1_core.cpp") and links
 // one set of generated VU1 code, so two builds of the generated code can be compared run by run.
 //
-// Inputs: an F8 VU1 trace (vu1trace_<tick>.bin, written next to kamite.exe with the vu1_<hash>.bin images it needs),
+// Inputs: an F8 VU1 trace (vu1trace_<tick>.bin, written next to GHR.exe with the vu1_<hash>.bin images it needs),
 // or the captured images in build/vu1_images for the synthetic mode.
 //
 //   vu1_replay verify <trace>            compiled code vs the interpreter: runs whose VF/VI registers, VU memory or

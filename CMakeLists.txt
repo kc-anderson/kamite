@@ -18,13 +18,13 @@ set(URBAN_BUILD_RECOMP ${KAMITE_BUILD_RECOMP})
 set(URBAN_BUILD_TOOLS ${KAMITE_BUILD_TOOLS})
 
 # In-game ImGui "Runtime Debugger" (threads, kernel, IOP/SIF, RPC history, GS, DMA, memory); F1 toggles it.
-option(KAMITE_DEBUG_UI "Build the ImGui runtime debugger into kamite.exe" ON)
+option(KAMITE_DEBUG_UI "Build the ImGui runtime debugger into GHR.exe" ON)
 set(PS2X_ENABLE_DEBUG_UI ${KAMITE_DEBUG_UI} CACHE BOOL "" FORCE)
 # FFmpeg MPEG decoder for the libmpeg HLE. OFF: ON downloads a prebuilt LGPL FFmpeg at configure time
 # (runtime/ps2xRuntime/CMakeLists.txt, ExternalProject ffmpeg_external).
 option(KAMITE_FFMPEG "Decode MPEG video with FFmpeg (downloads a prebuilt FFmpeg)" OFF)
 set(PS2X_ENABLE_FFMPEG ${KAMITE_FFMPEG} CACHE BOOL "" FORCE)
-# Controllers through SDL3 (downloads the SDL3 source at configure time; SDL3.dll goes next to kamite.exe): XInput,
+# Controllers through SDL3 (downloads the SDL3 source at configure time; SDL3.dll goes next to GHR.exe): XInput,
 # PlayStation, Switch and Steam controllers, vibration. OFF (or PS2X_SDL_INPUT=0 at run time): GLFW's gamepads.
 option(KAMITE_SDL_INPUT "Read controllers through SDL3" ON)
 set(PS2X_ENABLE_SDL_INPUT ${KAMITE_SDL_INPUT} CACHE BOOL "" FORCE)
@@ -53,7 +53,7 @@ if(KAMITE_PCSX2_GS AND WIN32)
 endif()
 
 # KAMITE_LTO: also /GL for ps2_iop and the port sources (linked with /LTCG). ps2_runtime always gets /GL in
-# RelWithDebInfo/Release from the runtime's own EnableFastReleaseMode, and kamite.exe links /LTCG in RelWithDebInfo
+# RelWithDebInfo/Release from the runtime's own EnableFastReleaseMode, and GHR.exe links /LTCG in RelWithDebInfo
 # (src/CMakeLists.txt). The generated code (~10k files) never gets /GL.
 option(KAMITE_LTO "Whole-program optimization of the runtime, the IOP and the port (not the generated code)" OFF)
 if(MSVC AND KAMITE_LTO AND TARGET kamite)

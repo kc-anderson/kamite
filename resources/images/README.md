@@ -21,4 +21,4 @@ Without the file the launcher draws its brown gradient.
 The logo images are built by `tools/logo/build_logo.py --wordmark <render.png> --kana <kana.png> [--psd layers.psd]`, or
 from that PSD again with `--layers layers.psd`; the script prints the wordmark's centre for `kLogoCentreX/Y` and the
 kana's rectangle for `kKanaRect` if the layout changes. The whole `resources/` folder is copied next
-to kamite.exe at build time.
+to GHR.exe at build time.

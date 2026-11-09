@@ -82,7 +82,7 @@ namespace kamite::pcsampler
         }
 
 #if defined(_WIN32)
-        // Host function of an address in the EE thread ("module!function"; kamite.pdb next to kamite.exe for names).
+        // Host function of an address in the EE thread ("module!function"; GHR.pdb next to GHR.exe for names).
         std::string hostFunction(DWORD64 address, DWORD64 &start)
         {
             HANDLE process = GetCurrentProcess();

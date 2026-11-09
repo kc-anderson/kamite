@@ -23,7 +23,7 @@ namespace kamite::hd_textures
 
     // Texture replacements on (and the generated folder usable).
     bool enabled();
-    // The folder holding kamite.exe (set by install even when replacements are off).
+    // The folder holding GHR.exe (set by install even when replacements are off).
     const std::filesystem::path &exeDirectory();
     // The pack's file for a replacement name ("9c64...-82a5...-000061d3"), .png or .dds; empty when it has none.
     std::filesystem::path packFile(const std::string &name);

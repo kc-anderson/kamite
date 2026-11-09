@@ -1,6 +1,6 @@
 """Build the playable character mods from your own disc: assets/characters/<id>/ -> <out>/mods/characters/<id>/.
 
-    python -I tools/models/build_characters.py --iso <disc image .iso> --out <folder holding kamite.exe> [--texture-pack <dir>] [id ...]
+    python -I tools/models/build_characters.py --iso <disc image .iso> --out <folder holding GHR.exe> [--texture-pack <dir>] [id ...]
 
 Each assets/characters/<id>/character.json lists the disc files it replaces:
     {"files": {"pl/pl00.dat": {"nodes": "xavier_nodes.scr", "textures": "xavier_textures.tm3"},

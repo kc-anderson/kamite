@@ -313,7 +313,7 @@ namespace kamite::modern
             IniFile ini;
             if (g_iniPath.empty() || !ini.load(g_iniPath))
             {
-                setStatus("Could not read kamite.ini.");
+                setStatus("Could not read GHR.ini.");
                 return;
             }
             ini.set("Game", "ControlStyle", g_modern.load() ? "modern" : "classic");
@@ -326,7 +326,7 @@ namespace kamite::modern
             ini.set("Game", "MouseSensitivity", number2(g_mouseSensitivity.load()));
             ini.set("Game", "MenuButtons", menu_buttons::styleName(menu_buttons::style()));
             ini.set("Game", "ButtonPrompts", prompt_hd::choiceName(prompt_hd::choice()));
-            setStatus(ini.save() ? "Saved to kamite.ini." : "Could not write kamite.ini.");
+            setStatus(ini.save() ? "Saved to GHR.ini." : "Could not write GHR.ini.");
         }
 
 #if defined(KAMITE_HAS_GS_MENU)
@@ -400,7 +400,7 @@ namespace kamite::modern
             ui->text_disabled("Menus, dialogs and the roulette; the moves keep their buttons. The save menu's own wording "
                               "follows at the next start.");
 
-            ui->separator_text("kamite.ini");
+            ui->separator_text("GHR.ini");
             if (ui->button("Save##controls"))
                 saveToIni();
             {

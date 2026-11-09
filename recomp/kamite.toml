@@ -40,7 +40,7 @@ stubs = []
 runtime_relocations = "kamite_runtime_relocations.csv"
 
 # Switchable patches (ps2xRecomp: both forms are compiled in, the run-time flag picks one; src/kamite/frame_patches.cpp
-# sets the flags from kamite.ini and holds the hooks). "fps60": the 60 FPS mode, a port of the PCSX2 patch
+# sets the flags from GHR.ini and holds the hooks). "fps60": the 60 FPS mode, a port of the PCSX2 patch
 # SLUS-21503_6FB69282.pnach "60 Fps" (Puggsy + Claude Ai + Gemini). "frame_hook": always on.
 [patches]
 

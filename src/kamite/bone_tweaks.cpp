@@ -329,7 +329,7 @@ namespace kamite::bone_tweaks
             ui->separator_text("Money");
             float money = g_money.load(std::memory_order_relaxed) * 100.0f;
             ui->set_next_width(340.0f);
-            // Kept in kamite.ini ([Game] Money) once the slider has rested half a second (K, Nov 7: no Save button).
+            // Kept in GHR.ini ([Game] Money) once the slider has rested half a second (K, Nov 7: no Save button).
             static int64_t changedMs = -1;
             const int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                                       std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -343,7 +343,7 @@ namespace kamite::bone_tweaks
                 changedMs = -1;
                 const int percent = static_cast<int>(std::lround(g_money.load(std::memory_order_relaxed) * 100.0f));
                 if (!dev_menu::saveIniValue("Game", "Money", std::to_string(percent)))
-                    KM_WARN(Game, "Money: could not write kamite.ini");
+                    KM_WARN(Game, "Money: could not write GHR.ini");
             }
         }
     }

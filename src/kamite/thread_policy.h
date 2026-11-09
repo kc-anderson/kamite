@@ -1,7 +1,7 @@
 #pragma once
 
 // Host thread placement. GENERIC: the Urban Reign port's src/urban/thread_policy.h (only the namespace renamed); it
-// places the runtime's named threads, nothing game-specific. kamite.ini sets PS2X_THREAD_POLICY=off for boot tests.
+// places the runtime's named threads, nothing game-specific. GHR.ini sets PS2X_THREAD_POLICY=off for boot tests.
 
 namespace kamite::threadpolicy
 {

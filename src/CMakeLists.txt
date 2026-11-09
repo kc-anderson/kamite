@@ -1,4 +1,4 @@
-# Game layer (kamite.exe) and the recompiled game code. Adapted from the Urban Reign port's src/CMakeLists.txt.
+# Game layer (GHR.exe) and the recompiled game code. Adapted from the Urban Reign port's src/CMakeLists.txt.
 
 # KAMITE_ARCH: instruction set the compiler may use in the generated code (game code + VU1 AOT, the bulk of the build).
 # SSE41 (default): one exe for every CPU with SSE4.1 (MSVC has no /arch:SSE4.2, so its own code stays SSE2 and the
@@ -84,20 +84,20 @@ set(KAMITE_HOST_SOURCES
     kamite/thread_policy.cpp
 )
 
-# kamite.ini (top level) is built into kamite.exe as its default settings: kamite_generated/kamite/default_ini.h.
-# The header is rewritten only when the text changes, so editing kamite.ini rebuilds main.cpp alone.
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/kamite.ini")
-file(READ "${CMAKE_SOURCE_DIR}/kamite.ini" KAMITE_DEFAULT_INI)
+# GHR.ini (top level) is built into GHR.exe as its default settings: kamite_generated/kamite/default_ini.h.
+# The header is rewritten only when the text changes, so editing GHR.ini rebuilds main.cpp alone.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/GHR.ini")
+file(READ "${CMAKE_SOURCE_DIR}/GHR.ini" KAMITE_DEFAULT_INI)
 string(LENGTH "${KAMITE_DEFAULT_INI}" KAMITE_DEFAULT_INI_LENGTH)
 if(KAMITE_DEFAULT_INI_LENGTH GREATER 16000)
-    message(FATAL_ERROR "kamite.ini is ${KAMITE_DEFAULT_INI_LENGTH} bytes; MSVC string literals stop at 16380 (split it)")
+    message(FATAL_ERROR "GHR.ini is ${KAMITE_DEFAULT_INI_LENGTH} bytes; MSVC string literals stop at 16380 (split it)")
 endif()
 if(KAMITE_DEFAULT_INI MATCHES "\\)KMINI\"")
-    message(FATAL_ERROR "kamite.ini must not contain )KMINI\" (the raw string delimiter)")
+    message(FATAL_ERROR "GHR.ini must not contain )KMINI\" (the raw string delimiter)")
 endif()
 set(KAMITE_INI_HEADER "${CMAKE_CURRENT_BINARY_DIR}/kamite_generated/kamite/default_ini.h")
 file(WRITE "${KAMITE_INI_HEADER}.tmp"
-    "// Generated from kamite.ini by src/CMakeLists.txt. Do not edit.\n"
+    "// Generated from GHR.ini by src/CMakeLists.txt. Do not edit.\n"
     "#pragma once\n"
     "namespace kamite\n"
     "{\n"
@@ -261,6 +261,13 @@ file(WRITE "${KAMITE_MODULE_INDEX}.tmp"
 file(COPY_FILE "${KAMITE_MODULE_INDEX}.tmp" "${KAMITE_MODULE_INDEX}" ONLY_IF_DIFFERENT)
 
 add_executable(kamite ${KAMITE_HOST_SOURCES} "${KAMITE_MODULE_INDEX}")
+# The player-facing name: GHR.exe (the target, the code and the build folders stay "kamite"). On Windows the version
+# resource (kamite/ghr.rc) gives Explorer and Task Manager the name "God Hand: Rearmed".
+set_target_properties(kamite PROPERTIES OUTPUT_NAME GHR)
+if(WIN32)
+    enable_language(RC)
+    target_sources(kamite PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/kamite/ghr.rc")
+endif()
 # The checkout's commit for the test cases' meta (kamite_generated/kamite/git_commit.h), refreshed at every build.
 set(KAMITE_COMMIT_HEADER "${CMAKE_CURRENT_BINARY_DIR}/kamite_generated/kamite/git_commit.h")
 execute_process(COMMAND "${CMAKE_COMMAND}" -DSRC=${CMAKE_SOURCE_DIR} -DOUT=${KAMITE_COMMIT_HEADER}
@@ -276,7 +283,7 @@ if(KAMITE_MODULE_LIBRARIES)
 endif()
 # The port's own resources (resources/images/logo.png: the launcher's logo, npc_motions, prompts) next to the exe,
 # merged into the resources/ folder pcsx2gs.dll also fills (shaders, OSD font). A target of its own that runs at every
-# build of kamite (the build script builds --target kamite): as a POST_BUILD step it ran only when kamite.exe was
+# build of kamite (the build script builds --target kamite): as a POST_BUILD step it ran only when GHR.exe was
 # linked again, so a change to resources/ alone never reached the build (Oct 26: the counter idle takes).
 add_custom_target(kamite_resources
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/resources" "$<TARGET_FILE_DIR:kamite>/resources"

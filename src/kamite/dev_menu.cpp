@@ -56,7 +56,7 @@ namespace kamite::dev_menu
         {
             if (g_iniPath.empty() || !ini.load(g_iniPath))
             {
-                status = "Could not read kamite.ini.";
+                status = "Could not read GHR.ini.";
                 return false;
             }
             return true;
@@ -64,7 +64,7 @@ namespace kamite::dev_menu
 
         void saveIni(IniFile &ini, std::string &status)
         {
-            status = ini.save() ? "Saved to kamite.ini." : "Could not write kamite.ini.";
+            status = ini.save() ? "Saved to GHR.ini." : "Could not write GHR.ini.";
         }
 
 #if defined(KAMITE_HAS_GS_MENU)
@@ -110,7 +110,7 @@ namespace kamite::dev_menu
                                                 : envOn("KAMITE_START_MAXIMIZED", false) ? "maximized"
                                                                                            : "window, " + env("PS2X_WINDOW_SIZE", "auto"));
 
-            ui->separator_text("kamite.ini");
+            ui->separator_text("GHR.ini");
             if (ui->button("Save##display"))
             {
                 IniFile ini;
@@ -188,7 +188,7 @@ namespace kamite::dev_menu
             launcherOnly(ui, "Better Shop & Casino Poses", envOn("KAMITE_NPC_POSES", false) ? "on" : "off");
             launcherOnly(ui, "Busta-Chan Jive", envOn("KAMITE_SPRINT_TRAVERSAL", false) ? "on" : "off");
 
-            ui->separator_text("kamite.ini");
+            ui->separator_text("GHR.ini");
             if (ui->button("Save##gameplay"))
             {
                 IniFile ini;
@@ -227,7 +227,7 @@ namespace kamite::dev_menu
     {
         g_iniPath = iniPath;
 #if defined(KAMITE_HAS_GS_MENU)
-        ps2x::menu::setTitle("Kamite dev menu", "F2 (or the Dev menu hotkey) closes this. The game keeps running behind it.");
+        ps2x::menu::setTitle("God Hand: Rearmed dev menu", "F2 (or the Dev menu hotkey) closes this. The game keeps running behind it.");
         ps2x::menu::setTabOrder({"Display", "Graphics", "Gameplay", "Camera", "Controls", "NPCs", "Debug"});
         ps2x::menu::addPanel("Display", &drawDisplay);
         ps2x::menu::addPanel("Graphics", &drawGraphicsExtras);

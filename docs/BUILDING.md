@@ -1,6 +1,6 @@
-# Building and using Kamite
+# Building and using God Hand: Rearmed
 
-How to build Kamite from source, play it, and work on it. The [README](../README.md) has the overview.
+How to build God Hand: Rearmed (codename Kamite) from source, play it, and work on it. The [README](../README.md) has the overview.
 
 ## How to set it up
 
@@ -36,11 +36,11 @@ python -I build.py characters
 
 ### Play
 
-Double-click **`Start-Kamite.cmd`**, or run `build\port\bin\kamite.exe`. The launcher opens first: point it at your
+Double-click **`Start-GHR.cmd`**, or run `build\port\bin\GHR.exe`. The launcher opens first: point it at your
 disc image once, then Play. The very first start can sit on a black screen for a couple of minutes while the graphics
 are prepared for your card; later starts take seconds.
 
-Your settings are in `build\port\bin\kamite.ini` (every launcher option is a line there, with a comment), your saves in
+Your settings are in `build\port\bin\GHR.ini` (every launcher option is a line there, with a comment), your saves in
 `build\port\bin\memcards\`, your controls in `build\port\bin\controls.ini`.
 
 ### Options
@@ -53,7 +53,7 @@ Your settings are in `build\port\bin\kamite.ini` (every launcher option is a lin
 | Controls | Menu controls, button prompts, every key, mouse button and controller button (also F1 in game), the port's hotkeys |
 | Mods | Character: Gene or Xavier; HD texture pack and its folder |
 
-In game: **F1** controls, **F2** the dev menu (display, graphics, gameplay, camera, controls, NPCs, debug; options tuned live), **F5** / **F9** save / load state, **F7** HUD layout, **F11** full screen, **F12** debugger. All but F1 are rebindable (kamite.ini [Hotkeys]; the launcher's and the F2 menu's Controls tabs).
+In game: **F1** controls, **F2** the dev menu (display, graphics, gameplay, camera, controls, NPCs, debug; options tuned live), **F5** / **F9** save / load state, **F7** HUD layout, **F11** full screen, **F12** debugger. All but F1 are rebindable (GHR.ini [Hotkeys]; the launcher's and the F2 menu's Controls tabs).
 
 ---
 
@@ -70,7 +70,7 @@ that put Xavier onto Gene's skeleton (`tools/models/xavier/README.md`).
 ### HD textures
 
 Any PCSX2 texture pack for the game (USA, SLUS-21503) works: set its folder in Graphics, or put it at `textures/SLUS-21503/`
-next to `kamite.exe`.
+next to `GHR.exe`.
 
 ---
 
@@ -105,10 +105,10 @@ options were on (60 FPS, aspect ratio, character).
   the PC sampler and the call profiler all use them.
 - **Switchable patches:** `[[patches.conditional]]` and `[[patches.hooks]]` in `recomp/kamite.toml` (and per module in
   `recomp/modules/`) are compiled in both forms and picked by a run-time flag; `src/kamite/frame_patches.cpp` sets the
-  flags from `kamite.ini`.
+  flags from `GHR.ini`.
 - **Faster 3D:** `python -I build.py vu` compiles every VU1 microcode upload found on the disc. A few uploads are placed
   by the game itself: play with `PS2X_VU1_CAPTURE=<folder>` set, then `python -I build.py vu <folder>` and build again.
-- **Diagnostics** (environment or `[Runtime]` in `kamite.ini`): `KAMITE_PC_SAMPLE` (`KAMITE_PC_SAMPLE_ALL=1` adds
+- **Diagnostics** (environment or `[Runtime]` in `GHR.ini`): `KAMITE_PC_SAMPLE` (`KAMITE_PC_SAMPLE_ALL=1` adds
   every thread of the process: busy share and hottest host functions, for a frame's bottleneck outside the EE),
   `KAMITE_CALL_PROFILE`, `KAMITE_FIND_COUNTERS`, `KAMITE_TRACE`; F8 in game dumps RAM and the VU1 trace; Shift+F8 writes a hang dump (guest threads, PCs, waits) to the log; F6 writes one
   frame's 2D primitives and every drawn layout's entry table to the log.

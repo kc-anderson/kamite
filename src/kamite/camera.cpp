@@ -1049,7 +1049,7 @@ namespace kamite
                     std::memcpy(rdram + camera + kShakeChannels[i], &amplitude[i], 4);
         }
 
-        // ---- Settings in kamite.ini ------------------------------------------------------------------------------
+        // ---- Settings in GHR.ini ------------------------------------------------------------------------------
 
         float envValue(const char *name, float fallback, float low, float high)
         {
@@ -1087,7 +1087,7 @@ namespace kamite
             g_status = std::move(text);
         }
 
-        // [Video] SeeThrough*: read straight from kamite.ini (at install and on Revert).
+        // [Video] SeeThrough*: read straight from GHR.ini (at install and on Revert).
         void loadExtras(const IniFile &ini)
         {
             g_seeThrough = ini.getBool("Video", "SeeThrough", true);
@@ -1103,7 +1103,7 @@ namespace kamite
             IniFile ini;
             if (g_iniPath.empty() || !ini.load(g_iniPath))
             {
-                setStatus("Could not read kamite.ini.");
+                setStatus("Could not read GHR.ini.");
                 return;
             }
             ini.set("Video", "FieldOfView", number(g_fovPercent.load()));
@@ -1123,11 +1123,11 @@ namespace kamite
             ini.set("Video", "SeeThroughSoftness", number(g_seeSoftness.load()));
             if (!ini.save())
             {
-                setStatus("Could not write kamite.ini.");
+                setStatus("Could not write GHR.ini.");
                 return;
             }
-            KM_INFO(Game, "camera saved to kamite.ini; as a preset (camera_presets.h): " << presetLine());
-            setStatus("Saved to kamite.ini.");
+            KM_INFO(Game, "camera saved to GHR.ini; as a preset (camera_presets.h): " << presetLine());
+            setStatus("Saved to GHR.ini.");
         }
 
         void revertToIni()
@@ -1135,7 +1135,7 @@ namespace kamite
             IniFile ini;
             if (g_iniPath.empty() || !ini.load(g_iniPath))
             {
-                setStatus("Could not read kamite.ini.");
+                setStatus("Could not read GHR.ini.");
                 return;
             }
             g_fovPercent = iniValue(ini, "Video", "FieldOfView", 100.0f, 50.0f, 200.0f);
@@ -1153,7 +1153,7 @@ namespace kamite
             GSPcsx2Backend::SetOption("precise_depth", g_preciseDepth.load() ? "1" : "0");
             GSPcsx2Backend::SetOption("perspective_shading", g_perspectiveShading.load() ? "1" : "0");
             GSPcsx2Backend::SetOption("dof", g_depthOfField.load() ? "1" : "0");
-            setStatus("Back to the values in kamite.ini.");
+            setStatus("Back to the values in GHR.ini.");
         }
 
         // ---- F2 menu: the Camera tab ------------------------------------------------------------------------------
@@ -1245,7 +1245,7 @@ namespace kamite
                 ui->text_disabled(line);
             }
 
-            ui->separator_text("kamite.ini");
+            ui->separator_text("GHR.ini");
             if (ui->button("Save"))
                 saveToIni();
             ui->same_line();
@@ -1308,7 +1308,7 @@ namespace kamite
                               static_cast<unsigned long long>(cutNear), static_cast<unsigned long long>(noStitch));
                 ui->text_wrapped(line);
             }
-            ui->separator_text("kamite.ini");
+            ui->separator_text("GHR.ini");
             if (ui->button("Save##graphics"))
                 saveToIni();
             {
@@ -1412,7 +1412,7 @@ namespace kamite
         if (!s_panel)
         {
             s_panel = true;
-            ps2x::menu::setTitle("Kamite", "F2 closes this menu. The game keeps running behind it.");
+            ps2x::menu::setTitle("God Hand: Rearmed", "F2 closes this menu. The game keeps running behind it.");
             ps2x::menu::addPanel("Camera", &drawCameraPanel);
             ps2x::menu::addPanel("Graphics", &drawGraphicsPanel);
         }

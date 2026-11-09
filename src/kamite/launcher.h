@@ -1,8 +1,8 @@
 #pragma once
 
 // The launcher: the first screen in the game window, before the game boots. Install (pick and check the player's own
-// disc image), then Play / Options, with "don't show again" ([Launcher] Show=0 in kamite.ini; holding Shift
-// while the game starts shows it again). Options edit kamite.ini in place. Drawn with Dear ImGui (rlImGui) on the
+// disc image), then Play / Options, with "don't show again" ([Launcher] Show=0 in GHR.ini; holding Shift
+// while the game starts shows it again). Options edit GHR.ini in place. Drawn with Dear ImGui (rlImGui) on the
 // raylib window the game then keeps; mouse, keyboard and any controller.
 #include <filesystem>
 #include <string>
@@ -12,7 +12,7 @@ namespace kamite::launcher
     struct Context
     {
         std::filesystem::path exeDir;
-        std::filesystem::path iniPath;  // kamite.ini
+        std::filesystem::path iniPath;  // GHR.ini
         std::filesystem::path cacheDir; // game_data (the checked boot ELF is written there)
         std::filesystem::path iso;      // the disc image found so far (may be empty or unusable)
         std::string message;            // shown on the Install screen, e.g. why the configured image failed
@@ -20,7 +20,7 @@ namespace kamite::launcher
 
     enum class Result
     {
-        Play, // kamite.ini holds the chosen image and settings; read the settings again and boot
+        Play, // GHR.ini holds the chosen image and settings; read the settings again and boot
         Quit,
     };
 

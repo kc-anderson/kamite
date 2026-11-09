@@ -7,13 +7,13 @@
     python -I build.py vu [capture dir ...]           VU1 microcode ahead of time: the uploads found on your disc plus
                                                       captured images (vu1_*.bin) into generated/vu1
     python -I build.py configure [-DOPTION=...]       CMake configure (Ninja, RelWithDebInfo, no LTCG)
-    python -I build.py build [target]                 compile kamite.exe (configures first if needed)
+    python -I build.py build [target]                 compile GHR.exe (configures first if needed)
     python -I build.py all [--iso X]                  generate -> configure -> build
     python -I build.py characters [--iso X] [--texture-pack D] [id ...]  playable characters (assets/characters) built
                                                       from your disc into build/port/bin/mods/characters (D: the HD
                                                       pack folder, for the painted textures' full-resolution versions)
     python -I build.py boot [--seconds N] [--iso X]   one hidden, time-capped run; output in build/port/bin/logs
-    python -I build.py run [args]                     a normal run in a window (arguments go to kamite.exe)
+    python -I build.py run [args]                     a normal run in a window (arguments go to GHR.exe)
     python -I build.py status                         what exists so far
 
 Needs Python 3.10+, Visual Studio 2022 with C++ (cl, CMake and Ninja come with it; VSROOT if it is not in the default
@@ -33,7 +33,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 BUILD = ROOT / "build" / "port"
 BIN = BUILD / "bin"
-EXE = BIN / "kamite.exe"
+EXE = BIN / "GHR.exe"
 VSENV = ROOT / "tools" / "win" / "vsenv.cmd"
 JOBS = os.environ.get("KAMITE_JOBS", str(os.cpu_count() or 8))
 GENERATED = ROOT / "generated"
@@ -103,8 +103,8 @@ def in_vs(*cmd):
 def game_running():
     if os.name != "nt":
         return False
-    out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq kamite.exe", "/NH"], capture_output=True, text=True).stdout
-    return "kamite.exe" in out.lower()
+    out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq GHR.exe", "/NH"], capture_output=True, text=True).stdout
+    return "ghr.exe" in out.lower()
 
 
 # ---- disc ---------------------------------------------------------------------------------------------------------
@@ -603,7 +603,7 @@ def build(target="kamite"):
         print("The recompiled game code is missing: run 'python -I build.py generate' first.")
         return 1
     if game_running():
-        print("kamite.exe is running: close it first (the link would fail).")
+        print("GHR.exe is running: close it first (the link would fail).")
         return 1
     # build.ninja, not CMakeCache.txt: CMake writes the cache even when configure fails.
     if not (BUILD / "build.ninja").exists() and configure():
@@ -643,7 +643,7 @@ def build_all(args=()):
 
 def play(args=()):
     if not EXE.exists():
-        print("kamite.exe not built yet: run 'python -I build.py build' first.")
+        print("GHR.exe not built yet: run 'python -I build.py build' first.")
         return 1
     # Session header (sweep L2): play_last.log had elapsed seconds only, no wall-clock time or exe identity.
     digest = hashlib.sha256(EXE.read_bytes()).hexdigest()
@@ -655,7 +655,7 @@ def play(args=()):
 
 
 def keep_play_log(args=()):
-    """Start-Kamite.cmd, before it overwrites logs/play_last.log: keep the previous session as
+    """Start-GHR.cmd, before it overwrites logs/play_last.log: keep the previous session as
     logs/play_<its time>.log (nothing is deleted; each is ~1 MB). Sweep 2026-10-17 L2: two sessions' logs were lost."""
     logs = BIN / "logs"
     last = logs / "play_last.log"
@@ -685,7 +685,7 @@ def summarize(log_path, code, stamp):
 
 def boot(args=()):
     """One hidden run with a wall-clock cap. Nothing appears on screen (no console window, hidden game window, muted).
-    kamite.exe stops itself at the cap (exit 124); only if it is still alive 60 s later is this one process killed."""
+    GHR.exe stops itself at the cap (exit 124); only if it is still alive 60 s later is this one process killed."""
     args = list(args)
     seconds = 120
     extra = []
@@ -701,10 +701,10 @@ def boot(args=()):
             extra.append(args[i])
             i += 1
     if not EXE.exists():
-        print("kamite.exe not built yet: run 'python -I build.py build' first.")
+        print("GHR.exe not built yet: run 'python -I build.py build' first.")
         return 1
     if game_running():
-        print("kamite.exe is already running; not starting another one.")
+        print("GHR.exe is already running; not starting another one.")
         return 1
     logs = BIN / "logs"
     logs.mkdir(parents=True, exist_ok=True)
@@ -748,7 +748,7 @@ def boot(args=()):
     with open(log_path, "w", encoding="utf-8") as out:
         proc = subprocess.Popen(cmd, cwd=BIN, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
                                 creationflags=flags)
-        print(f"kamite.exe pid {proc.pid}, cap {seconds} s")
+        print(f"GHR.exe pid {proc.pid}, cap {seconds} s")
         try:
             code = proc.wait(timeout=seconds + 60)
         except subprocess.TimeoutExpired:
@@ -769,7 +769,7 @@ def status(args=()):
         ("generated code", GENERATED / "register_functions.cpp"),
         ("VU1 microcode compiled", GENERATED / "vu1" / "vu1_programs.cpp"),
         ("CMake cache", BUILD / "CMakeCache.txt"),
-        ("kamite.exe", EXE),
+        ("GHR.exe", EXE),
         ("tools/win/vsenv.cmd", VSENV),
     ]
     for label, path in rows:

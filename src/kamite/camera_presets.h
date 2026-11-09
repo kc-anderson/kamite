@@ -1,7 +1,7 @@
 #pragma once
 
 // The camera presets the launcher offers (Display > Camera) and the F2 menu's Camera tab applies. A preset is just
-// the four [Video] values; kamite.ini keeps the values, and the launcher shows the preset they match ("Custom"
+// the four [Video] values; GHR.ini keeps the values, and the launcher shows the preset they match ("Custom"
 // otherwise). Tune them live in the F2 menu, then copy its "preset line" here.
 namespace kamite
 {

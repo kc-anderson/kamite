@@ -6,7 +6,7 @@ struct Pcsx2GsUi;
 
 namespace kamite::hotkeys
 {
-    // The port's shortcut keys (runtime/ps2_hotkeys.h) as kamite.ini [Hotkeys] lines, one per action id
+    // The port's shortcut keys (runtime/ps2_hotkeys.h) as GHR.ini [Hotkeys] lines, one per action id
     // (SaveState=F5, DebugDump=Shift+F8, Menu=F2 ...; "none" unbinds). Read at start into the runtime's table;
     // the F2 Controls tab's Hotkeys section and the launcher edit them, and saving writes them back.
     void install(const std::filesystem::path &iniPath);

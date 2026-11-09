@@ -10,7 +10,7 @@
 // actions it handles itself and fire()s the others, which the game thread picks up with take(). F1 (the Controls screen) and
 // Esc are not here: they stay fixed.
 //
-// The game layer keeps the bindings (kamite.ini [Hotkeys], one line per action id); this table is the live copy.
+// The game layer keeps the bindings (GHR.ini [Hotkeys], one line per action id); this table is the live copy.
 namespace ps2x::hotkeys
 {
     enum class Action : int

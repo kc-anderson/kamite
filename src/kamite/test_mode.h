@@ -17,7 +17,7 @@ namespace kamite::test_mode
     // Before the game loop, after installFramePatches (the script may switch the frame rate). Relative paths in the
     // script are taken from exeDir.
     void install(PS2Runtime &runtime, const std::filesystem::path &exeDir);
-    // A case replay (KAMITE_REPLAY_CASE), right after kamite.ini was read and before anything reads the settings: the
+    // A case replay (KAMITE_REPLAY_CASE), right after GHR.ini was read and before anything reads the settings: the
     // recorder's gameplay settings kept in the case's meta (env.<variable>=<value>) replace this machine's. Returns
     // log lines.
     std::vector<std::string> applyCaseSettings(const std::filesystem::path &exeDir);

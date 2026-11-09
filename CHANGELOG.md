@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 9, 2026
 
+- Renamed to God Hand: Rearmed: the program is GHR.exe and its settings GHR.ini (an existing kamite.ini carries over); window titles, launcher, F2 menu and the exe's file details use the new name.
 - Launcher: every tab's options grouped under titled categories; the Experimental tab is gone (its options are in Display and Gameplay), replacement textures moved to Mods, hotkeys folded away by default.
 - Launcher: options renamed (Display Mode, Camera & FOV, Click-Stick Dash, Moveset Presets, Target Select, Dry Spinning, Intro Skipper, Hard-On) and names in title case.
 - Vulkan is the default graphics API.

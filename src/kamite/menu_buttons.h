@@ -38,7 +38,7 @@ namespace kamite::menu_buttons
     // F2 > Controls (any thread): the tables, the roulette and the core hint text follow at once; the save menu's text
     // (written over its file on the disc at start) at the next start.
     void setStyle(Style style);
-    // "western" / "japanese" / "classic", as kamite.ini spells them.
+    // "western" / "japanese" / "classic", as GHR.ini spells them.
     const char *styleName(Style style);
     // modern_controls' pad filter (window thread), player 1: the right stick's x (0..255), which turns Gene on the
     // Techniques screen (every menu style; turnTechniquesGene).

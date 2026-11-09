@@ -1,6 +1,6 @@
 #pragma once
 
-// kamite.ini as text: values read and changed in place, so the comments, order and line endings stay as they are
+// GHR.ini as text: values read and changed in place, so the comments, order and line endings stay as they are
 // (the launcher's Options write here; the file stays editable by hand).
 #include <filesystem>
 #include <string>

@@ -37,7 +37,7 @@
 #include "kamite/bone_tweaks.h"
 #include "kamite/hd_textures.h"
 #include "kamite/call_trace.h"
-#include "kamite/default_ini.h" // generated from kamite.ini by src/CMakeLists.txt
+#include "kamite/default_ini.h" // generated from GHR.ini by src/CMakeLists.txt
 #include "kamite/function_hooks.h"
 #include "kamite/game_disc.h"
 #include "kamite/hang_dump.h"
@@ -180,12 +180,12 @@ namespace
         const char *missing = !sse41 ? "SSE4.1" : (needAvx2 && !avx2 ? "AVX2" : nullptr);
         if (!missing)
             return true;
-        std::fprintf(stderr, "[cpu] this processor does not support %s, which this build of Kamite needs\n", missing);
+        std::fprintf(stderr, "[cpu] this processor does not support %s, which this build of God Hand: Rearmed needs\n", missing);
         if (dialog) // never a dialog in hidden runs: nothing may appear on screen
         {
             wchar_t text[160];
-            std::swprintf(text, 160, L"This processor does not support %hs, which this build of Kamite needs.", missing);
-            MessageBoxW(nullptr, text, L"Kamite", MB_OK | MB_ICONERROR);
+            std::swprintf(text, 160, L"This processor does not support %hs, which this build of God Hand: Rearmed needs.", missing);
+            MessageBoxW(nullptr, text, L"God Hand: Rearmed", MB_OK | MB_ICONERROR);
         }
         return false;
     }
@@ -219,8 +219,8 @@ namespace
     std::atomic<PS2Runtime *> g_crashRuntime{nullptr};
 
     // A native crash in a normal (windowed) run: the exception, the module and offset of the faulting code, the guest
-    // PC the EE was at, and the host stack walked from the faulting context (function names when kamite.pdb is next
-    // to kamite.exe), written to the log before Windows' own crash handling goes on.
+    // PC the EE was at, and the host stack walked from the faulting context (function names when GHR.pdb is next
+    // to GHR.exe), written to the log before Windows' own crash handling goes on.
     LONG WINAPI crashLogFilter(EXCEPTION_POINTERS *info)
     {
         static std::atomic<bool> entered{false};
@@ -377,7 +377,7 @@ namespace
         _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
     }
 
-    // ---- kamite.ini -> environment ---------------------------------------------------------------------------------
+    // ---- GHR.ini -> environment ---------------------------------------------------------------------------------
     // GENERIC idea of Urban main.cpp:435-556 (config.ini lines become environment variables; the environment wins),
     // without Urban's legacy-file conversion, mods list and template upgrade.
 
@@ -464,7 +464,7 @@ namespace
         {"launcher", "show", "KAMITE_LAUNCHER"},
     };
 
-    // Variables holding a path: a relative value from kamite.ini is made absolute against the exe folder (a value
+    // Variables holding a path: a relative value from GHR.ini is made absolute against the exe folder (a value
     // from the real environment is left as it is), and the folder it needs is created.
     enum class PathUse
     {
@@ -512,25 +512,34 @@ namespace
         return value;
     }
 
-    // PS2X_PAD1, PS2X_PAD1_CROSS, ...: the controller layout an older kamite.ini carried (not PS2X_PAD_SCRIPT/_FIFO).
+    // PS2X_PAD1, PS2X_PAD1_CROSS, ...: the controller layout an older GHR.ini carried (not PS2X_PAD_SCRIPT/_FIFO).
     bool padLayoutVariable(const std::string &variable)
     {
         return variable.size() >= 9u && variable.rfind("PS2X_PAD", 0) == 0 && variable[8] >= '1' && variable[8] <= '8' &&
                (variable.size() == 9u || variable[9] == '_');
     }
 
-    // Reads kamite.ini (written from the built-in default when missing). Returns the lines to log once the log is set
-    // up ("ini: X=..." / "env: X=... (wins over kamite.ini)"). PS2X_PAD<n>* lines are not exported: they go to
+    // Reads GHR.ini (written from the built-in default when missing). Returns the lines to log once the log is set
+    // up ("ini: X=..." / "env: X=... (wins over GHR.ini)"). PS2X_PAD<n>* lines are not exported: they go to
     // `padLayout`, which only seeds the controls file (controls.ini) when that does not exist yet.
-    std::set<std::string> g_iniVariables; // set from kamite.ini (not the real environment)
+    std::set<std::string> g_iniVariables; // set from GHR.ini (not the real environment)
 
-    // Settings of a build from before the rename (2026-10-25): the old settings file next to the exe becomes kamite.ini
-    // once, with its port switches renamed (the old ones are left in place, unread). Returns a note for the log.
+    // Settings of a build from before a rename: the old settings file next to the exe becomes GHR.ini once. kamite.ini
+    // (renamed 2026-11-09) is copied as it is; godhand.ini (2026-10-25) with its port switches renamed. The old file is
+    // left in place, unread. Returns a note for the log.
     std::string migrateOldSettings(const fs::path &exeDir)
     {
-        const fs::path now = exeDir / "kamite.ini", old = exeDir / "godhand.ini";
+        const fs::path now = exeDir / "GHR.ini", kamite = exeDir / "kamite.ini", old = exeDir / "godhand.ini";
         std::error_code error;
-        if (fs::exists(now, error) || !fs::exists(old, error))
+        if (fs::exists(now, error))
+            return {};
+        if (fs::exists(kamite, error))
+        {
+            fs::copy_file(kamite, now, error);
+            return error ? "settings: could not copy kamite.ini to GHR.ini: " + error.message()
+                         : "settings: copied kamite.ini to GHR.ini; the old file is no longer read";
+        }
+        if (!fs::exists(old, error))
             return {};
         std::ifstream in(old, std::ios::binary);
         std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
@@ -539,8 +548,8 @@ namespace
             text.replace(at, from.size(), to);
         std::ofstream out(now, std::ios::binary);
         out << text;
-        return out ? "settings: copied the old godhand.ini to kamite.ini (switches renamed); the old file is no longer read"
-                   : "settings: could not write kamite.ini from the old godhand.ini";
+        return out ? "settings: copied the old godhand.ini to GHR.ini (switches renamed); the old file is no longer read"
+                   : "settings: could not write GHR.ini from the old godhand.ini";
     }
 
     std::vector<std::string> loadSettings(const fs::path &iniPath, const fs::path &exeDir,
@@ -605,7 +614,7 @@ namespace
             }
             if (const char *current = std::getenv(variable.c_str()); current && !ours)
             {
-                notes.push_back("env: " + variable + "=" + current + " (wins over kamite.ini " + value + ")");
+                notes.push_back("env: " + variable + "=" + current + " (wins over GHR.ini " + value + ")");
                 continue;
             }
             const std::string resolved = resolvePath(exeDir, variable, value);
@@ -630,7 +639,7 @@ namespace
         const std::time_t now = std::time(nullptr);
         char stamp[64] = {};
         std::strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
-        std::fprintf(stdout, "\n===== kamite.exe run %s (pid %lu) =====\n", stamp, static_cast<unsigned long>(GetCurrentProcessId()));
+        std::fprintf(stdout, "\n===== GHR.exe run %s (pid %lu) =====\n", stamp, static_cast<unsigned long>(GetCurrentProcessId()));
         std::fflush(stdout);
 #endif
     }
@@ -708,7 +717,7 @@ namespace
     {
         std::cout << "usage: kamite [--iso <path-to-" << kamite::kSerial << ".iso>] [--headless|--window] [--time-limit <seconds>]\n"
                   << "               [--replay-case <file.case> [--fps60 0|1]] [--test <script>] [--write-settings]\n"
-                  << "settings: kamite.ini next to kamite.exe (environment variables of the same name win)\n"
+                  << "settings: GHR.ini next to GHR.exe (environment variables of the same name win)\n"
                   << "exit codes: 0 ok, 1 init failed, 2 no disc, 3 wrong disc, 4 CPU, 5 missing function (stop), 6 crash, 7 test failed,\n"
                   << "            124 time limit\n";
     }
@@ -718,7 +727,7 @@ int main(int argc, char *argv[])
 {
     const fs::path exeDir = executableDirectory();
 
-    // Command line first: it wins over the environment, which wins over kamite.ini.
+    // Command line first: it wins over the environment, which wins over GHR.ini.
     fs::path iso;
     bool writeSettingsOnly = false;
     for (int i = 1; i < argc; ++i)
@@ -753,12 +762,12 @@ int main(int argc, char *argv[])
     const bool controlsFileFromEnvironment = std::getenv("KAMITE_CONTROLS_FILE") && *std::getenv("KAMITE_CONTROLS_FILE");
     std::vector<std::pair<std::string, std::string>> padLayout;
     const std::string migrationNote = migrateOldSettings(exeDir);
-    std::vector<std::string> settingNotes = loadSettings(exeDir / "kamite.ini", exeDir, padLayout);
+    std::vector<std::string> settingNotes = loadSettings(exeDir / "GHR.ini", exeDir, padLayout);
     for (std::string &note : kamite::test_mode::applyCaseSettings(exeDir)) // a replay runs with the recorder's settings
         settingNotes.push_back(std::move(note));
     if (!migrationNote.empty())
         settingNotes.insert(settingNotes.begin(), migrationNote);
-    kamite::setCameraIniPath(exeDir / "kamite.ini"); // the F2 menu's Camera tab saves there
+    kamite::setCameraIniPath(exeDir / "GHR.ini"); // the F2 menu's Camera tab saves there
     if (writeSettingsOnly)
         return kExitOk;
     redirectOutput();
@@ -781,7 +790,7 @@ int main(int argc, char *argv[])
     for (const std::string &note : settingNotes)
         KM_INFO(Boot, "settings: " << note);
     if (!padLayout.empty())
-        KM_INFO(Boot, "settings: " << padLayout.size() << " PS2X_PAD<n> line(s) in kamite.ini are not used: the layout lives in the "
+        KM_INFO(Boot, "settings: " << padLayout.size() << " PS2X_PAD<n> line(s) in GHR.ini are not used: the layout lives in the "
                                    "controls file (they only seed it when it is missing)");
     // KAMITE_CONTROLS_FILE: the bindings file the F1 Controls screen edits (default controls.ini next to the exe).
     {
@@ -801,7 +810,7 @@ int main(int argc, char *argv[])
         ps2_host_input::setControlsFile(controlsPath.string(), padLayout);
     }
     kamite::hangdump::startFromEnvironment();
-    kamite::threadpolicy::startFromEnvironment(); // PS2X_THREAD_POLICY (kamite.ini: off)
+    kamite::threadpolicy::startFromEnvironment(); // PS2X_THREAD_POLICY (GHR.ini: off)
     startTimeLimit();                                // counts from here: covers disc check, init and the run
 
     // The disc image: --iso, then KAMITE_ISO / [Game] Iso, then an .iso in a game folder near the exe. Without one (or
@@ -825,7 +834,7 @@ int main(int argc, char *argv[])
 #else
     const bool launcherAllowed = false;
 #endif
-    // Shows the launcher; false = the player quit. Afterwards kamite.ini is read again (the settings it changed).
+    // Shows the launcher; false = the player quit. Afterwards GHR.ini is read again (the settings it changed).
     auto showLauncher = [&](const std::string &message) -> bool
     {
 #if KAMITE_HAS_LAUNCHER
@@ -833,11 +842,11 @@ int main(int argc, char *argv[])
         ps2_host_display::setStartMaximized(envFlag("KAMITE_START_MAXIMIZED", false));
         ps2_host_display::setStartFullscreen(envFlag("KAMITE_START_FULLSCREEN", true));
         const kamite::launcher::Result result =
-            kamite::launcher::run(kamite::launcher::Context{exeDir, exeDir / "kamite.ini", cacheDir, iso, message});
+            kamite::launcher::run(kamite::launcher::Context{exeDir, exeDir / "GHR.ini", cacheDir, iso, message});
         if (result == kamite::launcher::Result::Quit)
             return false;
         std::vector<std::pair<std::string, std::string>> unusedPadLayout;
-        for (const std::string &note : loadSettings(exeDir / "kamite.ini", exeDir, unusedPadLayout))
+        for (const std::string &note : loadSettings(exeDir / "GHR.ini", exeDir, unusedPadLayout))
             KM_INFO(Boot, "settings (after the launcher): " << note);
         iso = resolveIso();
         return true;
@@ -946,7 +955,7 @@ int main(int argc, char *argv[])
     GSGpuBackend::SetAsyncPresentDefault(true);
     // MTVU (VU1 and the GIF on threads of their own, as PCSX2's MTVU) on by default since 2026-10-22: in gameplay the EE
     // thread spent ~27% in VU1 and ~5% in VIF/GIF and had speed drops into the 80s at 60 FPS with widescreen; with
-    // MTVU it waits ~70% of the time and held 100%. PS2X_MTVU=0 (kamite.ini [Runtime]) runs VU1 on the EE thread.
+    // MTVU it waits ~70% of the time and held 100%. PS2X_MTVU=0 (GHR.ini [Runtime]) runs VU1 on the EE thread.
     ps2x::asyncvif::setDefaultEnabled(true);
     ps2x::asyncvif::setHostPacingDefault(true);
     EeScheduler::setHostPacingDefault(true);
@@ -1029,8 +1038,8 @@ int main(int argc, char *argv[])
         kamite::menu_buttons::install(runtime.memory().getRDRAM()); // [Game] MenuButtons: the menus' confirm/cancel buttons
         kamite::radar_glow::install(runtime.memory().getRDRAM()); // Modern: the radar glows while the free camera is on
         kamite::tutorial_text::install(runtime.memory().getRDRAM()); // Tutorial 1 (Modern's switch and Auto), Tutorial 2 (the roulette's buttons)
-        kamite::hotkeys::install(exeDir / "kamite.ini"); // [Hotkeys]: the port's shortcut keys
-        kamite::dev_menu::install(exeDir / "kamite.ini"); // F2: the dev menu's tab order, Display and Gameplay
+        kamite::hotkeys::install(exeDir / "GHR.ini"); // [Hotkeys]: the port's shortcut keys
+        kamite::dev_menu::install(exeDir / "GHR.ini"); // F2: the dev menu's tab order, Display and Gameplay
         kamite::style_presets::install(runtime); // style presets: d-pad swaps in play, the Techniques screen's style row and L2 / R2
         kamite::buck_breaker::install(runtime);  // [Game] BuckBreaker: the stun punish per style (the Techniques screen's punish slot)
         kamite::punish_fit::install(runtime, exeDir); // with it: the punishes fitted to every body (resources/punish_fit.txt)
