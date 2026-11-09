@@ -262,11 +262,13 @@ file(COPY_FILE "${KAMITE_MODULE_INDEX}.tmp" "${KAMITE_MODULE_INDEX}" ONLY_IF_DIF
 
 add_executable(kamite ${KAMITE_HOST_SOURCES} "${KAMITE_MODULE_INDEX}")
 # The player-facing name: GHR.exe (the target, the code and the build folders stay "kamite"). On Windows the version
-# resource (kamite/ghr.rc) gives Explorer and Task Manager the name "God Hand: Rearmed".
+# resource (kamite/ghr.rc) gives Explorer and Task Manager the name "God Hand: Rearmed" and the icon.
 set_target_properties(kamite PROPERTIES OUTPUT_NAME GHR)
 if(WIN32)
     enable_language(RC)
     target_sources(kamite PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/kamite/ghr.rc")
+    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/kamite/ghr.rc" PROPERTIES
+        OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/kamite/ghr.ico")
 endif()
 # The checkout's commit for the test cases' meta (kamite_generated/kamite/git_commit.h), refreshed at every build.
 set(KAMITE_COMMIT_HEADER "${CMAKE_CURRENT_BINARY_DIR}/kamite_generated/kamite/git_commit.h")

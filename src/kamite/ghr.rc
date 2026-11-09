@@ -1,6 +1,11 @@
-// The exe's version resource: Explorer's Details tab and Task Manager show the port's public name (the file is GHR.exe,
-// the code and the build target stay "kamite"). The icon goes here too once the logo exists.
+// The exe's resources: its icon and version details, so Explorer and Task Manager show the port's public name (the file
+// is GHR.exe; the code and the build target stay "kamite").
 #include <winver.h>
+
+// The icon (from assets/icon.svg: tools/icon/make_ico.py). Named GLFW_ICON because raylib's window (GLFW) takes the
+// resource of that name for its title bar and taskbar icon; as the exe's only icon it is also the file's icon. The
+// path is relative to src/, which is on the resource compiler's include path.
+GLFW_ICON ICON "kamite/ghr.ico"
 
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION 0,0,0,0
