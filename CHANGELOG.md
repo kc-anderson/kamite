@@ -5,7 +5,7 @@ Newest first, one line per change; the code comments say how.
 ## November 8, 2026
 
 - Buck Breaker: loading a save state after playing other punishes no longer plays wrong animations in wrong places.
-- Buck Breaker: Cobra Twist on human Elvis: Gene's arms lock round the neck with his hands together (the right arm hung down the chest).
+- Buck Breaker: Cobra Twist is no longer offered on human Elvis (he keeps his own punish).
 - 60 FPS: animations no longer jitter between frames in fast moves (up to 30-50 degrees on elbows and wrists, e.g. the Stinger's slam): each in-between pose follows the path between the two real frames.
 - Buck Breaker: Gene's re-posed arms no longer twitch for a frame at 60 FPS (the edited motions hold the intended pose on every frame in between).
 - Buck Breaker: Spanking human Elvis and the other big fat men: Gene's holding arm lies stretched across the back, palm down, holding on (it was lifted off it, then twisted).

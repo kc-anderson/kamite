@@ -9,6 +9,10 @@ from punishes import PUNISH
 from fit_pose import B, TYPES, REP, REFGROUP, OUT as FITS, type_of
 FILE={'Suplex':'Suplex','Stinger':'Stinger','Cobra':'CobraTwist','Spanking':'Spanking','Gorilla':'GorillaSuplex'}
 GORILLA_GROUPS={2,3,7,8,20,21}
+# Pairings K turned off after seeing them in play (the enemy keeps its own punish for that pick).
+# Cobra on em03 (human Elvis, Nov 9): the clasped arms float above his head at the bottom of each pull.
+OFF_BY_K={('Cobra',3)}
+
 def verdict(m):
     clip=max(v[1] for v in m['clip1'].values())
     if m['name']=='Gorilla':      # its arms are kept out of the victim on purpose (K): the hands leave the original's spots
@@ -87,7 +91,7 @@ def main(path):
             for s in (1.0,1.15,1.3):
                 if (name,g,s) not in fits: continue
                 m,npy=fits[(name,g,s)]; X=np.load(npy); v,clip=verdict(m)
-                off=v=='off' or off10        # a size that can't be made to work: own punish from halfway there
+                off=v=='off' or off10 or (name,g) in OFF_BY_K  # a size that can't be made to work: own punish from halfway there
                 if s==1.0: off10=off
                 lines.append('fit %s %s%s scale=%.2f size=%.3f   # %s (%s%s), %s: touch %.0f -> %.0f cm, clip +%.1f cm'%(
                     FILE[name],keys,' off' if off else '',s,m['size'],file,t,', hands clasped' if m.get('clasp') else ', pose from the representative' if not m['rep'] and m.get('pose_from')!='original' else '',
