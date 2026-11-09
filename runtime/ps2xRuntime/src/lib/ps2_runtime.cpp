@@ -1178,7 +1178,8 @@ bool PS2Runtime::initialize(const char *title)
 #else
         ps2_host_display::openHostWindow(title);
         SetExitKey(KEY_NULL);
-        InitAudioDevice();
+        if (!IsAudioDeviceReady()) // the launcher may have left it open (its Play sound still ringing)
+            InitAudioDevice();
         m_audioBackend.setAudioReady(IsAudioDeviceReady());
         GSSharedPresent::CaptureHostContext();
         ps2xHostVsyncSetWindow(GetWindowHandle()); // the vblank lock follows the window's monitor (Kernel/host_vsync.cpp)

@@ -267,10 +267,10 @@ namespace kamite::launcher
         // light up, the plate smears out both ways into a yellow bar, the bar thins to streaks, all gone at 0.28 s;
         // the rest of the launcher fades to black meanwhile and the game starts at kPlayLength.
         constexpr float kPlayLength = 0.34f;
-        // Play's sound: one of the game's menu sounds (se/core.ses on the disc; the menus' OK is 0x15E), and the music.
-        constexpr int kPlaySoundId = 0x15E;
+        // Play's sound: the game's main menu confirm (se/core.ses on the disc, sound 0x160; K's pick), and the music.
+        // The sound plays on into the game's boot: the launcher leaves the audio device open for the game.
+        constexpr int kPlaySoundId = 0x160;
         constexpr float kMusicVolume = 0.6f;
-        constexpr float kPlaySoundLimit = 1.2f; // the launcher waits (on black) at most this long for the sound to end
 
         // A sound of the game's SE bank (.ses: "SES\0", f32 version; u32s at +0x10.. = sections: +0x10 the sound table
         // (u32 count, then from +0x20 0x30-byte entries: +4 u16 tone, +0xF 0x80 = unused, +0x10 u8 volume 0..127), +0x20
@@ -2091,9 +2091,7 @@ void main()
                 if (state.playTime == 0.0f && state.hasPlaySound)
                     PlaySound(state.playSound);
                 state.playTime += std::min(GetFrameTime(), 0.05f);
-                // The picture is black at kPlayLength; the game waits for the sound to finish (at most kPlaySoundLimit).
-                const bool sounding = state.hasPlaySound && IsSoundPlaying(state.playSound) && state.playTime < kPlaySoundLimit;
-                if (state.playTime >= kPlayLength && !sounding)
+                if (state.playTime >= kPlayLength)
                 {
                     state.result = Result::Play;
                     state.done = true;
@@ -2171,10 +2169,19 @@ void main()
             UnloadFont(state.splashFont);
         if (state.hasMusic)
             UnloadMusicStream(state.music);
-        if (state.hasPlaySound)
-            UnloadSound(state.playSound);
-        if (state.audio)
-            CloseAudioDevice(); // the game opens its own
+        if (state.result == Result::Play && state.audio)
+        {
+            // The game takes the audio device over (the runtime opens it only when it is not open yet), so Play's
+            // sound rings on while the game boots; the sound's few samples are left to the device until then.
+            KM_INFO(Boot, "launcher: audio device handed to the game");
+        }
+        else
+        {
+            if (state.hasPlaySound)
+                UnloadSound(state.playSound);
+            if (state.audio)
+                CloseAudioDevice();
+        }
         rlImGuiShutdown(); // the F12 debugger sets ImGui up again later
         // One empty frame, so the window does not keep showing the launcher until the game's first picture.
         BeginDrawing();
