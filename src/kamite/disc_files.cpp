@@ -5,6 +5,7 @@
 
 #include <cctype>
 #include <cstring>
+#include <fstream>
 #include <functional>
 
 namespace kamite::disc_files
@@ -160,5 +161,64 @@ namespace kamite::disc_files
         if (!g_open)
             return {0u, 0u};
         return {le32(g_toc, 8 + 8u * g_count), le32(g_toc, 12 + 8u * g_count)};
+    }
+
+    bool readFromImage(const std::filesystem::path &image, std::string_view path, std::vector<uint8_t> &out)
+    {
+        std::ifstream in(image, std::ios::binary);
+        if (!in)
+            return false;
+        auto readAt = [&](uint64_t offset, size_t size, std::vector<uint8_t> &buf) {
+            buf.assign(size, 0u);
+            in.clear();
+            in.seekg(static_cast<std::streamoff>(offset));
+            in.read(reinterpret_cast<char *>(buf.data()), static_cast<std::streamsize>(size));
+            return static_cast<size_t>(in.gcount()) == size;
+        };
+        constexpr uint64_t kSector = PS2CdImage::kSectorSize;
+        // ISO9660: the primary volume descriptor (sector 16) holds the root directory's record at +156.
+        std::vector<uint8_t> pvd, root, fst, head, toc;
+        if (!readAt(16 * kSector, kSector, pvd) || pvd[0] != 1 || std::memcmp(pvd.data() + 1, "CD001", 5) != 0)
+            return false;
+        const uint32_t rootLba = le32(pvd, 156 + 2), rootSize = le32(pvd, 156 + 10);
+        if (rootSize == 0 || rootSize > 1u << 20 || !readAt(rootLba * kSector, rootSize, root))
+            return false;
+        uint64_t afs = 0, fstAt = 0;
+        uint32_t fstSize = 0;
+        for (size_t at = 0; at < root.size();)
+        {
+            const uint8_t length = root[at];
+            if (length == 0) // records do not cross sectors: on to the next one
+            {
+                at = (at / kSector + 1) * kSector;
+                continue;
+            }
+            if (at + 33 > root.size() || at + 33 + root[at + 32] > root.size())
+                break;
+            std::string name(reinterpret_cast<const char *>(&root[at + 33]), root[at + 32]);
+            if (const size_t semi = name.find(';'); semi != std::string::npos)
+                name.resize(semi);
+            name = lower(name);
+            const uint64_t where = static_cast<uint64_t>(le32(root, at + 2)) * kSector;
+            if (name == "_data.afs")
+                afs = where;
+            else if (name.size() > 4 && name.compare(name.size() - 4, 4, ".fst") == 0)
+            {
+                fstAt = where;
+                fstSize = le32(root, at + 10);
+            }
+            at += length;
+        }
+        if (afs == 0 || fstAt == 0 || fstSize == 0 || fstSize > 1u << 22 || !readAt(fstAt, fstSize, fst))
+            return false;
+        const std::map<std::string, uint32_t> names = readFst(fst);
+        const auto it = names.find(lower(path));
+        if (it == names.end() || !readAt(afs, 8, head) || std::memcmp(head.data(), "AFS", 3) != 0)
+            return false;
+        const uint32_t count = le32(head, 4);
+        if (it->second >= count || !readAt(afs + 8 + 8ull * it->second, 8, toc))
+            return false;
+        const uint32_t offset = le32(toc, 0), size = le32(toc, 4);
+        return size != 0 && size < 1u << 28 && readAt(afs + offset, size, out);
     }
 }

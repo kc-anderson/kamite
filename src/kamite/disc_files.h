@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <map>
 #include <optional>
 #include <string>
@@ -39,4 +40,8 @@ namespace kamite::disc_files
     uint64_t archiveBase();
     uint32_t archiveCount();
     std::pair<uint32_t, uint32_t> attributeTable();
+
+    // One file read straight from a disc image, on its own (no shared state, no patches): for the launcher, which runs
+    // before the game mounts the image and whose image may still change. "se/core.ses", any case. False when missing.
+    bool readFromImage(const std::filesystem::path &image, std::string_view path, std::vector<uint8_t> &out);
 }

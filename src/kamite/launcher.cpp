@@ -2,6 +2,7 @@
 
 #include "kamite/camera_presets.h"
 #include "kamite/character_mods.h"
+#include "kamite/disc_files.h"
 #include "kamite/game_disc.h"
 #include "kamite/ini_file.h"
 #include "kamite/launcher_platform.h"
@@ -251,6 +252,11 @@ namespace kamite::launcher
             bool logoThisFrame = false;  // title() laid the logo out this frame (drawLogo draws it after ImGui)
             ImVec2 logoMin{}, logoMax{};
             float playTime = -1.0f;      // seconds since Play was pressed (the plate's animation, the fade); -1: not yet
+            bool audio = false;          // the audio device is open (closed again before the game opens its own)
+            Music music{};               // resources/music/launcher.ogg, looped; fades out with Play
+            bool hasMusic = false;
+            Sound playSound{};           // the game's menu sound for Play, read from the player's disc image
+            bool hasPlaySound = false;
         };
 
         // GOD HAND's centre in the logo's canvas (tools/logo/export_launcher_logo.py prints it); the burst is centred
@@ -261,6 +267,89 @@ namespace kamite::launcher
         // light up, the plate smears out both ways into a yellow bar, the bar thins to streaks, all gone at 0.28 s;
         // the rest of the launcher fades to black meanwhile and the game starts at kPlayLength.
         constexpr float kPlayLength = 0.34f;
+        // Play's sound: one of the game's menu sounds (se/core.ses on the disc; the menus' OK is 0x15E), and the music.
+        constexpr int kPlaySoundId = 0x15E;
+        constexpr float kMusicVolume = 0.6f;
+        constexpr float kPlaySoundLimit = 1.2f; // the launcher waits (on black) at most this long for the sound to end
+
+        // A sound of the game's SE bank (.ses: "SES\0", f32 version; u32s at +0x10.. = sections: +0x10 the sound table
+        // (u32 count, then from +0x20 0x30-byte entries: +4 u16 tone, +0xF 0x80 = unused, +0x10 u8 volume 0..127), +0x20
+        // the tone table (16 bytes each: u32 offset into the sample data, u32 sample rate), +0x28 / +0x2C the sample
+        // data (PS-ADPCM)) as 16-bit mono PCM. False when the bank or the sound is not what that describes.
+        bool decodeSesSound(const std::vector<uint8_t> &ses, int id, std::vector<int16_t> &pcm, int &rate, float &volume)
+        {
+            auto u32 = [&](size_t o) -> uint32_t {
+                return o + 4 > ses.size() ? 0u : static_cast<uint32_t>(ses[o]) | (static_cast<uint32_t>(ses[o + 1]) << 8) |
+                                                 (static_cast<uint32_t>(ses[o + 2]) << 16) | (static_cast<uint32_t>(ses[o + 3]) << 24);
+            };
+            if (ses.size() < 0x40 || std::memcmp(ses.data(), "SES", 4) != 0)
+                return false;
+            const uint32_t table = u32(0x10), tones = u32(0x20), toneBytes = u32(0x24), data = u32(0x28), dataSize = u32(0x2C);
+            if (id < 0 || static_cast<uint32_t>(id) >= u32(table) || data + static_cast<uint64_t>(dataSize) > ses.size())
+                return false;
+            const size_t entry = table + 0x20 + 0x30 * static_cast<size_t>(id);
+            if (entry + 0x30 > ses.size() || (ses[entry + 0xF] & 0x80) != 0)
+                return false;
+            const uint32_t tone = static_cast<uint32_t>(ses[entry + 4]) | (static_cast<uint32_t>(ses[entry + 5]) << 8);
+            if (16ull * (tone + 1) > toneBytes)
+                return false;
+            const uint32_t offset = u32(tones + 16 * tone);
+            rate = static_cast<int>(u32(tones + 16 * tone + 4));
+            volume = std::clamp(static_cast<float>(ses[entry + 0x10]) / 127.0f, 0.0f, 1.0f);
+            if (rate < 4000 || rate > 96000 || offset >= dataSize)
+                return false;
+            // PS-ADPCM: 16-byte frames (shift | filter << 4, flags (bit 0: last frame), 14 bytes = 28 samples).
+            static constexpr int kFilter[5][2] = {{0, 0}, {60, 0}, {115, -52}, {98, -55}, {122, -60}};
+            int s1 = 0, s2 = 0;
+            pcm.clear();
+            for (size_t p = data + offset; p + 16 <= data + static_cast<size_t>(dataSize); p += 16)
+            {
+                const int shift = ses[p] & 15, filter = std::min(ses[p] >> 4, 4);
+                for (int i = 0; i < 28; ++i)
+                {
+                    const uint8_t b = ses[p + 2 + i / 2];
+                    int v = (i & 1) ? (b >> 4) : (b & 15);
+                    if (v > 7)
+                        v -= 16;
+                    v = shift <= 12 ? (v << 12) >> shift : 0;
+                    v += (s1 * kFilter[filter][0] + s2 * kFilter[filter][1]) >> 6; // floor, as the SPU2
+                    v = std::clamp(v, -32768, 32767);
+                    pcm.push_back(static_cast<int16_t>(v));
+                    s2 = s1;
+                    s1 = v;
+                }
+                if ((ses[p + 1] & 1) != 0)
+                    break;
+            }
+            return !pcm.empty();
+        }
+
+        // Play's sound from the player's own disc (never shipped): loaded at the start and after an install.
+        void loadPlaySound(State &state, const fs::path &image)
+        {
+            if (!state.audio || state.hasPlaySound || image.empty())
+                return;
+            std::vector<uint8_t> ses;
+            std::vector<int16_t> pcm;
+            int rate = 0;
+            float volume = 1.0f;
+            if (!disc_files::readFromImage(image, "se/core.ses", ses) || !decodeSesSound(ses, kPlaySoundId, pcm, rate, volume))
+            {
+                KM_INFO(Boot, "launcher: no Play sound (se/core.ses sound 0x" << std::hex << kPlaySoundId << std::dec
+                                                                                 << " not read from the disc image)");
+                return;
+            }
+            Wave wave{};
+            wave.frameCount = static_cast<unsigned int>(pcm.size());
+            wave.sampleRate = static_cast<unsigned int>(rate);
+            wave.sampleSize = 16;
+            wave.channels = 1;
+            wave.data = pcm.data();
+            state.playSound = LoadSoundFromWave(wave); // copies the samples
+            state.hasPlaySound = state.playSound.frameCount > 0;
+            if (state.hasPlaySound)
+                SetSoundVolume(state.playSound, volume);
+        }
 
         void updateMotion(State &state, Screen screen)
         {
@@ -699,6 +788,7 @@ void main()
             state.ini.set("Game", "Iso", utf8(image));
             state.ini.save();
             state.installed = true;
+            loadPlaySound(state, image);
             state.installMessage.clear();
             state.installError = false;
             KM_INFO(Boot, "launcher: disc image installed: " << utf8(image));
@@ -1967,6 +2057,22 @@ void main()
             }
         }
         loadSplash(state, context.exeDir / "resources" / "splash");
+        InitAudioDevice();
+        state.audio = IsAudioDeviceReady();
+        const fs::path musicPath = context.exeDir / "resources" / "music" / "launcher.ogg";
+        if (state.audio && fs::is_regular_file(musicPath, error))
+        {
+            state.music = LoadMusicStream(utf8(musicPath).c_str());
+            state.hasMusic = IsMusicValid(state.music);
+            if (state.hasMusic)
+            {
+                state.music.looping = true; // the file is cut to loop seamlessly
+                SetMusicVolume(state.music, kMusicVolume);
+                PlayMusicStream(state.music);
+            }
+        }
+        if (state.installed)
+            loadPlaySound(state, context.iso);
         KM_INFO(Boot, "launcher: shown (" << (state.installed ? "installed" : "not installed") << ")");
 
         while (!state.done)
@@ -1982,12 +2088,22 @@ void main()
             state.logoThisFrame = false;
             if (state.playTime >= 0.0f)
             {
+                if (state.playTime == 0.0f && state.hasPlaySound)
+                    PlaySound(state.playSound);
                 state.playTime += std::min(GetFrameTime(), 0.05f);
-                if (state.playTime >= kPlayLength)
+                // The picture is black at kPlayLength; the game waits for the sound to finish (at most kPlaySoundLimit).
+                const bool sounding = state.hasPlaySound && IsSoundPlaying(state.playSound) && state.playTime < kPlaySoundLimit;
+                if (state.playTime >= kPlayLength && !sounding)
                 {
                     state.result = Result::Play;
                     state.done = true;
                 }
+            }
+            if (state.hasMusic)
+            {
+                const float fade = state.playTime >= 0.0f ? std::clamp(state.playTime / (kPlayLength - 0.02f), 0.0f, 1.0f) : 0.0f;
+                SetMusicVolume(state.music, kMusicVolume * (1.0f - fade));
+                UpdateMusicStream(state.music);
             }
             const bool playing = state.playTime >= 0.0f;
             BeginDrawing();
@@ -2053,6 +2169,12 @@ void main()
             UnloadShader(state.backgroundShader);
         if (state.splashFont.texture.id != 0u)
             UnloadFont(state.splashFont);
+        if (state.hasMusic)
+            UnloadMusicStream(state.music);
+        if (state.hasPlaySound)
+            UnloadSound(state.playSound);
+        if (state.audio)
+            CloseAudioDevice(); // the game opens its own
         rlImGuiShutdown(); // the F12 debugger sets ImGui up again later
         // One empty frame, so the window does not keep showing the launcher until the game's first picture.
         BeginDrawing();
