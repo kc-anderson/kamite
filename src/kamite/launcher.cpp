@@ -255,8 +255,18 @@ namespace kamite::launcher
             bool audio = false;          // the audio device is open (closed again before the game opens its own)
             Music music{};               // resources/music/launcher.ogg, looped; fades out with Play
             bool hasMusic = false;
-            Sound playSound{};           // the game's menu sound for Play, read from the player's disc image
-            bool hasPlaySound = false;
+            // The game's menu sounds (read from the player's disc image): kMenuSoundIds' order.
+            Sound menuSounds[4]{};
+            float menuSoundBase[4]{};    // each sound's own volume in the game's bank
+            bool hasMenuSound[4]{};
+            float volume = 0.8f;         // [Launcher] Volume: music and sounds (the corner slider)
+            bool muted = false;          // [Launcher] Mute
+            ImGuiID volumeSliderId = 0;  // makes no sound when grabbed
+            ImGuiID lastNavId = 0;       // the keyboard / gamepad cursor's item last frame
+            bool popupWasOpen = false;
+            bool soundThisFrame = false; // a confirm / cancel / Play sound already played this frame
+            int quietFrames = 0;         // no cursor tick for a frame or two after a confirm / cancel (focus moves then)
+            Screen soundScreen = Screen::Home;
         };
 
         // GOD HAND's centre in the logo's canvas (tools/logo/export_launcher_logo.py prints it); the burst is centred
@@ -267,10 +277,19 @@ namespace kamite::launcher
         // light up, the plate smears out both ways into a yellow bar, the bar thins to streaks, all gone at 0.28 s;
         // the rest of the launcher fades to black meanwhile and the game starts at kPlayLength.
         constexpr float kPlayLength = 0.34f;
-        // Play's sound: the game's main menu confirm (se/core.ses on the disc, sound 0x160; K's pick), and the music.
-        // The sound plays on into the game's boot: the launcher leaves the audio device open for the game.
-        constexpr int kPlaySoundId = 0x160;
-        constexpr float kMusicVolume = 0.6f;
+        // The game's menu sounds (se/core.ses on the disc; K's picks): the cursor's tick when the keyboard or gamepad
+        // moves it (0x164), confirm (0x15E: buttons, boxes, tabs, dropdown picks; clicks too), cancel (0x161: Back, B /
+        // Esc), Play (0x160, the main menu's confirm; it rings on into the game's boot: the launcher leaves the audio
+        // device open for the game). The volume slider makes none.
+        enum MenuSound
+        {
+            kTick,
+            kConfirm,
+            kCancel,
+            kPlay
+        };
+        constexpr int kMenuSoundIds[4] = {0x164, 0x15E, 0x161, 0x160};
+        constexpr float kMusicVolume = 0.6f; // under the player's volume
 
         // A sound of the game's SE bank (.ses: "SES\0", f32 version; u32s at +0x10.. = sections: +0x10 the sound table
         // (u32 count, then from +0x20 0x30-byte entries: +4 u16 tone, +0xF 0x80 = unused, +0x10 u8 volume 0..127), +0x20
@@ -324,32 +343,81 @@ namespace kamite::launcher
             return !pcm.empty();
         }
 
-        // Play's sound from the player's own disc (never shipped): loaded at the start and after an install.
-        void loadPlaySound(State &state, const fs::path &image)
+        // The menu sounds from the player's own disc (never shipped): loaded at the start and after an install.
+        void loadMenuSounds(State &state, const fs::path &image)
         {
-            if (!state.audio || state.hasPlaySound || image.empty())
+            if (!state.audio || state.hasMenuSound[kPlay] || image.empty())
                 return;
             std::vector<uint8_t> ses;
-            std::vector<int16_t> pcm;
-            int rate = 0;
-            float volume = 1.0f;
-            if (!disc_files::readFromImage(image, "se/core.ses", ses) || !decodeSesSound(ses, kPlaySoundId, pcm, rate, volume))
+            if (!disc_files::readFromImage(image, "se/core.ses", ses))
             {
-                KM_INFO(Boot, "launcher: no Play sound (se/core.ses sound 0x" << std::hex << kPlaySoundId << std::dec
-                                                                                 << " not read from the disc image)");
+                KM_INFO(Boot, "launcher: no menu sounds (se/core.ses not read from the disc image)");
                 return;
             }
-            Wave wave{};
-            wave.frameCount = static_cast<unsigned int>(pcm.size());
-            wave.sampleRate = static_cast<unsigned int>(rate);
-            wave.sampleSize = 16;
-            wave.channels = 1;
-            wave.data = pcm.data();
-            state.playSound = LoadSoundFromWave(wave); // copies the samples
-            state.hasPlaySound = state.playSound.frameCount > 0;
-            if (state.hasPlaySound)
-                SetSoundVolume(state.playSound, volume);
+            for (int i = 0; i < 4; ++i)
+            {
+                std::vector<int16_t> pcm;
+                int rate = 0;
+                float volume = 1.0f;
+                if (!decodeSesSound(ses, kMenuSoundIds[i], pcm, rate, volume))
+                {
+                    KM_INFO(Boot, "launcher: menu sound 0x" << std::hex << kMenuSoundIds[i] << std::dec << " not in se/core.ses");
+                    continue;
+                }
+                Wave wave{};
+                wave.frameCount = static_cast<unsigned int>(pcm.size());
+                wave.sampleRate = static_cast<unsigned int>(rate);
+                wave.sampleSize = 16;
+                wave.channels = 1;
+                wave.data = pcm.data();
+                state.menuSounds[i] = LoadSoundFromWave(wave); // copies the samples
+                state.hasMenuSound[i] = state.menuSounds[i].frameCount > 0;
+                state.menuSoundBase[i] = volume;
+            }
         }
+
+        float userVolume(const State &state) { return state.muted ? 0.0f : state.volume; }
+
+        void playMenuSound(State &state, MenuSound which)
+        {
+            if (!state.hasMenuSound[which])
+                return;
+            SetSoundVolume(state.menuSounds[which], state.menuSoundBase[which] * userVolume(state));
+            PlaySound(state.menuSounds[which]);
+        }
+
+        void menuSound(State &state, MenuSound which)
+        {
+            playMenuSound(state, which);
+            state.soundThisFrame = true;
+            state.quietFrames = 2;
+        }
+
+        // The frame's sounds from what ImGui did (after the launcher's window): an item activated (click or A / Enter:
+        // confirm; not the volume slider), a dropdown closed with B / Esc (cancel), the keyboard / gamepad cursor moved
+        // to another item (tick; mouse hovering moves nothing). Sounds the screens play themselves (Back, Play) win.
+        void frameSounds(State &state)
+        {
+            ImGuiContext &g = *GImGui;
+            const bool popupOpen = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
+            const bool backKey = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+            if (state.playTime < 0.0f && !state.soundThisFrame)
+            {
+                if (state.popupWasOpen && !popupOpen && backKey)
+                    menuSound(state, kCancel);
+                else if (g.ActiveIdIsJustActivated && g.ActiveId != 0 && g.ActiveId != state.volumeSliderId)
+                    menuSound(state, kConfirm);
+                else if (g.NavId != state.lastNavId && state.lastNavId != 0 && g.NavId != 0 && g.NavCursorVisible &&
+                         state.quietFrames == 0 && state.soundScreen == state.screen)
+                    playMenuSound(state, kTick);
+            }
+            if (state.quietFrames > 0 && !state.soundThisFrame)
+                --state.quietFrames;
+            state.lastNavId = g.NavId;
+            state.popupWasOpen = popupOpen;
+            state.soundScreen = state.screen;
+        }
+
 
         void updateMotion(State &state, Screen screen)
         {
@@ -618,6 +686,60 @@ void main()
             return clicked;
         }
 
+        // The corner's volume: a mute button (a speaker, crossed out when muted) and a slider; both kept in GHR.ini.
+        void drawVolume(State &state)
+        {
+            const float size = fontSize(state, 34.0f), margin = fontSize(state, 22.0f);
+            ImGui::SetCursorPos(ImVec2(margin, ImGui::GetWindowHeight() - margin - size));
+            const ImVec2 p = ImGui::GetCursorScreenPos();
+            if (ImGui::InvisibleButton("##mute", ImVec2(size, size)))
+            {
+                state.muted = !state.muted;
+                state.ini.setBool("Launcher", "Mute", state.muted);
+                state.ini.save();
+            }
+            const bool lit = ImGui::IsItemHovered() || ImGui::IsItemFocused();
+            const ImU32 ink = ImGui::GetColorU32(lit ? kAccent : kText);
+            ImDrawList *draw = ImGui::GetWindowDrawList();
+            const auto at = [&](float x, float y) { return ImVec2(p.x + x * size, p.y + y * size); };
+            draw->AddRectFilled(at(0.14f, 0.38f), at(0.32f, 0.62f), ink);
+            const ImVec2 cone[4] = {at(0.31f, 0.38f), at(0.54f, 0.18f), at(0.54f, 0.82f), at(0.31f, 0.62f)};
+            draw->AddConvexPolyFilled(cone, 4, ink);
+            const float stroke = std::max(1.5f, size * 0.07f);
+            if (state.muted || state.volume <= 0.0f)
+            {
+                draw->AddLine(at(0.66f, 0.36f), at(0.88f, 0.64f), ink, stroke);
+                draw->AddLine(at(0.66f, 0.64f), at(0.88f, 0.36f), ink, stroke);
+            }
+            else
+                for (int wave = 0; wave < (state.volume > 0.5f ? 2 : 1); ++wave)
+                {
+                    draw->PathArcTo(at(0.54f, 0.5f), size * (0.17f + 0.15f * static_cast<float>(wave)), -0.85f, 0.85f, 12);
+                    draw->PathStroke(ink, ImDrawFlags_None, stroke);
+                }
+            ImGui::SameLine(0.0f, fontSize(state, 8.0f));
+            ImGui::SetCursorPosY(ImGui::GetWindowHeight() - margin - size + (size - ImGui::GetFrameHeight()) * 0.5f);
+            ImGui::SetNextItemWidth(fontSize(state, 200.0f));
+            float percent = state.volume * 100.0f;
+            if (ImGui::SliderFloat("##volume", &percent, 0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp))
+            {
+                state.volume = percent / 100.0f;
+                if (state.muted && state.volume > 0.0f)
+                {
+                    state.muted = false;
+                    state.ini.setBool("Launcher", "Mute", false);
+                }
+            }
+            state.volumeSliderId = ImGui::GetItemID();
+            if (ImGui::IsItemDeactivatedAfterEdit())
+            {
+                char text[16];
+                std::snprintf(text, sizeof(text), "%.2f", state.volume);
+                state.ini.set("Launcher", "Volume", text);
+                state.ini.save();
+            }
+        }
+
         void drawLayer(const Texture2D &texture, const ImVec2 &min, const ImVec2 &max, Color tint)
         {
             if (texture.id == 0u || tint.a == 0)
@@ -788,7 +910,7 @@ void main()
             state.ini.set("Game", "Iso", utf8(image));
             state.ini.save();
             state.installed = true;
-            loadPlaySound(state, image);
+            loadMenuSounds(state, image);
             state.installMessage.clear();
             state.installError = false;
             KM_INFO(Boot, "launcher: disc image installed: " << utf8(image));
@@ -823,7 +945,10 @@ void main()
                     ImGui::SetNavCursorVisible(true);
                 }
                 if (bigButton(state, "Play", buttonWidth, true) && state.playTime < 0.0f)
+                {
                     state.playTime = 0.0f; // the plate's animation and the fade; the main loop starts the game after
+                    state.soundThisFrame = true; // Play's own sound, next frame
+                }
                 if (bigButton(state, "Options", buttonWidth, false))
                 {
                     state.screen = Screen::Options;
@@ -919,6 +1044,8 @@ void main()
             ImGui::Spacing();
             if (ImGui::Button(state.installed ? "Continue" : "Back"))
             {
+                if (!state.installed)
+                    menuSound(state, kCancel);
                 state.screen = Screen::Home;
                 state.focusFirst = true;
             }
@@ -1952,6 +2079,7 @@ void main()
             ImGui::PopFont();
             if (back || cancel)
             {
+                menuSound(state, kCancel);
                 state.ini.save();
                 saveControls();
                 g_resetArmed = false;
@@ -2071,8 +2199,10 @@ void main()
                 PlayMusicStream(state.music);
             }
         }
+        state.volume = std::clamp(static_cast<float>(std::atof(state.ini.get("Launcher", "Volume", "0.8").c_str())), 0.0f, 1.0f);
+        state.muted = state.ini.getBool("Launcher", "Mute", false);
         if (state.installed)
-            loadPlaySound(state, context.iso);
+            loadMenuSounds(state, context.iso);
         KM_INFO(Boot, "launcher: shown (" << (state.installed ? "installed" : "not installed") << ")");
 
         while (!state.done)
@@ -2086,10 +2216,11 @@ void main()
             feedGamepads(io);
             updateMotion(state, state.screen);
             state.logoThisFrame = false;
+            state.soundThisFrame = false;
             if (state.playTime >= 0.0f)
             {
-                if (state.playTime == 0.0f && state.hasPlaySound)
-                    PlaySound(state.playSound);
+                if (state.playTime == 0.0f)
+                    playMenuSound(state, kPlay);
                 state.playTime += std::min(GetFrameTime(), 0.05f);
                 if (state.playTime >= kPlayLength)
                 {
@@ -2100,7 +2231,7 @@ void main()
             if (state.hasMusic)
             {
                 const float fade = state.playTime >= 0.0f ? std::clamp(state.playTime / (kPlayLength - 0.02f), 0.0f, 1.0f) : 0.0f;
-                SetMusicVolume(state.music, kMusicVolume * (1.0f - fade));
+                SetMusicVolume(state.music, kMusicVolume * userVolume(state) * (1.0f - fade));
                 UpdateMusicStream(state.music);
             }
             const bool playing = state.playTime >= 0.0f;
@@ -2133,6 +2264,8 @@ void main()
                     drawOptions(state);
                     break;
                 }
+                if (state.screen != Screen::Options)
+                    drawVolume(state);
                 if (playing)
                 {
                     ImGui::EndDisabled();
@@ -2140,6 +2273,7 @@ void main()
                 }
             }
             ImGui::End();
+            frameSounds(state);
             rlImGuiEnd();
             drawLogo(state);
             drawSplash(state);
@@ -2177,8 +2311,9 @@ void main()
         }
         else
         {
-            if (state.hasPlaySound)
-                UnloadSound(state.playSound);
+            for (int i = 0; i < 4; ++i)
+                if (state.hasMenuSound[i])
+                    UnloadSound(state.menuSounds[i]);
             if (state.audio)
                 CloseAudioDevice();
         }
