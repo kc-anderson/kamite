@@ -383,7 +383,9 @@ namespace kamite::launcher
             if (!state.hasMenuSound[which])
                 return;
             SetSoundVolume(state.menuSounds[which], state.menuSoundBase[which] * userVolume(state));
-            PlaySound(state.menuSounds[which]);
+            // Not PlaySound: GHR.exe links winmm with /FORCE:MULTIPLE, and winmm's PlaySound took the call (no sound,
+            // no error). raylib's PlaySound is exactly this.
+            PlayAudioStream(state.menuSounds[which].stream);
         }
 
         void menuSound(State &state, MenuSound which)
@@ -643,7 +645,7 @@ void main()
                 size *= logoWidth * 0.40f / measured.x;
             size *= 1.0f + 0.05f * std::fabs(std::sin(state.time * 3.14159265f)); // the pulse, once a second
             const Vector2 box = MeasureTextEx(state.splashFont, text, size, 0.0f);
-            const Vector2 at{state.logoMin.x + logoWidth * 0.93f, state.logoMin.y + logoHeight * 0.80f};
+            const Vector2 at{state.logoMin.x + logoWidth * 0.90f, state.logoMin.y + logoHeight * 0.68f}; // on the D's lower right
             const Vector2 origin{box.x * 0.5f, box.y * 0.5f};
             const float shadow = size * 0.085f;
             const unsigned char alpha = static_cast<unsigned char>(255.0f * std::clamp(state.burstShown, 0.0f, 1.0f));
@@ -686,11 +688,13 @@ void main()
             return clicked;
         }
 
-        // The corner's volume: a mute button (a speaker, crossed out when muted) and a slider; both kept in GHR.ini.
+        // The lower right corner's volume: a mute button (a speaker, crossed out when muted) left of a slider; both kept
+        // in GHR.ini.
         void drawVolume(State &state)
         {
-            const float size = fontSize(state, 34.0f), margin = fontSize(state, 22.0f);
-            ImGui::SetCursorPos(ImVec2(margin, ImGui::GetWindowHeight() - margin - size));
+            const float size = fontSize(state, 34.0f), margin = fontSize(state, 22.0f), slider = fontSize(state, 200.0f);
+            const float gap = fontSize(state, 8.0f);
+            ImGui::SetCursorPos(ImVec2(ImGui::GetWindowWidth() - margin - slider - gap - size, ImGui::GetWindowHeight() - margin - size));
             const ImVec2 p = ImGui::GetCursorScreenPos();
             if (ImGui::InvisibleButton("##mute", ImVec2(size, size)))
             {
@@ -717,9 +721,9 @@ void main()
                     draw->PathArcTo(at(0.54f, 0.5f), size * (0.17f + 0.15f * static_cast<float>(wave)), -0.85f, 0.85f, 12);
                     draw->PathStroke(ink, ImDrawFlags_None, stroke);
                 }
-            ImGui::SameLine(0.0f, fontSize(state, 8.0f));
+            ImGui::SameLine(0.0f, gap);
             ImGui::SetCursorPosY(ImGui::GetWindowHeight() - margin - size + (size - ImGui::GetFrameHeight()) * 0.5f);
-            ImGui::SetNextItemWidth(fontSize(state, 200.0f));
+            ImGui::SetNextItemWidth(slider);
             float percent = state.volume * 100.0f;
             if (ImGui::SliderFloat("##volume", &percent, 0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp))
             {

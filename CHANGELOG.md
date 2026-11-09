@@ -8,7 +8,8 @@ Newest first, one line per change; the code comments say how.
 - Launcher: Play starts the game with the logo's roulette pick, the game's menu sound (from your disc) and a fade to black.
 - Launcher: music, fading out when the game starts.
 - Launcher: the game's menu sounds when moving the cursor, confirming and going back (from your disc).
-- Launcher: a volume slider with a mute button in the lower left corner, kept between starts.
+- Launcher: a volume slider with a mute button in the lower right corner, kept between starts.
+- Launcher: the splash text sits on the logo's D.
 - GHR.exe has its own icon (file, title bar and taskbar).
 - Renamed to God Hand: Rearmed: the program is GHR.exe and its settings GHR.ini (an existing kamite.ini carries over); window titles, launcher, F2 menu and the exe's file details use the new name.
 - Launcher: every tab's options grouped under titled categories; the Experimental tab is gone (its options are in Display and Gameplay), replacement textures moved to Mods, hotkeys folded away by default.

@@ -813,7 +813,8 @@ void PS2AudioBackend::playDecodedSample(uint32_t sampleKey, DecodedSample &sampl
     SetSoundPitch(snd, pitch);
     SetSoundVolume(snd, volume);
     m_impl->activeSounds.push_back({snd, sampleKey});
-    PlaySound(snd);
+    PlayAudioStream(snd.stream); // = raylib's PlaySound; the exe links winmm (/FORCE:MULTIPLE), whose PlaySound won
+
 #endif
 }
 
