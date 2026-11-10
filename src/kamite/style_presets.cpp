@@ -1195,8 +1195,12 @@ namespace kamite::style_presets
             const R5900Context saved = *ctx;
             int reg = 4;
             for (uint32_t a : args)
-                if (reg <= 11)
-                    SET_GPR_U32(ctx, reg++, a);
+            {
+                if (reg > 11)
+                    break;
+                SET_GPR_U32(ctx, reg, a); // a macro: it reads its register argument more than once (no reg++ in it)
+                ++reg;
+            }
             ctx->pc = address; // a hooked function finds its hook by the pc (game_options.cpp callGuest)
             runtime->eeScheduler().beginHostCall();
             fn(rdram, ctx, runtime);
@@ -1224,9 +1228,14 @@ namespace kamite::style_presets
         constexpr uint16_t kStreamLine = 14u;                      // record 48's own line ("Shit!")
         constexpr int64_t kRestoreMs = 3000;                       // record 48 back to its own line after this
         constexpr uint16_t kStyleLines[kStyles] = {8u, 2u, 12u, 6u}; // afd entries: S Cool, E Nice, X Great, Y Awesome
-        // The roulette's arm flash: func_00114608 step 1, once at the opening, SetEffect(0, 0xE, gene, 0, -1, -1) when
-        // the costume (cCoreSave_getCostumeNo) is below 8 and even (its jump table 0x41C210; odd costumes get none).
-        constexpr uint32_t kSetEffect = 0x306528u, kGetCostume = 0x1FC0A8u, kArmFlash = 0xEu;
+        // The arm's own glow (K, Nov 10: the flash and its faint trail), as Gene's God Hand moves light it: func_00129630
+        // (gene) turns it on (sets +0x15F4 & 0x20; SetEffect(0, 0x2E, gene, ...) for costumes 0..7 even, 0x74 odd; nothing
+        // with +0x15F4 & 0x10), func_00129578 (gene) off (clears 0x20; the fade, effect 0x19 / 0x75). Called by the move
+        // states 0x10F0D0..0x1140E8. Held kGlowMs, then off; +0x15F4's 0x20 is put back as it was before.
+        constexpr uint32_t kGlowOn = 0x129630u, kGlowOff = 0x129578u;
+        constexpr int64_t kGlowMs = 500;
+        int64_t g_glowOffAt = 0;
+        bool g_glowing = false, g_glowBitWas = false;
         uint32_t g_signalHandle = 0u;  // the line playing (cut by the next switch's)
         uint32_t g_patchedRecord = 0u; // record 48 while it points at a style's line
         int64_t g_restoreAt = 0;
@@ -1289,45 +1298,31 @@ namespace kamite::style_presets
                                                                           << GPR_U32(ctx, 31) << std::dec);
         }
 
-        // Diagnostic (Nov 10, to strip): what the roulette's opening starts on Gene (sounds and effects), to find the
-        // arm flash K means.
-        int g_diagLines = 0;
-        bool openingOf(uint32_t gene)
+        void glowOff(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t gene)
         {
-            const uint32_t player = rd32(0x7474A0u + 0x5F4u);
-            if (!validPointer(player, 0x1700u) || gene != player || g_ram[gene + 0x2F5u] != 0x2Bu)
+            g_glowing = false;
+            if (!validPointer(gene, 0x1700u))
+                return;
+            callGuest(rdram, ctx, runtime, kGlowOff, {gene});
+            if (g_glowBitWas)
             {
-                if (validPointer(player, 0x1700u) && g_ram[player + 0x2F5u] != 0x2Bu)
-                    g_diagLines = 0;
-                return false;
+                const uint32_t flags = rd32(gene + 0x15F4u) | 0x20u;
+                std::memcpy(g_ram + gene + 0x15F4u, &flags, sizeof(flags));
             }
-            float clock = 0.0f;
-            std::memcpy(&clock, g_ram + gene + 0x430u, sizeof(clock));
-            return clock < 30.0f && g_diagLines++ < 40;
         }
-        void diagSeCall(uint8_t *, R5900Context *ctx, PS2Runtime *)
-        {
-            if (openingOf(GPR_U32(ctx, 7)))
-                KM_INFO(Game, "styles: diag roulette SeCall bank " << GPR_U32(ctx, 5) << " id 0x" << std::hex
-                                                                    << GPR_U32(ctx, 6) << " t0 0x" << GPR_U32(ctx, 8)
-                                                                    << " ra 0x" << GPR_U32(ctx, 31) << std::dec);
-        }
-        void diagSetEffect(uint8_t *, R5900Context *ctx, PS2Runtime *)
-        {
-            if (openingOf(GPR_U32(ctx, 6)))
-                KM_INFO(Game, "styles: diag roulette SetEffect 0x" << std::hex << GPR_U32(ctx, 4) << ", 0x"
-                                                                  << GPR_U32(ctx, 5) << ", params 0x" << GPR_U32(ctx, 7)
-                                                                  << ", 0x" << GPR_U32(ctx, 8) << ", 0x" << GPR_U32(ctx, 9)
-                                                                  << " ra 0x" << GPR_U32(ctx, 31) << std::dec);
-        }
+
         // Run inside Gene's own update (cObjBase_SetSeqEffect, called by it every frame, 0x1095F0), where the game plays
         // his sounds and effects: from the frame start (the top of the main loop) the sound call gave no voice.
         void onGeneUpdate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             if (!g_ram || GPR_U32(ctx, 4) != rd32(0x7474A0u + 0x5F4u))
                 return;
-            if (g_patchedRecord && steadyMs() >= g_restoreAt)
+            const int64_t now = steadyMs();
+            if (g_patchedRecord && now >= g_restoreAt)
                 restoreRecord();
+            const uint32_t player = GPR_U32(ctx, 4);
+            if (g_glowing && now >= g_glowOffAt)
+                glowOff(rdram, ctx, runtime, player);
             const int to = g_signal.exchange(0, std::memory_order_relaxed);
             if (to < 1 || to > kStyles)
                 return;
@@ -1340,11 +1335,12 @@ namespace kamite::style_presets
             KM_INFO(Game, "styles: signal (diagnostic): style " << to << ", gene 0x" << std::hex << gene << std::dec
                                                                 << ", +0x15F4 0x" << std::hex << rd32(gene + 0x15F4u) << std::dec);
             playStyleLine(rdram, ctx, runtime, gene, to - 1);
-            const uint32_t costume = callGuest(rdram, ctx, runtime, kGetCostume, {kCoreSave});
-            uint32_t effect = 0xFFFFFFFFu;
-            if (costume < 8u && (costume & 1u) == 0u)
-                effect = callGuest(rdram, ctx, runtime, kSetEffect, {0u, kArmFlash, gene, 0u, 0xFFFFFFFFu, 0xFFFFFFFFu});
-            KM_INFO(Game, "styles: signal (diagnostic): costume " << costume << ", SetEffect -> 0x" << std::hex << effect << std::dec);
+            if (g_glowing)
+                glowOff(rdram, ctx, runtime, gene); // a new switch flashes again
+            g_glowBitWas = (rd32(gene + 0x15F4u) & 0x20u) != 0u;
+            callGuest(rdram, ctx, runtime, kGlowOn, {gene});
+            g_glowing = true;
+            g_glowOffAt = now + kGlowMs;
         }
 
         void onWazaDraw(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
@@ -1678,8 +1674,6 @@ namespace kamite::style_presets
         ps2x::pnach::addFrameHook(&onVblank);
         if (g_signalOn)
         {
-            FunctionHooks::instance().observeEntry(kSeCallObj, "cSnd_SeCall (signal diagnostic)", &diagSeCall);
-            FunctionHooks::instance().observeEntry(kSetEffect, "SetEffect (signal diagnostic)", &diagSetEffect);
             FunctionHooks::instance().observeEntry(0x14FB48u, "cObjBase_SetSeqEffect (Signal Style Switch)", &onGeneUpdate);
         }
         FunctionHooks::instance().observeEntry(0x2AAA40u, "cIDBase_move (style list)", &onLayoutMove);
