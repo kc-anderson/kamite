@@ -830,16 +830,25 @@ namespace kamite::style_presets
         uint32_t g_hudText = 0u, g_hudShadow = 0u; // the two entries (EE thread); 0 = not found
         bool g_hudShown = false;
 
+        constexpr int kOutlineCopies = 8;
         std::vector<uint16_t> hudText(const Store &store, bool colours)
         {
             const int64_t now = steadyMs();
             const bool blinkOn = (now / kBlinkMs) % 2 == 0;
             const bool flash = now - g_lastActionMs.load(std::memory_order_relaxed) < kFlashMs;
+            // K, Nov 10: the letters sit round the minimap (hud_layout moves each glyph there: S top, E right, X bottom,
+            // Y left). The text is the four letters; the shadow carries each letter kOutlineCopies times, spread round it
+            // by hud_layout, as a full outline (readable on both the PS2 and the texture pack's minimap).
             std::vector<uint16_t> out;
+            if (!colours)
+            {
+                for (int slot = 0; slot < kStyles; ++slot)
+                    out.insert(out.end(), kOutlineCopies, glyph(g_letters[slot]));
+                out.push_back(kEnd);
+                return out;
+            }
             for (int slot = 0; slot < kStyles; ++slot)
             {
-                if (slot > 0)
-                    out.push_back(kSpace);
                 const bool used = (store.used & (1u << slot)) != 0u;
                 uint32_t colour = kBeige;
                 if (used && store.active == slot)
@@ -1432,13 +1441,31 @@ namespace kamite::style_presets
         return store.active < kStyles && (store.used & (1u << store.active)) ? store.active + 1 : 0;
     }
 
+    bool lettersOnRadar() { return g_ram != nullptr; }
+
+    int hudGlyph(uint32_t entry, int index, float &dx, float &dy)
+    {
+        entry &= 0x1FFFFFFu;
+        dx = dy = 0.0f;
+        if (!g_ram || !g_hudShown || (entry != g_hudText && entry != g_hudShadow) || index < 0)
+            return -1;
+        if (entry == g_hudText)
+            return index < kStyles ? index : -1;
+        if (index >= kStyles * kOutlineCopies)
+            return -1;
+        static constexpr float kDir[kOutlineCopies][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}};
+        dx = kDir[index % kOutlineCopies][0];
+        dy = kDir[index % kOutlineCopies][1];
+        return index / kOutlineCopies;
+    }
+
     bool onHudEntry(uint32_t entry)
     {
         entry &= 0x1FFFFFFu;
         if (!g_ram || !g_hudShown || (entry != g_hudText && entry != g_hudShadow))
             return false;
         // Placed here, after the layout's move put the entry where its data says (the top left corner).
-        const float d = entry == g_hudShadow ? 1.0f : 0.0f;
+        const float d = 0.0f; // the outline is spread per glyph (hudGlyph): the shadow sits under the text
         wrFloat(entry + ent::kDrawX, kHudX + d);
         wrFloat(entry + ent::kDrawY, kHudY + d);
         return true;

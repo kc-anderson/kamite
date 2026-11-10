@@ -141,6 +141,29 @@ namespace kamite::hud
         Context g_regionCtx, g_lastEntry;
         uint32_t g_moneyLayout = 0u;                              // cCockMoney (its layout), once seen
         float g_radarRightSeen = -1e9f, g_radarRight = std::nanf(""); // the minimap's right edge (before narrowing)
+
+        // The style indicator round the minimap (style_presets::hudGlyph; K, Nov 10): S above, E right, X below, Y left,
+        // never over the active disc (the part Modern's glow lights yellow). With Style switching on the minimap and the
+        // gold counter move down so S fits under the screen's top, and the counter a little further, clear of X.
+        // Measured on K's screenshots (16:9, 1333 px high: 2.98 px a unit): outer radius 55.8 units, the yellow edge
+        // at 0.776 of it; a letter at 0.65 about 15 units high, 10 wide.
+        constexpr uint32_t kRadarLetters = 0xF0000005u;            // the indicator's own group (radar anchor)
+        constexpr float kRadarNudgeX = 0.0f, kRadarNudgeY = 8.0f;   // the minimap and the counter
+        constexpr float kMoneyExtraY = 8.0f;                       // the counter, past that
+        constexpr float kMoneyMinY = 80.0f;                        // the counter's draws (the action prompt above: y < 50)
+        constexpr float kActiveShare = 0.776f;                     // the active disc's radius / the minimap's outer one
+        constexpr float kLetterHalfH = 7.5f, kLetterHalfW = 5.5f;  // a letter's visible half size (y units)
+        constexpr float kLetterGap = 1.5f;                         // from the active disc's edge
+        constexpr float kOutlineStep = 1.0f;                       // the outline copies' offset (y units)
+        constexpr float kGlyphBiasY = 0.0f;                        // the glyph's visible centre below its quad's
+        struct Box
+        {
+            float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+            bool valid() const { return x0 < x1 && y0 < y1; }
+        };
+        Box g_radarSeen, g_radarBox; // the minimap's extent this frame / last frame (after the nudge, before narrowing)
+        bool g_radarShown = false;   // drawn last frame
+        int g_glyphIndex = 0;        // glyphs drawn so far in the entry being drawn
         bool g_inIdTrans = false;
         uint32_t g_idCaller = 0u; // the return address of the cIDBase_trans being drawn
         uint32_t g_curLayout = 0u; // the cIDBase being drawn (every caller)
@@ -305,6 +328,31 @@ namespace kamite::hud
             // The minimap's right edge, for the gold counter (at every aspect and layout: both use the same mapping).
             if (g_ctx.active && g_ctx.key == kRadar && x1 - x0 < 0.9f * width && !menuNow())
                 g_radarRightSeen = std::max(g_radarRightSeen, x1);
+            // Room for the style indicator: the minimap and the gold counter move down (the counter's number is right-
+            // aligned to the minimap's edge measured above, before the move, then moves with everything else).
+            if (g_ctx.active && !menuNow() && x1 - x0 < 0.9f * width && style_presets::lettersOnRadar() &&
+                (g_ctx.key == kRadar || (g_ctx.key == kMoney && y0 >= kMoneyMinY)))
+            {
+                const float dx = kRadarNudgeX, dy = kRadarNudgeY + (g_ctx.key == kMoney ? kMoneyExtraY : 0.0f);
+                for (int i = 0; i < n; ++i)
+                {
+                    xs[i] += dx;
+                    write32(rdram, address + 16u * i, static_cast<uint32_t>(static_cast<int32_t>(std::lround(xs[i] * 16.0f)) + offset));
+                    const int32_t y = static_cast<int32_t>(read32(rdram, address + 16u * i + 4u));
+                    write32(rdram, address + 16u * i + 4u, static_cast<uint32_t>(y + static_cast<int32_t>(std::lround(dy * 16.0f))));
+                }
+                x0 += dx;
+                x1 += dx;
+                y0 += dy;
+                y1 += dy;
+            }
+            if (g_ctx.active && g_ctx.key == kRadar && x1 - x0 < 0.9f * width && !menuNow())
+            {
+                g_radarSeen.x0 = std::min(g_radarSeen.x0, x0);
+                g_radarSeen.x1 = std::max(g_radarSeen.x1, x1);
+                g_radarSeen.y0 = std::min(g_radarSeen.y0, y0);
+                g_radarSeen.y1 = std::max(g_radarSeen.y1, y1);
+            }
             const float none = std::nanf("");
             if (n >= 2 && x1 - x0 >= 0.9f * width)
             {
@@ -385,9 +433,49 @@ namespace kamite::hud
 
         // func_002A53A8 (text glyphs and inline button icons) at 0x2A5704: its two corners converted (screen*16, the
         // offset not added yet) at sp+0x20 and sp+0x30; caller's $ra at sp+0x40.
+        // A glyph of the style indicator (two corners at `at`, at + 0x10, screen*16): moved to its place round the
+        // minimap (last frame's extent), or shrunk to nothing while the minimap is not drawn.
+        void placeStyleGlyph(uint8_t *rdram, uint32_t at)
+        {
+            if (!g_inIdTrans)
+                return;
+            float ox, oy;
+            const int slot = style_presets::hudGlyph(g_entry, g_glyphIndex++, ox, oy);
+            if (slot < 0)
+                return;
+            auto get = [&](uint32_t a) { return static_cast<float>(static_cast<int32_t>(read32(rdram, a))) / 16.0f; };
+            auto put = [&](uint32_t a, float v) { write32(rdram, a, static_cast<uint32_t>(static_cast<int32_t>(std::lround(v * 16.0f)))); };
+            const float gx0 = get(at), gy0 = get(at + 4u), gx1 = get(at + 0x10u), gy1 = get(at + 0x14u);
+            if (!g_radarShown || !g_radarBox.valid() || menuNow())
+            {
+                put(at + 0x10u, gx0);
+                put(at + 0x14u, gy0);
+                return;
+            }
+            const float cx = 0.5f * (g_radarBox.x0 + g_radarBox.x1), cy = 0.5f * (g_radarBox.y0 + g_radarBox.y1);
+            const float rx = 0.5f * (g_radarBox.x1 - g_radarBox.x0), ry = 0.5f * (g_radarBox.y1 - g_radarBox.y0);
+            const float sx = rx / ry; // x units per y unit (the HUD's stretch)
+            float tx = cx, ty = cy;
+            switch (slot)
+            {
+            case 0: ty = cy - ry * kActiveShare - kLetterGap - kLetterHalfH; break;
+            case 1: tx = cx + rx * kActiveShare + (kLetterGap + kLetterHalfW) * sx; break;
+            case 2: ty = cy + ry * kActiveShare + kLetterGap + kLetterHalfH; break;
+            default: tx = cx - rx * kActiveShare - (kLetterGap + kLetterHalfW) * sx; break;
+            }
+            tx += ox * kOutlineStep * sx;
+            ty += oy * kOutlineStep;
+            const float dx = tx - 0.5f * (gx0 + gx1), dy = ty - (0.5f * (gy0 + gy1) + kGlyphBiasY);
+            put(at, gx0 + dx);
+            put(at + 4u, gy0 + dy);
+            put(at + 0x10u, gx1 + dx);
+            put(at + 0x14u, gy1 + dy);
+        }
+
         void fontSprite(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             const uint32_t sp = GPR_U32(ctx, 29);
+            placeStyleGlyph(rdram, sp + 0x20u);
             narrowVertices(rdram, sp + 0x20u, 2, read32(rdram, sp + 0x40u), "glyph", false);
         }
 
@@ -524,6 +612,7 @@ namespace kamite::hud
         void idEntry(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             g_entry = GPR_U32(ctx, 5) & 0x01FFFFFFu;
+            g_glyphIndex = 0;
             style_presets::noteEntry(g_entry); // the Techniques screen's style list draws arrows for its own entry
             roulette_bar::onEntry(rdram, g_curLayout, g_entry);
             if (g_entryOverride)
@@ -531,13 +620,23 @@ namespace kamite::hud
                 g_ctx = g_savedCtx;
                 g_entryOverride = false;
             }
-            // The style indicator rides in the money display's layout but belongs with the level meter at the left
-            // edge: its own group, anchored there, so its draws neither follow the money nor widen its extent.
             // The game's action prompt ("A :Throw") rides in the same two text entries (+0x9C / +0xA0, message 0x3010)
             // and sits at the top left of the 4:3 screen (x 16, y 14; K's F6, Nov 1): with the money it followed the
             // minimap's anchor and landed mid-screen at 16:9. It goes with the left edge, like the indicator.
-            bool leftEdge = style_presets::onHudEntry(g_entry);
-            if (!leftEdge && g_moneyLayout != 0u && g_curLayout == g_moneyLayout &&
+            // The style indicator (Nov 10) goes round the minimap: the minimap's anchor, its own group.
+            if (style_presets::onHudEntry(g_entry))
+            {
+                if (!menuNow())
+                {
+                    const float width = screenWidth(rdram);
+                    g_savedCtx = g_ctx;
+                    g_ctx = Context{true, kRadarLetters, anchorFor(kRadar, width - 0.5f * width * (1.0f - g_edgeShare), width)};
+                    g_entryOverride = true;
+                }
+                return;
+            }
+            bool leftEdge = false;
+            if (g_moneyLayout != 0u && g_curLayout == g_moneyLayout &&
                 (g_entry == (read32(rdram, g_moneyLayout + kMoneyText) & 0x01FFFFFFu) ||
                  g_entry == (read32(rdram, g_moneyLayout + kMoneyShadow) & 0x01FFFFFFu)))
                 leftEdge = true;
@@ -677,6 +776,10 @@ namespace kamite::hud
         if (g_radarRightSeen > -1e8f)
             g_radarRight = g_radarRightSeen; // a frame without the minimap (menus) keeps the last
         g_radarRightSeen = -1e9f;
+        g_radarShown = g_radarSeen.valid();
+        if (g_radarShown)
+            g_radarBox = g_radarSeen;
+        g_radarSeen = Box{};
         // The pause menu's own screens (Techniques, the move list...) can be drawn over the 3D view with no
         // full-screen background: an open sub screen counts as a menu too (cSubScr D_003BD930, +0x48 the open screen's
         // kind, -1 when closed; decomp include/godhand/cSubScr.h). Narrowed, their layers came apart (the Techniques

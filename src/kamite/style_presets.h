@@ -33,6 +33,12 @@ namespace kamite::style_presets
     // The in-play style indicator's entries (the HUD's money layout carries them): true for one of them, with its
     // draw position set; hud_layout then anchors it to the left edge like the level meter.
     bool onHudEntry(uint32_t entry);
+    // The indicator round the minimap (K, Nov 10): true while Style switching is on (the minimap and the gold counter
+    // then move down a little to make room). For a glyph of the indicator's entries (the index-th drawn in it): the
+    // style it shows (0..3 = S E X Y: top, right, bottom, left of the minimap), else -1; for the outline's copies the
+    // direction of its offset (-1..1 each).
+    bool lettersOnRadar();
+    int hudGlyph(uint32_t entry, int index, float &dx, float &dy);
 
     // ps2_host_input's pad filter, player 1 (window thread): called by modern_controls' filter before its own work.
     void padFilter(uint32_t player, ps2x::iop::PadInputState &state);
