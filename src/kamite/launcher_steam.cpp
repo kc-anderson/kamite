@@ -49,7 +49,7 @@ namespace kamite::launcher::steam
         constexpr Art kArt[] = {
             {"cover", "p", "https://cdn2.steamgriddb.com/grid/991c548e1dbad52115bb48b158407334.png"}, // 600x900 (K: stand-in)
             {"wide cover", "", "https://cdn2.steamgriddb.com/grid/78434f3b63efa331e51d1e41dd47cfb0.png"}, // 920x430
-            {"hero banner", "_hero", "https://cdn2.steamgriddb.com/hero/a8d83990b2b2f804f8e53c0b7ddec7b0.png"}, // 3840x1240
+            {"hero banner", "_hero", "https://cdn2.steamgriddb.com/hero/7cff4ce87d7f2179d73e7959bf213529.jpg"}, // 3840x1240
         };
 
         std::string utf8(const fs::path &path)
