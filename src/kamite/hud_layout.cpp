@@ -433,6 +433,7 @@ namespace kamite::hud
 
         // func_002A53A8 (text glyphs and inline button icons) at 0x2A5704: its two corners converted (screen*16, the
         // offset not added yet) at sp+0x20 and sp+0x30; caller's $ra at sp+0x40.
+        constexpr uint32_t kNearestZ = 0x00FFFFFFu << 4; // the 24-bit depth's nearest, in vftoi4 units
         // A glyph of the style indicator (two corners at `at`, at + 0x10, screen*16): moved to its place round the
         // minimap (last frame's extent), or shrunk to nothing while the minimap is not drawn.
         void placeStyleGlyph(uint8_t *rdram, uint32_t at)
@@ -470,6 +471,11 @@ namespace kamite::hud
             put(at + 4u, gy0 + dy);
             put(at + 0x10u, gx1 + dx);
             put(at + 0x14u, gy1 + dy);
+            // Over the minimap: the font's glyphs carry a depth (vertex +8, vftoi4 of the draw's z; XYZ2 takes it >> 4)
+            // and fail the depth test where the minimap drew nearer, whatever the order (K's Nov 10 build: the
+            // letters under the minimap's rim, also when drawn after it). The letters take the nearest 24-bit depth.
+            write32(rdram, at + 8u, kNearestZ);
+            write32(rdram, at + 0x18u, kNearestZ);
         }
 
         void fontSprite(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
