@@ -32,3 +32,6 @@ Without the file the launcher draws its brown gradient.
 
 `steam_logo.png`: the five logo layers flattened (REARMED's letters in the launcher's gold), 1280 px wide: the Steam
 library logo Add to Steam writes (src/kamite/launcher_steam.cpp). Rebuild it the same way when the layers change.
+
+`steam_icon.png`: src/kamite/ghr.ico's 256 px frame as a PNG, the Steam entry's icon (Steam reads the exe's
+PNG-compressed icon frames with a black background).

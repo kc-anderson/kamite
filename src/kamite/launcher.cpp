@@ -1180,9 +1180,10 @@ void main()
 
         // The logo, after ImGui laid it out: the kana behind (moved a little with the cursor), GOD HAND, the plate.
         // While Play's animation runs the plate is drawn later, over the fade.
-        void drawLogo(const State &state)
+        // force: draw last frame's placement (before ImGui, under an open popup).
+        void drawLogo(const State &state, bool force = false)
         {
-            if (!state.logoThisFrame)
+            if (!(state.logoThisFrame || (force && state.logoPlaced)))
                 return;
             const ImVec2 shift(state.parallax.x * fontSize(state, 10.0f), state.parallax.y * fontSize(state, 7.0f));
             drawLayer(state.kana, ImVec2(state.logoMin.x + shift.x, state.logoMin.y + shift.y),
@@ -2609,6 +2610,13 @@ void main()
             if (!drawDesert(state))
                 drawBackground();
             drawBurst(state);
+            // A popup (Add to Steam's) must sit over the logo: while one is open the logo goes under ImGui.
+            const bool logoUnder = state.popupWasOpen && !playing;
+            if (logoUnder)
+            {
+                drawLogo(state, true);
+                drawSplash(state);
+            }
             rlImGuiBegin();
             ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
             ImGui::SetNextWindowSize(io.DisplaySize);
@@ -2649,8 +2657,11 @@ void main()
             ImGui::End();
             frameSounds(state);
             rlImGuiEnd();
-            drawLogo(state);
-            drawSplash(state);
+            if (!logoUnder)
+            {
+                drawLogo(state);
+                drawSplash(state);
+            }
             if (playing)
             {
                 DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(),

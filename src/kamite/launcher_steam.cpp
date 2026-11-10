@@ -37,8 +37,9 @@ namespace kamite::launcher::steam
         constexpr const char *kAppName = "God Hand: Rearmed";
 
         // The library art (K's SteamGridDB picks, downloaded when the button is pressed, never shipped; README
-        // credits their makers). A dead link is a one-line swap here. The logo is ours (resources/images/
-        // steam_logo.png, the launcher's layers flattened) and the icon is GHR.exe's own.
+        // credits their makers). A dead link is a one-line swap here. The logo and the icon are ours
+        // (resources/images/steam_logo.png: the launcher's layers flattened; steam_icon.png: ghr.ico's 256 px frame).
+        // The icon is a PNG of its own: Steam reads GHR.exe's PNG-compressed icon frames with a black background.
         struct Art
         {
             const char *name;   // for the popup: "Couldn't download the <name>."
@@ -520,7 +521,7 @@ namespace kamite::launcher::steam
 
         // Adds our entry to the list read by readShortcuts, or re-points the one there (true): GHR.exe, its folder,
         // its icon; Steam's id for it in appid.
-        bool addEntry(std::vector<Node> &root, const fs::path &exePath, uint32_t &appid)
+        bool addEntry(std::vector<Node> &root, const fs::path &exePath, const fs::path &grid, uint32_t &appid)
         {
             std::vector<Node> &shortcuts = find(root, "shortcuts")->kids;
             const std::string exe = utf8(exePath);
@@ -549,7 +550,7 @@ namespace kamite::launcher::steam
             setText(entry->kids, "AppName", kAppName);
             setText(entry->kids, "Exe", exeQuoted);
             setText(entry->kids, "StartDir", "\"" + utf8(exePath.parent_path()) + "\"");
-            setText(entry->kids, "icon", exe); // GHR.exe's own icon
+            setText(entry->kids, "icon", utf8(grid / (std::to_string(appid) + "_icon.png"))); // written with the art
             if (!update)
             {
                 setText(entry->kids, "ShortcutPath", "");
@@ -642,8 +643,9 @@ namespace kamite::launcher::steam
             restart();
             return done(false, "Steam's shortcut list couldn't be read, so nothing was changed.");
         }
+        const fs::path grid = account.config / "grid";
         uint32_t appid = 0;
-        const bool update = addEntry(root, exePath, appid);
+        const bool update = addEntry(root, exePath, grid, appid);
 
         std::error_code error;
         fs::create_directories(account.config, error);
@@ -659,7 +661,6 @@ namespace kamite::launcher::steam
         }
 
         // The art: grid/<appid><suffix>.<ext>. A picture that didn't download keeps the one from last time.
-        const fs::path grid = account.config / "grid";
         fs::create_directories(grid, error);
         const std::string id = std::to_string(appid);
         std::string missing;
@@ -677,9 +678,12 @@ namespace kamite::launcher::steam
             if (!writeFile(grid / (id + kArt[i].suffix + ext), art[i].data(), art[i].size()))
                 missing += std::string("\nThe ") + kArt[i].name + " couldn't be saved.";
         }
-        std::vector<uint8_t> logo;
-        if (readFile(resources / "images" / "steam_logo.png", logo) && !logo.empty())
-            writeFile(grid / (id + "_logo.png"), logo.data(), logo.size());
+        for (const char *ours : {"_logo", "_icon"})
+        {
+            std::vector<uint8_t> image;
+            if (readFile(resources / "images" / (std::string("steam") + ours + ".png"), image) && !image.empty())
+                writeFile(grid / (id + ours + ".png"), image.data(), image.size());
+        }
 
         restart();
         std::string message = update ? "Steam entry updated." : "Added to Steam.";
