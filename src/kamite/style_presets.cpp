@@ -1245,17 +1245,20 @@ namespace kamite::style_presets
             if (!list || count <= static_cast<int16_t>(kStreamRecord))
                 return 0u;
             const uint32_t r = list + kStreamRecord * 0x30u;
-            return g_ram[r + 6u] == 0x31u && (g_ram[r + 0xFu] & 0x80u) == 0u ? r : 0u;
+            return (g_ram[r + 6u] == 0x31u || r == g_patchedRecord) && (g_ram[r + 0xFu] & 0x80u) == 0u ? r : 0u;
         }
-        void writeLine(uint32_t record, uint16_t line)
+        // Type 0x31 looks like "one of the lines up to +0x28" (the pickup's random positive line, 0x1C198C: 0xF8 or
+        // 0xF9 at random, both entry 14), type 0x30 "the line +0x28" (r000's narration, core's jingles).
+        void writeLine(uint32_t record, uint8_t type, uint16_t line)
         {
+            g_ram[record + 6u] = type;
             g_ram[record + 0x28u] = static_cast<uint8_t>(line);
             g_ram[record + 0x29u] = static_cast<uint8_t>(line >> 8);
         }
         void restoreRecord()
         {
-            if (g_patchedRecord && validPointer(g_patchedRecord, 0x30u) && g_ram[g_patchedRecord + 6u] == 0x31u)
-                writeLine(g_patchedRecord, kStreamLine);
+            if (g_patchedRecord && validPointer(g_patchedRecord, 0x30u) && g_ram[g_patchedRecord + 6u] == 0x30u)
+                writeLine(g_patchedRecord, 0x31u, kStreamLine);
             g_patchedRecord = 0u;
         }
 
@@ -1269,12 +1272,21 @@ namespace kamite::style_presets
             }
             if (g_signalHandle)
                 callGuest(rdram, ctx, runtime, kSeStop, {kSnd, g_signalHandle}); // a new switch cuts the last line
-            writeLine(record, kStyleLines[slot]);
+            writeLine(record, 0x30u, kStyleLines[slot]);
             g_patchedRecord = record;
             g_restoreAt = steadyMs() + kRestoreMs;
+            // Diagnostic: the core slot's state and the driver's read of the record, then the call.
+            const uint32_t core = rd32(kSnd + 0x3Cu);
+            const uint32_t buf = (GPR_U32(ctx, 29) - 0x400u) & ~0xFu;
+            const uint32_t got = callGuest(rdram, ctx, runtime, 0x374CB8u, {kGeneBank, kStreamRecord, buf});
             g_signalHandle = callGuest(rdram, ctx, runtime, kSeCallObj, {kSnd, 0u, kStreamCallId, gene, 0u, 0u, 0u, 0u});
-            KM_INFO(Game, "styles: signal (diagnostic): record 48 -> line " << kStyleLines[slot] << ", handle "
-                                                                            << g_signalHandle);
+            KM_INFO(Game, "styles: signal (diagnostic): core slot state " << (validPointer(core) ? rd32(core) : 0xDEADu)
+                                                                          << ", record read " << static_cast<int32_t>(got)
+                                                                          << " type 0x" << std::hex << int(g_ram[buf + 6u])
+                                                                          << " line " << std::dec << int(g_ram[buf + 0x28u])
+                                                                          << ", line " << kStyleLines[slot] << ", handle "
+                                                                          << g_signalHandle << ", ra 0x" << std::hex
+                                                                          << GPR_U32(ctx, 31) << std::dec);
         }
 
         // Diagnostic (Nov 10, to strip): what the roulette's opening starts on Gene (sounds and effects), to find the
@@ -1308,12 +1320,31 @@ namespace kamite::style_presets
                                                                   << ", 0x" << GPR_U32(ctx, 8) << ", 0x" << GPR_U32(ctx, 9)
                                                                   << " ra 0x" << GPR_U32(ctx, 31) << std::dec);
         }
-        void diagSeqEffect(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        // Run inside Gene's own update (cObjBase_SetSeqEffect, called by it every frame, 0x1095F0), where the game plays
+        // his sounds and effects: from the frame start (the top of the main loop) the sound call gave no voice.
+        void onGeneUpdate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
-            if (openingOf(GPR_U32(ctx, 4)))
-                KM_INFO(Game, "styles: diag roulette SetSeqEffect a1 0x" << std::hex << GPR_U32(ctx, 5) << " a2 0x"
-                                                                        << GPR_U32(ctx, 6) << " a3 0x" << GPR_U32(ctx, 7)
-                                                                        << " ra 0x" << GPR_U32(ctx, 31) << std::dec);
+            if (!g_ram || GPR_U32(ctx, 4) != rd32(0x7474A0u + 0x5F4u))
+                return;
+            if (g_patchedRecord && steadyMs() >= g_restoreAt)
+                restoreRecord();
+            const int to = g_signal.exchange(0, std::memory_order_relaxed);
+            if (to < 1 || to > kStyles)
+                return;
+            const uint32_t gene = rd32(0x7474A0u + 0x5F4u); // GameWork's player
+            if (!validPointer(gene, 0x1700u))
+            {
+                KM_INFO(Game, "styles: signal (diagnostic): no player 0x" << std::hex << gene << std::dec);
+                return;
+            }
+            KM_INFO(Game, "styles: signal (diagnostic): style " << to << ", gene 0x" << std::hex << gene << std::dec
+                                                                << ", +0x15F4 0x" << std::hex << rd32(gene + 0x15F4u) << std::dec);
+            playStyleLine(rdram, ctx, runtime, gene, to - 1);
+            const uint32_t costume = callGuest(rdram, ctx, runtime, kGetCostume, {kCoreSave});
+            uint32_t effect = 0xFFFFFFFFu;
+            if (costume < 8u && (costume & 1u) == 0u)
+                effect = callGuest(rdram, ctx, runtime, kSetEffect, {0u, kArmFlash, gene, 0u, 0xFFFFFFFFu, 0xFFFFFFFFu});
+            KM_INFO(Game, "styles: signal (diagnostic): costume " << costume << ", SetEffect -> 0x" << std::hex << effect << std::dec);
         }
 
         void onWazaDraw(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
@@ -1625,31 +1656,6 @@ namespace kamite::style_presets
         return true;
     }
 
-    void signalFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
-    {
-        if (!g_ram)
-            return;
-        if (g_patchedRecord && steadyMs() >= g_restoreAt)
-            restoreRecord();
-        const int to = g_signal.exchange(0, std::memory_order_relaxed);
-        if (to < 1 || to > kStyles)
-            return;
-        const uint32_t gene = rd32(0x7474A0u + 0x5F4u); // GameWork's player
-        if (!validPointer(gene, 0x1700u))
-        {
-            KM_INFO(Game, "styles: signal (diagnostic): no player 0x" << std::hex << gene << std::dec);
-            return;
-        }
-        KM_INFO(Game, "styles: signal (diagnostic): style " << to << ", gene 0x" << std::hex << gene << std::dec
-                                                            << ", +0x15F4 0x" << std::hex << rd32(gene + 0x15F4u) << std::dec);
-        playStyleLine(rdram, ctx, runtime, gene, to - 1);
-        const uint32_t costume = callGuest(rdram, ctx, runtime, kGetCostume, {kCoreSave});
-        uint32_t effect = 0xFFFFFFFFu;
-        if (costume < 8u && (costume & 1u) == 0u)
-            effect = callGuest(rdram, ctx, runtime, kSetEffect, {0u, kArmFlash, gene, 0u, 0xFFFFFFFFu, 0xFFFFFFFFu});
-        KM_INFO(Game, "styles: signal (diagnostic): costume " << costume << ", SetEffect -> 0x" << std::hex << effect << std::dec);
-    }
-
     void install(PS2Runtime &runtime)
     {
         // [Game] StyleSwitching ("Style switching" in the launcher, off by default): without it nothing here is
@@ -1674,7 +1680,7 @@ namespace kamite::style_presets
         {
             FunctionHooks::instance().observeEntry(kSeCallObj, "cSnd_SeCall (signal diagnostic)", &diagSeCall);
             FunctionHooks::instance().observeEntry(kSetEffect, "SetEffect (signal diagnostic)", &diagSetEffect);
-            FunctionHooks::instance().observeEntry(0x14FB48u, "cObjBase_SetSeqEffect (signal diagnostic)", &diagSeqEffect);
+            FunctionHooks::instance().observeEntry(0x14FB48u, "cObjBase_SetSeqEffect (Signal Style Switch)", &onGeneUpdate);
         }
         FunctionHooks::instance().observeEntry(0x2AAA40u, "cIDBase_move (style list)", &onLayoutMove);
         FunctionHooks::instance().observeEntry(0x16DC18u, "cSubScrWaza draw (style list)", &onWazaDraw);

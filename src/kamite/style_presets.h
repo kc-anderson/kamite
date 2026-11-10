@@ -7,7 +7,6 @@
 #include <cstdint>
 
 class PS2Runtime;
-struct R5900Context;
 
 // Style presets: four saved sets of Gene's equipped moves (Style S, E, X, Y; L, I, F, E as Xavier), kept in the save.
 //
@@ -43,11 +42,6 @@ namespace kamite::style_presets
 
     // ps2_host_input's pad filter, player 1 (window thread): called by modern_controls' filter before its own work.
     void padFilter(uint32_t player, ps2x::iop::PadInputState &state);
-
-    // frame_patches' frame start (EE thread): Signal Style Switch ([Game] StyleSignal, a sub-option of Style switching):
-    // after a d-pad switch in play, Gene says the style's line (S "Cool", E "Nice", X "Great", Y "Awesome"; a new switch
-    // cuts the last one) and his arm gives the roulette's opening flash.
-    void signalFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
 
     // EE thread: 0 for None (also with Style switching off), 1..4 for the style on (S..Y). Buck Breaker's per-style pick.
     int activePosition();

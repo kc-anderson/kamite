@@ -47,7 +47,6 @@
 #include "kamite/counter_finder.h"
 #include "kamite/test_mode.h"
 #include "kamite/game_options.h"
-#include "kamite/style_presets.h"
 #include "kamite/function_hooks.h"
 #include "kamite/pc_sampler.h"
 #include "kamite/log.h"
@@ -1650,7 +1649,6 @@ namespace kamite
             forgetClothAfterLoad(rdram);
             deadPanFrame(rdram, ctx, runtime);
             rouletteTargetFrame(rdram, ctx, runtime);
-            style_presets::signalFrame(rdram, ctx, runtime);
             if (const int request = g_fps60Request.exchange(-1); request >= 0)
             {
                 g_fps60User = request != 0;
