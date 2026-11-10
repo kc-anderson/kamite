@@ -1,5 +1,6 @@
 // Style presets, stage 1. See style_presets.h.
 #include "kamite/style_presets.h"
+#include "kamite/hud_layout.h"
 
 #include "kamite/buck_breaker.h"
 #include "kamite/button_prompt_sheets.h"
@@ -1202,12 +1203,26 @@ namespace kamite::style_presets
         // of a line whether or not they are drawn, so the same value gives the shadow the same pitch). A new line
         // moves down by the line's height (the tallest code on it: 32 x scale for an icon) + state+0x30 x state+0x48
         // (the vertical scale).
+        // The text's draw slot (font state +0x58 list, +0x5C position, just set to the entry's list and position 5):
+        // the indicator round the minimap goes to the minimap's list, one position nearer than its nearest sprite, so
+        // the minimap does not cover it (text and sprites sit in per-list ordering tables: a lower position is drawn
+        // later; equal positions draw the last queued first). K's Nov 10 build: drawn under the minimap's rim.
+        void hudTextSlot(uint32_t entry, uint32_t state)
+        {
+            int list, pos;
+            if (!g_hudShown || (entry != g_hudText && entry != g_hudShadow) || !hud::radarSlot(list, pos))
+                return;
+            wr32(state + 0x58u, static_cast<uint32_t>(list));
+            wr32(state + 0x5Cu, static_cast<uint32_t>(std::max(0, pos - 1)));
+        }
+
         void onTextSetup(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
-            if (!g_ram || !g_listEntry)
+            if (!g_ram)
                 return;
             const uint32_t entry = GPR_U32(ctx, 17) & 0x1FFFFFFu;
-            if (entry != g_listEntry)
+            hudTextSlot(entry, GPR_U32(ctx, 16) & 0x1FFFFFFu);
+            if (!g_listEntry || entry != g_listEntry)
                 return;
             const uint32_t state = GPR_U32(ctx, 16);
             const float zoom = rdFloat(state + game::MessDrawFont::kZoomY);

@@ -162,6 +162,10 @@ namespace kamite::hud
             bool valid() const { return x0 < x1 && y0 < y1; }
         };
         Box g_radarSeen, g_radarBox; // the minimap's extent this frame / last frame (after the nudge, before narrowing)
+        // Where the minimap's sprites are queued (cIDBase entry +0x8D list when the layout's mode +0x46 is 6, else the
+        // mode; +0x8E position): this frame's (nearest position) / last frame's. The style indicator's text goes to the
+        // same list, one position nearer (style_presets onTextSetup), so it is drawn over the minimap.
+        int g_radarListSeen = -1, g_radarPosSeen = 0x7FFFFFFF, g_radarList = -1, g_radarPos = 0;
         bool g_radarShown = false;   // drawn last frame
         int g_glyphIndex = 0;        // glyphs drawn so far in the entry being drawn
         bool g_inIdTrans = false;
@@ -280,6 +284,7 @@ namespace kamite::hud
         // F6: every 2D primitive of one frame written to the log (which drawer, caller, group, anchor, x before/after).
         bool g_dumpArmed = false, g_dumping = false;
         uint32_t g_entry = 0; // the cIDBase entry being drawn
+        uint32_t g_dumpSlotEntry = 0; // F6: the entry whose draw slot was logged last
         std::vector<std::string> g_dump;
 
         void dump(const char *line)
@@ -325,6 +330,18 @@ namespace kamite::hud
             }
             if (g_inIdTrans)
                 roulette_bar::onDraw(g_curLayout, g_entry, x0, x1, y0, y1, !withOffset);
+            // F6: each layout entry's draw slot (list, position), once per entry.
+            if (g_dumping && g_inIdTrans && g_entry >= 0x100000u && g_entry != g_dumpSlotEntry && g_curLayout >= 0x100000u)
+            {
+                g_dumpSlotEntry = g_entry;
+                const uint8_t mode = rdram[(g_curLayout + 0x46u) & 0x01FFFFFFu];
+                int16_t pos;
+                std::memcpy(&pos, rdram + ((g_entry + 0x8Eu) & 0x01FFFFFFu), sizeof(pos));
+                char line[120];
+                std::snprintf(line, sizeof(line), "    slot ent %08X layout mode %u list %u pos %d (text: pos 5)", g_entry, mode,
+                              mode == 6u ? rdram[(g_entry + 0x8Du) & 0x01FFFFFFu] : mode, pos);
+                dump(line);
+            }
             // The minimap's right edge, for the gold counter (at every aspect and layout: both use the same mapping).
             if (g_ctx.active && g_ctx.key == kRadar && x1 - x0 < 0.9f * width && !menuNow())
                 g_radarRightSeen = std::max(g_radarRightSeen, x1);
@@ -348,6 +365,17 @@ namespace kamite::hud
             }
             if (g_ctx.active && g_ctx.key == kRadar && x1 - x0 < 0.9f * width && !menuNow())
             {
+                if (g_inIdTrans && g_entry >= 0x100000u && g_curLayout >= 0x100000u)
+                {
+                    const uint8_t mode = rdram[(g_curLayout + 0x46u) & 0x01FFFFFFu];
+                    const int list = mode == 6u ? rdram[(g_entry + 0x8Du) & 0x01FFFFFFu] : mode;
+                    int16_t pos;
+                    std::memcpy(&pos, rdram + ((g_entry + 0x8Eu) & 0x01FFFFFFu), sizeof(pos));
+                    if (g_radarListSeen < 0)
+                        g_radarListSeen = list;
+                    if (list == g_radarListSeen)
+                        g_radarPosSeen = std::min<int>(g_radarPosSeen, pos);
+                }
                 g_radarSeen.x0 = std::min(g_radarSeen.x0, x0);
                 g_radarSeen.x1 = std::max(g_radarSeen.x1, x1);
                 g_radarSeen.y0 = std::min(g_radarSeen.y0, y0);
@@ -433,7 +461,6 @@ namespace kamite::hud
 
         // func_002A53A8 (text glyphs and inline button icons) at 0x2A5704: its two corners converted (screen*16, the
         // offset not added yet) at sp+0x20 and sp+0x30; caller's $ra at sp+0x40.
-        constexpr uint32_t kNearestZ = 0x00FFFFFFu << 4; // the 24-bit depth's nearest, in vftoi4 units
         // A glyph of the style indicator (two corners at `at`, at + 0x10, screen*16): moved to its place round the
         // minimap (last frame's extent), or shrunk to nothing while the minimap is not drawn.
         void placeStyleGlyph(uint8_t *rdram, uint32_t at)
@@ -471,11 +498,6 @@ namespace kamite::hud
             put(at + 4u, gy0 + dy);
             put(at + 0x10u, gx1 + dx);
             put(at + 0x14u, gy1 + dy);
-            // Over the minimap: the font's glyphs carry a depth (vertex +8, vftoi4 of the draw's z; XYZ2 takes it >> 4)
-            // and fail the depth test where the minimap drew nearer, whatever the order (K's Nov 10 build: the
-            // letters under the minimap's rim, also when drawn after it). The letters take the nearest 24-bit depth.
-            write32(rdram, at + 8u, kNearestZ);
-            write32(rdram, at + 0x18u, kNearestZ);
         }
 
         void fontSprite(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
@@ -776,6 +798,15 @@ namespace kamite::hud
 
     bool menuActive() { return menuNow(); }
 
+    bool radarSlot(int &list, int &pos)
+    {
+        if (g_radarList < 0)
+            return false;
+        list = g_radarList;
+        pos = g_radarPos;
+        return true;
+    }
+
     void onFrame(uint8_t *rdram)
     {
         roulette_bar::onFrame();
@@ -786,6 +817,13 @@ namespace kamite::hud
         if (g_radarShown)
             g_radarBox = g_radarSeen;
         g_radarSeen = Box{};
+        if (g_radarListSeen >= 0)
+        {
+            g_radarList = g_radarListSeen;
+            g_radarPos = g_radarPosSeen;
+        }
+        g_radarListSeen = -1;
+        g_radarPosSeen = 0x7FFFFFFF;
         // The pause menu's own screens (Techniques, the move list...) can be drawn over the 3D view with no
         // full-screen background: an open sub screen counts as a menu too (cSubScr D_003BD930, +0x48 the open screen's
         // kind, -1 when closed; decomp include/godhand/cSubScr.h). Narrowed, their layers came apart (the Techniques
@@ -842,6 +880,10 @@ namespace kamite::hud
         {
             g_dumpArmed = false;
             g_dumping = true;
+            g_dumpSlotEntry = 0u;
+            char line[100];
+            std::snprintf(line, sizeof(line), "    minimap draw slot: list %d, nearest pos %d (the style letters go one nearer)", g_radarList, g_radarPos);
+            dump(line);
         }
         if (ps2x::hotkeys::take(ps2x::hotkeys::Action::Dump2D))
             g_dumpArmed = true;

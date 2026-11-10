@@ -27,6 +27,9 @@ namespace kamite::hud
     // A menu or screen is up (a full-screen background in a non-HUD layout in the last few frames). Tracked at every
     // aspect ratio.
     bool menuActive();
+    // The minimap's draw slot last frame (its layout entries' draw list, and their nearest position in it: a lower
+    // position is drawn later, over a higher one). False until the minimap has been drawn.
+    bool radarSlot(int &list, int &pos);
 
     // For the font and gauge width hooks of widescreen.cpp: whether those draws still need narrowing there.
     bool narrowFont();
