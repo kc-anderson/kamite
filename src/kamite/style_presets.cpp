@@ -1228,26 +1228,16 @@ namespace kamite::style_presets
         constexpr uint16_t kStreamLine = 14u;                      // record 48's own line ("Shit!")
         constexpr int64_t kRestoreMs = 2000;                       // record 48 back to its own line after this (K)
         constexpr uint16_t kStyleLines[kStyles] = {8u, 2u, 12u, 6u}; // afd entries: S Cool, E Nice, X Great, Y Awesome
-        // The flash (K, Nov 10), costume = save data +0xAE (cCoreSave_getCostumeNo), none while the God Hand is unleashed
-        // (+0x15F4 & 0x10, as the game's glow functions):
-        // - the roulette's: func_00114608 step 1, SetEffect(0, 0xE, gene, 0, -1, -1) for costumes 0..7 even (0x41C210);
-        // - the arm glow's fade: func_00129578 (Gene's God Hand moves turn the glow off) plays SetEffect(0, 0x19 / 0x75
-        //   (odd costumes), gene, 0, -1, -1) for costumes 0..7 (0x41CD50); K saw the glow leave a faint trail. The glow's
-        //   on (func_00129630, effect 0x2E / 0x74) was too strong (K).
-        // F2 > Styles picks which while K compares them.
+        // The flash (K, Nov 10: the roulette's; the arm glow's on, effect 0x2E, was too strong): func_00114608 step 1,
+        // SetEffect(0, 0xE, gene, 0, -1, -1) for costumes 0..7 even (its jump table 0x41C210); costume = save data +0xAE
+        // (cCoreSave_getCostumeNo). None while the God Hand is unleashed (+0x15F4 & 0x10; K liked that).
         constexpr uint32_t kSetEffect = 0x306528u;
-        std::atomic<int> g_flashKind{0}; // 0 roulette flash, 1 glow fade, 2 both, 3 none
         void flash(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t gene)
         {
             const uint32_t data = dataPointer();
             const uint32_t costume = data ? g_ram[data + 0xAEu] : 0u;
-            const int kind = g_flashKind.load(std::memory_order_relaxed);
-            if (costume >= 8u || (rd32(gene + 0x15F4u) & 0x10u) != 0u)
-                return;
-            if ((kind == 0 || kind == 2) && (costume & 1u) == 0u)
+            if (costume < 8u && (costume & 1u) == 0u && (rd32(gene + 0x15F4u) & 0x10u) == 0u)
                 callGuest(rdram, ctx, runtime, kSetEffect, {0u, 0xEu, gene, 0u, 0xFFFFFFFFu, 0xFFFFFFFFu});
-            if (kind == 1 || kind == 2)
-                callGuest(rdram, ctx, runtime, kSetEffect, {0u, (costume & 1u) ? 0x75u : 0x19u, gene, 0u, 0xFFFFFFFFu, 0xFFFFFFFFu});
         }
         uint32_t g_signalHandle = 0u;  // the line playing (cut by the next switch's)
         uint32_t g_patchedRecord = 0u; // record 48 while it points at a style's line
@@ -1271,20 +1261,16 @@ namespace kamite::style_presets
         }
         // Type 0x31 looks like "one of the lines up to +0x28" (the pickup's random positive line, 0x1C198C: 0xF8 or
         // 0xF9 at random, both entry 14), type 0x30 "the line +0x28" (r000's narration, core's jingles).
-        // +0x08 is the record's volume (0..0x7F; 48 has 0x46, Gene's loud shouts 0x64): K found the lines a little low.
-        std::atomic<int> g_lineVolume{0x64};
-        uint8_t g_recordVolume = 0x46u; // record 48's own
-        void writeLine(uint32_t record, uint8_t type, uint16_t line, uint8_t volume)
+        void writeLine(uint32_t record, uint8_t type, uint16_t line)
         {
             g_ram[record + 6u] = type;
-            g_ram[record + 8u] = volume;
             g_ram[record + 0x28u] = static_cast<uint8_t>(line);
             g_ram[record + 0x29u] = static_cast<uint8_t>(line >> 8);
         }
         void restoreRecord()
         {
             if (g_patchedRecord && validPointer(g_patchedRecord, 0x30u) && g_ram[g_patchedRecord + 6u] == 0x30u)
-                writeLine(g_patchedRecord, 0x31u, kStreamLine, g_recordVolume);
+                writeLine(g_patchedRecord, 0x31u, kStreamLine);
             g_patchedRecord = 0u;
         }
 
@@ -1298,9 +1284,7 @@ namespace kamite::style_presets
             }
             if (g_signalHandle)
                 callGuest(rdram, ctx, runtime, kSeStop, {kSnd, g_signalHandle}); // a new switch cuts the last line
-            if (record != g_patchedRecord)
-                g_recordVolume = g_ram[record + 8u];
-            writeLine(record, 0x30u, kStyleLines[slot], static_cast<uint8_t>(g_lineVolume.load(std::memory_order_relaxed)));
+            writeLine(record, 0x30u, kStyleLines[slot]);
             g_patchedRecord = record;
             g_restoreAt = steadyMs() + kRestoreMs;
             g_signalHandle = callGuest(rdram, ctx, runtime, kSeCallObj, {kSnd, 0u, kStreamCallId, gene, 0u, 0u, 0u, 0u});
@@ -1512,17 +1496,6 @@ namespace kamite::style_presets
             ui->text_wrapped("Styles are kept in the save (they go to the memory card with it). On the Techniques screen "
                              "L2 / R2 cycle None, S, E, X, Y; changes save to the style shown; None = styles off. In play "
                              "a d-pad tap switches style (up, right, down, left) while one is on.");
-            if (g_signalOn)
-            {
-                // Signal Style Switch: K compares the flashes and the lines' volume (Nov 10).
-                static const char *const kFlashes[] = {"Roulette flash", "Glow fade (trail)", "Both", "None"};
-                int kind = g_flashKind.load(std::memory_order_relaxed);
-                if (ui->combo("Signal flash##signalflash", &kind, kFlashes, 4))
-                    g_flashKind.store(kind, std::memory_order_relaxed);
-                float volume = static_cast<float>(g_lineVolume.load(std::memory_order_relaxed));
-                if (ui->slider_float("Signal line volume##signalvolume", &volume, 40.0f, 127.0f, "%.0f (pickup's 70)"))
-                    g_lineVolume.store(static_cast<int>(volume + 0.5f), std::memory_order_relaxed);
-            }
             ui->separator_text("Equipped now");
             if (!g_snapshot.valid)
                 ui->text_disabled("No save data in memory yet (start or load a game).");
