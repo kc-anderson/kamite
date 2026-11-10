@@ -32,7 +32,7 @@ namespace kamite::launcher_bark
             Treatment treatment;
         };
         // The narration: "...the title of God Hand" (31.195-32.12 s, from the G's onset through the D's release).
-        // The cutscene cuts: K's ten keepers of 23 found by speech recognition (12, 20 and 22 trimmed by hand).
+        // The cutscene cuts: K's ten keepers of 23 found by speech recognition (12, 20 and 22 trimmed by hand; 20 keeps the D, its S faded).
         constexpr Line kLines[] = {
             {"narrator A", "se/r000.afs", 1, 1497360, 1541760, 0.008f, Treatment::NarratorA},
             {"narrator B", "se/r000.afs", 1, 1497360, 1541760, 0.008f, Treatment::NarratorB},
@@ -45,7 +45,7 @@ namespace kamite::launcher_bark
             {"ev20 68.61", "se/ev/ev20.afs", 0, 3293478, 3352119, 0.006f, Treatment::Cutscene},
             {"ev29 6.56", "se/ev/ev29.afs", 0, 314685, 387241, 0.006f, Treatment::Cutscene},
             {"ev32 48.86", "se/ev/ev32.afs", 0, 2345117, 2398080, 0.006f, Treatment::Cutscene},
-            {"ev34 13.05", "se/ev/ev34.afs", 0, 626400, 684960, 0.015f, Treatment::Cutscene},
+            {"ev34 13.05", "se/ev/ev34.afs", 0, 626400, 686016, 0.008f, Treatment::Cutscene},
             {"ev4a 6.60", "se/ev/ev4a.afs", 0, 316800, 408000, 0.080f, Treatment::Cutscene},
         };
 
