@@ -685,7 +685,7 @@ namespace kamite::style_presets
         static_assert(kStoreOffset + sizeof(Store) <= kListText, "the strings clear of the Store");
         static_assert(kTextEnd <= kSaveSize, "the strings in cCoreSaveData");
         constexpr uint16_t kHudMessage = 0x3041u, kHudShadowMessage = 0x3042u;            // two more "<7d>" placeholders of bank 3
-        constexpr float kListX = 294.0f, kListY = 42.0f; // the hints' block centre (align 0): right of the big title, level with it, above the Punish slot (K, Nov 10)
+        constexpr float kListX = 290.5f, kListY = 42.0f; // the hints' block centre (align 0): right of the big title, level with it, above the Punish slot (K, Nov 10)
         constexpr float kRowX = 100.0f, kRowY = 78.0f;   // the row's centre: under the title, above the TECHNIQUES bar
         constexpr float kTextScale = 0.65f;
         constexpr float kListScale = 0.55f; // the hints, smaller and tighter beside the title (K, Nov 10)
@@ -853,11 +853,12 @@ namespace kamite::style_presets
             out.insert(out.end(), {kColour, static_cast<uint16_t>(colour >> 16), static_cast<uint16_t>(colour & 0xFFFFu)});
         }
 
-        // The hints, two by two (K, Nov 10: the Punish slot took the column's top): "Style S: [up]   Style X: [down]" /
-        // "Style E: [right]   Style Y: [left]", the style on gold, empty ones dim. Each line pairs arrows of one shape
-        // and every arrow advances by the widest (pieceAdvance), so the second column lines up within a letter's width.
-        constexpr int kHintGrid[2][2] = {{0, 2}, {1, 3}}; // S X / E Y
-        constexpr int kHintColumnGap = 2;                  // spaces between the two columns
+        // The hints, two by two (K, Nov 10: the Punish slot took the column's top): "Style S: [up] Style E: [right]" /
+        // "Style X: [down] Style Y: [left]", the style on gold, empty ones dim. The first column's arrows are the narrow
+        // ones, the second's the wide ones, so both lines' left / right arrows end on the move boxes' right edge (the
+        // up arrow's advance also makes up S + E being narrower than X + Y: pieceAdvance).
+        constexpr int kHintGrid[2][2] = {{0, 1}, {2, 3}}; // S E / X Y
+        constexpr int kHintColumnGap = 1;                  // spaces between the two columns
         std::vector<uint16_t> listText(const Store &store)
         {
             std::vector<uint16_t> out;
@@ -1233,13 +1234,14 @@ namespace kamite::style_presets
 
         // A piece's width in the text, in the units cMessDrawFont_measureCode gets from func_002B12D8 for an icon (32 =
         // a cell, drawn as a 26-unit square; a piece is drawn at side / 28 a texel, so w texels = w x 26 / 28 units).
-        // Every arrow advances by the widest arrow, so the names start in one column (K, Oct 25).
-        float pieceAdvance(int)
+        // Each arrow advances by its own shape's width (up / down narrow, left / right wide); the up arrow (the first
+        // line's middle) adds the letters' difference, (X + Y) - (S + E) in the font's units at scale 1 (K's Nov 10
+        // screenshot: 15 px at 0.65 on a 3.46 px-per-unit screen), so the two lines end together.
+        constexpr float kUpLineBalance = 6.7f;
+        float pieceAdvance(int piece)
         {
-            float texels = 0.0f;
-            for (int i = 0; i < kStyles; ++i)
-                texels = std::max(texels, pieceRect(i).x1 - pieceRect(i).x0);
-            return (texels + kArrowTextGap) * (26.0f / 28.0f);
+            const prompt_sheets::ArrowRect r = pieceRect(piece);
+            return (r.x1 - r.x0 + kArrowTextGap) * (26.0f / 28.0f) + (piece == 0 ? kUpLineBalance : 0.0f);
         }
 
         // The lines' entry is being drawn.
