@@ -317,6 +317,14 @@ if(KAMITE_DEBUG_UI AND TARGET rlImGui)
     # The launcher (src/kamite/launcher.cpp) draws with the same Dear ImGui.
     target_sources(kamite PRIVATE kamite/launcher.cpp kamite/launcher_bark.cpp kamite/launcher_platform.cpp)
     target_compile_definitions(kamite PRIVATE KAMITE_HAS_LAUNCHER=1)
+    # Add to Steam (src/kamite/launcher_steam.cpp): desktop only, left out of the Android build.
+    if(KAMITE_STEAM_SHORTCUT)
+        target_sources(kamite PRIVATE kamite/launcher_steam.cpp)
+        target_compile_definitions(kamite PRIVATE KAMITE_STEAM_SHORTCUT=1)
+        if(WIN32)
+            target_link_libraries(kamite PRIVATE winhttp)
+        endif()
+    endif()
 endif()
 
 # FFmpeg is off by default (KAMITE_FFMPEG); with it on, the runtime stages its DLLs next to the exe.

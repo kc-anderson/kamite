@@ -28,6 +28,13 @@ set(PS2X_ENABLE_FFMPEG ${KAMITE_FFMPEG} CACHE BOOL "" FORCE)
 # PlayStation, Switch and Steam controllers, vibration. OFF (or PS2X_SDL_INPUT=0 at run time): GLFW's gamepads.
 option(KAMITE_SDL_INPUT "Read controllers through SDL3" ON)
 set(PS2X_ENABLE_SDL_INPUT ${KAMITE_SDL_INPUT} CACHE BOOL "" FORCE)
+# The launcher's Add to Steam button (a non-Steam shortcut with library art); not on Android.
+if(ANDROID)
+    set(KAMITE_STEAM_SHORTCUT_DEFAULT OFF)
+else()
+    set(KAMITE_STEAM_SHORTCUT_DEFAULT ON)
+endif()
+option(KAMITE_STEAM_SHORTCUT "Add to Steam in the launcher" ${KAMITE_STEAM_SHORTCUT_DEFAULT})
 # Runtime logs: the normal ones stay, the very verbose ones (per-call function log tracker) are off.
 set(PS2X_ENABLE_AGRESSIVE_LOGS OFF CACHE BOOL "" FORCE)
 set(PS2X_ENABLE_SCCACHE OFF CACHE BOOL "" FORCE)

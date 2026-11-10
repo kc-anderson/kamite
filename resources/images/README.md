@@ -29,3 +29,6 @@ Without the file the launcher draws its brown gradient.
 
 `tools/logo/build_logo.py` built the old KAMITE logo (wordmark + kana over it); kept for its burst.png step. The whole
 `resources/` folder is copied next to GHR.exe at build time.
+
+`steam_logo.png`: the five logo layers flattened (REARMED's letters in the launcher's gold), 1280 px wide: the Steam
+library logo Add to Steam writes (src/kamite/launcher_steam.cpp). Rebuild it the same way when the layers change.

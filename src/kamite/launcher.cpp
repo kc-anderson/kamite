@@ -7,6 +7,10 @@
 #include "kamite/game_disc.h"
 #include "kamite/ini_file.h"
 #include "kamite/launcher_platform.h"
+#if defined(KAMITE_STEAM_SHORTCUT) && KAMITE_STEAM_SHORTCUT
+#include "kamite/launcher_steam.h"
+#define KAMITE_LAUNCHER_STEAM 1
+#endif
 #include "kamite/log.h"
 #include "ps2_host_gamepads.h"
 #include "ps2_host_input.h"
@@ -20,6 +24,7 @@
 #include "rlgl.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cctype>
 #include <cmath>
@@ -290,6 +295,23 @@ namespace kamite::launcher
             bool soundThisFrame = false; // a confirm / cancel / Play sound already played this frame
             int quietFrames = 0;         // no cursor tick for a frame or two after a confirm / cancel (focus moves then)
             Screen soundScreen = Screen::Home;
+#if KAMITE_LAUNCHER_STEAM
+            // Add to Steam (launcher_steam.h): the lower left corner's button and its popup.
+            enum class SteamPopup
+            {
+                None,
+                Confirm, // Steam runs: restart it?
+                Working, // the job on steamWorker; steamStage follows it
+                Done     // steamResult's message
+            };
+            steam::Status steam;              // probed when the launcher opens and after each job
+            std::thread steamWorker;
+            std::atomic<int> steamStage{-1};  // steam::Stage while a job runs
+            steam::Result steamResult;        // read once the worker is joined
+            SteamPopup steamPopup = SteamPopup::None;
+            bool steamOpenPopup = false;
+            bool steamFocus = false;          // put the cursor on the popup's first button (it changed page)
+#endif
         };
 
         // GOD HAND's centre in the logo's canvas (tools/logo/export_launcher_logo.py prints it); the burst is centred
@@ -575,12 +597,14 @@ namespace kamite::launcher
                         return std::find(items.begin(), items.end(), g.ActiveId) != items.end();
                     };
                     const bool inPopup = g.ActiveIdWindow != nullptr && (g.ActiveIdWindow->Flags & ImGuiWindowFlags_Popup) != 0;
-                    if (listed(g_tickItems) || inPopup) // a box, a dropdown or a pick from its list
+                    if (listed(g_ownSoundItems)) // Back / Play / a popup's buttons play their own sound when let go
+                        ;
+                    else if (listed(g_tickItems) || inPopup) // a box, a dropdown or a pick from its list
                     {
                         playMenuSound(state, kTick);
                         state.quietFrames = 2; // the dropdown's list opening moves the cursor
                     }
-                    else if (!listed(g_ownSoundItems)) // Back / Play play their own sound when let go
+                    else
                         menuSound(state, kConfirm);
                 }
                 else if (g.NavId != state.lastNavId && state.lastNavId != 0 && g.NavId != 0 && g.NavCursorVisible &&
@@ -919,6 +943,144 @@ void main()
                 state.ini.save();
             }
         }
+
+#if KAMITE_LAUNCHER_STEAM
+        void startSteamJob(State &state)
+        {
+            if (state.steamWorker.joinable())
+                state.steamWorker.join();
+            state.steamStage = static_cast<int>(steam::Stage::Downloading);
+            state.steamPopup = State::SteamPopup::Working;
+            const fs::path resources = state.context->exeDir / "resources";
+            state.steamWorker = std::thread([&state, resources] { state.steamResult = steam::addOrUpdate(resources, state.steamStage); });
+        }
+
+        // The lower left corner (K Nov 10; placement to be revisited with the launcher's next visual pass): Add to
+        // Steam, or Update Steam Entry once it is there; hidden without Steam. Steam reads its shortcut list only when
+        // it starts, so a running Steam is restarted, after asking.
+        void drawSteam(State &state)
+        {
+            using Popup = State::SteamPopup;
+            if (!state.steam.available)
+                return;
+            const float size = fontSize(state, 34.0f), margin = fontSize(state, 22.0f);
+            pushSize(state, 20.0f);
+            ImGui::SetCursorPos(ImVec2(margin, ImGui::GetWindowHeight() - margin - size));
+            if (ImGui::Button(state.steam.added ? "Update Steam Entry" : "Add to Steam", ImVec2(0.0f, size)))
+            {
+                if (steam::running())
+                    state.steamPopup = Popup::Confirm;
+                else
+                    startSteamJob(state);
+                state.steamOpenPopup = true;
+            }
+            ImGui::PopFont();
+            if (state.steamOpenPopup)
+            {
+                state.steamOpenPopup = false;
+                ImGui::OpenPopup("##steam");
+            }
+            ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+            if (!ImGui::BeginPopupModal("##steam", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar))
+                return;
+            pushSize(state, 22.0f);
+            ImGui::Dummy(ImVec2(fontSize(state, 460.0f), fontSize(state, 4.0f)));
+            const float buttonWidth = fontSize(state, 200.0f);
+            const bool back = ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+            bool close = false;
+            if (state.steamPopup == Popup::Working && state.steamStage.load() == static_cast<int>(steam::Stage::Done))
+            {
+                state.steamWorker.join();
+                state.steam = steam::probe();
+                state.steamPopup = Popup::Done;
+                state.steamFocus = true;
+            }
+            switch (state.steamPopup)
+            {
+            case Popup::Confirm:
+            {
+                ImGui::TextUnformatted("Steam needs to restart to show God Hand: Rearmed.");
+                ImGui::TextUnformatted("Restart Steam now?");
+                ImGui::Dummy(ImVec2(0.0f, fontSize(state, 10.0f)));
+                if (ImGui::IsWindowAppearing() || state.steamFocus)
+                {
+                    ImGui::SetKeyboardFocusHere();
+                    state.steamFocus = false;
+                }
+                const bool yes = ImGui::Button("Restart Steam", ImVec2(buttonWidth, 0.0f));
+                ownSoundItem();
+                ImGui::SameLine();
+                const bool no = ImGui::Button("Cancel", ImVec2(buttonWidth, 0.0f));
+                ownSoundItem();
+                if (yes)
+                {
+                    menuSound(state, kConfirm);
+                    startSteamJob(state);
+                }
+                else if (no || back)
+                {
+                    menuSound(state, kCancel);
+                    close = true;
+                }
+                break;
+            }
+            case Popup::Working:
+            {
+                const char *text = "Downloading the library art";
+                switch (static_cast<steam::Stage>(state.steamStage.load()))
+                {
+                case steam::Stage::ClosingSteam:
+                    text = "Closing Steam";
+                    break;
+                case steam::Stage::Writing:
+                    text = "Adding God Hand: Rearmed to Steam";
+                    break;
+                case steam::Stage::StartingSteam:
+                    text = "Starting Steam";
+                    break;
+                default:
+                    break;
+                }
+                const int dots = static_cast<int>(GetTime() * 3.0) % 4;
+                ImGui::Text("%s%.*s", text, dots, "...");
+                break;
+            }
+            case Popup::Done:
+            {
+                ImGui::TextUnformatted(state.steamResult.message.c_str());
+                ImGui::Dummy(ImVec2(0.0f, fontSize(state, 10.0f)));
+                if (ImGui::IsWindowAppearing() || state.steamFocus)
+                {
+                    ImGui::SetKeyboardFocusHere();
+                    state.steamFocus = false;
+                }
+                const bool ok = ImGui::Button("OK", ImVec2(buttonWidth, 0.0f));
+                ownSoundItem();
+                if (ok)
+                {
+                    menuSound(state, kConfirm);
+                    close = true;
+                }
+                else if (back)
+                {
+                    menuSound(state, kCancel);
+                    close = true;
+                }
+                break;
+            }
+            case Popup::None:
+                close = true;
+                break;
+            }
+            if (close)
+            {
+                state.steamPopup = Popup::None;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopFont();
+            ImGui::EndPopup();
+        }
+#endif
 
         void drawLayer(const Texture2D &texture, const ImVec2 &min, const ImVec2 &max, Color tint)
         {
@@ -2399,6 +2561,10 @@ void main()
             }
         }
         state.volume = std::clamp(static_cast<float>(std::atof(state.ini.get("Launcher", "Volume", "0.8").c_str())), 0.0f, 1.0f);
+#if KAMITE_LAUNCHER_STEAM
+        state.steam = steam::probe();
+        KM_INFO(Boot, "launcher: steam " << (state.steam.available ? (state.steam.added ? "found, entry there" : "found") : "not found"));
+#endif
         state.muted = state.ini.getBool("Launcher", "Mute", false);
         if (state.installed)
         {
@@ -2470,6 +2636,10 @@ void main()
                 }
                 if (state.screen != Screen::Options)
                     drawVolume(state);
+#if KAMITE_LAUNCHER_STEAM
+                if (state.screen == Screen::Home)
+                    drawSteam(state);
+#endif
                 if (playing)
                 {
                     ImGui::EndDisabled();
@@ -2507,6 +2677,10 @@ void main()
             UnloadFont(state.splashFont);
         if (state.barkWorker.joinable())
             state.barkWorker.join();
+#if KAMITE_LAUNCHER_STEAM
+        if (state.steamWorker.joinable())
+            state.steamWorker.join();
+#endif
         if (state.hasMusic)
             UnloadMusicStream(state.music);
         if (state.result == Result::Play && state.audio)

@@ -23,7 +23,8 @@ codename, Kamite, is the name the code and its folders use.
 - **Camera options:** field of view, distance and tilt (live in the F2 menu, with presets), fights framed as on the
   PS2, and enemies whose sense of "in front of Gene" widens with the picture.
 - **HD texture packs** in PCSX2's format, their alpha kept to the game's own levels so nothing turns see-through.
-- **A launcher:** install (pick and check your disc image), play, and every option in one place.
+- **A launcher:** install (pick and check your disc image), play, every option in one place, and Add to Steam (a
+  non-Steam library entry with art).
 - **Quality of life:** Click-Stick Dash, d-pad scrolling in the God Reel, a double-time roulette timer, Hard unlocked from the
   start, music mute, the blur effects at full resolution.
 - **Controls:** keyboard, mouse and controllers, rebindable in game (F1). Button prompts show the keys and buttons you

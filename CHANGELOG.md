@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 10, 2026
 
+- Launcher: Add to Steam (lower left): adds God Hand: Rearmed to your Steam library with its art, restarting Steam if it's open.
 - Launcher: Play says "God Hand": one of 13 lines from the game (read from your disc), the music washing out under it.
 - Launcher: the splash text and the Play line come in shuffled order, none again until all have come up.
 
