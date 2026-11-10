@@ -696,6 +696,12 @@ namespace kamite::style_presets
         constexpr uint16_t kL2Icon = 6u, kR2Icon = 7u;             // the game's own (prompt set) icons in the hint
         constexpr uint32_t kFontState = game::MessDrawFont::kInstance; // the font's draw state (D_005E7510)
         constexpr float kArrowTextGap = 5.0f;                      // texels after the arrow
+        // The pads: icon codes 8 / 9 (L3 / R3, never in the hints' text), drawn as nothing, advancing by what X is wider
+        // than S and Y than E, in font units (K's Nov 10 screenshot at 2.46 px a font unit: 8 px and 7 px). Only for
+        // Gene's SEXY: Xavier's LIFE gets no pads.
+        constexpr uint16_t kPadCode[2] = {8u, 9u}; // after the first line's letters: S, E
+        constexpr float kLetterPad[2] = {3.25f, 2.85f};
+        constexpr int kPadPending = 100; // g_pendingArrow: a pad's quad collapses (100, 101: which pad)
         constexpr uint16_t kPlus = 0x0Eu, kSlash = 0x2Du, kSpace = 0x10u, kNewLine = 0xA001u, kEnd = 0x8001u;
         constexpr uint16_t kColour = 0xB203u, kColourRestore = 0xB301u; // 0xB203 hi lo: A B G R (0x80 = full)
         constexpr uint32_t kGold = 0x80106880u, kDim = 0x80343434u; // dim: darker than the cream (K, Oct 26)
@@ -855,8 +861,8 @@ namespace kamite::style_presets
 
         // The hints, two by two (K, Nov 10: the Punish slot took the column's top): "Style S: [up] Style E: [right]" /
         // "Style X: [down] Style Y: [left]", the style on gold, empty ones dim. The first column's arrows are the narrow
-        // ones, the second's the wide ones, so both lines' left / right arrows end on the move boxes' right edge (the
-        // up arrow's advance also makes up S + E being narrower than X + Y: pieceAdvance).
+        // ones, the second's the wide ones; S and E are followed by an invisible pad (kPadCode) as wide as the X / Y
+        // below them are wider, so the colons, the arrows and the second column's "Style" line up.
         constexpr int kHintGrid[2][2] = {{0, 1}, {2, 3}}; // S E / X Y
         constexpr int kHintColumnGap = 1;                  // spaces between the two columns
         std::vector<uint16_t> listText(const Store &store)
@@ -875,6 +881,8 @@ namespace kamite::style_presets
                     colourOn(out, colour);
                 append(out, "Style ");
                 out.push_back(glyph(g_letters[slot]));
+                if ((slot == 0 || slot == 1) && std::memcmp(g_letters, "SEXY", kStyles) == 0)
+                    out.push_back(kPadCode[slot]); // S / E as wide as X / Y below them: the columns line up
                 append(out, ": ");
                 out.push_back(kArrowCode[slot]);
                 if (colour)
@@ -1205,6 +1213,9 @@ namespace kamite::style_presets
 
         int pieceOfCode(uint16_t code)
         {
+            for (int i = 0; i < 2; ++i)
+                if (code == kPadCode[i])
+                    return kPadPending + i;
             for (int i = 0; i < kStyles; ++i)
                 if (code == kArrowCode[i])
                     return i;
@@ -1222,6 +1233,11 @@ namespace kamite::style_presets
             const int arrow = pieceOfCode(rd16(GPR_U32(ctx, 16)));
             if (arrow < 0)
                 return;
+            if (arrow >= kPadPending)
+            {
+                g_pendingArrow = arrow;
+                return;
+            }
             // Up = the down arrow flipped vertically, left = the right arrow flipped horizontally.
             const prompt_sheets::ArrowRect r = pieceRect(arrow);
             const float u0 = r.x0 / 128.0f, v0 = r.y0 / 128.0f, u1 = r.x1 / 128.0f, v1 = r.y1 / 128.0f;
@@ -1234,14 +1250,13 @@ namespace kamite::style_presets
 
         // A piece's width in the text, in the units cMessDrawFont_measureCode gets from func_002B12D8 for an icon (32 =
         // a cell, drawn as a 26-unit square; a piece is drawn at side / 28 a texel, so w texels = w x 26 / 28 units).
-        // Each arrow advances by its own shape's width (up / down narrow, left / right wide); the up arrow (the first
-        // line's middle) adds the letters' difference, (X + Y) - (S + E) in the font's units at scale 1 (K's Nov 10
-        // screenshot: 15 px at 0.65 on a 3.46 px-per-unit screen), so the two lines end together.
-        constexpr float kUpLineBalance = 6.7f;
+        // Each arrow advances by its own shape's width (up / down narrow, left / right wide); the pad by kLetterPad.
         float pieceAdvance(int piece)
         {
+            if (piece >= kPadPending)
+                return kLetterPad[piece - kPadPending];
             const prompt_sheets::ArrowRect r = pieceRect(piece);
-            return (r.x1 - r.x0 + kArrowTextGap) * (26.0f / 28.0f) + (piece == 0 ? kUpLineBalance : 0.0f);
+            return (r.x1 - r.x0 + kArrowTextGap) * (26.0f / 28.0f);
         }
 
         // The lines' entry is being drawn.
@@ -1291,6 +1306,15 @@ namespace kamite::style_presets
             const float side = x1 - x0;
             if (!(side > 0.0f && side < 200.0f))
                 return;
+            if (arrow >= kPadPending) // nothing: the quad shrinks to a point
+            {
+                for (uint32_t o : {0x60u, 0x70u, 0x80u, 0x90u})
+                {
+                    wrFloat(sp + o, x0);
+                    wrFloat(sp + o + 4u, y0);
+                }
+                return;
+            }
             const prompt_sheets::ArrowRect r = pieceRect(arrow);
             const float k = side / 28.0f;
             const float w = (r.x1 - r.x0) * k, h = (r.y1 - r.y0) * k;
