@@ -2638,8 +2638,9 @@ void main()
             if (!drawDesert(state))
                 drawBackground();
             drawBurst(state);
-            // A popup (Add to Steam's) must sit over the logo: while one is open the logo goes under ImGui.
-            const bool logoUnder = state.popupWasOpen && !playing;
+            // A popup (Add to Steam's) must sit over the logo: while one is open on Home the logo goes under ImGui
+            // (only on Home: the other screens draw no logo).
+            const bool logoUnder = state.popupWasOpen && !playing && state.screen == Screen::Home;
             if (logoUnder)
             {
                 drawLogo(state, true);
