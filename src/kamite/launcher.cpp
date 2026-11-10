@@ -1,4 +1,5 @@
 #include "kamite/launcher.h"
+#include "kamite/launcher_bark.h"
 
 #include "kamite/camera_presets.h"
 #include "kamite/character_mods.h"
@@ -19,6 +20,7 @@
 #include "rlgl.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -29,6 +31,7 @@
 #include <functional>
 #include <random>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace kamite::launcher
@@ -268,6 +271,17 @@ namespace kamite::launcher
             Sound menuSounds[4]{};
             float menuSoundBase[4]{};    // each sound's own volume in the game's bank
             bool hasMenuSound[4]{};
+            // The start bark (launcher_bark.h, K Nov 10): one line, dealt from [Launcher] BarkDeck, rendered in the
+            // background from the disc image; the music's tail is rendered when Play is pressed.
+            std::thread barkWorker;
+            bool barkStarted = false;
+            int barkLine = -1;
+            launcher_bark::Stereo barkPcm;   // empty: no voice (not read)
+            launcher_bark::Wash wash;
+            std::vector<int16_t> musicPcm;   // resources/music/launcher.ogg decoded, for its tail
+            int musicRate = 0;
+            fs::path musicPath;
+            bool musicHandedOff = false;     // Play replaced the music stream with its tail
             float volume = 0.8f;         // [Launcher] Volume: music and sounds (the corner slider)
             bool muted = false;          // [Launcher] Mute
             ImGuiID volumeSliderId = 0;  // makes no sound when grabbed
@@ -387,14 +401,153 @@ namespace kamite::launcher
 
         float userVolume(const State &state) { return state.muted ? 0.0f : state.volume; }
 
-        void playMenuSound(State &state, MenuSound which)
+        void playMenuSound(State &state, MenuSound which, float scale = 1.0f)
         {
             if (!state.hasMenuSound[which])
                 return;
-            SetSoundVolume(state.menuSounds[which], state.menuSoundBase[which] * userVolume(state));
+            SetSoundVolume(state.menuSounds[which], state.menuSoundBase[which] * userVolume(state) * scale);
             // Not PlaySound: GHR.exe links winmm with /FORCE:MULTIPLE, and winmm's PlaySound took the call (no sound,
             // no error). raylib's PlaySound is exactly this.
             PlayAudioStream(state.menuSounds[which].stream);
+        }
+
+        uint32_t fnv1a(std::string_view text, uint32_t hash = 2166136261u)
+        {
+            for (const unsigned char c : text)
+                hash = (hash ^ c) * 16777619u;
+            return hash;
+        }
+
+        // One pick from a shuffled deck kept in GHR.ini ([Launcher] key = "<list id>:<last>:<rest, ...>", K Nov 10):
+        // every entry comes once, in random order, before any comes back; a new deck never starts with the one just
+        // used; a changed list (another id: a splash line added) starts a new deck.
+        int dealFromDeck(State &state, const char *key, int count, uint32_t listId)
+        {
+            if (count <= 0)
+                return -1;
+            char id[16];
+            std::snprintf(id, sizeof(id), "%08x", listId);
+            const std::string saved = state.ini.get("Launcher", key, "");
+            int last = -1;
+            std::vector<int> rest;
+            const size_t c1 = saved.find(':'), c2 = c1 == std::string::npos ? c1 : saved.find(':', c1 + 1);
+            if (c2 != std::string::npos && saved.compare(0, c1, id) == 0)
+            {
+                last = std::atoi(saved.substr(c1 + 1, c2 - c1 - 1).c_str());
+                std::string list = saved.substr(c2 + 1);
+                for (size_t at = 0; at < list.size();)
+                {
+                    const size_t comma = std::min(list.find(',', at), list.size());
+                    const std::string item = list.substr(at, comma - at);
+                    const int v = item.empty() ? -1 : std::atoi(item.c_str());
+                    if (v >= 0 && v < count && std::find(rest.begin(), rest.end(), v) == rest.end())
+                        rest.push_back(v);
+                    at = comma + 1;
+                }
+            }
+            if (rest.empty())
+            {
+                for (int i = 0; i < count; ++i)
+                    rest.push_back(i);
+                std::mt19937 random(std::random_device{}() ^ static_cast<unsigned>(std::time(nullptr)));
+                std::shuffle(rest.begin(), rest.end(), random);
+                if (count > 1 && rest.front() == last)
+                    std::swap(rest[0], rest[1]);
+            }
+            const int pick = rest.front();
+            rest.erase(rest.begin());
+            std::string value = std::string(id) + ":" + std::to_string(pick) + ":";
+            for (size_t i = 0; i < rest.size(); ++i)
+                value += (i ? "," : "") + std::to_string(rest[i]);
+            state.ini.set("Launcher", key, value);
+            state.ini.save();
+            return pick;
+        }
+
+        // The start bark: deals this start's line and renders it in the background (with the music's reverb and the
+        // music itself, for the tail on Play). Once per start, when the disc image is known.
+        void startBark(State &state, const fs::path &image)
+        {
+            if (!state.audio || state.barkStarted || image.empty())
+                return;
+            state.barkStarted = true;
+            uint32_t listId = 2166136261u;
+            for (int i = 0; i < launcher_bark::count(); ++i)
+                listId = fnv1a(std::string(launcher_bark::name(i)) + "\n", listId);
+            state.barkLine = dealFromDeck(state, "BarkDeck", launcher_bark::count(), listId);
+            const fs::path musicPath = state.hasMusic ? state.musicPath : fs::path();
+            state.barkWorker = std::thread([&state, image, musicPath, line = state.barkLine] {
+                const launcher_bark::ReadFile read = [&image](std::string_view path, std::vector<uint8_t> &bytes) {
+                    return disc_files::readFromImage(image, path, bytes);
+                };
+                if (!launcher_bark::render(line, read, state.barkPcm))
+                    state.barkPcm.lr.clear();
+                if (musicPath.empty())
+                    return;
+                Wave wave = LoadWave(utf8(musicPath).c_str());
+                if (wave.data != nullptr && wave.frameCount > 0)
+                {
+                    WaveFormat(&wave, static_cast<int>(wave.sampleRate), 16, 2);
+                    const int16_t *pcm = static_cast<const int16_t *>(wave.data);
+                    state.musicPcm.assign(pcm, pcm + static_cast<size_t>(wave.frameCount) * 2);
+                    state.musicRate = static_cast<int>(wave.sampleRate);
+                    launcher_bark::prepareWash(state.wash);
+                }
+                UnloadWave(wave);
+            });
+        }
+
+        Sound soundFrom(const launcher_bark::Stereo &pcm)
+        {
+            std::vector<int16_t> samples(pcm.lr.size());
+            for (size_t i = 0; i < samples.size(); ++i)
+                samples[i] = static_cast<int16_t>(std::clamp(pcm.lr[i], -1.0f, 1.0f) * 32767.0f);
+            Wave wave{};
+            wave.frameCount = static_cast<unsigned int>(pcm.frames());
+            wave.sampleRate = launcher_bark::kRate;
+            wave.sampleSize = 16;
+            wave.channels = 2;
+            wave.data = samples.data();
+            return LoadSoundFromWave(wave); // copies the samples
+        }
+
+        // Play: its own sound (lower under a bark, as K approved the mix), the bark, and the music's tail in place of
+        // the music: it closes down and washes out under the voice, all faded out right after the last word. The
+        // sounds ring on into the game's boot (the audio device is left to the game, as for Play's sound).
+        void playBark(State &state)
+        {
+            if (state.barkWorker.joinable())
+                state.barkWorker.join(); // ready long before Play, unless Play came at once
+            const bool voice = !state.barkPcm.lr.empty();
+            playMenuSound(state, kPlay, voice ? 0.55f : 1.0f);
+            const auto start = std::chrono::steady_clock::now();
+            float end = 1.5f;
+            if (voice)
+            {
+                const Sound bark = soundFrom(state.barkPcm);
+                SetSoundVolume(bark, userVolume(state));
+                PlayAudioStream(bark.stream); // not PlaySound (winmm's, see playMenuSound)
+                end = static_cast<float>(state.barkPcm.frames()) / launcher_bark::kRate;
+            }
+            if (state.hasMusic && !state.musicPcm.empty() && state.wash.fftSize != 0)
+            {
+                const size_t frames = state.musicPcm.size() / 2;
+                const size_t from = static_cast<size_t>(GetMusicTimePlayed(state.music) * state.musicRate) % frames;
+                launcher_bark::Stereo tail;
+                launcher_bark::musicTail(state.musicPcm.data(), frames, state.musicRate, from, end, state.wash, tail);
+                if (!tail.lr.empty())
+                {
+                    const Sound sound = soundFrom(tail);
+                    SetSoundVolume(sound, kMusicVolume * userVolume(state));
+                    StopMusicStream(state.music);
+                    PlayAudioStream(sound.stream);
+                    state.musicHandedOff = true;
+                }
+            }
+            KM_INFO(Boot, "launcher: start bark " << (voice ? launcher_bark::name(state.barkLine) : "none (not read from the disc)")
+                                                  << ", music tail " << (state.musicHandedOff ? "on" : "off") << " ("
+                                                  << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count()
+                                                  << " ms)");
         }
 
         void menuSound(State &state, MenuSound which)
@@ -642,8 +795,10 @@ void main()
             const fs::path fontPath = folder / "splash.fnt";
             if (lines.empty() || !fs::is_regular_file(fontPath, error))
                 return;
-            std::mt19937 random(std::random_device{}() ^ static_cast<unsigned>(std::time(nullptr)));
-            state.splash = lines[std::uniform_int_distribution<size_t>(0, lines.size() - 1)(random)];
+            uint32_t listId = 2166136261u;
+            for (const std::string &l : lines)
+                listId = fnv1a(l + "\n", listId);
+            state.splash = lines[static_cast<size_t>(dealFromDeck(state, "SplashDeck", static_cast<int>(lines.size()), listId))];
             state.splashFont = LoadFont(utf8(fontPath).c_str());
             if (state.splashFont.texture.id == 0u || state.splashFont.texture.id == GetFontDefault().texture.id)
             {
@@ -936,6 +1091,7 @@ void main()
             state.ini.save();
             state.installed = true;
             loadMenuSounds(state, image);
+            startBark(state, image);
             state.installMessage.clear();
             state.installError = false;
             KM_INFO(Boot, "launcher: disc image installed: " << utf8(image));
@@ -2230,6 +2386,7 @@ void main()
         InitAudioDevice();
         state.audio = IsAudioDeviceReady();
         const fs::path musicPath = context.exeDir / "resources" / "music" / "launcher.ogg";
+        state.musicPath = musicPath;
         if (state.audio && fs::is_regular_file(musicPath, error))
         {
             state.music = LoadMusicStream(utf8(musicPath).c_str());
@@ -2244,7 +2401,10 @@ void main()
         state.volume = std::clamp(static_cast<float>(std::atof(state.ini.get("Launcher", "Volume", "0.8").c_str())), 0.0f, 1.0f);
         state.muted = state.ini.getBool("Launcher", "Mute", false);
         if (state.installed)
+        {
             loadMenuSounds(state, context.iso);
+            startBark(state, context.iso);
+        }
         KM_INFO(Boot, "launcher: shown (" << (state.installed ? "installed" : "not installed") << ")");
 
         while (!state.done)
@@ -2264,7 +2424,7 @@ void main()
             if (state.playTime >= 0.0f)
             {
                 if (state.playTime == 0.0f)
-                    playMenuSound(state, kPlay);
+                    playBark(state);
                 state.playTime += std::min(GetFrameTime(), 0.05f);
                 if (state.playTime >= kPlayLength)
                 {
@@ -2272,7 +2432,7 @@ void main()
                     state.done = true;
                 }
             }
-            if (state.hasMusic)
+            if (state.hasMusic && !state.musicHandedOff)
             {
                 const float fade = state.playTime >= 0.0f ? std::clamp(state.playTime / (kPlayLength - 0.02f), 0.0f, 1.0f) : 0.0f;
                 SetMusicVolume(state.music, kMusicVolume * userVolume(state) * (1.0f - fade));
@@ -2345,6 +2505,8 @@ void main()
             UnloadShader(state.backgroundShader);
         if (state.splashFont.texture.id != 0u)
             UnloadFont(state.splashFont);
+        if (state.barkWorker.joinable())
+            state.barkWorker.join();
         if (state.hasMusic)
             UnloadMusicStream(state.music);
         if (state.result == Result::Play && state.audio)

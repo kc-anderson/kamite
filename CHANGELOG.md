@@ -2,6 +2,11 @@
 
 Newest first, one line per change; the code comments say how.
 
+## November 10, 2026
+
+- Launcher: Play says "God Hand": one of 13 lines from the game (read from your disc), the music washing out under it.
+- Launcher: the splash text and the Play line come in shuffled order, none again until all have come up.
+
 ## November 9, 2026
 
 - Building from a folder with spaces in its path works.
