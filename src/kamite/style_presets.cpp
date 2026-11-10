@@ -1277,6 +1277,8 @@ namespace kamite::style_presets
             if (g_signalHandle)
                 callGuest(rdram, ctx, runtime, kSeStop, {kSnd, g_signalHandle}); // a new switch cuts the last line
             g_signalHandle = callGuest(rdram, ctx, runtime, kSeCallObj, {kSnd, bank, id, gene, 0u, 0u, 0u, 0u});
+            KM_INFO(Game, "styles: signal (diagnostic): bank " << bank << " record " << id << " -> line "
+                                                               << kStyleLines[slot] << ", handle " << g_signalHandle);
         }
 
         void onWazaDraw(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
@@ -1595,11 +1597,18 @@ namespace kamite::style_presets
             return;
         const uint32_t gene = rd32(0x7474A0u + 0x5F4u); // GameWork's player
         if (!validPointer(gene, 0x1700u))
+        {
+            KM_INFO(Game, "styles: signal (diagnostic): no player 0x" << std::hex << gene << std::dec);
             return;
+        }
+        KM_INFO(Game, "styles: signal (diagnostic): style " << to << ", gene 0x" << std::hex << gene << std::dec
+                                                            << ", +0x15F4 0x" << std::hex << rd32(gene + 0x15F4u) << std::dec);
         playStyleLine(rdram, ctx, runtime, gene, to - 1);
         const uint32_t costume = callGuest(rdram, ctx, runtime, kGetCostume, {kCoreSave});
+        uint32_t effect = 0xFFFFFFFFu;
         if (costume < 8u && (costume & 1u) == 0u)
-            callGuest(rdram, ctx, runtime, kSetEffect, {0u, kArmFlash, gene, 0u, 0xFFFFFFFFu, 0xFFFFFFFFu});
+            effect = callGuest(rdram, ctx, runtime, kSetEffect, {0u, kArmFlash, gene, 0u, 0xFFFFFFFFu, 0xFFFFFFFFu});
+        KM_INFO(Game, "styles: signal (diagnostic): costume " << costume << ", SetEffect -> 0x" << std::hex << effect << std::dec);
     }
 
     void install(PS2Runtime &runtime)
