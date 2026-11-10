@@ -828,7 +828,6 @@ namespace kamite::style_presets
         // white on screen (K, Oct 26).
         constexpr uint32_t kBeige = 0x8050646Eu; // A B G R
         uint32_t g_hudText = 0u, g_hudShadow = 0u; // the two entries (EE thread); 0 = not found
-        uint32_t g_hudLayout = 0u;                 // the money layout carrying them
         bool g_hudShown = false;
 
         constexpr int kOutlineCopies = 8;
@@ -1050,7 +1049,6 @@ namespace kamite::style_presets
             const bool show = data && readStore(data, store) && store.active < kStyles; // None: styles off, no letters
             g_hudText = text;
             g_hudShadow = shadow;
-            g_hudLayout = layout;
             if (!show)
             {
                 g_hudShown = false;
@@ -1068,7 +1066,7 @@ namespace kamite::style_presets
                 g_ram[(e + ent::kAlign) & 0x1FFFFFFu] = 0u; // align: the block centred on its position
                 wrFloat(e + ent::kDrawSclX, kHudScale);
                 wrFloat(e + ent::kDrawSclY, kHudScale);
-                setNoDraw(e, true); // drawn by hud_layout after the minimap (hudPass), over it; not in the money's own draw
+                setNoDraw(e, false);
             }
             g_hudShown = true;
         }
@@ -1444,16 +1442,6 @@ namespace kamite::style_presets
     }
 
     bool lettersOnRadar() { return g_ram != nullptr; }
-
-    bool hudPass(uint32_t &layout, uint32_t &text, uint32_t &shadow)
-    {
-        if (!g_ram || !g_hudShown || !g_hudLayout || !g_hudText || !g_hudShadow)
-            return false;
-        layout = g_hudLayout;
-        text = g_hudText;
-        shadow = g_hudShadow;
-        return true;
-    }
 
     int hudGlyph(uint32_t entry, int index, float &dx, float &dy)
     {

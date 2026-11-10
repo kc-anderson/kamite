@@ -22,7 +22,6 @@
 // screen = its own centre (button prompts over things in the 3D view); else by the third its centre is in: the
 // screen's left edge, centre or right edge.
 #include "kamite/hud_layout.h"
-#include "runtime/ee_scheduler.h"
 #include "runtime/ps2_hotkeys.h"
 #include "kamite/game_layout.h"
 #include "kamite/log.h"
@@ -719,55 +718,6 @@ namespace kamite::hud
             g_lastEntry = Context{};
         }
 
-        // The minimap's trans has ended: the style indicator's two entries are drawn now, so they sit over the minimap
-        // (the money layout that carries them draws before it). A second cIDBase_trans of that layout with every
-        // other entry hidden but the two entries' parents (a hidden parent hides its children).
-        constexpr uint32_t kTrans = 0x002AAC28u; // cIDBase_trans
-        constexpr uint32_t kEntParent = 0x20u;   // an entry's parent entry
-        void radarEnd(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
-        {
-            regionEnd(rdram, ctx, runtime);
-            uint32_t layout, text, shadow;
-            if (!runtime || menuNow() || !style_presets::hudPass(layout, text, shadow) || !runtime->hasFunction(kTrans))
-                return;
-            layout &= 0x01FFFFFFu;
-            const uint32_t entries = read32(rdram, layout + idb::kEnt) & 0x01FFFFFFu;
-            const int32_t count = static_cast<int32_t>(read32(rdram, layout + idb::kEntNum));
-            if (entries < 0x100000u || count <= 0 || count > 64 || entries + static_cast<uint32_t>(count) * ent::kSize > PS2_RAM_SIZE)
-                return;
-            std::vector<uint32_t> keep{text & 0x01FFFFFFu, shadow & 0x01FFFFFFu};
-            for (int k = 0; k < 2; ++k)
-                for (uint32_t p = read32(rdram, keep[k] + kEntParent) & 0x01FFFFFFu; p >= entries && keep.size() < 16u;
-                     p = read32(rdram, p + kEntParent) & 0x01FFFFFFu)
-                {
-                    if (p >= entries + static_cast<uint32_t>(count) * ent::kSize || (p - entries) % ent::kSize != 0u)
-                        break;
-                    keep.push_back(p);
-                }
-            std::vector<uint32_t> flags(static_cast<size_t>(count));
-            for (int32_t i = 0; i < count; ++i)
-            {
-                const uint32_t e = entries + static_cast<uint32_t>(i) * ent::kSize;
-                flags[static_cast<size_t>(i)] = read32(rdram, e + ent::kFlags);
-                const bool kept = std::find(keep.begin(), keep.end(), e) != keep.end();
-                write32(rdram, e + ent::kFlags, kept ? flags[static_cast<size_t>(i)] & ~game::kIdentFlagNoDraw
-                                                     : flags[static_cast<size_t>(i)] | game::kIdentFlagNoDraw);
-            }
-            PS2Runtime::RecompiledFunction fn = runtime->lookupFunction(kTrans);
-            if (fn)
-            {
-                const R5900Context saved = *ctx;
-                SET_GPR_U32(ctx, 4, layout);
-                ctx->pc = kTrans;
-                runtime->eeScheduler().beginHostCall();
-                fn(rdram, ctx, runtime);
-                runtime->eeScheduler().endHostCall();
-                *ctx = saved;
-            }
-            for (int32_t i = 0; i < count; ++i)
-                write32(rdram, entries + static_cast<uint32_t>(i) * ent::kSize + ent::kFlags, flags[static_cast<size_t>(i)]);
-        }
-
         const char *layoutName(Layout layout)
         {
             switch (layout)
@@ -946,7 +896,6 @@ namespace kamite::hud
         ps2xRegisterHostHook("km_hud_radar_begin", &regionBegin<kRadar, Region::Forced>);
         ps2xRegisterHostHook("km_hud_roulette_begin", &regionBegin<kRoulette, Region::Forced>);
         ps2xRegisterHostHook("km_hud_region_end", &regionEnd);
-        ps2xRegisterHostHook("km_hud_radar_end", &radarEnd);
         if (wide)
             KM_INFO(Game, "HUD layout: " << layoutName(g_layout) << " (the HUD layout hotkey switches 16:9 / 4:3; the 2D dump hotkey writes one frame's 2D to the log)");
     }

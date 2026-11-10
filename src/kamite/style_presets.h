@@ -39,9 +39,6 @@ namespace kamite::style_presets
     // direction of its offset (-1..1 each).
     bool lettersOnRadar();
     int hudGlyph(uint32_t entry, int index, float &dx, float &dy);
-    // The indicator is drawn in a pass of its own right after the minimap (so it sits over it): true with the money
-    // layout and the two entries to draw (they stay hidden in the layout's own draw).
-    bool hudPass(uint32_t &layout, uint32_t &text, uint32_t &shadow);
 
     // ps2_host_input's pad filter, player 1 (window thread): called by modern_controls' filter before its own work.
     void padFilter(uint32_t player, ps2x::iop::PadInputState &state);
