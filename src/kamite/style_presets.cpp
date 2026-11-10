@@ -685,12 +685,13 @@ namespace kamite::style_presets
         static_assert(kStoreOffset + sizeof(Store) <= kListText, "the strings clear of the Store");
         static_assert(kTextEnd <= kSaveSize, "the strings in cCoreSaveData");
         constexpr uint16_t kHudMessage = 0x3041u, kHudShadowMessage = 0x3042u;            // two more "<7d>" placeholders of bank 3
-        constexpr float kListX = 292.0f, kListY = 42.0f; // the hints' block centre (align 0): right of the big title, level with it, above the Punish slot (K, Nov 10)
+        constexpr float kListX = 294.0f, kListY = 42.0f; // the hints' block centre (align 0): right of the big title, level with it, above the Punish slot (K, Nov 10)
         constexpr float kRowX = 100.0f, kRowY = 78.0f;   // the row's centre: under the title, above the TECHNIQUES bar
         constexpr float kTextScale = 0.65f;
+        constexpr float kListScale = 0.55f; // the hints, smaller and tighter beside the title (K, Nov 10)
         // Line pitch: a new line moves down by the line's height (the tallest code: a letter, 41 x the scale = 26.8 at
         // 0.65; icons are 32 x the scale) + state+0x30 x state+0x48. The game's +0x30 at this scale gives ~22 (K: right).
-        constexpr float kLinePitch = 22.0f, kLineHeight = 26.8f;
+        constexpr float kLinePitch = 19.0f, kLineHeight = 26.8f; // the hints' pitch (22 at 0.65 before Nov 10)
         constexpr uint16_t kArrowCode[kStyles] = {4u, 5u, 6u, 7u}; // up, right, down, left
         constexpr uint16_t kL2Icon = 6u, kR2Icon = 7u;             // the game's own (prompt set) icons in the hint
         constexpr uint32_t kFontState = game::MessDrawFont::kInstance; // the font's draw state (D_005E7510)
@@ -856,7 +857,7 @@ namespace kamite::style_presets
         // "Style E: [right]   Style Y: [left]", the style on gold, empty ones dim. Each line pairs arrows of one shape
         // and every arrow advances by the widest (pieceAdvance), so the second column lines up within a letter's width.
         constexpr int kHintGrid[2][2] = {{0, 2}, {1, 3}}; // S X / E Y
-        constexpr int kHintColumnGap = 4;                  // spaces between the two columns
+        constexpr int kHintColumnGap = 2;                  // spaces between the two columns
         std::vector<uint16_t> listText(const Store &store)
         {
             std::vector<uint16_t> out;
@@ -1120,8 +1121,8 @@ namespace kamite::style_presets
             for (const uint32_t e : {text, shadow, name})
                 if (validPointer(e, ent::kSize))
                 {
-                    wrFloat(e + ent::kDrawSclX, kTextScale);
-                    wrFloat(e + ent::kDrawSclY, kTextScale);
+                    wrFloat(e + ent::kDrawSclX, e == name ? kListScale : kTextScale);
+                    wrFloat(e + ent::kDrawSclY, e == name ? kListScale : kTextScale);
                 }
             const uint32_t entries = rd32(waza + 0x4u);
             const uint32_t box = validPointer(entries, 0x4000u) ? entries + 57u * ent::kSize : 0u;
