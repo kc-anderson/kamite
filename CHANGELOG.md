@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 10, 2026
 
+- Moveset Presets: new sub-option Signal Style Switch: Gene calls out each style as you switch to it in play, and his God Hand flashes.
 - Style switching: the in-play style letters sit round the minimap (S top, E right, X bottom, Y left), outlined; the minimap and gold counter moved down to make room.
 - Techniques screen: the Punish slot is the top of the right column; the style hints are two by two beside the title.
 - Launcher: no logo behind the Options screen's dropdowns.

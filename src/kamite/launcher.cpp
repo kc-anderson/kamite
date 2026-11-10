@@ -2325,6 +2325,12 @@ void main()
                                                         "X and Y) and swap between them in play with the d-pad. On the "
                                                         "Techniques screen, L2 / R2 cycle them.");
                         iniCheckbox(state, "On##styles", "Game", "StyleSwitching", false);
+                        if (state.ini.getBool("Game", "StyleSwitching", false))
+                        {
+                            subSetting("Signal Style Switch", "Gene calls out each style as you switch to it, and his "
+                                                              "God Hand flashes.");
+                            iniCheckbox(state, "On##stylesignal", "Game", "StyleSignal", false);
+                        }
                         settingLabel("Buck Breaker", "Choose how to punish stunned enemies with a new slot on the "
                                                      "Techniques screen. Works with Moveset Presets.");
                         iniCheckbox(state, "On##buckbreaker", "Game", "BuckBreaker", false);

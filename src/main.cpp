@@ -440,6 +440,7 @@ namespace
         {"video", "cameratilt", "KAMITE_CAMERA_TILT"},
         {"video", "steadyidlecamera", "KAMITE_STEADY_IDLE_CAMERA"},
         {"game", "styleswitching", "KAMITE_STYLE_SWITCHING"},
+        {"game", "stylesignal", "KAMITE_STYLE_SIGNAL"},
         {"game", "buckbreaker", "KAMITE_BUCK_BREAKER"},
         {"game", "npcposes", "KAMITE_NPC_POSES"},
         {"game", "sprinttraversal", "KAMITE_SPRINT_TRAVERSAL"},
