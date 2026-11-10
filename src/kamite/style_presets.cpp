@@ -1206,23 +1206,30 @@ namespace kamite::style_presets
             return v0;
         }
 
-        // Gene's 48 kHz lines are streams of se/pl00.afs, listed in se/pl00.afd (entry n = stream n). The game plays
-        // them through stream sounds of his bank (se/pl00.ses), whose record +0x28 names the afd entry: pl00.ses has
-        // only two (48, 49: entry 14, "Shit!", the dog-dirt line at 0x1B0AAC, cSnd_SeCall(snd, 2, 0x30, obj)). The
-        // sound driver reads a record from the bank's table each time a sound starts (SdeIssTblGet 0x374CB8: bank table
-        // 0x76DF10, 0x20 a bank, +0 count, +4 records, 0x30 each, +0x0E & 0x8000 = empty). So each style gets a copy of
-        // record 48 in one of the bank's empty records (60..63) pointing at its line, played as the game plays 48.
+        // Gene's 48 kHz lines are streams of se/pl00.afs, listed in se/pl00.afd (entry n = stream n; the .afd is also
+        // the .ses's section at +0x18). A sound record (0x30 bytes; +6 type, +0x0E & 0x8000 empty, +0x21 random count,
+        // +0x28 afd entry) of type 0x30 / 0x31 is a stream sound; pl00.ses has two, 48 and 49 (entry 14, "Shit!").
+        // pl00.ses is cSnd slot / Sde bank 3 (cSnd_LoadStartupBanks: 0 "core", 3 "pl00"). Gene's sounds are called as
+        // bank 0 with fixed ids that cSndSeVoice_Setup moves to bank 3 (0x2CE040: 0xC8..0xE8 -> 0..0x20, 0xEA, 0xEE/F,
+        // 0xF2/3, 0xF8/9 -> 0x30/1, 0x109, 0x10B); calling bank 3 directly gives no voice (K's log, Nov 10: handle 0).
+        // So record 48 (id 0xF8) is played the game's way with its +0x28 pointed at the style's line for a while (the
+        // driver reads the record when the sound starts, SdeIssTblGet 0x374CB8: bank table 0x76DF10, 0x20 a bank, +0
+        // count, +4 records), then put back.
         constexpr uint32_t kSnd = 0x5FEE00u;                       // cSnd
         constexpr uint32_t kSeCallObj = 0x2CBA48u;                 // cSnd_SeCall(snd, bank, id, obj, 0, 0, 0, 0)
         constexpr uint32_t kSeStop = 0x2CBBA0u;                    // cSnd_SeStop(snd, handle)
-        constexpr uint32_t kSdeBanks = 0x76DF10u, kSdeBankCount = 0x34u;
-        constexpr uint32_t kGeneBank = 2u;                         // pl00.ses (checked by its records, else searched)
-        constexpr uint32_t kStreamRecord = 48u, kSpareRecord = 60u;
+        constexpr uint32_t kSdeBanks = 0x76DF10u;
+        constexpr uint32_t kGeneBank = 3u;                         // pl00.ses (checked by its records, else searched)
+        constexpr uint32_t kStreamRecord = 48u, kStreamCallId = 0xF8u; // record 48 as the game calls it (bank 0)
+        constexpr uint16_t kStreamLine = 14u;                      // record 48's own line ("Shit!")
+        constexpr int64_t kRestoreMs = 3000;                       // record 48 back to its own line after this
         constexpr uint16_t kStyleLines[kStyles] = {8u, 2u, 12u, 6u}; // afd entries: S Cool, E Nice, X Great, Y Awesome
         // The roulette's arm flash: func_00114608 step 1, once at the opening, SetEffect(0, 0xE, gene, 0, -1, -1) when
         // the costume (cCoreSave_getCostumeNo) is below 8 and even (its jump table 0x41C210; odd costumes get none).
         constexpr uint32_t kSetEffect = 0x306528u, kGetCostume = 0x1FC0A8u, kArmFlash = 0xEu;
-        uint32_t g_signalHandle = 0u; // the line playing (cut by the next switch's)
+        uint32_t g_signalHandle = 0u;  // the line playing (cut by the next switch's)
+        uint32_t g_patchedRecord = 0u; // record 48 while it points at a style's line
+        int64_t g_restoreAt = 0;
 
         uint32_t records(uint32_t bank, int16_t &count)
         {
@@ -1231,54 +1238,82 @@ namespace kamite::style_presets
             const uint32_t list = rd32(at + 4u);
             return count > 0 && validPointer(list, static_cast<uint32_t>(count) * 0x30u) ? list : 0u;
         }
-        bool isGeneBank(uint32_t bank)
+        uint32_t streamRecord(uint32_t bank)
         {
             int16_t count = 0;
             const uint32_t list = records(bank, count);
-            if (!list || count < static_cast<int16_t>(kSpareRecord + kStyles))
-                return false;
+            if (!list || count <= static_cast<int16_t>(kStreamRecord))
+                return 0u;
             const uint32_t r = list + kStreamRecord * 0x30u;
-            return g_ram[r + 6u] == 0x31u && (rd32(r + 0x28u) & 0xFFFFu) == 14u && (rd32(r + 0xCu) >> 16 & 0x8000u) == 0u;
+            return g_ram[r + 6u] == 0x31u && (g_ram[r + 0xFu] & 0x80u) == 0u ? r : 0u;
+        }
+        void writeLine(uint32_t record, uint16_t line)
+        {
+            g_ram[record + 0x28u] = static_cast<uint8_t>(line);
+            g_ram[record + 0x29u] = static_cast<uint8_t>(line >> 8);
+        }
+        void restoreRecord()
+        {
+            if (g_patchedRecord && validPointer(g_patchedRecord, 0x30u) && g_ram[g_patchedRecord + 6u] == 0x31u)
+                writeLine(g_patchedRecord, kStreamLine);
+            g_patchedRecord = 0u;
         }
 
         void playStyleLine(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t gene, int slot)
         {
-            static uint32_t bank = kGeneBank;
-            if (!isGeneBank(bank))
+            uint32_t record = streamRecord(kGeneBank);
+            if (!record || ((rd32(record + 0x28u) & 0xFFFFu) != kStreamLine && record != g_patchedRecord))
             {
-                bank = kSdeBankCount;
-                for (uint32_t b = 0; b < kSdeBankCount; ++b)
-                    if (isGeneBank(b))
-                    {
-                        bank = b;
-                        break;
-                    }
-                if (bank == kSdeBankCount)
-                {
-                    bank = kGeneBank;
-                    KM_INFO(Game, "styles: signal: Gene's sound bank not found, no voice line");
-                    return;
-                }
-            }
-            int16_t count = 0;
-            const uint32_t list = records(bank, count);
-            const uint32_t id = kSpareRecord + static_cast<uint32_t>(slot);
-            uint8_t *spare = g_ram + list + id * 0x30u;
-            const bool empty = (spare[0xF] & 0x80u) != 0u;
-            const bool ours = spare[6] == 0x31u && spare[0x28] == kStyleLines[slot] && spare[0x29] == 0u;
-            if (!empty && !ours)
-            {
-                KM_INFO(Game, "styles: signal: record " << id << " of Gene's bank is in use, no voice line");
+                KM_INFO(Game, "styles: signal: Gene's sound bank (3) not as expected, no voice line");
                 return;
             }
-            std::memcpy(spare, g_ram + list + kStreamRecord * 0x30u, 0x30u);
-            spare[0x28] = static_cast<uint8_t>(kStyleLines[slot]);
-            spare[0x29] = 0u;
             if (g_signalHandle)
                 callGuest(rdram, ctx, runtime, kSeStop, {kSnd, g_signalHandle}); // a new switch cuts the last line
-            g_signalHandle = callGuest(rdram, ctx, runtime, kSeCallObj, {kSnd, bank, id, gene, 0u, 0u, 0u, 0u});
-            KM_INFO(Game, "styles: signal (diagnostic): bank " << bank << " record " << id << " -> line "
-                                                               << kStyleLines[slot] << ", handle " << g_signalHandle);
+            writeLine(record, kStyleLines[slot]);
+            g_patchedRecord = record;
+            g_restoreAt = steadyMs() + kRestoreMs;
+            g_signalHandle = callGuest(rdram, ctx, runtime, kSeCallObj, {kSnd, 0u, kStreamCallId, gene, 0u, 0u, 0u, 0u});
+            KM_INFO(Game, "styles: signal (diagnostic): record 48 -> line " << kStyleLines[slot] << ", handle "
+                                                                            << g_signalHandle);
+        }
+
+        // Diagnostic (Nov 10, to strip): what the roulette's opening starts on Gene (sounds and effects), to find the
+        // arm flash K means.
+        int g_diagLines = 0;
+        bool openingOf(uint32_t gene)
+        {
+            const uint32_t player = rd32(0x7474A0u + 0x5F4u);
+            if (!validPointer(player, 0x1700u) || gene != player || g_ram[gene + 0x2F5u] != 0x2Bu)
+            {
+                if (validPointer(player, 0x1700u) && g_ram[player + 0x2F5u] != 0x2Bu)
+                    g_diagLines = 0;
+                return false;
+            }
+            float clock = 0.0f;
+            std::memcpy(&clock, g_ram + gene + 0x430u, sizeof(clock));
+            return clock < 30.0f && g_diagLines++ < 40;
+        }
+        void diagSeCall(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            if (openingOf(GPR_U32(ctx, 7)))
+                KM_INFO(Game, "styles: diag roulette SeCall bank " << GPR_U32(ctx, 5) << " id 0x" << std::hex
+                                                                    << GPR_U32(ctx, 6) << " t0 0x" << GPR_U32(ctx, 8)
+                                                                    << " ra 0x" << GPR_U32(ctx, 31) << std::dec);
+        }
+        void diagSetEffect(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            if (openingOf(GPR_U32(ctx, 6)))
+                KM_INFO(Game, "styles: diag roulette SetEffect 0x" << std::hex << GPR_U32(ctx, 4) << ", 0x"
+                                                                  << GPR_U32(ctx, 5) << ", params 0x" << GPR_U32(ctx, 7)
+                                                                  << ", 0x" << GPR_U32(ctx, 8) << ", 0x" << GPR_U32(ctx, 9)
+                                                                  << " ra 0x" << GPR_U32(ctx, 31) << std::dec);
+        }
+        void diagSeqEffect(uint8_t *, R5900Context *ctx, PS2Runtime *)
+        {
+            if (openingOf(GPR_U32(ctx, 4)))
+                KM_INFO(Game, "styles: diag roulette SetSeqEffect a1 0x" << std::hex << GPR_U32(ctx, 5) << " a2 0x"
+                                                                        << GPR_U32(ctx, 6) << " a3 0x" << GPR_U32(ctx, 7)
+                                                                        << " ra 0x" << GPR_U32(ctx, 31) << std::dec);
         }
 
         void onWazaDraw(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
@@ -1592,8 +1627,12 @@ namespace kamite::style_presets
 
     void signalFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
+        if (!g_ram)
+            return;
+        if (g_patchedRecord && steadyMs() >= g_restoreAt)
+            restoreRecord();
         const int to = g_signal.exchange(0, std::memory_order_relaxed);
-        if (!g_ram || to < 1 || to > kStyles)
+        if (to < 1 || to > kStyles)
             return;
         const uint32_t gene = rd32(0x7474A0u + 0x5F4u); // GameWork's player
         if (!validPointer(gene, 0x1700u))
@@ -1631,6 +1670,12 @@ namespace kamite::style_presets
             g_signalOn = true;
         KM_INFO(Game, "style switching: on" << (g_signalOn ? ", signal style switch" : ""));
         ps2x::pnach::addFrameHook(&onVblank);
+        if (g_signalOn)
+        {
+            FunctionHooks::instance().observeEntry(kSeCallObj, "cSnd_SeCall (signal diagnostic)", &diagSeCall);
+            FunctionHooks::instance().observeEntry(kSetEffect, "SetEffect (signal diagnostic)", &diagSetEffect);
+            FunctionHooks::instance().observeEntry(0x14FB48u, "cObjBase_SetSeqEffect (signal diagnostic)", &diagSeqEffect);
+        }
         FunctionHooks::instance().observeEntry(0x2AAA40u, "cIDBase_move (style list)", &onLayoutMove);
         FunctionHooks::instance().observeEntry(0x16DC18u, "cSubScrWaza draw (style list)", &onWazaDraw);
         ps2xRegisterHostHook("km_styles_icon", &onIconDraw);
