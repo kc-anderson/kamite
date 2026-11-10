@@ -318,8 +318,8 @@ namespace kamite::launcher
         // there. kRearmedRect: the REARMED plate (left, top, right, bottom as fractions of the canvas, same script).
         constexpr float kLogoCentreX = 0.5048f, kLogoCentreY = 0.5197f;
         constexpr float kRearmedRect[4] = {0.3110f, 0.7152f, 0.6961f, 0.8930f};
-        // Play: the plate's animation, taken from the game's roulette pick (K's capture at 1/8 speed): the letters
-        // light up, the plate smears out both ways into a yellow bar, the bar thins to streaks, all gone at 0.28 s;
+        // Play: the plate's animation, after the game's roulette pick (K's capture at 1/8 speed): the letters
+        // heat up and bloom, a yellow bar shoots out both ways, the bar thins to streaks, all gone at 0.28 s;
         // the rest of the launcher fades to black meanwhile and the game starts at kPlayLength.
         constexpr float kPlayLength = 0.34f;
         // The game's menu sounds (se/core.ses on the disc; K's picks): the cursor's tick when the keyboard or gamepad
@@ -1094,20 +1094,33 @@ void main()
 
         float ramp(float t, float a, float b) { return std::clamp((t - a) / (b - a), 0.0f, 1.0f); }
 
-        // A horizontal band from (x0) fading to nothing at (x1), either way.
+        // Smooth in and out (smoothstep), so no step lands as a pop at 60 Hz.
+        float ease(float t, float a, float b)
+        {
+            const float x = ramp(t, a, b);
+            return x * x * (3.0f - 2.0f * x);
+        }
+
+        // A horizontal band from (x0) fading to nothing at (x1), either way (float edges: no pixel jitter).
         void band(float x0, float x1, float y, float h, Color c)
         {
             Color clear = c;
             clear.a = 0;
-            if (x1 >= x0)
-                DrawRectangleGradientH(static_cast<int>(x0), static_cast<int>(y), static_cast<int>(x1 - x0) + 1,
-                                       std::max(1, static_cast<int>(h)), c, clear);
-            else
-                DrawRectangleGradientH(static_cast<int>(x1), static_cast<int>(y), static_cast<int>(x0 - x1) + 1,
-                                       std::max(1, static_cast<int>(h)), clear, c);
+            const float left = std::min(x0, x1), width = std::fabs(x1 - x0);
+            DrawRectangleGradientEx(Rectangle{left, y, width, std::max(1.0f, h)}, x1 >= x0 ? c : clear, x1 >= x0 ? c : clear,
+                                    x1 >= x0 ? clear : c, x1 >= x0 ? clear : c);
+        }
+
+        // A layer scaled about a point (the glow's bloom rings).
+        void drawLayerScaled(const Texture2D &texture, ImVec2 min, ImVec2 max, float cx, float cy, float sx, float sy, Color tint)
+        {
+            drawLayer(texture, ImVec2(cx + (min.x - cx) * sx, cy + (min.y - cy) * sy), ImVec2(cx + (max.x - cx) * sx, cy + (max.y - cy) * sy),
+                      tint);
         }
 
         // The REARMED plate. t < 0: at rest; t >= 0: seconds since Play (the roulette pick, both ways from the plate).
+        // K Nov 10: the plate no longer smears out to the screen edges; the letters bloom (additive glow rings, a hot
+        // core and a soft flare) before the bar; every step eased.
         void drawPlate(const State &state, float t)
         {
             const ImVec2 min = state.logoMin, max = state.logoMax;
@@ -1121,39 +1134,26 @@ void main()
             }
             const float px = min.x + w * kRearmedRect[0], py = min.y + h * kRearmedRect[1];
             const float pw = w * (kRearmedRect[2] - kRearmedRect[0]), ph = h * (kRearmedRect[3] - kRearmedRect[1]);
-            const float cx = px + pw * 0.5f, screen = static_cast<float>(GetScreenWidth());
+            const float cx = px + pw * 0.5f, cy = py + ph * 0.5f, screen = static_cast<float>(GetScreenWidth());
             const float reach = std::max(cx, screen - cx); // from the plate's centre to the farther screen edge
-            const float glow = ramp(t, 0.055f, 0.07f), smear = ramp(t, 0.07f, 0.12f);
-            const float bar = ramp(t, 0.11f, 0.13f) * (1.0f - ramp(t, 0.17f, 0.2f));
-            const float streak = ramp(t, 0.17f, 0.19f) * (1.0f - ramp(t, 0.24f, 0.275f));
-            const float live = 1.0f - ramp(t, 0.255f, 0.28f), body = 1.0f - ramp(t, 0.075f, 0.11f);
+            const float glow = ease(t, 0.02f, 0.09f);                                // the letters heat up
+            const float bloom = ease(t, 0.03f, 0.10f) * (1.0f - ease(t, 0.15f, 0.24f)); // their glow spreading
+            const float bar = ease(t, 0.09f, 0.14f) * (1.0f - ease(t, 0.16f, 0.22f));
+            const float streak = ease(t, 0.15f, 0.20f) * (1.0f - ease(t, 0.22f, 0.275f));
+            const float live = 1.0f - ease(t, 0.24f, 0.28f), body = 1.0f - ease(t, 0.06f, 0.13f);
             drawLayer(state.rearmed, min, max, Color{255, 255, 255, alphaOf(body)});
-            // The plate smeared out both ways (three stretched copies, a cheap blur), fading as the bar comes in.
-            if (smear > 0.0f && bar < 1.0f && state.rearmed.id != 0u)
-            {
-                const Rectangle source{static_cast<float>(state.rearmed.width) * kRearmedRect[0],
-                                       static_cast<float>(state.rearmed.height) * kRearmedRect[1],
-                                       static_cast<float>(state.rearmed.width) * (kRearmedRect[2] - kRearmedRect[0]),
-                                       static_cast<float>(state.rearmed.height) * (kRearmedRect[3] - kRearmedRect[1])};
-                for (const float part : {0.55f, 0.8f, 1.0f})
-                {
-                    const float stretch = smear * reach * part;
-                    DrawTexturePro(state.rearmed, source, Rectangle{px - stretch, py, pw + stretch * 2.0f, ph},
-                                   Vector2{0.0f, 0.0f}, 0.0f, Color{255, 255, 255, alphaOf(0.2f * (1.0f - bar) * live)});
-                }
-            }
             if (bar > 0.0f)
             {
                 const float y0 = py + ph * 0.18f, bh = ph * 0.64f, a = bar * live;
                 for (const float side : {-1.0f, 1.0f})
                 {
-                    band(cx, cx + side * reach, y0, bh, Color{255, 226, 90, alphaOf(0.9f * a)});
-                    band(cx, cx + side * reach * 0.7f, y0 + bh * 0.1f, bh * 0.8f, Color{255, 250, 215, alphaOf(0.6f * a)});
+                    band(cx, cx + side * reach * (0.4f + 0.6f * bar), y0, bh, Color{255, 226, 90, alphaOf(0.9f * a)});
+                    band(cx, cx + side * reach * (0.3f + 0.4f * bar), y0 + bh * 0.1f, bh * 0.8f, Color{255, 250, 215, alphaOf(0.6f * a)});
                 }
             }
-            if (streak > 0.0f || (smear > 0.0f && bar < 1.0f))
+            if (streak > 0.0f)
             {
-                const float k = std::max(streak, smear * (1.0f - bar)) * live, thick = std::max(1.0f, ph / 45.0f);
+                const float k = streak * live, thick = std::max(1.0f, ph / 45.0f);
                 const float lines[5][3] = {{0.38f, 0.95f, 3.0f}, {0.5f, 0.7f, 2.0f}, {0.62f, 1.0f, 3.0f},
                                            {0.45f, 0.5f, 2.0f}, {0.56f, 0.85f, 2.0f}};
                 for (const auto &line : lines)
@@ -1164,16 +1164,40 @@ void main()
                         band(cx, cx + side * reach * line[1], y - th * 0.4f, th * 0.8f, Color{255, 245, 190, alphaOf(0.7f * k)});
                     }
             }
-            // The letters: gold, then hot orange with a glow.
+            // The letters: gold heating to a white-hot core, the glow blooming out in rings with a soft flare through
+            // them (all additive, so it lights what is behind instead of only brightening the letters).
             drawLayer(state.rearmedText, min, max, Color{gold.r, gold.g, gold.b, alphaOf((1.0f - glow) * live)});
-            if (glow > 0.0f)
+            if (glow > 0.0f || bloom > 0.0f)
             {
                 BeginBlendMode(BLEND_ADDITIVE);
-                drawLayer(state.rearmedGlow, min, max, Color{255, 100, 10, alphaOf(0.95f * glow * live)});
+                const float a = live;
+                const struct
+                {
+                    float sx, sy, alpha;
+                    Color color;
+                } rings[] = {{1.0f, 1.0f, 0.9f, {255, 120, 20, 255}},
+                             {1.06f, 1.35f, 0.65f, {255, 140, 40, 255}},
+                             {1.14f, 1.9f, 0.45f, {255, 110, 20, 255}},
+                             {1.26f, 2.6f, 0.28f, {255, 90, 10, 255}}};
+                for (const auto &ring : rings)
+                {
+                    const float grow = 1.0f + (ring.sx - 1.0f) * (0.5f + 0.5f * bloom), growY = 1.0f + (ring.sy - 1.0f) * (0.5f + 0.5f * bloom);
+                    Color c = ring.color;
+                    c.a = alphaOf(ring.alpha * std::max(glow * 0.6f, bloom) * a);
+                    drawLayerScaled(state.rearmedGlow, min, max, cx, cy, grow, growY, c);
+                }
+                // The flare: a soft horizontal light through the letters' middle.
+                const float fh = ph * (0.5f + 0.3f * bloom), fa = 0.55f * bloom * a;
+                for (const float side : {-1.0f, 1.0f})
+                {
+                    band(cx, cx + side * pw * (0.55f + 0.5f * bloom), cy - fh * 0.5f, fh, Color{255, 150, 50, alphaOf(fa * 0.6f)});
+                    band(cx, cx + side * pw * (0.45f + 0.35f * bloom), cy - fh * 0.12f, fh * 0.24f, Color{255, 235, 190, alphaOf(fa)});
+                }
                 EndBlendMode();
-                drawLayer(state.rearmedText, min, max, Color{255, 190, 60, alphaOf(glow * live)});
+                drawLayer(state.rearmedText, min, max, Color{255, 200, 90, alphaOf(glow * a)});
                 BeginBlendMode(BLEND_ADDITIVE);
-                drawLayer(state.rearmedText, min, max, Color{160, 140, 100, alphaOf(0.7f * glow * live)});
+                drawLayer(state.rearmedText, min, max, Color{255, 230, 170, alphaOf(0.75f * glow * a)}); // the white-hot core
+                drawLayer(state.rearmedGlow, min, max, Color{255, 200, 120, alphaOf(0.5f * bloom * a)});
                 EndBlendMode();
             }
         }
@@ -2485,8 +2509,12 @@ void main()
         }
 
         ps2_host_display::openHostWindow(kWindowTitle);
+        // Without vsync: the monitor's own rate (a 60 cap on a faster screen judders Play's animation; K Nov 10).
         if (!ps2_host_display::vsyncEnabled())
-            SetTargetFPS(60);
+        {
+            const int rate = GetMonitorRefreshRate(GetCurrentMonitor());
+            SetTargetFPS(rate >= 60 && rate <= 360 ? rate : 60);
+        }
         rlImGuiSetup(true);
         ImGuiIO &io = ImGui::GetIO();
         io.IniFilename = nullptr;

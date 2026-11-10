@@ -8,8 +8,8 @@ The logo is five layers with the same canvas, drawn into one rectangle at the to
 - `rearmed.png`: the REARMED plate without its letters.
 - `rearmed_text.png`: the plate's letters, white with a slight shade; the launcher tints them gold.
 - `rearmed_glow.png`: the letters blurred, white; the hot glow when Play is pressed (the plate then plays the game's
-  roulette pick: the letters light up, the plate smears out both ways into a yellow bar that thins to streaks, while
-  the rest fades to black).
+  roulette pick: the letters heat up and bloom, a yellow bar shoots out both ways and thins to streaks, while the
+  rest fades to black).
 
 They come from K's layered GHR_logo.psd through `tools/logo/export_launcher_logo.py --psd GHR_logo.psd --readme
 assets/logo.png`, which also prints `kLogoCentreX/Y` (GOD HAND's centre) and `kRearmedRect` (the plate) for
