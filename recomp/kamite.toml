@@ -2351,10 +2351,10 @@ address = "0x0014436C"
 hook = "km_hud_radar_begin"
 flag = "hud2d"
 
-# cCockRader trans: end
+# cCockRader trans: end (and the style indicator drawn over the minimap: hud_layout radarEnd)
 [[patches.hooks]]
 address = "0x00144A8C"
-hook = "km_hud_region_end"
+hook = "km_hud_radar_end"
 flag = "hud2d"
 
 # cCockRoulette trans (func_00146328): start
