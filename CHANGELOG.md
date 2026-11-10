@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 9, 2026
 
+- Building from a folder with spaces in its path works.
 - New logo in the launcher and the README.
 - Launcher: Play starts the game with the logo's roulette pick, the game's menu sound (from your disc) and a fade to black.
 - Launcher: music, fading out when the game starts.

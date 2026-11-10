@@ -88,6 +88,13 @@ def find_vsroot():
     return None
 
 
+def vs_command(*cmd):
+    """`cmd` run through tools/win/vsenv.cmd, as one command line. /s and an outer pair of quotes: a plain
+    `cmd /c "path with spaces" ... "more quotes"` strips the first and last quote of the whole line and runs
+    `C:\\...\\God` (T3's builder folder had spaces)."""
+    return 'cmd /s /c "' + subprocess.list2cmdline([str(VSENV), *[str(c) for c in cmd]]) + '"'
+
+
 def in_vs(*cmd):
     """Runs a command inside the Visual Studio x64 environment (tools/win/vsenv.cmd)."""
     if not VSENV.exists():
@@ -97,7 +104,9 @@ def in_vs(*cmd):
     vsroot = find_vsroot()
     if vsroot:
         env["VSROOT"] = vsroot
-    return run(["cmd", "/c", VSENV, *cmd], env=env)
+    line = vs_command(*cmd)
+    print("+", line, flush=True)
+    return subprocess.run(line, env=env, creationflags=LOW_PRIORITY).returncode
 
 
 def game_running():
@@ -614,10 +623,10 @@ def build(target="kamite"):
     vsroot = find_vsroot()
     if vsroot:
         env["VSROOT"] = vsroot
-    cmd = ["cmd", "/c", VSENV, "cmake", "--build", BUILD, "--target", target, "--", "-j", JOBS]
-    print("+", " ".join(str(c) for c in cmd), f"(log {log_path})", flush=True)
+    cmd = vs_command("cmake", "--build", BUILD, "--target", target, "--", "-j", JOBS)
+    print("+", cmd, f"(log {log_path})", flush=True)
     with open(log_path, "w", encoding="utf-8", errors="replace") as log:
-        proc = subprocess.Popen([str(c) for c in cmd], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, errors="replace", creationflags=LOW_PRIORITY)
         for line in proc.stdout:
             sys.stdout.write(line)
