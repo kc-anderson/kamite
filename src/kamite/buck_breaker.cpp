@@ -417,18 +417,20 @@ namespace kamite::buck_breaker
         // idsubscrwaza_us.idd's first IDP). The single slots' rows: name text parts[0x13 + row] (its children: the box,
         // record id -1, and the button parts[0x1A + row], whose child is the "down+" art), the cursor frame parts[1]
         // (placed from the table 0x420000: (x, y) per row, 8 bytes, 0x30 a column; column 1 has a sixth row, (195, 230)),
-        // the RETURN frame parts[0x18]. Our slot: the Down + A row (4) drawn again one row lower (a second cIDBase_trans
-        // with every other entry NO_DRAW), its name our message, its button the icon sheet's circle cell. The game's
-        // cursor stays on row 4 while ours is on the slot; for the screen's update it reads -1 (RETURN's way: no row
-        // lit, Gene stands, no move info), then the frame is put on the slot and RETURN's frame hidden.
+        // the RETURN frame parts[0x18]. Our slot (K, Nov 10: the column's top; it was under Down + A): the Down + A row
+        // (4) drawn again one row above row 0 (a second cIDBase_trans with every other entry NO_DRAW), its name our
+        // message, its button the icon sheet's circle cell. The game's cursor stays on row 0 while ours is on the slot;
+        // for the screen's update it reads -1 (RETURN's way: no row lit, Gene stands, no move info), then the frame is
+        // put on the slot and RETURN's frame hidden.
         constexpr uint32_t kSubScrPointer = game::SubScr::kPointer;
         constexpr int32_t kTechniquesKind = 1;
         constexpr uint32_t kWazaOffset = 0x310u, kWazaState = 0x5Au, kWazaCursor = 0x25Cu, kWazaColumn = 0x284u;
         constexpr uint32_t kSlotsLayout = 0x290u; // the screen's third layout: its move is the update's last call
-        constexpr int kNameRow3 = 0x16, kNameRow4 = 0x17, kButtonRow4 = 0x1E, kCursorFrame = 0x01, kReturnFrame = 0x18;
-        constexpr int8_t kRow4 = 4;
+        constexpr int kNameRow0 = 0x13, kNameRow3 = 0x16, kNameRow4 = 0x17, kButtonRow4 = 0x1E, kCursorFrame = 0x01,
+                      kReturnFrame = 0x18;
+        constexpr int8_t kRow0 = 0;
         constexpr uint32_t kCursorTable = 0x420000u;
-        constexpr uint32_t kSlotPlace = kCursorTable + 0x30u + 5u * 8u; // column 1, row 5
+        constexpr uint32_t kColumn1Places = kCursorTable + 0x30u; // column 1's rows: (x, y) floats, 8 bytes each
         constexpr uint32_t kInfoRecord = 53u;                             // "Attack Str" (id -1: by its index)
         constexpr float kInfoX = 395.0f, kInfoY = 353.0f;                 // its record's position (the check)
         // Entry fields (cIDBase.h): +0x1C src, +0x20 parent, +0x2A id, +0x38 / +0x3C position, +0x70 f70[4] (a
@@ -455,7 +457,7 @@ namespace kamite::buck_breaker
         constexpr uint32_t kSeCall = 0x2CB8A0u, kCursorSound = 0x15Fu; // the screen's cursor sound (0x16DFC4)
         constexpr uint32_t kTrans = 0x2AAC28u;                          // cIDBase_trans
 
-        bool g_onSlot = false;   // the cursor is on our slot (the game's stays on Down + A)
+        bool g_onSlot = false;   // the cursor is on our slot (the game's stays on row 0)
         uint32_t g_faked = 0u;   // the screen whose cursor reads -1 for its update (put back at its last move call)
         uint32_t g_hidInfo = 0u; // "Attack Str", hidden by us while on the slot
 
@@ -530,7 +532,7 @@ namespace kamite::buck_breaker
             if (!g_faked)
                 return;
             if (cursorOf(g_faked) == -1)
-                byteAt(g_faked + kWazaCursor) = static_cast<uint8_t>(kRow4);
+                byteAt(g_faked + kWazaCursor) = static_cast<uint8_t>(kRow0);
             g_faked = 0u;
         }
 
@@ -545,7 +547,7 @@ namespace kamite::buck_breaker
             unfake();
             if (!g_onSlot)
                 return;
-            if (byteAt(waza + kWazaState) != 0u || byteAt(waza + kWazaColumn) != 1u || cursorOf(waza) != kRow4)
+            if (byteAt(waza + kWazaState) != 0u || byteAt(waza + kWazaColumn) != 1u || cursorOf(waza) != kRow0)
             {
                 leaveSlot(waza);
                 return;
@@ -572,9 +574,11 @@ namespace kamite::buck_breaker
             const uint32_t frame = part(waza, kCursorFrame), back = part(waza, kReturnFrame);
             if (validPointer(frame, ent::kSize))
             {
+                // One row above row 0: row 0's place less the step to row 1.
+                const float x0 = rdFloat(kColumn1Places), y0 = rdFloat(kColumn1Places + 4u), y1 = rdFloat(kColumn1Places + 12u);
                 wr32(frame + ent::kFlags, rd32(frame + ent::kFlags) & ~kNoDraw);
-                wrFloat(frame + kEntPosX, rdFloat(kSlotPlace));
-                wrFloat(frame + kEntPosY, rdFloat(kSlotPlace + 4u));
+                wrFloat(frame + kEntPosX, x0);
+                wrFloat(frame + kEntPosY, y0 - (y1 - y0));
             }
             if (validPointer(back, ent::kSize))
                 wr32(back + ent::kFlags, rd32(back + ent::kFlags) | kNoDraw);
@@ -602,10 +606,10 @@ namespace kamite::buck_breaker
                                                    << (at ? std::string(" (style ") + kLetters[at] + ")" : std::string(" (base)")));
         }
 
-        // The screen's input (0x16DF38, $a0 = the screen), before it reads the command words: Down on Down + A (and Up
-        // on RETURN in the single slots' column, and left / right on the chain's sixth row) goes to our slot; on it, OK
-        // cycles the punish, Up goes back to Down + A, and Down / left / right / Cancel do what they do on Down + A
-        // (RETURN, the square chain, leaving).
+        // The screen's input (0x16DF38, $a0 = the screen), before it reads the command words (K, Nov 10): the slot is the
+        // single slots' top, so Up on row 0 and Down on RETURN come to it (where the game linked row 0 and RETURN); on it,
+        // OK cycles the punish, Down goes to row 0, and Up / left / right / Cancel do what they do on row 0 (RETURN, the
+        // chain's top, leaving).
         void onWazaInput(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             if (!g_ram)
@@ -624,25 +628,20 @@ namespace kamite::buck_breaker
             uint64_t trg = rd64(trgAt), rep = rd64(repAt);
             const uint8_t column = byteAt(waza + kWazaColumn);
             const int8_t row = cursorOf(waza);
-            const bool onDownA = column == 1u && row == kRow4;
+            const bool onRow0 = column == 1u && row == kRow0;
             bool sound = false;
             if (!g_onSlot)
             {
-                if (onDownA && (rep & kCmdDown))
+                if (onRow0 && (rep & kCmdUp))
                 {
                     g_onSlot = true;
-                    rep &= ~kCmdDown;
+                    rep &= ~kCmdUp;
                     sound = true;
                 }
-                else if (column == 1u && row == -1 && (rep & kCmdUp))
-                    g_onSlot = true; // RETURN -> up: the game goes to Down + A (its sound), the cursor shows on the slot
-                else if (column == 0u && row == 5 && (trg & kCmdSide))
-                {
-                    byteAt(waza + kWazaCursor) = static_cast<uint8_t>(kRow4); // the chain's sixth row faces the slot
-                    g_onSlot = true;                                         // (the game had nothing there: RETURN)
-                }
+                else if (column == 1u && row == -1 && (rep & kCmdDown))
+                    g_onSlot = true; // RETURN -> down: the game goes to row 0 (its sound), the cursor shows on the slot
             }
-            else if (!onDownA)
+            else if (!onRow0)
                 leaveSlot(waza);
             else if (trg & kCmdOk)
             {
@@ -650,14 +649,14 @@ namespace kamite::buck_breaker
                 trg &= ~kCmdOk;
                 sound = true;
             }
-            else if (rep & kCmdUp)
+            else if (rep & kCmdDown)
             {
                 leaveSlot(waza);
-                rep &= ~kCmdUp;
+                rep &= ~kCmdDown;
                 sound = true;
             }
-            else if ((rep & kCmdDown) || (trg & (kCmdSide | kCmdCancel)))
-                leaveSlot(waza);
+            else if ((rep & kCmdUp) || (trg & (kCmdSide | kCmdCancel)))
+                leaveSlot(waza); // the game moves on from row 0
             wr64(trgAt, trg);
             wr64(repAt, rep);
             if (sound)
@@ -710,7 +709,9 @@ namespace kamite::buck_breaker
                 return e >= entries && e < entries + count * ent::kSize && (e - entries) % ent::kSize == 0u;
             };
             const uint32_t name = part(waza, kNameRow4), above = part(waza, kNameRow3), button = part(waza, kButtonRow4);
-            if (!inLayout(name) || !inLayout(above) || !inLayout(button) || byteAt(name + ent::kKind) != game::kIdentKindText)
+            const uint32_t top = part(waza, kNameRow0);
+            if (!inLayout(name) || !inLayout(above) || !inLayout(button) || !inLayout(top) ||
+                byteAt(name + ent::kKind) != game::kIdentKindText)
                 return;
             uint32_t box = 0u;
             for (uint32_t i = 0; i < count && !box; ++i)
@@ -722,10 +723,13 @@ namespace kamite::buck_breaker
             }
             if (!box)
                 return;
-            const float dx = rdFloat(name + ent::kDrawX) - rdFloat(above + ent::kDrawX);
-            const float dy = rdFloat(name + ent::kDrawY) - rdFloat(above + ent::kDrawY);
-            if (!(dx > -2.0f && dx < 2.0f && dy > 10.0f && dy < 100.0f))
+            const float stepX = rdFloat(name + ent::kDrawX) - rdFloat(above + ent::kDrawX);
+            const float stepY = rdFloat(name + ent::kDrawY) - rdFloat(above + ent::kDrawY);
+            if (!(stepX > -2.0f && stepX < 2.0f && stepY > 10.0f && stepY < 100.0f))
                 return; // not the layout we know: no slot rather than a misplaced one
+            // Row 4's entries moved to one row step above row 0.
+            const float dx = rdFloat(top + ent::kDrawX) - rdFloat(name + ent::kDrawX) - stepX;
+            const float dy = rdFloat(top + ent::kDrawY) - rdFloat(name + ent::kDrawY) - stepY;
 
             Block block;
             readBlock(data, block);

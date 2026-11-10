@@ -661,9 +661,9 @@ namespace kamite::style_presets
         // The style row "Style: None / S / E / X / Y" under the big TECHNIQUES title (the space above the slots'
         // TECHNIQUES bar), the one on gold, filled beige, empty dim, with its shadow: the "Already Set" text and shadow
         // (parts[0x23] / [0x24], shown by the game only while the move picker is open, to say the highlighted move is in
-        // another slot) carry it while the slots are browsed. The four hint lines "Style S: [up]" .. "Style Y: [left]"
-        // right of the title (x ~225..365, y ~10..110 of the 512 x 448 menu screen; K's pick, Oct 25; reads SEXY, LIFE as
-        // Xavier) go in that group's move name (parts[0x25], a text entry, no shadow), the style on gold, empty ones dim.
+        // another slot) carry it while the slots are browsed. The hints "Style S: [up]" .. "Style Y: [left]", two by two
+        // right of the title (x ~220..365, y ~18..66 of the 512 x 448 menu screen; K, Nov 10: four lines until the Punish
+        // slot moved to the column's top) go in that group's move name (parts[0x25], a text entry, no shadow).
         // The rest of the group ([0x26] the "down+" art, [0x27] the slot's button, the name box: record #57, no id) is
         // hidden. The texts are placeholder messages (unused "<7d>": 0x30C4 the row, 0x30FE its shadow (no colour codes,
         // which would colour the shadow too), 0x3043 the lines) pointed at strings of ours. The bottom bar's spare line
@@ -685,7 +685,7 @@ namespace kamite::style_presets
         static_assert(kStoreOffset + sizeof(Store) <= kListText, "the strings clear of the Store");
         static_assert(kTextEnd <= kSaveSize, "the strings in cCoreSaveData");
         constexpr uint16_t kHudMessage = 0x3041u, kHudShadowMessage = 0x3042u;            // two more "<7d>" placeholders of bank 3
-        constexpr float kListX = 328.0f, kListY = 56.5f; // the lines' block centre (align 0): their right end (the arrows) on the move boxes' right edge (~360; K, Nov 7)
+        constexpr float kListX = 292.0f, kListY = 42.0f; // the hints' block centre (align 0): right of the big title, level with it, above the Punish slot (K, Nov 10)
         constexpr float kRowX = 100.0f, kRowY = 78.0f;   // the row's centre: under the title, above the TECHNIQUES bar
         constexpr float kTextScale = 0.65f;
         // Line pitch: a new line moves down by the line's height (the tallest code: a letter, 41 x the scale = 26.8 at
@@ -852,14 +852,21 @@ namespace kamite::style_presets
             out.insert(out.end(), {kColour, static_cast<uint16_t>(colour >> 16), static_cast<uint16_t>(colour & 0xFFFFu)});
         }
 
-        // Four hint lines: "Style S: [up]" .. "Style Y: [left]": the style on gold, empty ones dim.
+        // The hints, two by two (K, Nov 10: the Punish slot took the column's top): "Style S: [up]   Style X: [down]" /
+        // "Style E: [right]   Style Y: [left]", the style on gold, empty ones dim. Each line pairs arrows of one shape
+        // and every arrow advances by the widest (pieceAdvance), so the second column lines up within a letter's width.
+        constexpr int kHintGrid[2][2] = {{0, 2}, {1, 3}}; // S X / E Y
+        constexpr int kHintColumnGap = 4;                  // spaces between the two columns
         std::vector<uint16_t> listText(const Store &store)
         {
             std::vector<uint16_t> out;
-            for (int slot = 0; slot < kStyles; ++slot)
+            for (int at = 0; at < kStyles; ++at)
             {
-                if (slot > 0)
+                const int slot = kHintGrid[at / 2][at % 2];
+                if (at == 2)
                     out.push_back(kNewLine);
+                else if (at % 2 == 1)
+                    out.insert(out.end(), kHintColumnGap, kSpace);
                 const bool used = (store.used & (1u << slot)) != 0u;
                 const uint32_t colour = used && store.active == slot ? kGold : used ? 0u : kDim; // 0: the line's own
                 if (colour)

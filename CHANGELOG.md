@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## November 10, 2026
 
+- Techniques screen: the Punish slot is the top of the right column; the style hints are two by two beside the title.
+- Launcher: no logo behind the Options screen's dropdowns.
 - Launcher: Play's REARMED animation glows and runs smoother; the plate no longer stretches across the screen.
 - Launcher: Add to Steam (lower left): adds God Hand: Rearmed to your Steam library with its art, restarting Steam if it's open.
 - Launcher: Play says "God Hand": one of 13 lines from the game (read from your disc), the music washing out under it.
