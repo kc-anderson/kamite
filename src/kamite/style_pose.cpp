@@ -12,8 +12,9 @@
 #include <cmath>
 #include <cstring>
 
-#if defined(KAMITE_HAS_GS_MENU)
+#if __has_include("pcsx2gs_api.h")
 #include "pcsx2gs_api.h"
+#define KAMITE_HAS_GS_MENU 1
 #endif
 
 namespace kamite::style_pose
@@ -22,21 +23,23 @@ namespace kamite::style_pose
     {
         // func_00158328(obj): the pose of the motion at +0x428 (an mtb3 block) at the clock +0x430 into every part's
         // Euler +0x100..+0x108 (parts at +0x278, count +0x2B4), root outputs +0x310 / +0x340 / +0x370 (frame_patches'
-        // motionPoseSmooth and game_options' roulette replay wrap it too; this wrapper chains with them). For the arm
-        // swing it runs once more first with Gene's quick turn (motion 30 of his pack, +0x304: u32 count, then offsets
-        // from the pack) at the swing's clock; the arm and shoulder parts of that pose are blended into the real one,
-        // which runs last so root motion, translations and the part caches stay the game's.
+        // motionPoseSmooth and game_options' roulette replay wrap it too; this wrapper chains with them). After the
+        // game's pose, the arm and shoulder parts are slerped toward Gene's quick turn (motion 30 of his pack, +0x304:
+        // u32 count, then offsets from the pack) at the swing's clock, decoded here from the motion in RAM (as
+        // tools/models/mot.py). Running the game's pose function on the turn instead (948a609) moved more than the
+        // arms: it writes translations (hips, the leg IK targets 20 / 24) through part pointers (+0xD0) outside what
+        // was put back: K saw his legs freeze and the model shift.
         constexpr uint32_t kMotionPose = 0x158328u;
         constexpr uint32_t kPlayer = 0x7474A0u + 0x5F4u; // GameWork's player
         constexpr uint32_t kTurnMotion = 30u;
         constexpr uint32_t kFirstBone = 5u, kLastBone = 16u; // clavicles, deltoids, arms, twists, hands (R 5-10, L 11-16)
-        constexpr int64_t kFadeInMs = 80, kFadeOutMs = 100, kCancelMs = 100;
+        constexpr int64_t kCancelMs = 100;
 
         PS2Runtime::RecompiledFunction g_inner = nullptr;
         uint8_t *g_ram = nullptr;
 
         // Tuning (F2, temporary while K dials it in): frames of motion 30, speed, strength.
-        std::atomic<float> g_from{0.0f}, g_to{15.0f}, g_speed{1.0f}, g_strength{1.0f};
+        std::atomic<float> g_from{0.0f}, g_to{15.0f}, g_speed{1.0f}, g_strength{1.0f}, g_easeIn{150.0f}, g_easeOut{150.0f};
 
         std::atomic<bool> g_request{false};
         bool g_active = false;
@@ -71,6 +74,79 @@ namespace kamite::style_pose
                 return 0u;
             const uint32_t motion = pack + rd32(pack + 4u + 4u * kTurnMotion);
             return inRam(motion, 8u) && std::memcmp(g_ram + motion, "mtb3", 4) == 0 ? motion : 0u;
+        }
+
+        // ---- the motion's curves (mtb3: u16 frames, u8 records, u8 loop; 12-byte records: u8 bone, u8 channel (high
+        // nibble 0x00 constant f32 payload / 0x10 Hermite curve at motion + payload; low nibble 0..5 = t xyz, r xyz),
+        // u16 key count, u32 flags, u32 payload; curve: six half floats (value, value step, in tangent, its step, out
+        // tangent, its step), then 4-byte keys (frames since the last, value step, in step, out step)) ----
+        float half(uint16_t v)
+        {
+            const uint32_t sign = (v >> 15) & 1u, expo = (v >> 9) & 0x3Fu, mant = v & 0x1FFu;
+            if (expo == 0u && mant == 0u)
+                return 0.0f;
+            const uint32_t bits = (sign << 31) | ((expo - 47u + 127u) << 23) | (mant << 14);
+            float f = 0.0f;
+            std::memcpy(&f, &bits, 4);
+            return f;
+        }
+        uint16_t rd16(uint32_t a)
+        {
+            uint16_t v = 0;
+            std::memcpy(&v, g_ram + (a & 0x01FFFFFFu), 2);
+            return v;
+        }
+        // The rotation of `bone` at frame t: out[c] set where the motion keys component c (found[c]).
+        void sampleRotation(uint32_t motion, uint32_t bone, float t, float out[3], bool found[3])
+        {
+            found[0] = found[1] = found[2] = false;
+            const uint32_t records = g_ram[motion + 6u];
+            for (uint32_t i = 0; i < records; ++i)
+            {
+                const uint32_t r = motion + 8u + 12u * i;
+                const uint32_t channel = g_ram[r + 1u];
+                if (channel == 0xFFu)
+                    break;
+                const uint32_t component = channel & 0x0Fu;
+                if (g_ram[r] != bone || component < 3u || component > 5u)
+                    continue;
+                const uint32_t keys = rd16(r + 2u), payload = rd32(r + 8u);
+                float value = 0.0f;
+                if ((channel & 0xF0u) == 0x00u)
+                    std::memcpy(&value, &payload, 4);
+                else if ((channel & 0xF0u) == 0x10u && keys > 0u && inRam(motion + payload, 12u + 4u * keys))
+                {
+                    const uint32_t c = motion + payload;
+                    const float p = half(rd16(c)), dp = half(rd16(c + 2u)), m0 = half(rd16(c + 4u)),
+                                dm0 = half(rd16(c + 6u)), m1 = half(rd16(c + 8u)), dm1 = half(rd16(c + 10u));
+                    float f0 = 0.0f, v0 = 0.0f, out0 = 0.0f;
+                    uint32_t frame = 0u;
+                    bool done = false;
+                    for (uint32_t k = 0; k < keys && !done; ++k)
+                    {
+                        const uint8_t *key = g_ram + c + 12u + 4u * k;
+                        frame += key[0];
+                        const float f = static_cast<float>(frame), v = p + dp * key[1], in = m0 + dm0 * key[2],
+                                    o = m1 + dm1 * key[3];
+                        if (k == 0u)
+                            value = v;
+                        if (k > 0u && f > t && f > f0)
+                        {
+                            const float u = (t - f0) / (f - f0), u2 = u * u, u3 = u2 * u;
+                            value = (2 * u3 - 3 * u2 + 1) * v0 + (u3 - 2 * u2 + u) * out0 + (-2 * u3 + 3 * u2) * v +
+                                    (u3 - u2) * in;
+                            done = true;
+                        }
+                        else if (f <= t)
+                            value = v; // at or past this key (the last key holds)
+                        f0 = f, v0 = v, out0 = o;
+                    }
+                }
+                else
+                    continue; // an encoding not known here: leave the component to the game's pose
+                out[component - 3u] = value;
+                found[component - 3u] = true;
+            }
         }
 
         // ---- rotations (as frame_patches.cpp's half-frame poses: Euler R = Rz Ry Rx, radians) ----
@@ -172,7 +248,13 @@ namespace kamite::style_pose
             if (!isFree(obj) && g_cancelMs == 0)
                 g_cancelMs = now; // he does something else: fade out (the swing never holds him)
             float weight = g_strength.load(std::memory_order_relaxed);
-            weight *= std::clamp(std::min(t / kFadeInMs, (lengthMs - t) / kFadeOutMs), 0.0f, 1.0f);
+            {
+                // eased (smoothstep) in and out
+                float k = std::clamp(std::min(t / std::max(1.0f, g_easeIn.load(std::memory_order_relaxed)),
+                                              (lengthMs - t) / std::max(1.0f, g_easeOut.load(std::memory_order_relaxed))),
+                                     0.0f, 1.0f);
+                weight *= k * k * (3.0f - 2.0f * k);
+            }
             if (g_cancelMs)
                 weight *= std::clamp(1.0f - static_cast<float>(now - g_cancelMs) / kCancelMs, 0.0f, 1.0f);
             if (t >= lengthMs || (g_cancelMs && now - g_cancelMs >= kCancelMs))
@@ -180,49 +262,29 @@ namespace kamite::style_pose
             const uint32_t turn = turnMotion(obj), parts = rd32(obj + 0x278u), count = g_ram[obj + 0x2B4u];
             if (!(weight > 0.001f) || !turn || count <= kLastBone || !inRam(parts, 4u * count))
                 return g_inner(rdram, ctx, runtime);
-            // Every part's state and the root outputs are put back after the quick turn's pass, so the real pass
-            // starts from exactly what it would have seen (a bone the real motion doesn't key keeps the game's value).
-            constexpr uint32_t kMaxParts = 64u, kPartBytes = 0x160u;
-            static uint8_t partSave[kMaxParts][kPartBytes], rootSave[0x80];
-            uint32_t part[kMaxParts];
-            if (count > kMaxParts)
-                return g_inner(rdram, ctx, runtime);
-            for (uint32_t i = 0; i < count; ++i)
-                if (!inRam(part[i] = rd32(parts + 4u * i), kPartBytes))
-                    return g_inner(rdram, ctx, runtime);
-
-            float swing[kLastBone + 1][3];
-            const uint32_t motion = rd32(obj + 0x428u);
-            const float clock = rdF(obj + 0x430u);
-            const R5900Context saved = *ctx;
-            EeScheduler &scheduler = runtime->eeScheduler();
-            scheduler.beginHostCall(); // both calls run to their end
-            for (uint32_t i = 0; i < count; ++i)
-                std::memcpy(partSave[i], g_ram + part[i], kPartBytes);
-            std::memcpy(rootSave, g_ram + obj + 0x300u, sizeof(rootSave));
-            std::memcpy(g_ram + obj + 0x428u, &turn, 4);
-            wrF(obj + 0x430u, std::min(from + t / 1000.0f * 30.0f * speed, to));
-            g_inner(rdram, ctx, runtime); // the quick turn's pose at the swing's clock
+            uint32_t part[kLastBone + 1];
             for (uint32_t i = kFirstBone; i <= kLastBone; ++i)
-                std::memcpy(swing[i], g_ram + part[i] + 0x100u, 12);
-            *ctx = saved;
-            for (uint32_t i = 0; i < count; ++i)
-                std::memcpy(g_ram + part[i], partSave[i], kPartBytes);
-            std::memcpy(g_ram + obj + 0x300u, rootSave, sizeof(rootSave));
-            std::memcpy(g_ram + obj + 0x428u, &motion, 4);
-            wrF(obj + 0x430u, clock);
-            g_inner(rdram, ctx, runtime); // the real pose last: root motion, translations and caches are the game's
-            scheduler.endHostCall();
+                if (!inRam(part[i] = rd32(parts + 4u * i), 0x10Cu))
+                    return g_inner(rdram, ctx, runtime);
+            g_inner(rdram, ctx, runtime); // the game's pose, untouched
 
+            const float swingClock = std::min(from + t / 1000.0f * 30.0f * speed, to);
             for (uint32_t i = kFirstBone; i <= kLastBone; ++i)
             {
-                float e[3];
+                float e[3], target[3];
+                bool found[3];
                 std::memcpy(e, g_ram + part[i] + 0x100u, 12);
-                if (!std::isfinite(e[0]) || !std::isfinite(e[1]) || !std::isfinite(e[2]) || !std::isfinite(swing[i][0]))
+                if (!std::isfinite(e[0]) || !std::isfinite(e[1]) || !std::isfinite(e[2]))
                     continue;
+                sampleRotation(turn, i, swingClock, target, found);
+                if (!found[0] && !found[1] && !found[2])
+                    continue;
+                for (int c = 0; c < 3; ++c)
+                    if (!found[c])
+                        target[c] = e[c]; // not keyed by the turn: the game's
                 float ra[3][3], rb[3][3], rc[3][3], ec[3];
                 eulerMatrix(e, ra);
-                eulerMatrix(swing[i], rb);
+                eulerMatrix(target, rb);
                 quatMatrix(quatSlerp(matrixQuat(ra), matrixQuat(rb), weight), rc);
                 if (eulerNear(rc, e, ec))
                     std::memcpy(g_ram + part[i] + 0x100u, ec, 12);
@@ -263,6 +325,11 @@ namespace kamite::style_pose
             g_speed.store(speed);
         if (ui->slider_float("Arm swing strength##swingstrength", &strength, 0.0f, 1.0f, "%.2f"))
             g_strength.store(strength);
+        float easeIn = g_easeIn.load(), easeOut = g_easeOut.load();
+        if (ui->slider_float("Arm swing ease in (ms)##swingin", &easeIn, 0.0f, 400.0f, "%.0f"))
+            g_easeIn.store(easeIn);
+        if (ui->slider_float("Arm swing ease out (ms)##swingout", &easeOut, 0.0f, 400.0f, "%.0f"))
+            g_easeOut.store(easeOut);
         if (ui->button("Play arm swing##swingplay"))
             trigger();
 #else
