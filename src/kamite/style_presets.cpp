@@ -1105,7 +1105,7 @@ namespace kamite::style_presets
             const uint32_t data = dataPointer();
             const bool show = data && static_cast<int32_t>(rd32(subScr + game::SubScr::kKind)) == kTechniquesKind &&
                               g_ram[waza + kWazaState] == 0u;
-            const uint32_t text = part(waza, 0x23), shadow = part(waza, 0x24), name = part(waza, 0x25),
+            const uint32_t text = part(waza, 0x23), shadow = part(waza, 0x24),
                            hintEntry = part(waza, 57), hintShadow = part(waza, 58);
             g_listShown = false;
             if (!show)
@@ -1133,34 +1133,21 @@ namespace kamite::style_presets
             readStore(data, store);
             writeText(data + kRowText, rowText(store, true), kRowShadowText - kRowText);
             writeText(data + kRowShadowText, rowText(store, false), kHintText - kRowShadowText);
-            writeText(data + kListText, listText(store), kRowText - kListText);
             writeText(data + kHintText, hintText(), kHudText - kHintText);
             if (!pointMessage(kRowMessage, data + kRowText) || !pointMessage(kRowShadowMessage, data + kRowShadowText) ||
-                !pointMessage(kListMessage, data + kListText) || !pointMessage(kHintMessage, data + kHintText))
+                !pointMessage(kHintMessage, data + kHintText))
                 return;
             setNoDraw(text, false);
             wr16(text + ent::kMsg, kRowMessage);
             wr16(shadow + ent::kMsg, kRowShadowMessage);
-            // The lines in the move name (a text entry: anything else is left alone, and the lines go unshown).
-            if (validPointer(name, ent::kSize) && g_ram[(name + ent::kKind) & 0x1FFFFFFu] == game::kIdentKindText)
-            {
-                if (g_nameEntry != (name & 0x1FFFFFFu))
-                {
-                    g_nameEntry = name & 0x1FFFFFFu;
-                    g_nameMsg = rd16(name + ent::kMsg);
-                    g_nameColourSet = g_ram[(name + ent::kColourSet) & 0x1FFFFFFu];
-                }
-                wr16(name + ent::kMsg, kListMessage);
-                g_ram[(name + ent::kAlign) & 0x1FFFFFFu] = 0u; // the block centred on its position
-                g_ram[(name + ent::kColourSet) & 0x1FFFFFFu] = g_ram[(text + ent::kColourSet) & 0x1FFFFFFu];
-                setNoDraw(name, false);
-                g_listEntry = g_nameEntry;
-            }
-            for (const uint32_t e : {text, shadow, name})
+            // The "Style S: [up]" .. hints in the move name entry (0x25) went with the letters round the minimap (K,
+            // Nov 11): the entry is left to the game (hidden while browsing). listText and the icon / pad hooks
+            // (km_styles_icon*, gated by g_listEntry) are idle now: strip them when this code is next touched.
+            for (const uint32_t e : {text, shadow})
                 if (validPointer(e, ent::kSize))
                 {
-                    wrFloat(e + ent::kDrawSclX, e == name ? kListScale : kTextScale);
-                    wrFloat(e + ent::kDrawSclY, e == name ? kListScale : kTextScale);
+                    wrFloat(e + ent::kDrawSclX, kTextScale);
+                    wrFloat(e + ent::kDrawSclY, kTextScale);
                 }
             const uint32_t entries = rd32(waza + 0x4u);
             const uint32_t box = validPointer(entries, 0x4000u) ? entries + 57u * ent::kSize : 0u;
