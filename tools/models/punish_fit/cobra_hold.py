@@ -55,11 +55,17 @@ def frames_for(P,A,sz,ref,every=2,thin=5,ramp=(14,18)):
                         allow=[allowed_for(P,si,t,p) for p in PARTS],w=w))
     return out
 MAX_APART=0.10   # the original em07's hands stay 6-10 cm apart; a 1.0 fit's wider spacing (fat em18: up to 22 cm) isn't copied
+# Clipping allowed beyond the original's per part (m) and its weight. K (Nov 11, the strongman): rather Gene's chest
+# in the victim's upper back (the camera faces the front) than his arm through the neck: bend him at the hips.
+SLACK={'R arm':0.01,'L arm':0.01,'torso':0.01}; WEIGHT={'R arm':3.0,'L arm':3.0,'torso':3.0}
+ABSOLUTE=set()   # parts held to SLACK outright, not to the original's own depth + SLACK
+TORSO=np.radians(15.0)   # Gene's torso turn limit (x = bend at the hips, z = lean)
 LIFT_UNIT=0.04   # lift only where needed: this much lift costs one unit
 LIFT=3e-6     # set by job(): 1.20 needs none (no runtime change); the runtime has no lift yet
 def solve(P,A,frames,max_nfev=60,w_neck=1.0):
     hold={h[0]:h[3] for h in P['hold']}
-    used=sorted({f['k0'] for f in frames}|{f['k1'] for f in frames}); free=[k for k in used if not hold[k]]
+    used=sorted({f['k0'] for f in frames}|{f['k1'] for f in frames})
+    free=[k for k in used if not hold[k] and k!=P['offs'][0]]   # the grab's first key stays the 1.0 fit's (no pop at the start)
     pos={k:j for j,k in enumerate(free)}; nf=len(free); th0=A[free][:,COLS].copy()
     sc=np.array([0.02]+[D(6)]*8+[0.02])            # smoothness unit per col
     dev=np.array([0.05]+[D(25)]*8+[0.06])          # how far from the start is worth a unit
@@ -69,7 +75,8 @@ def solve(P,A,frames,max_nfev=60,w_neck=1.0):
     def frame_res(f,th):
         p=gx(f['d'],np.repeat(O_of(f,th)[None],len(f['d']['g0']),0)); c=f['cut']; out=[]
         for j in range(len(PARTS)):
-            q=p[c[j]:c[j+1]]; out.append(np.maximum(f['grid'](q)-(f['allow'][j]+0.01),0)/0.01/np.sqrt(len(q))*3)
+            q=p[c[j]:c[j+1]]; pn=list(PARTS)[j]; base=0.0 if pn in ABSOLUTE and f['w']>=1.0 else f['allow'][j]   # held out outright once the lock is on
+            out.append(np.maximum(f['grid'](q)-(base+SLACK[pn]),0)/0.01/np.sqrt(len(q))*WEIGHT[pn])
         hr=p[c[3]:c[4]].mean(0); hl=p[c[4]:c[5]].mean(0)
         out.append([max(np.linalg.norm(hr-hl)-(min(f['dh'],MAX_APART)+0.02),0)/0.01*f['w']])
         out.append(((hr+hl)/2-f['target'])/0.03*f['w']*w_neck)
@@ -95,7 +102,7 @@ def solve(P,A,frames,max_nfev=60,w_neck=1.0):
     t0=tail(th0.ravel())
     for j in range(nf*NC):
         x=th0.ravel().copy(); x[j]+=0.01; S[row+np.nonzero(tail(x)!=t0)[0],j]=1
-    lo=np.array([-0.15]+[-D(15)]*2+[-D(50)]*6+[0.0]); hi=np.array([0.0]+[D(15)]*2+[D(50)]*6+[LIFT])
+    lo=np.array([-0.15]+[-TORSO]*2+[-D(50)]*6+[0.0]); hi=np.array([0.0]+[TORSO]*2+[D(50)]*6+[LIFT])
     LO=np.tile(lo,nf); HI=np.tile(hi,nf)
     r=least_squares(res,np.clip(th0.ravel(),LO+1e-6,HI-1e-6),bounds=(LO,HI),loss='soft_l1',max_nfev=max_nfev,diff_step=1e-3,jac_sparsity=S,verbose=0)
     X=A.copy()

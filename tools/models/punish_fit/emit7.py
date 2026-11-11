@@ -101,7 +101,8 @@ def main(path):
                 lines.append('fit %s %s%s scale=%.2f size=%.3f   # %s (%s%s), %s: touch %.0f -> %.0f cm, clip +%.1f cm'%(
                     FILE[name],keys,' off' if off else '',s,m['size'],file,t,', hands clasped' if m.get('clasp') else ', headlock held' if m.get('hold') else ', pose from the representative' if not m['rep'] and m.get('pose_from')!='original' else '',
                     v,m['e0']*100,m['e1']*100,clip*100))
-                if not off: lines+=tracks(name,X,m['ks'])
+                if m.get('model_heights'): X=X.copy(); X[:,4]/=s   # the victim's heights in the model's units (newer fits)
+                if not off: lines+=tracks(name,X,m['ks'],lift=np.load(os.path.join(FITS,m['lift'])) if m.get('lift') else None)
                 summary.append((name,g,file,t,s,v,m))
     open(path,'w').write('\n'.join(lines)+'\n')
     return summary

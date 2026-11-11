@@ -20,7 +20,7 @@ for l in lines[i+1:]:
     if l.startswith('gene '):
         p=l.split(); keys=[]
         for it in p[2:]:
-            f,v=it.split(':'); vals=[float(x) for x in v.split(',')]; keys.append((float(f),vals+[0.0]*(13-len(vals))))
+            f,v=it.split(':'); vals=[float(x) for x in v.split(',')]; keys.append((float(f),(vals+[0.0]*13)[:13]))   # the 14th (lift) is a translation: not checked here
         tracks[int(p[1])]=keys
 def at(keys,f):
     if f<=keys[0][0] or len(keys)==1: return np.array(keys[0][1])

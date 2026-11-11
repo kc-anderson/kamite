@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 11, 2026
 
+- Buck Breaker: Cobra Twist on the big suited bruisers (1.20) keeps the headlock at their real size.
 - Buck Breaker: enemies no longer float with stretched legs after the Cobra Twist release.
 - Buck Breaker: fixed Gene's bent left arm when Spanking the big suited bruisers.
 - Buck Breaker: an enemy's own punish plays exactly as in the original game (no re-posing or resizing).
