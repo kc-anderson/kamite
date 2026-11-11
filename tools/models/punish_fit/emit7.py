@@ -12,10 +12,6 @@ GORILLA_GROUPS={2,3,7,8,20,21}
 # Pairings K turned off after seeing them in play (the enemy keeps its own punish for that pick).
 # Cobra on em03 (human Elvis, Nov 9): the clasped arms float above his head at the bottom of each pull.
 OFF_BY_K={('Cobra',3)}
-# Sizes K turned off for every body (the 1.0 fit scaled to the pair instead, up to the runtime's 12% each).
-# Cobra at 1.3 (Nov 11): the fits bob Gene 9-15 cm and swing his arms 10-45 deg within each pull (the 1.0 fits: steady);
-# K on a 1.20 man: the hands drift apart at the top, then Gene sinks through the victim.
-OFF_SIZE_BY_K={('Cobra',1.3)}
 
 def verdict(m):
     clip=max(v[1] for v in m['clip1'].values())
@@ -95,7 +91,7 @@ def main(path):
             for s in (1.0,1.15,1.3):
                 if (name,g,s) not in fits: continue
                 m,npy=fits[(name,g,s)]; X=np.load(npy); v,clip=verdict(m)
-                off=v=='off' or off10 or (name,g) in OFF_BY_K or (name,s) in OFF_SIZE_BY_K  # a size that can't be made to work: own punish from halfway there
+                off=v=='off' or off10 or (name,g) in OFF_BY_K  # a size that can't be made to work: own punish from halfway there
                 if s==1.0: off10=off
                 lines.append('fit %s %s%s scale=%.2f size=%.3f   # %s (%s%s), %s: touch %.0f -> %.0f cm, clip +%.1f cm'%(
                     FILE[name],keys,' off' if off else '',s,m['size'],file,t,', hands clasped' if m.get('clasp') else ', pose from the representative' if not m['rep'] and m.get('pose_from')!='original' else '',

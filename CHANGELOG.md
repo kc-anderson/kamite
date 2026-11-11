@@ -4,7 +4,6 @@ Newest first, one line per change; the code comments say how.
 
 ## November 11, 2026
 
-- Buck Breaker: fixed Gene's hands drifting apart and Gene sinking through larger enemies in the Cobra Twist.
 - Techniques screen: removed the style hints beside the title (the letters round the minimap show the directions).
 - Fixed the style letters round the minimap moving while the minimap's rim blinks.
 - Signal Style Switch: Gene swings his arms back on a switch while he is free (drawn only, cancelled by any action).
