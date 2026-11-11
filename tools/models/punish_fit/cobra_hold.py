@@ -55,6 +55,7 @@ def frames_for(P,A,sz,ref,every=2,thin=5,ramp=(14,18)):
                         allow=[allowed_for(P,si,t,p) for p in PARTS],w=w))
     return out
 MAX_APART=0.10   # the original em07's hands stay 6-10 cm apart; a 1.0 fit's wider spacing (fat em18: up to 22 cm) isn't copied
+LIFT_UNIT=0.04   # lift only where needed: this much lift costs one unit
 LIFT=3e-6     # set by job(): 1.20 needs none (no runtime change); the runtime has no lift yet
 def solve(P,A,frames,max_nfev=60,w_neck=1.0):
     hold={h[0]:h[3] for h in P['hold']}
@@ -82,7 +83,7 @@ def solve(P,A,frames,max_nfev=60,w_neck=1.0):
         out.append((full[seqs[1][0]]-full[seqs[1][-1]])/(sc/4))   # the loop repeats
         out.append((full[seqs[0][-1]]-full[seqs[1][0]])/sc)       # grab -> loop
         out.append((full[seqs[1][-1]]-full[seqs[2][0]])/sc)       # loop -> final pull
-        out.append(((th-th0)/dev).ravel()); out.append(th[:,-1]/0.04)   # lift only where needed
+        out.append(((th-th0)/dev).ravel()); out.append(th[:,-1]/LIFT_UNIT)   # lift only where needed
         return np.concatenate(out)
     def res(x): th=x.reshape(nf,NC); return np.concatenate([frame_res(f,th) for f in frames]+[tail(x)])
     S=lil_matrix((len(res(th0.ravel())),nf*NC),dtype=int); row=0
@@ -108,8 +109,9 @@ def report(X,frames):
         if f['w']>0.5:
             hr=p[c[3]:c[4]].mean(0); hl=p[c[4]:c[5]].mean(0); dc.append(np.linalg.norm(hr-hl)); dn.append(np.linalg.norm((hr+hl)/2-f['target']))
     return ', '.join('%s %.1f/%.1f'%(k,np.mean(v)*100,np.max(v)*100) for k,v in ex.items())+'; hands apart %.0f/%.0f, off the neck spot %.0f/%.0f cm'%(np.mean(dc)*100,np.max(dc)*100,np.mean(dn)*100,np.max(dn)*100)
-def job(t,g,s,lift=0.0):
-    global LIFT
+def job(t,g,s,lift=0.0,lift_unit=0.04):
+    global LIFT, LIFT_UNIT
+    LIFT_UNIT=lift_unit
     import fit_pose
     LIFT=max(lift,3e-6); t0=time.time()
     tch,base=touches_for('Cobra',t); rep=g==REP[t]; path=path_of(g,t if rep else None)

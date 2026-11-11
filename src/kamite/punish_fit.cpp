@@ -114,12 +114,13 @@ namespace kamite::punish_fit
         constexpr uint32_t kNumber = 0x564u, kScaleX = 0x110u, kScaleY = 0x114u, kScaleZ = 0x118u, kCaught = 0x694u;
         constexpr int kRampVblanks = 12; // the size changes ease in (and out) over this many vblanks (K: quick)
         constexpr float kMaxStep = 1.12f; // each of the two changes size by at most this factor (K: 12%, for the stage 1 demon)
-        constexpr int kValues = 13;
+        constexpr int kValues = 14;
         constexpr uint32_t kParts = 0x144u, kPartCount = 0x2B4u, kPartOffset = 0xE0u, kPartParent = 0x148u;
         constexpr uint32_t kMotionPlaying = 0x428u, kMotionFrame = 0x430u;
 
         // A curve: keys (frame, values). Gene: forward (m), side (m), turn (degrees), height (m), torso x, torso z,
-        // left raise, left swing, left elbow, right raise, right swing, right elbow, left forearm twist (degrees);
+        // left raise, left swing, left elbow, right raise, right swing, right elbow, left forearm twist (degrees), lift (m:
+        // his whole body, the hips and both leg IK targets, so the feet leave the ground; K: Cobra Twist on the big bodies);
         // victim: height (m), bend (degrees).
         struct Key
         {
@@ -636,17 +637,19 @@ namespace kamite::punish_fit
             std::vector<uint8_t> m(rdram + motion, rdram + motion + length);
             uint16_t frames;
             std::memcpy(&frames, m.data() + 4, 2);
-            std::vector<float> height(frames), bend(frames);
+            std::vector<float> height(frames), bend(frames), lift(frames);
             // Gene's pose: the torso (bone 1), upper arms (13 left, 7 right), their helpers (12, 6: half), forearms (14, 8).
             constexpr int kPoseBones[7] = {1, 13, 12, 7, 6, 14, 8};
             std::vector<mot::Mat> pose[7];
             std::vector<mot::Mat> twist; // the left forearm about its length: half on bone 15, half on the hand (16)
-            bool anyHeight = false, anyBend = false, anyPose = false, anyTwist = false;
+            bool anyHeight = false, anyBend = false, anyPose = false, anyTwist = false, anyLift = false;
             for (int f = 0; f < frames; ++f)
             {
                 float v[kValues];
                 track.at(static_cast<float>(f), v);
-                height[f] = track.gene ? v[3] : v[0];
+                height[f] = track.gene ? v[3] + v[13] : v[0];
+                lift[f] = track.gene ? v[13] : 0.0f;
+                anyLift = anyLift || lift[f] != 0.0f;
                 bend[f] = track.gene ? 0.0f : v[1] * kDegrees;
                 anyHeight = anyHeight || height[f] != 0.0f;
                 anyBend = anyBend || bend[f] != 0.0f;
@@ -675,6 +678,9 @@ namespace kamite::punish_fit
             }
             if (anyHeight)
                 mot::addCurve(m, 0, 1, height, 1);
+            if (anyLift)
+                for (int bone : {20, 24}) // the leg IK targets (model space) go up with the hips: the legs keep their shape
+                    mot::addCurve(m, bone, 1, lift, 1);
             if (anyBend)
                 mot::addCurve(m, 1, 3, bend, 1);
             if (anyPose)
@@ -858,7 +864,7 @@ namespace kamite::punish_fit
         //       [size=<s>]   (the lines after it, until the next fit, are its; gorilla on a Suplex fit: that body plays
         //       the Gorilla Suplex for a Suplex pick; scale: the enemy size it is for, 1 if not given)
         //   gene <motion> <frame>:<forward>,<side>,<turn>,<height>[,<torso x>,<torso z>,<left raise>,<left swing>,
-        //       <left elbow>,<right raise>,<right swing>,<right elbow>] ...
+        //       <left elbow>,<right raise>,<right swing>,<right elbow>[,<left forearm twist>[,<lift>]]] ...
         //   victim <motion> <frame>:<height>,<bend> ...
         //   body <body hex>[,<body hex>...] <type>   (the enemy labels' body type)
         void load()

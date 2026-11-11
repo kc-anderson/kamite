@@ -26,8 +26,9 @@ def verdict(m):
     else: v='off'
     if v=='fitted' and clip>0.03 and m['group']!=10: v='questionable'
     return v,clip
-def tracks(name,X,ks,twist=0.0):
-    """twist: Gene's left forearm about its length (deg), eased with the left arm's raise (spank_fat2's held pose)."""
+def tracks(name,X,ks,twist=0.0,lift=None):
+    """twist: Gene's left forearm about its length (deg), eased with the left arm's raise (spank_fat2's held pose).
+    lift: per key, Gene's whole body raised (m; cobra_hold on the big bodies), the 14th value."""
     from fk import Motion
     out=[]; o=0; wmax=np.abs(X[:,8]).max()
     for si,stg in enumerate(PUNISH[name]):
@@ -36,9 +37,11 @@ def tracks(name,X,ks,twist=0.0):
         for j,f in enumerate(fs):
             g='%d:%.3f,%.3f,%.2f,%.3f'%(f,K[j,0],K[j,1],np.degrees(K[j,2]),K[j,3])
             pose=np.degrees(K[j,6:14])
-            if np.any(np.abs(pose)>=0.05):
+            lf=lift[o-len(fs)+j] if lift is not None else 0.0
+            if np.any(np.abs(pose)>=0.05) or abs(lf)>=0.0005:
                 g+=','+','.join('%.1f'%a for a in pose)
-                if twist and wmax>0: g+=',%.1f'%(twist*abs(K[j,8])/wmax)
+                if (twist and wmax>0) or abs(lf)>=0.0005: g+=',%.1f'%(twist*abs(K[j,8])/wmax if twist and wmax>0 else 0.0)
+                if abs(lf)>=0.0005: g+=',%.3f'%lf
             items.append(g)
         out.append('gene %d %s'%(stg['g'][0],' '.join(items)))
         vm=stg['v'][0]; L=Motion(vm).frames

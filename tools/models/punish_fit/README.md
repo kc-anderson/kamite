@@ -57,3 +57,10 @@ and arms per key: hands as close as the 1.0 fit's and at its spot on the victim'
 deeper than the original + 1 cm, steady height through the pulls. A whole-body lift (feet off the ground, up to the
 4th argument) is in the solve but not in the runtime yet: 1.20 needs none. emit7 takes size 1.2 and marks it "headlock
 held". mot_check/chk2.py: SIZE=1.20 picks that size's fit.
+
+release_reach.py (K, Nov 11): Cobra's release (victim 1547) on bodies other than the tall ones: the motions key the
+hips at the tall body's height, so shorter legs can't reach the IK targets and the victim hung from stretched legs
+after the release (the fits left 1547 at 0). Sets each Cobra fit's 1547 height every 2nd frame to the least lowering
+that lets both legs reach (model units: the world value / the fit's scale; men ~-16 cm, women ~-18, strongman ~-25,
+the tall em07 0). Re-run after adding Cobra fits. Gene's 14th value (after the twist) = lift: the hips and leg IK
+targets 20 / 24 raised together (punish_fit.cpp rewrite; cobra_hold's col 14; emit7.tracks lift=).
