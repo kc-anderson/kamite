@@ -54,6 +54,7 @@ def frames_for(P,A,sz,ref,every=2,thin=5,ramp=(14,18)):
         out.append(dict(si=si,t=t,k0=k0,k1=k1,a=a,O=O,d=d,cut=cut,grid=Grid(Vm,T64,glo,ghi),target=target,dh=dh,
                         allow=[allowed_for(P,si,t,p) for p in PARTS],w=w))
     return out
+MAX_APART=0.10   # the original em07's hands stay 6-10 cm apart; a 1.0 fit's wider spacing (fat em18: up to 22 cm) isn't copied
 LIFT=3e-6     # set by job(): 1.20 needs none (no runtime change); the runtime has no lift yet
 def solve(P,A,frames,max_nfev=60,w_neck=1.0):
     hold={h[0]:h[3] for h in P['hold']}
@@ -69,7 +70,7 @@ def solve(P,A,frames,max_nfev=60,w_neck=1.0):
         for j in range(len(PARTS)):
             q=p[c[j]:c[j+1]]; out.append(np.maximum(f['grid'](q)-(f['allow'][j]+0.01),0)/0.01/np.sqrt(len(q))*3)
         hr=p[c[3]:c[4]].mean(0); hl=p[c[4]:c[5]].mean(0)
-        out.append([max(np.linalg.norm(hr-hl)-(f['dh']+0.02),0)/0.01*f['w']])
+        out.append([max(np.linalg.norm(hr-hl)-(min(f['dh'],MAX_APART)+0.02),0)/0.01*f['w']])
         out.append(((hr+hl)/2-f['target'])/0.03*f['w']*w_neck)
         return np.concatenate(out)
     offs=P['offs']; seqs=[[offs[si]+j for j in range(len(fs))] for si,fs in enumerate(P['ks'])]

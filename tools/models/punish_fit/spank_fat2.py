@@ -46,7 +46,8 @@ def job(g):
         O=np.zeros((len(sel),fit5.NP)); O[:,8:11]=th[None]*wsel[:,None]
         c_+=np.mean(np.sum((gene_xform(ds,O)-victim_xform(ds,O,1.0))**2,1))/0.0009
         return c_+0.3*np.sum((th/D(30))**2)
-    if g==fit_pose.REP['fat']:
+    if g==fit_pose.REP['fat'] and '--em18-bent' in sys.argv:
+        # (retired Nov 11: K in play at 1.20, "crooked / bent / broken"; em18 now takes the straight rule below)
         # em18: fitted (0976373, K: "almost perfect, just needs to come up a little bit more") + K_EXTRA_RAISE (3a23805).
         # K (Nov 8, in play): the first fit swung the arm forward (-60 deg) so it lay ALONG the back and showed more;
         # it should rotate up and round, ACROSS the back: the swing kept near 0 (negative = forward), raise and elbow free
@@ -79,12 +80,12 @@ def job(g):
     Xb=X.copy(); Xb[:,8:11]=th[None]*W[:,None]
     rep=g==fit_pose.REP['fat']; tag=('rep_Spanking_fat_1.00') if rep else ('g_Spanking_%02d_1.00'%g)
     m=save(tag,P,Xb,1.0,dict(name='Spanking',type='fat',group=g,scale=1.0,rep=rep,pose_from='own (K: the left arm on the back, held)',
-                             ltwist=0.0 if rep else TWIST))
+                             ltwist=TWIST))
     m0=fit7.parts_excess(P,X,1.0)
     return 'Spanking fat g%02d: raise %.0f swing %.0f elbow %.0f deg; L arm deeper than the original %.1f -> %.1f cm max (%.1f -> %.1f mean)'%(
         g,*np.degrees(th),m0['L arm'][1]*100,m['clip1']['L arm'][1]*100,m0['L arm'][0]*100,m['clip1']['L arm'][0]*100)
 if __name__=='__main__':
-    # --all refits em18 too (K tests its pose: left as is by default)
-    groups=[g for g in TYPES['fat'] if '--all' in sys.argv or g!=fit_pose.REP['fat']]
+    # every fat body (K, Nov 11: em18's bent arm looked broken too, so it takes the straight rule); or the groups given
+    groups=[int(a) for a in sys.argv[1:] if a.isdigit()] or list(TYPES['fat'])
     with Pool(2) as p:
         for line in p.imap_unordered(job,groups): print(line,flush=True)
