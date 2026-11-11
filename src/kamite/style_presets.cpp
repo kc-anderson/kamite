@@ -610,7 +610,10 @@ namespace kamite::style_presets
                             if (g_signalOn)
                             {
                                 g_signal.store(to, std::memory_order_relaxed); // Signal Style Switch (onGeneUpdate)
-                                style_sfx::play();
+                                // The switch sound goes with the flash: none while the God Hand is unleashed (K).
+                                const uint32_t gene = rd32(0x7474A0u + 0x5F4u);
+                                if (validPointer(gene, 0x1700u) && (rd32(gene + 0x15F4u) & 0x10u) == 0u)
+                                    style_sfx::play();
                             }
                         }
                     }
