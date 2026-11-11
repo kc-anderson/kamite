@@ -32,14 +32,18 @@ namespace kamite::style_pose
         constexpr uint32_t kMotionPose = 0x158328u;
         constexpr uint32_t kPlayer = 0x7474A0u + 0x5F4u; // GameWork's player
         constexpr uint32_t kTurnMotion = 30u;
-        constexpr uint32_t kFirstBone = 5u, kLastBone = 16u; // clavicles, deltoids, arms, twists, hands (R 5-10, L 11-16)
+        constexpr uint32_t kFirstBone = 1u, kLastBone = 16u; // spine, chest, neck, head (1-4: a share), arms (R 5-10, L 11-16)
+        constexpr uint32_t kFirstArm = 5u;
         constexpr int64_t kCancelMs = 100;
 
         PS2Runtime::RecompiledFunction g_inner = nullptr;
         uint8_t *g_ram = nullptr;
 
-        // Tuning (F2, temporary while K dials it in): frames of motion 30, speed, strength.
-        std::atomic<float> g_from{0.0f}, g_to{15.0f}, g_speed{1.0f}, g_strength{1.0f}, g_easeIn{150.0f}, g_easeOut{150.0f};
+        // K's values (Nov 11): frames 0-14 of motion 30 at its own speed, full strength, eased in 200 ms / out 300 ms.
+        constexpr float kFrom = 0.0f, kTo = 14.0f, kSpeed = 1.0f, kStrength = 1.0f, kEaseInMs = 200.0f, kEaseOutMs = 300.0f;
+        // The spine, chest, neck and head follow the turn by this share (K: "a touch too little motion in the torso and
+        // head"; F2 while he judges it; the turn's spine also twists into the turn, so only a part of it).
+        std::atomic<float> g_torsoShare{0.25f};
 
         std::atomic<bool> g_request{false};
         bool g_active = false;
@@ -241,18 +245,15 @@ namespace kamite::style_pose
 
             // The swing's clock and weight (host time: the swing is drawn only).
             const int64_t now = nowMs();
-            const float from = g_from.load(std::memory_order_relaxed), to = std::max(from + 1.0f, g_to.load(std::memory_order_relaxed));
-            const float speed = std::max(0.1f, g_speed.load(std::memory_order_relaxed));
+            const float from = kFrom, to = kTo, speed = kSpeed;
             const float lengthMs = (to - from) / 30.0f / speed * 1000.0f;
             const float t = static_cast<float>(now - g_startMs);
             if (!isFree(obj) && g_cancelMs == 0)
                 g_cancelMs = now; // he does something else: fade out (the swing never holds him)
-            float weight = g_strength.load(std::memory_order_relaxed);
+            float weight = kStrength;
             {
                 // eased (smoothstep) in and out
-                float k = std::clamp(std::min(t / std::max(1.0f, g_easeIn.load(std::memory_order_relaxed)),
-                                              (lengthMs - t) / std::max(1.0f, g_easeOut.load(std::memory_order_relaxed))),
-                                     0.0f, 1.0f);
+                float k = std::clamp(std::min(t / kEaseInMs, (lengthMs - t) / kEaseOutMs), 0.0f, 1.0f);
                 weight *= k * k * (3.0f - 2.0f * k);
             }
             if (g_cancelMs)
@@ -285,7 +286,10 @@ namespace kamite::style_pose
                 float ra[3][3], rb[3][3], rc[3][3], ec[3];
                 eulerMatrix(e, ra);
                 eulerMatrix(target, rb);
-                quatMatrix(quatSlerp(matrixQuat(ra), matrixQuat(rb), weight), rc);
+                const float share = i < kFirstArm ? g_torsoShare.load(std::memory_order_relaxed) : 1.0f;
+                if (!(share > 0.0f))
+                    continue;
+                quatMatrix(quatSlerp(matrixQuat(ra), matrixQuat(rb), weight * share), rc);
                 if (eulerNear(rc, e, ec))
                     std::memcpy(g_ram + part[i] + 0x100u, ec, 12);
             }
@@ -315,21 +319,10 @@ namespace kamite::style_pose
         const Pcsx2GsUi *ui = static_cast<const Pcsx2GsUi *>(uiPointer);
         if (!ui || !g_inner)
             return;
-        // Temporary (K, Nov 11): the swing's frames of the quick turn (motion 30, 21 frames), speed and strength.
-        float from = g_from.load(), to = g_to.load(), speed = g_speed.load(), strength = g_strength.load();
-        if (ui->slider_float("Arm swing from frame##swingfrom", &from, 0.0f, 19.0f, "%.1f"))
-            g_from.store(from);
-        if (ui->slider_float("Arm swing to frame##swingto", &to, 1.0f, 20.0f, "%.1f"))
-            g_to.store(to);
-        if (ui->slider_float("Arm swing speed##swingspeed", &speed, 0.25f, 2.0f, "%.2f"))
-            g_speed.store(speed);
-        if (ui->slider_float("Arm swing strength##swingstrength", &strength, 0.0f, 1.0f, "%.2f"))
-            g_strength.store(strength);
-        float easeIn = g_easeIn.load(), easeOut = g_easeOut.load();
-        if (ui->slider_float("Arm swing ease in (ms)##swingin", &easeIn, 0.0f, 400.0f, "%.0f"))
-            g_easeIn.store(easeIn);
-        if (ui->slider_float("Arm swing ease out (ms)##swingout", &easeOut, 0.0f, 400.0f, "%.0f"))
-            g_easeOut.store(easeOut);
+        // Temporary (K, Nov 11): how much the spine, chest, neck and head follow the turn.
+        float share = g_torsoShare.load();
+        if (ui->slider_float("Arm swing torso / head share##swingtorso", &share, 0.0f, 1.0f, "%.2f"))
+            g_torsoShare.store(share);
         if (ui->button("Play arm swing##swingplay"))
             trigger();
 #else

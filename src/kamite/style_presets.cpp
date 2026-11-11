@@ -1533,25 +1533,6 @@ namespace kamite::style_presets
                              "a d-pad tap switches style (up, right, down, left) while one is on.");
             if (g_signalOn)
             {
-                // Temporary (K, Nov 11): K tries his own switch sounds from style_sfx\ next to GHR.exe.
-                const std::vector<std::string> files = style_sfx::names();
-                std::vector<const char *> items{"None"};
-                for (const std::string &file : files)
-                    items.push_back(file.c_str());
-                int pick = style_sfx::selected() + 1;
-                if (ui->combo("Switch sound (style_sfx folder)##stylesfx", &pick, items.data(), static_cast<int>(items.size())))
-                {
-                    style_sfx::select(pick - 1);
-                    style_sfx::play();
-                }
-                float gain = style_sfx::gain();
-                if (ui->slider_float("Switch sound volume##stylesfxgain", &gain, 0.0f, 1.0f, "%.2f"))
-                    style_sfx::setGain(gain);
-                if (ui->button("Rescan style_sfx folder##stylesfxscan"))
-                    style_sfx::rescan();
-                ui->same_line();
-                if (ui->button("Play##stylesfxplay"))
-                    style_sfx::play();
                 style_pose::drawTuning(ui);
             }
             ui->separator_text("Equipped now");

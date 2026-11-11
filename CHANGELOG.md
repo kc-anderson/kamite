@@ -5,6 +5,7 @@ Newest first, one line per change; the code comments say how.
 ## November 11, 2026
 
 - Signal Style Switch: Gene swings his arms back on a switch while he is free (drawn only, cancelled by any action).
+- Signal Style Switch: a switch sound (not while the God Hand is unleashed).
 - Moveset Presets: switching style mid-chain gives 2/3 s for the next attack in the chain.
 
 ## November 10, 2026
