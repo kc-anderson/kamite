@@ -667,7 +667,6 @@ namespace kamite::hud
         {
             g_entry = GPR_U32(ctx, 5) & 0x01FFFFFFu;
             g_glyphIndex = 0;
-            style_presets::noteEntry(g_entry); // the Techniques screen's style list draws arrows for its own entry
             roulette_bar::onEntry(rdram, g_curLayout, g_entry);
             if (g_entryOverride)
             {
@@ -707,7 +706,6 @@ namespace kamite::hud
 
         void idEnd(uint8_t *, R5900Context *, PS2Runtime *)
         {
-            style_presets::noteEntry(0u);
             g_entryOverride = false;
             g_idCaller = 0u;
             g_inIdTrans = false;

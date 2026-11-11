@@ -28,8 +28,6 @@ namespace kamite::style_presets
 {
     // Before the game starts, with the EE's RDRAM: the per-vblank work, the screen's list and the F2 tab.
     void install(PS2Runtime &runtime);
-    // hud_layout's cIDBase_trans hooks (EE thread): the entry about to be drawn, 0 after the layout.
-    void noteEntry(uint32_t entry);
     // The in-play style indicator's entries (the HUD's money layout carries them): true for one of them, with its
     // draw position set; hud_layout then anchors it to the left edge like the level meter.
     bool onHudEntry(uint32_t entry);

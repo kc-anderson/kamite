@@ -2369,36 +2369,8 @@ address = "0x00146704"
 hook = "km_hud_region_end"
 flag = "hud2d"
 
-# Style presets: the icon drawer func_002B1300 at the join after its UV cases ($s0 -> the code, UVs at sp+0x14..0x20,
-# $a3 the icon sheet): in the Techniques screen's style list four icon codes are drawn as the style arrows.
-[[patches.hooks]]
-address = "0x002B1584"
-hook = "km_styles_icon"
-flag = "styles"
-
-# ... and before Gp_draw_polyFT4 (swc1 f4,8(s0) at 0x2B16C4; the quad's corners at sp+0x60..0x94): an arrow's quad
-# gets the arrow's shape.
-[[patches.hooks]]
-address = "0x002B16C4"
-hook = "km_styles_icon_quad"
-flag = "styles"
-
-# cMessDrawFont_measureCode right after func_002B12D8 gave an icon's width in $f0 (before lwc1 f1,($s2) at 0x2B0A24;
-# $s1 -> the code): the style list's plus and arrows advance by their own width.
-[[patches.hooks]]
-address = "0x002B0A24"
-hook = "km_styles_icon_width"
-flag = "styles"
-
-# cMessDrawFont_draw's own advance for an icon (lui at,0x4200 / mtc1 f2 just before; hook before lwc1 f1,0x88(s2) at
-# 0x2AFB30; $s2 the font state, +0x64 the code pointer): the same widths while drawing.
-[[patches.hooks]]
-address = "0x002AFB30"
-hook = "km_styles_icon_advance"
-flag = "styles"
-
 # cIDBase_transText after its line spacing is set (lwc1 f12,0x50(s1) at 0x2AB1E0; $s1 the entry, $s0 the font's
-# draw state): the style list's lines further apart.
+# draw state): the style letters' text goes to the minimap's draw list.
 [[patches.hooks]]
 address = "0x002AB1E0"
 hook = "km_styles_text"
