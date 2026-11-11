@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 11, 2026
 
+- Buck Breaker: an enemy's own punish plays exactly as in the original game (no re-posing or resizing).
 - Buck Breaker: Cobra Twist on larger men and women (1.20) keeps the headlock: hands together on the neck, no sinking through them.
 - Techniques screen: removed the style hints beside the title (the letters round the minimap show the directions).
 - Fixed the style letters round the minimap moving while the minimap's rim blinks.

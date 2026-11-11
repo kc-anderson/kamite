@@ -68,6 +68,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <iterator>
 #include <tuple>
 #include <vector>
 
@@ -382,6 +383,28 @@ namespace kamite::punish_fit
             const auto it = g_fits.find(fitKey(punish, body));
             return it == g_fits.end() || it->second.empty() ? nullptr : &it->second;
         }
+
+        // Enemies whose prompt offers a punish Buck Breaker changed (setChanged; the last few enemies seen).
+        struct Changed
+        {
+            uint32_t enemy = 0u;
+            bool changed = false;
+        };
+        Changed g_changed[16];
+        size_t g_changedNext = 0u;
+        bool changedFor(uint32_t enemy)
+        {
+            enemy &= 0x1FFFFFFu;
+            for (const Changed &c : g_changed)
+                if (c.enemy == enemy)
+                    return c.changed;
+            return false;
+        }
+        // The fits for a pair Buck Breaker made; nullptr for one the game already had (it plays as the game made it).
+        const Fits *fitsForPair(const uint8_t *, uint32_t enemy, int punish, uint32_t body)
+        {
+            return changedFor(enemy) ? fitsFor(punish, body) : nullptr;
+        }
         const Fit *fitFor(int punish, uint32_t body) // its flags (off, gorilla)
         {
             const Fits *fits = fitsFor(punish, body);
@@ -499,7 +522,7 @@ namespace kamite::punish_fit
                 sizeKey = g_pair.sizeKey;
                 return g_pair.fit;
             }
-            const Fits *fits = fitsFor(punish, bodyOf(rdram, enemy));
+            const Fits *fits = fitsForPair(rdram, enemy, punish, bodyOf(rdram, enemy));
             if (!fits)
                 return nullptr;
             float scale[3];
@@ -534,7 +557,7 @@ namespace kamite::punish_fit
                 finishResizes(rdram);
                 ownScale(rdram, enemy, g_pair.baseScale);
                 std::memcpy(g_pair.placeScale, g_pair.baseScale, sizeof(g_pair.placeScale));
-                const Fits *fits = fitsFor(call->punish, body);
+                const Fits *fits = fitsForPair(rdram, enemy, call->punish, body);
                 const Anchor an = fits ? anchorFor(*fits, g_pair.baseScale[1]) : Anchor{};
                 g_pair.fit = an.fit;
                 g_pair.sizeKey = sizeKeyOf(an.scale);
@@ -947,6 +970,19 @@ namespace kamite::punish_fit
         }
     }
 
+    void setChanged(uint32_t enemy, bool changed)
+    {
+        enemy &= 0x1FFFFFFu;
+        for (Changed &c : g_changed)
+            if (c.enemy == enemy)
+            {
+                c.changed = changed;
+                return;
+            }
+        g_changed[g_changedNext] = Changed{enemy, changed};
+        g_changedNext = (g_changedNext + 1u) % std::size(g_changed);
+    }
+
     bool doesntFit(const uint8_t *rdram, uint32_t enemy, int punish)
     {
         if (!g_on || punish < 0 || punish >= kPunishCount || !inRam(enemy, 0x700u))
@@ -990,7 +1026,7 @@ namespace kamite::punish_fit
         for (int p = 0; p < kPunishCount; ++p)
             if (phase == kGenePhase[p])
             {
-                const Fits *fits = g_on ? fitsFor(p, body) : nullptr;
+                const Fits *fits = g_on ? fitsForPair(rdram, enemy, p, body) : nullptr;
                 const Anchor an = fits ? anchorFor(*fits, scale[1]) : Anchor{};
                 char what[96];
                 if (!an.any)

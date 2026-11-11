@@ -33,6 +33,10 @@ namespace kamite::punish_fit
     // With [Game] BuckBreaker on: wraps the pair placement, observes motion starts, loads the fits.
     void install(PS2Runtime &runtime, const std::filesystem::path &exeDir);
 
+    // EE thread, from Buck Breaker's punish switch (each time an enemy's punish prompt is set): whether the punish it now
+    // offers is one Buck Breaker changed. Only those pairs are fitted (K, Nov 11: a pairing the game already had plays
+    // exactly as the game made it, no re-pose, no resize); an enemy never seen here counts as unchanged.
+    void setChanged(uint32_t enemy, bool changed);
     // EE thread: this enemy's body is marked "doesn't fit" for the punish (Buck Breaker then keeps its own punish).
     [[nodiscard]] bool doesntFit(const uint8_t *rdram, uint32_t enemy, int punish);
     // EE thread: a Suplex pick plays the Gorilla Suplex on this enemy's body (its Suplex fit says "gorilla").

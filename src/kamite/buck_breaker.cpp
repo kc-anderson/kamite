@@ -296,6 +296,15 @@ namespace kamite::buck_breaker
                     }
                 }
             }
+            // punish_fit fits only a pairing Buck Breaker made (K: the game's own pairings play as the game made them).
+            if (tableOk(rdram))
+            {
+                const uint32_t own = GPR_U32(ctx, 4) < kCases ? ram32(rdram, kCaseTable + 4u * GPR_U32(ctx, 4)) : kSuplexCase;
+                const uint32_t now = index < kCases ? ram32(rdram, kCaseTable + 4u * index) : kSuplexCase;
+                punish_fit::setChanged(GPR_U32(ctx, 17), now != own);
+            }
+            else
+                punish_fit::setChanged(GPR_U32(ctx, 17), false);
             SET_GPR_U32(ctx, 4, index);
             SET_GPR_U32(ctx, 3, index < kCases ? 1u : 0u);
         }
