@@ -1,5 +1,6 @@
 // Style presets, stage 1. See style_presets.h.
 #include "kamite/style_presets.h"
+#include "kamite/style_sfx.h"
 #include "kamite/hud_layout.h"
 
 #include "kamite/buck_breaker.h"
@@ -267,7 +268,8 @@ namespace kamite::style_presets
         // (Thinso, Oct 27: "saving a style takes twice as long on 30fps").
         std::atomic<int> g_lastStyle{-1};
         bool g_signalOn = false;        // [Game] StyleSignal (Signal Style Switch)
-        std::atomic<int> g_signal{0};   // a switch in play to signal: 1..4 = S..Y (onVblank -> signalFrame)
+        std::atomic<int> g_signal{0};   // a switch in play to signal: 1..4 = S..Y (onVblank -> onGeneUpdate)
+        std::atomic<bool> g_switchedInPlay{false}; // a d-pad switch in play (onVblank -> onGeneUpdate: the chain window)
         std::atomic<int64_t> g_lastActionMs{-100000};
         uint32_t g_vblanks = 0u; // frame-hook ticks (the snapshot refresh)
         constexpr int64_t kFlashMs = 667;  // 40 ticks at 60
@@ -602,8 +604,15 @@ namespace kamite::style_presets
                     {
                         g_lastStyle = to - 1;
                         g_lastActionMs = steadyMs();
-                        if (g_signalOn && request >= 11 && request <= 14)
-                            g_signal.store(to, std::memory_order_relaxed); // Signal Style Switch (signalFrame)
+                        if (request >= 11 && request <= 14)
+                        {
+                            g_switchedInPlay.store(true, std::memory_order_relaxed); // the chain window (onGeneUpdate)
+                            if (g_signalOn)
+                            {
+                                g_signal.store(to, std::memory_order_relaxed); // Signal Style Switch (onGeneUpdate)
+                                style_sfx::play();
+                            }
+                        }
                     }
                     if (to == 0)
                         std::snprintf(text, sizeof(text), "Style None (styles off).");
@@ -1290,12 +1299,33 @@ namespace kamite::style_presets
             g_signalHandle = callGuest(rdram, ctx, runtime, kSeCallObj, {kSnd, 0u, kStreamCallId, gene, 0u, 0u, 0u, 0u});
         }
 
+        // The Square chain's window (K, Nov 11: a switch mid-chain gets 2/3 s for the next attack). The chain attack
+        // state func_0010D3A8 sets Gene's +0x5F0 to 10 when each move starts; it counts down (one per 30 FPS frame, also
+        // at 60) while the move's cancel window is open (+0x3AC & 0x10), and at 0 the chain resets (+0x5E0 index and
+        // +0x5E2 set to 0, 0x10DC0C): the next press starts at move 1. A press counts for 3 frames (+0x621..0x625,
+        // 0x108F38). A switch while the chain is on (+0x5E0 > 0, +0x5E2 == 0 the Square chain, +0x5F0 > 0) raises the
+        // count to kChainAfterSwitch; the next move sets it back to 10. (func_0010E5B8, Triangle's attack state, keeps
+        // a copy of this counter but has no chain.)
+        constexpr uint16_t kChainAfterSwitch = 20; // 30 FPS frames
+        void widenChainWindow(uint32_t gene)
+        {
+            uint16_t index = 0, set = 0, count = 0;
+            std::memcpy(&index, g_ram + gene + 0x5E0u, 2);
+            std::memcpy(&set, g_ram + gene + 0x5E2u, 2);
+            std::memcpy(&count, g_ram + gene + 0x5F0u, 2);
+            if (index == 0u || set != 0u || count == 0u || count >= kChainAfterSwitch)
+                return;
+            std::memcpy(g_ram + gene + 0x5F0u, &kChainAfterSwitch, 2);
+        }
+
         // Run inside Gene's own update (cObjBase_SetSeqEffect, called by it every frame, 0x1095F0), where the game plays
         // his sounds and effects: from the frame start (the top of the main loop) the sound call gave no voice.
         void onGeneUpdate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             if (!g_ram || GPR_U32(ctx, 4) != rd32(0x7474A0u + 0x5F4u))
                 return;
+            if (g_switchedInPlay.exchange(false, std::memory_order_relaxed) && validPointer(GPR_U32(ctx, 4), 0x1700u))
+                widenChainWindow(GPR_U32(ctx, 4));
             const int64_t now = steadyMs();
             if (g_patchedRecord && now >= g_restoreAt)
                 restoreRecord();
@@ -1496,6 +1526,28 @@ namespace kamite::style_presets
             ui->text_wrapped("Styles are kept in the save (they go to the memory card with it). On the Techniques screen "
                              "L2 / R2 cycle None, S, E, X, Y; changes save to the style shown; None = styles off. In play "
                              "a d-pad tap switches style (up, right, down, left) while one is on.");
+            if (g_signalOn)
+            {
+                // Temporary (K, Nov 11): K tries his own switch sounds from style_sfx\ next to GHR.exe.
+                const std::vector<std::string> files = style_sfx::names();
+                std::vector<const char *> items{"None"};
+                for (const std::string &file : files)
+                    items.push_back(file.c_str());
+                int pick = style_sfx::selected() + 1;
+                if (ui->combo("Switch sound (style_sfx folder)##stylesfx", &pick, items.data(), static_cast<int>(items.size())))
+                {
+                    style_sfx::select(pick - 1);
+                    style_sfx::play();
+                }
+                float gain = style_sfx::gain();
+                if (ui->slider_float("Switch sound volume##stylesfxgain", &gain, 0.0f, 1.0f, "%.2f"))
+                    style_sfx::setGain(gain);
+                if (ui->button("Rescan style_sfx folder##stylesfxscan"))
+                    style_sfx::rescan();
+                ui->same_line();
+                if (ui->button("Play##stylesfxplay"))
+                    style_sfx::play();
+            }
             ui->separator_text("Equipped now");
             if (!g_snapshot.valid)
                 ui->text_disabled("No save data in memory yet (start or load a game).");
@@ -1638,10 +1690,7 @@ namespace kamite::style_presets
             g_signalOn = true;
         KM_INFO(Game, "style switching: on" << (g_signalOn ? ", signal style switch" : ""));
         ps2x::pnach::addFrameHook(&onVblank);
-        if (g_signalOn)
-        {
-            FunctionHooks::instance().observeEntry(0x14FB48u, "cObjBase_SetSeqEffect (Signal Style Switch)", &onGeneUpdate);
-        }
+        FunctionHooks::instance().observeEntry(0x14FB48u, "cObjBase_SetSeqEffect (styles: chain window, signal)", &onGeneUpdate);
         FunctionHooks::instance().observeEntry(0x2AAA40u, "cIDBase_move (style list)", &onLayoutMove);
         FunctionHooks::instance().observeEntry(0x16DC18u, "cSubScrWaza draw (style list)", &onWazaDraw);
         ps2xRegisterHostHook("km_styles_icon", &onIconDraw);

@@ -2,6 +2,10 @@
 
 Newest first, one line per change; the code comments say how.
 
+## November 11, 2026
+
+- Moveset Presets: switching style mid-chain gives 2/3 s for the next attack in the chain.
+
 ## November 10, 2026
 
 - Moveset Presets: new sub-option Signal Style Switch: Gene calls out each style as you switch to it in play, and his God Hand flashes.

@@ -45,6 +45,7 @@ set(KAMITE_HOST_SOURCES
     kamite/hd_textures.cpp
     kamite/prompt_hd.cpp
     kamite/style_presets.cpp
+    kamite/style_sfx.cpp
     kamite/buck_breaker.cpp
     kamite/punish_fit.cpp
     kamite/texture_slots.cpp
