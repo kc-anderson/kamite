@@ -1,5 +1,6 @@
 // Style presets, stage 1. See style_presets.h.
 #include "kamite/style_presets.h"
+#include "kamite/style_pose.h"
 #include "kamite/style_sfx.h"
 #include "kamite/hud_layout.h"
 
@@ -610,6 +611,7 @@ namespace kamite::style_presets
                             if (g_signalOn)
                             {
                                 g_signal.store(to, std::memory_order_relaxed); // Signal Style Switch (onGeneUpdate)
+                                style_pose::trigger(); // the arm swing (only if Gene is free)
                                 // The switch sound goes with the flash: none while the God Hand is unleashed (K).
                                 const uint32_t gene = rd32(0x7474A0u + 0x5F4u);
                                 if (validPointer(gene, 0x1700u) && (rd32(gene + 0x15F4u) & 0x10u) == 0u)
@@ -1550,6 +1552,7 @@ namespace kamite::style_presets
                 ui->same_line();
                 if (ui->button("Play##stylesfxplay"))
                     style_sfx::play();
+                style_pose::drawTuning(ui);
             }
             ui->separator_text("Equipped now");
             if (!g_snapshot.valid)
@@ -1694,6 +1697,8 @@ namespace kamite::style_presets
         KM_INFO(Game, "style switching: on" << (g_signalOn ? ", signal style switch" : ""));
         ps2x::pnach::addFrameHook(&onVblank);
         FunctionHooks::instance().observeEntry(0x14FB48u, "cObjBase_SetSeqEffect (styles: chain window, signal)", &onGeneUpdate);
+        if (g_signalOn)
+            style_pose::install(runtime);
         FunctionHooks::instance().observeEntry(0x2AAA40u, "cIDBase_move (style list)", &onLayoutMove);
         FunctionHooks::instance().observeEntry(0x16DC18u, "cSubScrWaza draw (style list)", &onWazaDraw);
         ps2xRegisterHostHook("km_styles_icon", &onIconDraw);
