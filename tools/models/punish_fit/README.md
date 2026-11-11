@@ -50,3 +50,10 @@ A new model: compare bones 0-25 (parents and offsets) with the groups; identical
 emit7 also writes core lines (hash of bones 0-25 -> a body): the runtime gives a skeleton in no body line the fits of the
 body with the same body bones, and logs a still-unknown skeleton once ("punish fit: body ... unknown: part:parent:x,y,z").
 +0x2FE is not the model file: every enemy in the casino case reads 0x2a5 (men of two skeletons and women alike).
+
+cobra_hold.py <type> <group> <size> (K, Nov 11): Cobra Twist at a larger enemy size without pair scaling (a vertical
+move: the size difference shows and is kept). Step A with the type's approved 1.0 pose held, then Gene's height, torso
+and arms per key: hands as close as the 1.0 fit's and at its spot on the victim's neck (scaled to the body), clipping no
+deeper than the original + 1 cm, steady height through the pulls. A whole-body lift (feet off the ground, up to the
+4th argument) is in the solve but not in the runtime yet: 1.20 needs none. emit7 takes size 1.2 and marks it "headlock
+held". mot_check/chk2.py: SIZE=1.20 picks that size's fit.

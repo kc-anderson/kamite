@@ -11,8 +11,9 @@ def Ry(a): c,s=np.cos(a),np.sin(a); return np.array([[c,0,s],[0,1,0],[-s,0,c]])
 def Rz(a): c,s=np.cos(a),np.sin(a); return np.array([[c,-s,0],[s,c,0],[0,0,1]])
 R=lambda e: Rz(e[2])@Ry(e[1])@Rx(e[0])
 body=sys.argv[1]; punish=sys.argv[2] if len(sys.argv)>2 else 'Spanking'
+size=os.environ.get('SIZE')   # e.g. SIZE=1.20: that size's fit (default: the body's first)
 lines=open(ROOT+'/resources/punish_fit.txt').read().split('\n')
-i=next(k for k,l in enumerate(lines) if l.startswith('fit %s '%punish) and body in l.split()[2].split(','))
+i=next(k for k,l in enumerate(lines) if l.startswith('fit %s '%punish) and body in l.split()[2].split(',') and (size is None or 'scale=%.2f'%float(size) in l))
 tracks={}
 for l in lines[i+1:]:
     if l.startswith('fit ') : break
