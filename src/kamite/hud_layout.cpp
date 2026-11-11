@@ -162,6 +162,19 @@ namespace kamite::hud
             bool valid() const { return x0 < x1 && y0 < y1; }
         };
         Box g_radarSeen, g_radarBox; // the minimap's extent this frame / last frame (after the nudge, before narrowing)
+        // The minimap's ring, for the letters and the counter: the union of every minimap draw also takes the rim's
+        // pulsing quad (an enemy behind Gene: entry +5 from the ring, 141 x 100 units against the ring's 104 x 104; K's
+        // F6 dump, Nov 11), which threw the letters about. The ring and the disc are exact squares (in these units),
+        // the pulse isn't: the ring = the largest square entry, kept by its entry address while it is drawn (so a
+        // pulse passing a square angle can't take over).
+        struct SquareSeen
+        {
+            uint32_t entry;
+            Box box;
+        };
+        SquareSeen g_squaresSeen[16];
+        int g_squareCount = 0;
+        uint32_t g_ringEntry = 0;
         // Where the minimap's sprites are queued (cIDBase entry +0x8D list when the layout's mode +0x46 is 6, else the
         // mode; +0x8E position): this frame's (nearest position) / last frame's. The style indicator's text goes to the
         // same list, one position nearer (style_presets onTextSetup), so it is drawn over the minimap.
@@ -380,6 +393,19 @@ namespace kamite::hud
                 g_radarSeen.x1 = std::max(g_radarSeen.x1, x1);
                 g_radarSeen.y0 = std::min(g_radarSeen.y0, y0);
                 g_radarSeen.y1 = std::max(g_radarSeen.y1, y1);
+                if (g_inIdTrans && g_entry >= 0x100000u && std::fabs((x1 - x0) - (y1 - y0)) <= 1.0f && x1 - x0 >= 20.0f)
+                {
+                    int i = 0;
+                    while (i < g_squareCount && g_squaresSeen[i].entry != g_entry)
+                        ++i;
+                    if (i == g_squareCount && g_squareCount < 16)
+                        g_squaresSeen[g_squareCount++] = SquareSeen{g_entry, Box{}};
+                    if (i < g_squareCount)
+                    {
+                        Box &b = g_squaresSeen[i].box;
+                        b.x0 = std::min(b.x0, x0), b.x1 = std::max(b.x1, x1), b.y0 = std::min(b.y0, y0), b.y1 = std::max(b.y1, y1);
+                    }
+                }
             }
             const float none = std::nanf("");
             if (n >= 2 && x1 - x0 >= 0.9f * width)
@@ -815,8 +841,29 @@ namespace kamite::hud
         g_radarRightSeen = -1e9f;
         g_radarShown = g_radarSeen.valid();
         if (g_radarShown)
-            g_radarBox = g_radarSeen;
+        {
+            // The ring (see g_squaresSeen): last frame's ring entry if drawn, else the largest square.
+            int ring = -1;
+            for (int i = 0; i < g_squareCount; ++i)
+                if (g_squaresSeen[i].entry == g_ringEntry)
+                    ring = i;
+            if (ring < 0)
+                for (int i = 0; i < g_squareCount; ++i)
+                    if (ring < 0 || g_squaresSeen[i].box.x1 - g_squaresSeen[i].box.x0 >
+                                        g_squaresSeen[ring].box.x1 - g_squaresSeen[ring].box.x0)
+                        ring = i;
+            if (ring >= 0 && g_squaresSeen[ring].box.valid())
+            {
+                g_ringEntry = g_squaresSeen[ring].entry;
+                g_radarBox = g_squaresSeen[ring].box;
+                // The gold counter's right edge: the ring's (before the nudge), not the pulse's.
+                g_radarRight = g_radarBox.x1 - (style_presets::lettersOnRadar() ? kRadarNudgeX : 0.0f);
+            }
+            else
+                g_radarBox = g_radarSeen;
+        }
         g_radarSeen = Box{};
+        g_squareCount = 0;
         if (g_radarListSeen >= 0)
         {
             g_radarList = g_radarListSeen;

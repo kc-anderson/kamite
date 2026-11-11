@@ -10,5 +10,4 @@ namespace kamite::style_pose
     void install(PS2Runtime &runtime); // with Signal Style Switch on
     void trigger();                    // any thread: a switch in play (skipped if Gene isn't free)
 
-    void drawTuning(const void *ui);   // temporary F2 sliders (Pcsx2GsUi *), from style_presets' panel
 }

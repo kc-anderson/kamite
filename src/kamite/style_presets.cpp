@@ -1531,10 +1531,6 @@ namespace kamite::style_presets
             ui->text_wrapped("Styles are kept in the save (they go to the memory card with it). On the Techniques screen "
                              "L2 / R2 cycle None, S, E, X, Y; changes save to the style shown; None = styles off. In play "
                              "a d-pad tap switches style (up, right, down, left) while one is on.");
-            if (g_signalOn)
-            {
-                style_pose::drawTuning(ui);
-            }
             ui->separator_text("Equipped now");
             if (!g_snapshot.valid)
                 ui->text_disabled("No save data in memory yet (start or load a game).");

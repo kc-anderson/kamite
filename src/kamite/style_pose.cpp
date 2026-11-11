@@ -12,10 +12,6 @@
 #include <cmath>
 #include <cstring>
 
-#if __has_include("pcsx2gs_api.h")
-#include "pcsx2gs_api.h"
-#define KAMITE_HAS_GS_MENU 1
-#endif
 
 namespace kamite::style_pose
 {
@@ -42,8 +38,8 @@ namespace kamite::style_pose
         // K's values (Nov 11): frames 0-14 of motion 30 at its own speed, full strength, eased in 200 ms / out 300 ms.
         constexpr float kFrom = 0.0f, kTo = 14.0f, kSpeed = 1.0f, kStrength = 1.0f, kEaseInMs = 200.0f, kEaseOutMs = 300.0f;
         // The spine, chest, neck and head follow the turn by this share (K: "a touch too little motion in the torso and
-        // head"; F2 while he judges it; the turn's spine also twists into the turn, so only a part of it).
-        std::atomic<float> g_torsoShare{0.25f};
+        // head"; he picked 0.45; the turn's spine also twists into the turn, so only a part of it).
+        constexpr float kTorsoShare = 0.45f;
 
         std::atomic<bool> g_request{false};
         bool g_active = false;
@@ -286,9 +282,7 @@ namespace kamite::style_pose
                 float ra[3][3], rb[3][3], rc[3][3], ec[3];
                 eulerMatrix(e, ra);
                 eulerMatrix(target, rb);
-                const float share = i < kFirstArm ? g_torsoShare.load(std::memory_order_relaxed) : 1.0f;
-                if (!(share > 0.0f))
-                    continue;
+                const float share = i < kFirstArm ? kTorsoShare : 1.0f;
                 quatMatrix(quatSlerp(matrixQuat(ra), matrixQuat(rb), weight * share), rc);
                 if (eulerNear(rc, e, ec))
                     std::memcpy(g_ram + part[i] + 0x100u, ec, 12);
@@ -311,22 +305,5 @@ namespace kamite::style_pose
             g_inner = nullptr;
             KM_WARN(Game, "styles: the motion pose (0x158328) is not hookable: no arm swing");
         }
-    }
-
-    void drawTuning(const void *uiPointer)
-    {
-#if defined(KAMITE_HAS_GS_MENU)
-        const Pcsx2GsUi *ui = static_cast<const Pcsx2GsUi *>(uiPointer);
-        if (!ui || !g_inner)
-            return;
-        // Temporary (K, Nov 11): how much the spine, chest, neck and head follow the turn.
-        float share = g_torsoShare.load();
-        if (ui->slider_float("Arm swing torso / head share##swingtorso", &share, 0.0f, 1.0f, "%.2f"))
-            g_torsoShare.store(share);
-        if (ui->button("Play arm swing##swingplay"))
-            trigger();
-#else
-        (void)uiPointer;
-#endif
     }
 }
