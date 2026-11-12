@@ -462,10 +462,14 @@ namespace kamite
         // camera to him, every mesh hit hidden for the frame; the game skips it while STP_CAMTHRU, game::Stp::kCamThru,
         // is set). The oval replaces that: while it is on, the meshes stay (toml patch at 0x308650, flag
         // "keep_walls"), and they dissolve round him instead.
+        // Only while the player's camera runs (K, Nov 12): when the game takes the camera (punishes and other camera
+        // moves) the oval is off (cameraMatrixReady), so the game's own wall hiding comes back until the player's camera
+        // is back (it built within the last 100 ms).
         bool g_keepWallsSet = false, g_keepWalls = false;
         void updateKeepWalls()
         {
-            const bool want = g_seeThrough.load(std::memory_order_relaxed);
+            const bool want = g_seeThrough.load(std::memory_order_relaxed) &&
+                              steadyMs() - g_playerCameraMs.load(std::memory_order_relaxed) <= 100;
             if (g_keepWallsSet && want == g_keepWalls)
                 return;
             g_keepWallsSet = true;
