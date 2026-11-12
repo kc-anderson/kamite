@@ -455,6 +455,11 @@ flag = "sway_bar"
 address = "0x0013CFA0"
 hook = "km_sway_bar_boss"
 flag = "sway_bar"
+# The last boss's bar (cCockLastBossBar, func_0013EBA0 after its cIDBase_trans; its early returns to 0x13EC38 too).
+[[patches.hooks]]
+address = "0x0013EC38"
+hook = "km_sway_bar_last_boss"
+flag = "sway_bar"
 # The mid-boss bars (cCockMiddleBoss, func_00140638's loop: after each boss's cIDBase_trans).
 [[patches.hooks]]
 address = "0x001406CC"

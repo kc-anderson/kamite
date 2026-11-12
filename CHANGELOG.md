@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 12, 2026
 
+- Sway Bar: the last boss shows the stun gauge beside his vertical health bar, filling from the bottom up.
 - Buck Breaker: Spanking on bigger women keeps Gene's holding arm out of her waist (now also for their own punish).
 - Buck Breaker: Spanking on women tips their seat up; bigger women lie lower so the slaps land on the seat, Gene's hand on their hip.
 - Sway Bar: bosses that can be stunned show the stun gauge under their health bar, in the boss bar's own style; mid-bosses (e.g. Dr. Ion) show it over their heads instead.

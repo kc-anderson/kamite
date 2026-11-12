@@ -98,7 +98,8 @@
 // (capped), and +0x17CC / 150 while stunned. While stunned the lag entry (magenta) is drawn full width behind the
 // draining fill; after the stun it shrinks to the left (0.08 of the width a call, like the game's own lag, per draw)
 // and the background shows again (K, Nov 5). Display only.
-// Bosses (K, Nov 12): the same gauge under the boss health bar on the HUD (bossSwayBar; cCockBossBar only so far).
+// Bosses (K, Nov 12): the same gauge under the boss health bar on the HUD (bossSwayBar: cCockBossBar), beside the last
+// boss's vertical bar (lastBossSwayBar), over mid-bosses' heads (middleSwayBar).
 //
 // RouletteTargetCycle (launcher: Gameplay, "Target Select"): while the roulette wheel runs (Gene mode 0
 // phase 0x2B step 1, func_00114608), a right-stick flick left / right moves Gene's target (+0x640) to the next enemy
@@ -997,7 +998,7 @@ namespace kamite
         std::unordered_set<uint32_t> g_bossLogged, g_bossDrawn;
 
         void bossGauge(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t bar, uint32_t boss, uint32_t fillEnt,
-                       uint32_t lagEnt, const char *what);
+                       uint32_t lagEnt, const char *what, uint32_t hideA = 0u, uint32_t hideB = 0u, bool vertical = false);
 
         void bossSwayBar(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
@@ -1010,6 +1011,26 @@ namespace kamite
                 (inGuest(save) && (ram32(rdram, save + 0xBB8u) >> 16 & 1u) != 0u) || rdram[bar + 0x19u] != 0u)
                 return;
             bossGauge(rdram, ctx, runtime, bar, boss, ram32(rdram, bar + 0xBCu), ram32(rdram, bar + 0xC0u), "the boss bar");
+        }
+
+        // The last boss's bar (cCockLastBossBar, K Nov 12): a vertical bar on the left with two lives stacked in one place
+        // (func_0013E970: +0xC8 the first life's fill = min(2 x HP ratio, 1), +0xC0 the second's = the rest over 1,
+        // +0xCC / +0xC4 their damage lags; all scaled in y, the fills growing from the bottom). The gauge: a half-width
+        // copy to the right of it, filling from the bottom up (the first life's fill and lag; the second's hidden). Hook
+        // after its trans (func_0013EBA0's cIDBase_trans at 0x13EC30; its early returns to 0x13EC38 land here too: the
+        // tests are repeated).
+        void lastBossSwayBar(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const uint32_t bar = GPR_U32(ctx, 16), boss = inGuest(bar) ? ram32(rdram, bar + 0x9Cu) : 0u;
+            if (!inGuest(bar) || !inGuest(boss) || ram32(rdram, bar + 0x94u) == 0u)
+                return;
+            const uint32_t sys = 0x747A24u, save = ram32(rdram, 0x569B70u);
+            if ((ram32(rdram, sys) & 8u) != 0u || static_cast<int32_t>(ram32(rdram, sys + 8u)) < 0 ||
+                static_cast<int16_t>(ram32(rdram, boss + 0x548u) & 0xFFFFu) == 0 || (ram32(rdram, bar + 0xA0u) & 0x20000000u) == 0u ||
+                (inGuest(save) && (ram32(rdram, save + 0xBB8u) >> 16 & 1u) != 0u) || (ram32(rdram, sys + 0x60u) & 0x80000u) != 0u)
+                return;
+            bossGauge(rdram, ctx, runtime, bar, boss, ram32(rdram, bar + 0xC8u), ram32(rdram, bar + 0xCCu), "the last boss bar",
+                      ram32(rdram, bar + 0xC0u), ram32(rdram, bar + 0xC4u), true);
         }
 
         // cCockMiddleBoss (Dr. Ion and the other mid-bosses; K, Nov 12): up to +0x358 bosses (+0x250 + 4i), each with its
@@ -1064,7 +1085,7 @@ namespace kamite
         }
 
         void bossGauge(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t bar, uint32_t boss, uint32_t fillEnt,
-                       uint32_t lagEnt, const char *what)
+                       uint32_t lagEnt, const char *what, uint32_t hideA, uint32_t hideB, bool vertical)
         {
             const int32_t build = static_cast<int32_t>(ram32(rdram, boss + 0x5B4u));
             float stun = ramF(rdram, boss + 0x17CCu) / kStunTime;
@@ -1108,14 +1129,14 @@ namespace kamite
             struct Saved
             {
                 uint32_t flags, colour;
-                float y, sclX, sclY;
+                float x, y, sclX, sclY;
             };
             std::vector<Saved> saved(count);
             for (uint32_t i = 0; i < count; ++i)
             {
                 const uint32_t e = ent + i * 0xACu;
-                saved[i] = {ram32(rdram, e + 0x2Cu), ram32(rdram, e + 0x64u), ramF(rdram, e + 0x54u), ramF(rdram, e + 0x58u),
-                            ramF(rdram, e + 0x5Cu)};
+                saved[i] = {ram32(rdram, e + 0x2Cu), ram32(rdram, e + 0x64u), ramF(rdram, e + 0x50u), ramF(rdram, e + 0x54u),
+                            ramF(rdram, e + 0x58u), ramF(rdram, e + 0x5Cu)};
             }
             const auto savedOf = [&](uint32_t e) -> const Saved & { return saved[(e - ent) / 0xACu]; };
             if (fillEnt < ent || lagEnt < ent || (fillEnt - ent) / 0xACu >= count || (lagEnt - ent) / 0xACu >= count)
@@ -1128,6 +1149,50 @@ namespace kamite
             // at half height, moved under the bar; the fill = the stun in the palette's B3 swatch, the lag
             // during / after the stun.
             const uint32_t root = ram32(rdram, fillEnt + 0x20u);
+            if (vertical)
+            {
+                // The last boss (vertical): the same copy at half width to the right of the bar, filling from the bottom
+                // up (kind 3: drawX / drawY = the bottom-left corner; the fills scale in y from base +0x44). Pieces
+                // reaching well past the fill's span (the skull ornaments) stay out of the copy.
+                const float fillW = ramF(rdram, fillEnt + 0x68u) * fs.sclX;
+                const float fyBase = ramF(rdram, fillEnt + 0x44u), lyBase = ramF(rdram, lagEnt + 0x44u);
+                const float fullH = ramF(rdram, fillEnt + 0x6Cu) * (fyBase > 0.001f ? fs.sclY / fyBase : fs.sclY);
+                const float x0 = fs.x + 0.5f * fillW, bottom = fs.y, top = fs.y - fullH;
+                const auto inSpan = [&](uint32_t e, const Saved &k) {
+                    const float h = ramF(rdram, e + 0x6Cu) * k.sclY;
+                    return k.y - h >= top - fillW - 0.5f && k.y <= bottom + fillW + 0.5f; // (kind 3 bottom; others centred:
+                    // either way within a bar's width of the fill's span)
+                };
+                float widest = fillW;
+                for (uint32_t i = 0; i < count; ++i)
+                {
+                    const uint32_t e = ent + i * 0xACu;
+                    if (ram32(rdram, e + 0x20u) == root && e != root && (saved[i].flags & kEntNoDraw) == 0u && inSpan(e, saved[i]))
+                        widest = std::max(widest, ramF(rdram, e + 0x68u) * saved[i].sclX);
+                }
+                const float shift = 0.75f * widest + 2.0f; // its centre: half the bar + 2 + half the copy right of the bar's
+                for (uint32_t i = 0; i < count; ++i)
+                {
+                    const uint32_t e = ent + i * 0xACu;
+                    const Saved &k = saved[i];
+                    if (ram32(rdram, e + 0x20u) != root || e == root || e == hideA || e == hideB || (k.flags & kEntNoDraw) != 0u ||
+                        !inSpan(e, k))
+                    {
+                        put32(rdram, e + 0x2Cu, k.flags | kEntNoDraw);
+                        continue;
+                    }
+                    putF(rdram, e + 0x50u, x0 + shift + (k.x - x0) * 0.5f);
+                    putF(rdram, e + 0x58u, k.sclX * 0.5f);
+                    if (e == fillEnt)
+                        putF(rdram, e + 0x5Cu, (fyBase > 0.001f ? k.sclY / fyBase : 1.0f) * stun);
+                    else if (e == lagEnt)
+                    {
+                        putF(rdram, e + 0x5Cu, (lyBase > 0.001f ? k.sclY / lyBase : 1.0f) * lag);
+                        if (lag <= 0.0f)
+                            put32(rdram, e + 0x2Cu, k.flags | kEntNoDraw);
+                    }
+                }
+            }
             const float fillBase = ramF(rdram, fillEnt + 0x40u), lagBase = ramF(rdram, lagEnt + 0x40u);
             const float fillH = ramF(rdram, fillEnt + 0x6Cu) * fs.sclY;
             const float y0 = fs.y - 0.5f * fillH; // the bar's centre line (the fill's kind 3: drawY = its bottom edge)
@@ -1139,7 +1204,7 @@ namespace kamite
                     tallest = std::max(tallest, ramF(rdram, e + 0x6Cu) * saved[i].sclY);
             }
             const float drop = 0.75f * tallest + 2.0f; // its centre: half the bar + 2 + half the copy below the bar's centre
-            for (uint32_t i = 0; i < count; ++i)
+            for (uint32_t i = 0; !vertical && i < count; ++i)
             {
                 const uint32_t e = ent + i * 0xACu;
                 const Saved &k = saved[i];
@@ -1179,6 +1244,7 @@ namespace kamite
                 const Saved &k = saved[i];
                 put32(rdram, e + 0x2Cu, k.flags);
                 put32(rdram, e + 0x64u, k.colour);
+                putF(rdram, e + 0x50u, k.x);
                 putF(rdram, e + 0x54u, k.y);
                 putF(rdram, e + 0x58u, k.sclX);
                 putF(rdram, e + 0x5Cu, k.sclY);
@@ -1488,6 +1554,7 @@ namespace kamite
         ps2xRegisterHostHook("km_sway_bar_s3", &swayBar<19, 2>);
         ps2xRegisterHostHook("km_sway_bar_s2", &swayBar<18, 3>);
         ps2xRegisterHostHook("km_sway_bar_boss", &bossSwayBar);
+        ps2xRegisterHostHook("km_sway_bar_last_boss", &lastBossSwayBar);
         ps2xRegisterHostHook("km_sway_bar_middle", &middleSwayBar);
         ps2xRegisterHostHook("km_sway_bar_mid_draw", &midBossDraw);
         ps2xSetPatchFlag("sway_bar", envOn("KAMITE_SWAY_BAR"));
