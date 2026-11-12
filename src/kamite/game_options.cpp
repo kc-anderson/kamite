@@ -98,6 +98,7 @@
 // (capped), and +0x17CC / 150 while stunned. While stunned the lag entry (magenta) is drawn full width behind the
 // draining fill; after the stun it shrinks to the left (0.08 of the width a call, like the game's own lag, per draw)
 // and the background shows again (K, Nov 5). Display only.
+// Bosses (K, Nov 12): the same gauge under the boss health bar on the HUD (bossSwayBar; cCockBossBar only so far).
 //
 // RouletteTargetCycle (launcher: Gameplay, "Target Select"): while the roulette wheel runs (Gene mode 0
 // phase 0x2B step 1, func_00114608), a right-stick flick left / right moves Gene's target (+0x640) to the next enemy
@@ -144,6 +145,7 @@
 #include <cmath>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <atomic>
 #include <cstdlib>
 #include <cstdio>
@@ -946,6 +948,113 @@ namespace kamite
             }
         }
 
+        // Bosses (K, Nov 12): the same gauge under the boss health bar on the HUD (cCockBossBar: a cIDBase whose +0x9C is
+        // the boss, +0xBC the health fill, +0xC0 the damage lag; drawn by IdDrawObj_transIfShown 0x13CF20). Shown once the
+        // boss has built any stun (bosses that can't be stunned never show it). After the game's trans (hook at 0x13CFA0,
+        // also reached by its early returns: its tests are repeated here) two more passes over the layout: the lag
+        // entry in translucent black (the gauge's background), then the lag (magenta, during / after a stun) and the fill
+        // (yellow, the stun), each half height and moved under the bar by its height and 2 units.
+        constexpr uint32_t kSwayBack = 0x50000000u;  // black, alpha 0x50
+        std::unordered_map<uint32_t, uint32_t> g_bossSeen; // bar -> the boss it has seen stun on
+        std::unordered_set<uint32_t> g_bossLogged;
+
+        void bossSwayBar(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const uint32_t bar = GPR_U32(ctx, 16), boss = inGuest(bar) ? ram32(rdram, bar + 0x9Cu) : 0u;
+            if (!inGuest(bar) || !inGuest(boss) || ram32(rdram, bar + 0x94u) == 0u)
+                return;
+            const uint32_t sys = 0x747A24u, save = ram32(rdram, 0x569B70u);
+            if ((ram32(rdram, sys) & 8u) != 0u || static_cast<int32_t>(ram32(rdram, sys + 8u)) < 0 ||
+                static_cast<int16_t>(ram32(rdram, boss + 0x548u) & 0xFFFFu) == 0 || (ram32(rdram, bar + 0xA0u) & 0x20000000u) == 0u ||
+                (inGuest(save) && (ram32(rdram, save + 0xBB8u) >> 16 & 1u) != 0u) || rdram[bar + 0x19u] != 0u)
+                return;
+            const int32_t build = static_cast<int32_t>(ram32(rdram, boss + 0x5B4u));
+            float stun = ramF(rdram, boss + 0x17CCu) / kStunTime;
+            if (build > 0 || stun > 0.0f)
+                g_bossSeen[bar] = boss;
+            const auto seen = g_bossSeen.find(bar);
+            if (seen == g_bossSeen.end() || seen->second != boss)
+                return;
+            const uint32_t fillEnt = ram32(rdram, bar + 0xBCu), lagEnt = ram32(rdram, bar + 0xC0u);
+            const uint32_t ent = ram32(rdram, bar + 0x4u), count = ram32(rdram, bar + 0xCu);
+            if (!inGuest(fillEnt) || !inGuest(lagEnt) || !inGuest(ent) || count == 0u || count > 64u)
+                return;
+            float &lag = g_swayLag[boss];
+            if (stun > 0.0f)
+                lag = 1.0f;
+            else
+            {
+                stun = static_cast<float>(build) / kStunFull;
+                lag = std::max(0.0f, lag - kSwayLagStep);
+            }
+            stun = std::clamp(stun, 0.0f, 1.0f);
+            if (g_bossLogged.insert(boss).second) // temporary: the boss bar's geometry for the first look (K, Nov 12)
+                for (const uint32_t e : {fillEnt, lagEnt})
+                    KM_INFO(Game, "sway bar: boss " << std::hex << ram32(rdram, boss + 0x564u) << " entry " << e << " flags "
+                                                    << ram32(rdram, e + 0x2Cu) << " colour " << ram32(rdram, e + 0x64u) << std::dec
+                                                    << " id " << int(static_cast<int8_t>(rdram[e + 0x2Au])) << " kind "
+                                                    << int(rdram[e + 0x89u]) << " draw " << ramF(rdram, e + 0x50u) << ","
+                                                    << ramF(rdram, e + 0x54u) << " scl " << ramF(rdram, e + 0x58u) << ","
+                                                    << ramF(rdram, e + 0x5Cu) << " size " << ramF(rdram, e + 0x68u) << "x"
+                                                    << ramF(rdram, e + 0x6Cu) << " uv " << ramF(rdram, e + 0x70u) << ","
+                                                    << ramF(rdram, e + 0x74u) << "-" << ramF(rdram, e + 0x78u) << ","
+                                                    << ramF(rdram, e + 0x7Cu) << " base " << ramF(rdram, e + 0x40u));
+            struct Saved
+            {
+                uint32_t flags, colour;
+                float y, sclX, sclY;
+            };
+            std::vector<Saved> saved(count);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                const uint32_t e = ent + i * 0xACu;
+                saved[i] = {ram32(rdram, e + 0x2Cu), ram32(rdram, e + 0x64u), ramF(rdram, e + 0x54u), ramF(rdram, e + 0x58u),
+                            ramF(rdram, e + 0x5Cu)};
+            }
+            const auto savedOf = [&](uint32_t e) -> const Saved & { return saved[(e - ent) / 0xACu]; };
+            if (fillEnt < ent || lagEnt < ent || (fillEnt - ent) / 0xACu >= count || (lagEnt - ent) / 0xACu >= count)
+                return;
+            const Saved &fs = savedOf(fillEnt);
+            if ((fs.flags & kEntActive) == 0u)
+                return;
+            const float fillBase = ramF(rdram, fillEnt + 0x40u);
+            const float parents = fillBase > 0.001f ? fs.sclX / fillBase : 1.0f;
+            const float drop = ramF(rdram, fillEnt + 0x6Cu) * fs.sclY + 2.0f; // the bar's height + 2 units
+            const auto place = [&](uint32_t e, float width, uint32_t colour) {
+                const Saved &k = savedOf(e);
+                put32(rdram, e + 0x2Cu, k.flags & ~kEntNoDraw);
+                putF(rdram, e + 0x54u, k.y + drop);
+                putF(rdram, e + 0x5Cu, k.sclY * 0.5f);
+                putF(rdram, e + 0x58u, parents * width);
+                put32(rdram, e + 0x64u, colour);
+            };
+            const auto pass = [&](bool background) {
+                for (uint32_t i = 0; i < count; ++i)
+                    put32(rdram, ent + i * 0xACu + 0x2Cu, saved[i].flags | kEntNoDraw);
+                if (background)
+                    place(lagEnt, 1.0f, kSwayBack);
+                else
+                {
+                    if (lag > 0.0f)
+                        place(lagEnt, lag, savedOf(lagEnt).colour);
+                    place(fillEnt, stun, (fs.colour & 0xFF000000u) | kSwayYellow);
+                }
+                callGuest(rdram, ctx, runtime, kIdBaseTrans, {bar});
+            };
+            pass(true);
+            pass(false);
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                const uint32_t e = ent + i * 0xACu;
+                const Saved &k = saved[i];
+                put32(rdram, e + 0x2Cu, k.flags);
+                put32(rdram, e + 0x64u, k.colour);
+                putF(rdram, e + 0x54u, k.y);
+                putF(rdram, e + 0x58u, k.sclX);
+                putF(rdram, e + 0x5Cu, k.sclY);
+            }
+        }
+
         // ---- Cycle Roulette Target: the wheel's greying for a new target (see the top of the file) ----------------
         constexpr uint32_t kListBuilder = 0x125048u;     // func_00125048(gene): the roulette's move list
         constexpr uint32_t kSetCommandList = 0x1F7900u;  // cActionButton_setCommandList(mgr, 0xD, matrix, list, count)
@@ -1248,6 +1357,7 @@ namespace kamite
         ps2xSetPatchFlag("ball_buster_women", envOn("KAMITE_BALL_BUSTER_WOMEN"));
         ps2xRegisterHostHook("km_sway_bar_s3", &swayBar<19, 2>);
         ps2xRegisterHostHook("km_sway_bar_s2", &swayBar<18, 3>);
+        ps2xRegisterHostHook("km_sway_bar_boss", &bossSwayBar);
         ps2xSetPatchFlag("sway_bar", envOn("KAMITE_SWAY_BAR"));
         ps2xSetPatchFlag("roulette_cycle", envOn("KAMITE_ROULETTE_CYCLE"));
         if (!runtime.hasFunction(kSetCommandList) || !(g_setCommandList = runtime.lookupFunction(kSetCommandList)) ||
