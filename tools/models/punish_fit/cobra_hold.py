@@ -22,7 +22,7 @@ NC=len(COLS)
 def gx(d,O):
     G=gene_xform(d,O[:,:NP]); G[:,1]+=O[:,14]; return G
 def neckspot(P,f,O,sz):
-    vd=P['vd']; V=victim_full(P,f,O,sz); N=V[vd==3].mean(0)
+    vd=P['vd']; V=victim_full(P,f,O,sz); N=V[vd==(3 if (vd==3).any() else 4)].mean(0)   # em09 has no neck-dominant vertices: the head's
     k=f['vW1'][:,0]/np.linalg.norm(f['vW1'][:,0]); th=O[5]
     K=np.array([[0,-k[2],k[1]],[k[2],0,-k[0]],[-k[1],k[0],0]]); R=np.eye(3)+np.sin(th)*K+(1-np.cos(th))*(K@K)
     return V,N,R@f['vW1']
@@ -124,7 +124,8 @@ def job(t,g,s,lift=0.0,lift_unit=0.04):
     tch,base=touches_for('Cobra',t); rep=g==REP[t]; path=path_of(g,t if rep else None)
     P1=prepare('Cobra',tch,base,path,1.0)
     r1=OUT+'/%s_1.00'%('rep_Cobra_%s'%t if rep else 'g_Cobra_%02d'%g)
-    X1=np.load(r1+'.npy'); sz1=json.load(open(r1+'.json'))['size']
+    if os.path.exists(r1+'.npy'): X1=np.load(r1+'.npy'); sz1=json.load(open(r1+'.json'))['size']
+    else: X1=np.zeros((P1['n'],NP)); sz1=1.0   # Cobra's own body (the tall em07): the game's pairing is its 1.0 pose
     ref=reference(P1,X1,sz1)
     P=prepare('Cobra',tch,base,path,s); P['flat_allow']=None; P['fixpose']=X1[:,6:]
     A,sz=fit7.step_a(P); A[:,6:]=P['fixpose']; A=np.concatenate([A,np.zeros((len(A),1))],1)

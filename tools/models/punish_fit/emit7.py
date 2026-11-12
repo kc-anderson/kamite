@@ -26,6 +26,8 @@ def verdict(m):
     else: v='off'
     if v=='fitted' and clip>0.03 and m['group']!=10: v='questionable'
     return v,clip
+def own_line(name,keys,file,t,s):
+    return 'fit %s %s scale=%.2f size=1.000   # %s (%s): the game\'s placement at %.2f, Gene\'s left arm straight across the back (spank130.py)'%(FILE[name],keys,s,file,t,s)
 def tracks(name,X,ks,twist=0.0,lift=None):
     """twist: Gene's left forearm about its length (deg), eased with the left arm's raise (spank_fat2's held pose).
     lift: per key, Gene's whole body raised (m; cobra_hold on the big bodies), the 14th value."""
@@ -95,7 +97,11 @@ def main(path):
             off10=False
             for s in (1.0,1.15,1.2,1.3):
                 if (name,g,s) not in fits: continue
-                m,npy=fits[(name,g,s)]; X=np.load(npy); v,clip=verdict(m)
+                m,npy=fits[(name,g,s)]; X=np.load(npy)
+                if m.get('own_placement'):   # spank130.py (K, Nov 12): the fat men's way at 1.30
+                    lines.append(own_line(name,keys,file,t,s)); lines+=tracks(name,X,m['ks'],m.get('ltwist',0.0))
+                    summary.append((name,g,file,t,s,'own placement',m)); continue
+                v,clip=verdict(m)
                 off=v=='off' or off10 or (name,g) in OFF_BY_K  # a size that can't be made to work: own punish from halfway there
                 # K (Nov 12, Dr. Ion at 1.29): a Cobra 1.30 fit lets the headlock slip; with a held 1.20 fit, bodies near 1.30
                 # play that one, the pair scaled (a 1.30 enemy may shrink to 1.20 at most, K Nov 11)
