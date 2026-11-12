@@ -680,11 +680,12 @@ namespace kamite::style_presets
         // The style row "Style: None / S / E / X / Y" under the big TECHNIQUES title (the space above the slots'
         // TECHNIQUES bar), the one on gold, filled beige, empty dim, with its shadow: the "Already Set" text and shadow
         // (parts[0x23] / [0x24], shown by the game only while the move picker is open, to say the highlighted move is in
-        // another slot) carry it while the slots are browsed. The group's move name (parts[0x25]) is left to the game (hidden
-        // while browsing): it carried the "Style S: [up]" .. hints until the letters round the minimap replaced them (K,
-        // Nov 11): **a free text slot** (message 0x3043, string room 0x1050..0x1150), and the icon-drawer hooks that drew
-        // the hints' arrows are gone. The rest of the group ([0x26] the "down+" art, [0x27] the slot's button, the name
-        // box: record #57, no id) is hidden. The texts are placeholder messages (unused "<7d>": 0x30C4 the row, 0x30FE its
+        // another slot) carry it while the slots are browsed. The group's move name (parts[0x25]) carried the "Style S: [up]"
+        // .. hints until the letters round the minimap replaced them (K, Nov 11): **a free text slot** (message 0x3043,
+        // string room 0x1050..0x1150), and the icon-drawer hooks that drew the hints' arrows are gone. The rest of the
+        // group ([0x25] the move name, [0x26] the "down+" art, [0x27] the slot's button, the name box: record #57, no id)
+        // is hidden while browsing: the game leaves its move name up after the picker (K, Nov 12: a half-typed
+        // description stuck under "Attack Str"). The texts are placeholder messages (unused "<7d>": 0x30C4 the row, 0x30FE its
         // shadow (no colour codes, which would colour the shadow too)) pointed at strings of ours. The bottom bar's spare line
         // (ids 57/58: "Release" on the chain's last rows, otherwise blank 0x30D0) says "[L2] [R2] Cycle Style" (0x30FF).
         // Entry fields: +0x2C flags (0x08000000 = not drawn), +0x50/+0x54 draw position, +0x90 message id.
@@ -709,6 +710,7 @@ namespace kamite::style_presets
 
         bool g_listShown = false;       // this frame's row and lines are on (the screen's draw places them)
         uint32_t g_hidBox = 0u;         // the name box, hidden by us, shown again when the picker opens
+        uint32_t g_hidName = 0u;        // the picker's move name (parts[0x25]), the same
 
         uint16_t glyph(char c)
         {
@@ -1055,7 +1057,9 @@ namespace kamite::style_presets
                 // The game's own use of the group (the picker's "Already Set"): what we changed comes back.
                 if (g_hidBox)
                     setNoDraw(g_hidBox, false);
-                g_hidBox = 0u;
+                if (g_hidName)
+                    setNoDraw(g_hidName, false);
+                g_hidBox = g_hidName = 0u;
                 for (const uint32_t entry : {hintEntry, hintShadow})
                     if (validPointer(entry, ent::kSize) && rd16(entry + ent::kMsg) == kHintMessage)
                         wr16(entry + ent::kMsg, kBlankMessage);
@@ -1086,6 +1090,11 @@ namespace kamite::style_presets
             g_hidBox = validPointer(box, ent::kSize) ? box : 0u;
             setNoDraw(part(waza, 0x26), true);
             setNoDraw(part(waza, 0x27), true);
+            // The picker's move name: the game leaves it up (with the last move's text, cut where it was typing) once
+            // the picker closes; it carried our style lines until Nov 11, which hid that (fixed Nov 12).
+            const uint32_t name = part(waza, 0x25);
+            setNoDraw(name, true);
+            g_hidName = validPointer(name, ent::kSize) ? name : 0u;
             for (const uint32_t entry : {hintEntry, hintShadow})
                 if (validPointer(entry, ent::kSize) && rd16(entry + ent::kMsg) == kBlankMessage)
                     wr16(entry + ent::kMsg, kHintMessage);
