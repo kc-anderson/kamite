@@ -73,6 +73,6 @@ until she lies down (60-100). Writes the victim keys' 3rd-5th values (hips back,
 after emit7 (idempotent).
 
 odd_bodies.py (K, Nov 12): non-human skeletons, written by hand (emit7 appends its block; run it alone to patch the
-file). em23, the snake demon: Spanking with Gene's left arm raised 60 deg off the back, Stinger and Cobra Twist off,
+file). em23, the snake demon: Spanking with the big bodies' straight arm, palm down, raised 35 deg, Stinger and Cobra Twist off,
 Suplex as the game plays it, label type "snake". The punish motions drive bones by number, so these bodies get human
 channels on whatever bones carry them; offline renders of them are rough (the tail is not posed as in the game).
