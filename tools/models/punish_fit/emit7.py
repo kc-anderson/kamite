@@ -97,6 +97,9 @@ def main(path):
                 if (name,g,s) not in fits: continue
                 m,npy=fits[(name,g,s)]; X=np.load(npy); v,clip=verdict(m)
                 off=v=='off' or off10 or (name,g) in OFF_BY_K  # a size that can't be made to work: own punish from halfway there
+                # K (Nov 12, Dr. Ion at 1.29): a Cobra 1.30 fit lets the headlock slip; with a held 1.20 fit, bodies near 1.30
+                # play that one, the pair scaled (a 1.30 enemy may shrink to 1.20 at most, K Nov 11)
+                if name=='Cobra' and s==1.3 and (name,g,1.2) in fits and fits[(name,g,1.2)][0].get('hold'): off=True
                 if s==1.0: off10=off
                 lines.append('fit %s %s%s scale=%.2f size=%.3f   # %s (%s%s), %s: touch %.0f -> %.0f cm, clip +%.1f cm'%(
                     FILE[name],keys,' off' if off else '',s,m['size'],file,t,', hands clasped' if m.get('clasp') else ', headlock held' if m.get('hold') else ', pose from the representative' if not m['rep'] and m.get('pose_from')!='original' else '',
