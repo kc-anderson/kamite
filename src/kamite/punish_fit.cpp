@@ -166,6 +166,7 @@ namespace kamite::punish_fit
         {
             bool off = false;
             bool gorilla = false; // a Suplex fit: the Suplex pick plays the Gorilla Suplex on this body
+            bool own = false;     // for the enemy's own punish (its prompt unchanged), e.g. Spanking on women (K, Nov 12)
             float scale = 1.0f;   // the enemy size it was fitted at
             float size = 1.0f;    // the victim's size change for the pairing
             std::vector<Track> tracks;
@@ -245,6 +246,7 @@ namespace kamite::punish_fit
         PS2Runtime::RecompiledFunction g_align = nullptr;
         fs::path g_file, g_shippedFile;
         std::map<uint64_t, Fits> g_fits; // punish << 32 | body, by size; read at start, then only read
+        std::map<uint64_t, Fits> g_ownFits; // the same for the enemy's own punish (fits marked own)
         std::map<uint32_t, std::string> g_bodyNames; // body -> its type ("men", ...), punish_fit.txt's body lines
         Pair g_pair;
         Resize g_resize[2]; // the victim, Gene
@@ -407,9 +409,15 @@ namespace kamite::punish_fit
             return false;
         }
         // The fits for a pair Buck Breaker made; nullptr for one the game already had (it plays as the game made it).
+        const Fits *ownFitsFor(int punish, uint32_t body)
+        {
+            const auto it = g_ownFits.find(fitKey(punish, body));
+            return it == g_ownFits.end() || it->second.empty() ? nullptr : &it->second;
+        }
+        // A changed punish plays the body's fits; the enemy's own punish only its own fits (none: the game's, untouched).
         const Fits *fitsForPair(const uint8_t *, uint32_t enemy, int punish, uint32_t body)
         {
-            return changedFor(enemy) ? fitsFor(punish, body) : nullptr;
+            return changedFor(enemy) ? fitsFor(punish, body) : ownFitsFor(punish, body);
         }
         const Fit *fitFor(int punish, uint32_t body) // its flags (off, gorilla)
         {
@@ -518,6 +526,7 @@ namespace kamite::punish_fit
                 out[i] = mine ? mine->base[i] : rdF(rdram, actor + kScaleX + 4u * i);
         }
         int sizeKeyOf(float s) { return static_cast<int>(std::lround(s * 100.0f)); }
+        int sizeKeyOf(const Fit *f, float s) { return sizeKeyOf(s) + (f && f->own ? 100000 : 0); } // own fits: copies of their own
 
         // The fit for the enemy's punish at its size: the pair's, or its anchor's for a motion started before the pair's
         // placement call; nullptr when there is none (or it doesn't fit).
@@ -536,7 +545,7 @@ namespace kamite::punish_fit
             const Anchor an = anchorFor(*fits, scale[1]);
             if (!an.any)
                 return nullptr;
-            sizeKey = sizeKeyOf(an.scale);
+            sizeKey = sizeKeyOf(an.fit, an.scale);
             return an.fit;
         }
 
@@ -566,7 +575,7 @@ namespace kamite::punish_fit
                 const Fits *fits = fitsForPair(rdram, enemy, call->punish, body);
                 const Anchor an = fits ? anchorFor(*fits, g_pair.baseScale[1]) : Anchor{};
                 g_pair.fit = an.fit;
-                g_pair.sizeKey = sizeKeyOf(an.scale);
+                g_pair.sizeKey = sizeKeyOf(an.fit, an.scale);
                 g_pair.live = an.any;
                 if (an.any)
                 {
@@ -839,6 +848,10 @@ namespace kamite::punish_fit
                 for (size_t i = 0; i < fits->size(); ++i)
                     if ((*fits)[i].get() == g_pair.fit)
                         s.fitIndex = static_cast<int32_t>(i);
+            if (const Fits *fits = g_pair.punish >= 0 ? ownFitsFor(g_pair.punish, g_pair.body) : nullptr)
+                for (size_t i = 0; i < fits->size(); ++i)
+                    if ((*fits)[i].get() == g_pair.fit)
+                        s.fitIndex = 1000 + static_cast<int32_t>(i); // an own fit
             if (g_pair.geneTrack)
             {
                 s.hasTrack = 1u;
@@ -865,10 +878,14 @@ namespace kamite::punish_fit
             std::memcpy(g_pair.baseScale, s.baseScale, sizeof(s.baseScale));
             std::memcpy(g_pair.placeScale, s.placeScale, sizeof(s.placeScale));
             std::memcpy(g_pair.applied, s.applied, sizeof(s.applied));
-            const Fits *fits = s.punish >= 0 && s.punish < kPunishCount ? fitsFor(s.punish, s.body) : nullptr;
-            const bool fitOk = s.fitIndex < 0 || (fits && static_cast<size_t>(s.fitIndex) < fits->size());
-            if (fits && s.fitIndex >= 0 && fitOk)
-                g_pair.fit = (*fits)[static_cast<size_t>(s.fitIndex)].get();
+            const bool ownFit = s.fitIndex >= 1000;
+            const int index = ownFit ? s.fitIndex - 1000 : s.fitIndex;
+            const Fits *fits = s.punish >= 0 && s.punish < kPunishCount
+                                   ? (ownFit ? ownFitsFor(s.punish, s.body) : fitsFor(s.punish, s.body))
+                                   : nullptr;
+            const bool fitOk = index < 0 || (fits && static_cast<size_t>(index) < fits->size());
+            if (fits && index >= 0 && fitOk)
+                g_pair.fit = (*fits)[static_cast<size_t>(index)].get();
             if (g_pair.fit && s.hasTrack)
                 g_pair.geneTrack = g_pair.fit->find(s.trackMotion, true);
             g_pair.live = s.live && fitOk && s.punish >= 0 && s.punish < kPunishCount;
@@ -920,7 +937,7 @@ namespace kamite::punish_fit
         }
 
         // punish_fit.txt:
-        //   fit <Suplex|Stinger|CobraTwist|Spanking|GorillaSuplex> <body hex>[,<body hex>...] [off] [gorilla] [scale=<s>]
+        //   fit <Suplex|Stinger|CobraTwist|Spanking|GorillaSuplex> <body hex>[,<body hex>...] [off] [gorilla] [own] [scale=<s>]
         //       [size=<s>]   (the lines after it, until the next fit, are its; gorilla on a Suplex fit: that body plays
         //       the Gorilla Suplex for a Suplex pick; scale: the enemy size it is for, 1 if not given)
         //   gene <motion> <frame>:<forward>,<side>,<turn>,<height>[,<torso x>,<torso z>,<left raise>,<left swing>,
@@ -959,6 +976,8 @@ namespace kamite::punish_fit
                             made->off = true;
                         else if (token == "gorilla")
                             made->gorilla = true;
+                        else if (token == "own")
+                            made->own = true;
                         else if (token.rfind("scale=", 0) == 0)
                             made->scale = std::strtof(token.c_str() + 6, nullptr);
                         else if (token.rfind("size=", 0) == 0)
@@ -970,7 +989,7 @@ namespace kamite::punish_fit
                     while (punish >= 0 && std::getline(keys, body, ','))
                         if (const uint32_t key = static_cast<uint32_t>(std::strtoul(body.c_str(), nullptr, 16)))
                         {
-                            g_fits[fitKey(punish, key)].push_back(made);
+                            (made->own ? g_ownFits : g_fits)[fitKey(punish, key)].push_back(made);
                             fit = made.get();
                         }
                     count += fit != nullptr;
@@ -1022,8 +1041,9 @@ namespace kamite::punish_fit
                         fit->tracks.push_back(std::move(track));
                 }
             }
-            for (auto &[key, fits] : g_fits)
-                std::stable_sort(fits.begin(), fits.end(), [](const auto &a, const auto &b) { return a->scale < b->scale; });
+            for (auto *map : {&g_fits, &g_ownFits})
+                for (auto &[key, fits] : *map)
+                    std::stable_sort(fits.begin(), fits.end(), [](const auto &a, const auto &b) { return a->scale < b->scale; });
             KM_INFO(Game, "punish fit: " << count << " fits for " << g_fits.size() << " bodies and punishes from "
                                          << file.filename().string()
                                          << (file == g_shippedFile ? " (shipped)" : " (yours, next to the exe)"));

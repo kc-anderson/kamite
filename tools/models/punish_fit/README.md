@@ -78,6 +78,11 @@ at its frame 0 to where the spanks left them, Gene's right arm refitted to slap 
 straight-arm raise re-solved. pairsim.py plays the pair with the runtime's edits (victim values 6-8: feet back, thigh,
 knee; punish_fit.cpp). `spank130.py --patch` rewrites those blocks in resources/punish_fit.txt; `--gif` renders now | new.
 
+spank_women.py / spank_tilt.py (K, Nov 12): Spanking is the women's own punish, which Buck Breaker otherwise leaves
+to the game: "own" fits (punish_fit.cpp) play when the enemy's prompt is unchanged. spank_women: the bigger women (group
+1, own fit at 1.15) with Gene's left arm raised 28 / elbow -10; spank_tilt (post-pass after emit7 + spank_women): the
+seat tipped up 30 deg on every women's Spanking block, plus an own 1.00 block (tilt only) per women's body.
+
 odd_bodies.py (K, Nov 12): non-human skeletons, written by hand (emit7 appends its block; run it alone to patch the
 file). em23, the snake demon: Spanking with the big bodies' straight arm, palm down, raised 35 deg, Stinger and Cobra Twist off,
 Suplex as the game plays it, label type "snake". The punish motions drive bones by number, so these bodies get human

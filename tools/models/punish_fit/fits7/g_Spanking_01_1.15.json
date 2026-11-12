@@ -5,6 +5,7 @@
  "scale": 1.15,
  "rep": false,
  "own_placement": true,
+ "own": true,
  "ks": [
   [
    0,

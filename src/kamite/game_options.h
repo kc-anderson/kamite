@@ -45,7 +45,5 @@ namespace kamite
     void setBallBusterWomen(bool on);
     // The F2 menu (any thread): Sway Bar, live.
     bool swayBar();
-    int swayBossSwatch(); // temporary (F2): the boss gauge's palette swatch, 0 = the boss's own
-    void setSwayBossSwatch(int swatch);
     void setSwayBar(bool on);
 }

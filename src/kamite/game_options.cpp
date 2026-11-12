@@ -953,7 +953,6 @@ namespace kamite
         // boss has built any stun (bosses that can't be stunned never show it). After the game's trans (hook at 0x13CFA0,
         // also reached by its early returns: its tests are repeated here) two more passes over the layout: the lag
         // copy of the bar's own pieces at half height under it (below).
-        int g_bossSwatch = 0; // F2 (temporary): the boss gauge's palette swatch, 0 = the boss's own fill
         std::unordered_map<uint32_t, uint32_t> g_bossSeen; // bar -> the boss it has seen stun on
         std::unordered_set<uint32_t> g_bossLogged, g_bossDrawn;
 
@@ -1027,7 +1026,7 @@ namespace kamite
                 return;
             // A copy of the bar (K, Nov 12: like the demons' gauge copies their bar's style): the entries under the fill's
             // parent (the frame pieces, the background, the fill and the lag; not the parent's ornament nor the portrait)
-            // at half height, moved under the bar; the fill = the stun in a palette swatch (F2 picks it, for now), the lag
+            // at half height, moved under the bar; the fill = the stun in the palette's B3 swatch, the lag
             // during / after the stun.
             const uint32_t root = ram32(rdram, fillEnt + 0x20u);
             const float fillBase = ramF(rdram, fillEnt + 0x40u), lagBase = ramF(rdram, lagEnt + 0x40u);
@@ -1037,7 +1036,7 @@ namespace kamite
             for (uint32_t i = 0; i < count; ++i)
             {
                 const uint32_t e = ent + i * 0xACu;
-                if (ram32(rdram, e + 0x20u) == root && (saved[i].flags & kEntActive) != 0u)
+                if (ram32(rdram, e + 0x20u) == root && (saved[i].flags & kEntNoDraw) == 0u)
                     tallest = std::max(tallest, ramF(rdram, e + 0x6Cu) * saved[i].sclY);
             }
             const float drop = 0.75f * tallest + 2.0f; // its centre: half the bar + 2 + half the copy below the bar's centre
@@ -1045,7 +1044,8 @@ namespace kamite
             {
                 const uint32_t e = ent + i * 0xACu;
                 const Saved &k = saved[i];
-                if (ram32(rdram, e + 0x20u) != root || e == root || (k.flags & kEntActive) == 0u)
+                if (ram32(rdram, e + 0x20u) != root || e == root || (k.flags & kEntNoDraw) != 0u) // (the frame pieces and
+                    // the background have no "in use" bit (0x80000000) and still draw)
                 {
                     put32(rdram, e + 0x2Cu, k.flags | kEntNoDraw);
                     continue;
@@ -1064,14 +1064,12 @@ namespace kamite
             float uv[4];
             for (int c = 0; c < 4; ++c)
                 uv[c] = ramF(rdram, fillEnt + 0x70u + 4u * c);
-            if (const int sw = g_bossSwatch; sw > 0 && sw <= 12)
             {
-                constexpr float kU[3][2] = {{0.155f, 0.1715f}, {0.28f, 0.3005f}, {0.405f, 0.4305f}};
-                constexpr float kV[4][2] = {{0.5f, 0.5625f}, {0.625f, 0.6875f}, {0.758f, 0.8125f}, {0.875f, 0.9375f}};
-                const int col = (sw - 1) / 4, row = (sw - 1) % 4;
-                const float pick[4] = {kU[col][0], kV[row][0], kU[col][1], kV[row][1]};
+                // The gauge's colour: the boss palette's swatch at column 2, row 3 (K picked "B3": orange-yellow; the
+                // palette's columns u 0.155 / 0.28 / 0.405, rows v 0.5 / 0.625 / 0.758 / 0.875).
+                constexpr float kSwatch[4] = {0.28f, 0.758f, 0.3005f, 0.8125f};
                 for (int c = 0; c < 4; ++c)
-                    putF(rdram, fillEnt + 0x70u + 4u * c, pick[c]);
+                    putF(rdram, fillEnt + 0x70u + 4u * c, kSwatch[c]);
             }
             callGuest(rdram, ctx, runtime, kIdBaseTrans, {bar});
             for (int c = 0; c < 4; ++c)
@@ -1470,9 +1468,6 @@ namespace kamite
         ps2xSetPatchFlag("ball_buster_women", on);
         setenvFlag("KAMITE_BALL_BUSTER_WOMEN", on);
     }
-
-    int swayBossSwatch() { return g_bossSwatch; }
-    void setSwayBossSwatch(int swatch) { g_bossSwatch = std::clamp(swatch, 0, 12); }
 
     bool swayBar()
     {

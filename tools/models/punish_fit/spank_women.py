@@ -10,6 +10,7 @@ import sys, os, json, numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import pairsim as ps
 from spank130 import KS
+# An "own" fit (K, Nov 12): Spanking is these women's own punish, so it plays when their prompt is unchanged.
 SCALE = 1.15; RAISE, ELBOW = 28.0, -10.0   # K's variant B (Nov 12)
 NOTE = "Gene's left arm raised %.0f deg, the elbow %.0f deg (K: the bigger women; spank_women.py)" % (RAISE, ELBOW)
 def save():
@@ -17,7 +18,7 @@ def save():
     X = np.zeros((sum(map(len, KS)), 14)); o = 0
     for si, fs in enumerate(KS):
         for f in fs: X[o, 8] = np.radians(RAISE) * ps.wstage(si, f); X[o, 10] = np.radians(ELBOW) * ps.wstage(si, f); o += 1
-    m = dict(name='Spanking', type='women', group=1, scale=SCALE, rep=False, own_placement=True, ks=KS, size=1.0, note=NOTE)
+    m = dict(name='Spanking', type='women', group=1, scale=SCALE, rep=False, own_placement=True, own=True, ks=KS, size=1.0, note=NOTE)
     np.save(os.path.join(OUT, 'g_Spanking_01_%.2f.npy' % SCALE), X); json.dump(m, open(os.path.join(OUT, 'g_Spanking_01_%.2f.json' % SCALE), 'w'), indent=1)
     return m, X
 def patch(path=os.path.join(HERE, '..', '..', '..', 'resources', 'punish_fit.txt')):
@@ -27,7 +28,7 @@ def patch(path=os.path.join(HERE, '..', '..', '..', 'resources', 'punish_fit.txt
     L = open(path).read().split('\n'); out = []; i = 0; done = False
     while i < len(L):
         p = L[i].split()
-        if p[:3] == ['fit', 'Spanking', keys] and 'scale=%.2f' % SCALE in p:   # an earlier copy: replaced
+        if p[:3] == ['fit', 'Spanking', keys] and 'scale=%.2f' % SCALE in p and 'own' not in p[3:4] or p[:4] == ['fit', 'Spanking', keys, 'own'] and 'scale=%.2f' % SCALE in p:   # an earlier copy: replaced
             i += 1
             while i < len(L) and L[i].split()[:1] in (['gene'], ['victim']): i += 1
             continue

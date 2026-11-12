@@ -181,13 +181,6 @@ namespace kamite::dev_menu
             int sway = swayBar() ? 1 : 0;
             if (ui->checkbox("Sway Bar: a stun gauge under the enemies' health bars##swaybar", &sway))
                 setSwayBar(sway != 0);
-            if (sway)
-            {
-                static const char *const kSwatch[] = {"Boss's own", "A1", "A2", "A3", "A4", "B1", "B2", "B3", "B4", "C1", "C2", "C3", "C4"};
-                int swatch = swayBossSwatch();
-                if (ui->combo("Boss gauge colour (temporary)##swayswatch", &swatch, kSwatch, 13))
-                    setSwayBossSwatch(swatch);
-            }
 
             ui->separator_text("At start");
             launcherOnly(ui, "Moveset Presets", envOn("KAMITE_STYLE_SWITCHING", false) ? "on" : "off");
