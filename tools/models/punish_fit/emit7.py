@@ -27,7 +27,14 @@ def verdict(m):
     if v=='fitted' and clip>0.03 and m['group']!=10: v='questionable'
     return v,clip
 def own_line(name,keys,file,t,s):
-    return 'fit %s %s scale=%.2f size=1.000   # %s (%s): the game\'s placement at %.2f, Gene\'s left arm straight across the back (spank130.py)'%(FILE[name],keys,s,file,t,s)
+    return 'fit %s %s scale=%.2f size=1.000   # %s (%s): the game\'s placement at %.2f, the victim lowered onto Gene\'s thigh, both arms refitted (spank130.py)'%(FILE[name],keys,s,file,t,s)
+def own_block(name,keys,file,t,s,m,X):
+    """spank130's fits: Gene's keys from X, the victim's from the json (height, bend, hips back, tilt, legs, feet back,
+    thigh, knee)."""
+    out=[own_line(name,keys,file,t,s)]+[l for l in tracks(name,X,m['ks'],m.get('ltwist',0.0)) if not (m.get('victim') and l.startswith('victim '))]
+    for mo,ks in sorted((m.get('victim') or {}).items()):
+        out.append('victim %s %s'%(mo,' '.join('%d:%.3f,%.2f,%.3f,%.1f,%.2f,%.3f,%.1f,%.1f'%(f,*v) for f,v in ks)))
+    return out
 def tracks(name,X,ks,twist=0.0,lift=None):
     """twist: Gene's left forearm about its length (deg), eased with the left arm's raise (spank_fat2's held pose).
     lift: per key, Gene's whole body raised (m; cobra_hold on the big bodies), the 14th value."""
@@ -99,7 +106,7 @@ def main(path):
                 if (name,g,s) not in fits: continue
                 m,npy=fits[(name,g,s)]; X=np.load(npy)
                 if m.get('own_placement'):   # spank130.py (K, Nov 12): the fat men's way at 1.30
-                    lines.append(own_line(name,keys,file,t,s)); lines+=tracks(name,X,m['ks'],m.get('ltwist',0.0))
+                    lines+=own_block(name,keys,file,t,s,m,X)
                     summary.append((name,g,file,t,s,'own placement',m)); continue
                 v,clip=verdict(m)
                 off=v=='off' or off10 or (name,g) in OFF_BY_K  # a size that can't be made to work: own punish from halfway there

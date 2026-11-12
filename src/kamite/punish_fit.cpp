@@ -20,7 +20,8 @@
 // punish's motions (pointers from the caught enemy's table, +0x694 -> +0x304) or the caught enemy one of its own,
 // the motion is copied into kRewriteArea with bone 0's height (Gene / victim) and bone 1's x rotation (the victim's
 // waist) changed by the curve (mot_edit addCurve, npc_poses' way), and started from there. A victim's track may also
-// carry the hips back, the pelvis tilt and the knees together (K, Nov 12: Stinger on women; tools stinger_women.py). Copies are kept per
+// carry the hips back, the pelvis tilt and the knees together (K, Nov 12: Stinger on women; tools stinger_women.py), and the
+// feet back / the legs' rotation (Spanking at 1.30; tools spank130.py). Copies are kept per
 // (body, punish, motion) and reused; the area starts over when full, the list after a save state load (saveState).
 //
 // Gene's pose (K, Nov 8: his arms through the victim where the original keeps clear; Cobra Twist's arms round the
@@ -124,7 +125,8 @@ namespace kamite::punish_fit
         // left raise, left swing, left elbow, right raise, right swing, right elbow, left forearm twist (degrees), lift (m:
         // his whole body, the hips and both leg IK targets, so the feet leave the ground; K: Cobra Twist on the big bodies);
         // victim: height (m), bend (degrees), hips back (m), pelvis tilt (degrees, + = the seat up), legs (0..1: the knees
-        // together; K, Nov 12: Stinger on women).
+        // together; K, Nov 12: Stinger on women), feet back (m: the ankles' IK targets), thigh pitch and knee bend (degrees,
+        // about x, for motions with the legs by rotation; K, Nov 12: Spanking at 1.30, the victim lowered onto Gene's thigh).
         struct Key
         {
             float frame = 0.0f;
@@ -641,11 +643,13 @@ namespace kamite::punish_fit
             uint16_t frames;
             std::memcpy(&frames, m.data() + 4, 2);
             std::vector<float> height(frames), bend(frames), lift(frames), back(frames), tilt(frames), legs(frames);
+            std::vector<float> feet(frames), thighs(frames), knees(frames);
             // Gene's pose: the torso (bone 1), upper arms (13 left, 7 right), their helpers (12, 6: half), forearms (14, 8).
             constexpr int kPoseBones[7] = {1, 13, 12, 7, 6, 14, 8};
             std::vector<mot::Mat> pose[7];
             std::vector<mot::Mat> twist; // the left forearm about its length: half on bone 15, half on the hand (16)
             bool anyHeight = false, anyBend = false, anyPose = false, anyTwist = false, anyLift = false, anyLegs = false;
+            bool anyFeet = false, anyFold = false;
             for (int f = 0; f < frames; ++f)
             {
                 float v[kValues];
@@ -662,6 +666,11 @@ namespace kamite::punish_fit
                     tilt[f] = v[3] * kDegrees;
                     legs[f] = std::clamp(v[4], 0.0f, 1.0f);
                     anyLegs = anyLegs || back[f] != 0.0f || tilt[f] != 0.0f || legs[f] != 0.0f;
+                    feet[f] = -v[5];
+                    thighs[f] = v[6] * kDegrees;
+                    knees[f] = v[7] * kDegrees;
+                    anyFeet = anyFeet || feet[f] != 0.0f;
+                    anyFold = anyFold || thighs[f] != 0.0f || knees[f] != 0.0f;
                     continue;
                 }
                 float a[8];
@@ -680,7 +689,7 @@ namespace kamite::punish_fit
                 twist.push_back(mot::rotX(v[12] * kDegrees * 0.5f));
                 anyTwist = anyTwist || v[12] != 0.0f;
             }
-            if (!anyHeight && !anyBend && !anyPose && !anyTwist && !anyLegs)
+            if (!anyHeight && !anyBend && !anyPose && !anyTwist && !anyLegs && !anyFeet && !anyFold)
             {
                 g_copies[key] = 0u;
                 return 0u;
@@ -714,6 +723,25 @@ namespace kamite::punish_fit
                 mot::addCurve(m, 20, 0, ankles[0], 1);
                 mot::addCurve(m, 22, 4, thighs[1], 1);
                 mot::addCurve(m, 24, 0, ankles[1], 1);
+            }
+            if (anyFeet)
+            {
+                // The feet back: the ankles' IK targets (20 / 24 z, model space). Only on motions that move them (the legs
+                // by IK); a curve added to a motion without one would be a new channel.
+                std::vector<mot::Rec> recs;
+                mot::parse(m, recs);
+                for (int bone : {20, 24})
+                    if (std::any_of(recs.begin(), recs.end(),
+                                    [&](const mot::Rec &r) { return r.bone == bone && (r.channel & 0x0F) == 2; }))
+                        mot::addCurve(m, bone, 2, feet, 1);
+            }
+            if (anyFold)
+            {
+                // Motions with the legs by rotation (no IK): the thighs (18 / 22) and knees (19 / 23) about x.
+                for (int bone : {18, 22})
+                    mot::addCurve(m, bone, 3, thighs, 1);
+                for (int bone : {19, 23})
+                    mot::addCurve(m, bone, 3, knees, 1);
             }
             if (anyPose)
                 for (int i = 0; i < 7; ++i)
@@ -897,7 +925,7 @@ namespace kamite::punish_fit
         //       the Gorilla Suplex for a Suplex pick; scale: the enemy size it is for, 1 if not given)
         //   gene <motion> <frame>:<forward>,<side>,<turn>,<height>[,<torso x>,<torso z>,<left raise>,<left swing>,
         //       <left elbow>,<right raise>,<right swing>,<right elbow>[,<left forearm twist>[,<lift>]]] ...
-        //   victim <motion> <frame>:<height>,<bend>[,<hips back>,<pelvis tilt>,<legs>] ...
+        //   victim <motion> <frame>:<height>,<bend>[,<hips back>,<pelvis tilt>,<legs>[,<feet back>,<thigh pitch>,<knee bend>]] ...
         //   body <body hex>[,<body hex>...] <type>   (the enemy labels' body type)
         void load()
         {

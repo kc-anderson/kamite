@@ -72,6 +72,12 @@ through the loop; in the slam the hips / seat ease back over frames 0-16 as Gene
 until she lies down (60-100). Writes the victim keys' 3rd-5th values (hips back, tilt, legs; punish_fit.cpp). Re-run
 after emit7 (idempotent).
 
+spank130.py (K, Nov 12, redone): Spanking on the men / tall bodies at 1.30 with the game's placement, the victim lowered
+onto Gene's thigh (belly 1 cm in), knees to the floor with the feet back (ankle IK targets), the finish's FK legs turned
+at its frame 0 to where the spanks left them, Gene's right arm refitted to slap as deep as the 1.0 original and the left
+straight-arm raise re-solved. pairsim.py plays the pair with the runtime's edits (victim values 6-8: feet back, thigh,
+knee; punish_fit.cpp). `spank130.py --patch` rewrites those blocks in resources/punish_fit.txt; `--gif` renders now | new.
+
 odd_bodies.py (K, Nov 12): non-human skeletons, written by hand (emit7 appends its block; run it alone to patch the
 file). em23, the snake demon: Spanking with the big bodies' straight arm, palm down, raised 35 deg, Stinger and Cobra Twist off,
 Suplex as the game plays it, label type "snake". The punish motions drive bones by number, so these bodies get human

@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 12, 2026
 
+- Buck Breaker: Spanking on big enemies lays them lower across Gene's thigh, knees on the floor, with Gene's arms refitted.
 - Buck Breaker: Spanking works on big enemies (around 1.30 size, e.g. Dr. Ion) instead of falling back to their own punish.
 - Buck Breaker: Cobra Twist on enemies near 1.30 size (e.g. Dr. Ion) keeps the headlock instead of slipping.
 - Buck Breaker: the stage 4 wrestlers take the punish you pick instead of always Pummel.
