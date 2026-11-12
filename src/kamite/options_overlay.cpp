@@ -9,15 +9,16 @@ namespace kamite::options_overlay
     namespace
     {
         Look g_look;
-        std::string g_labelFont, g_helpFont;
+        std::string g_labelFont, g_helpFont, g_titleImage;
     }
 
     Look &look() { return g_look; }
 
-    void setFonts(const std::string &labelFont, const std::string &helpFont)
+    void setAssets(const std::string &labelFont, const std::string &helpFont, const std::string &titleImage)
     {
         g_labelFont = labelFont;
         g_helpFont = helpFont;
+        g_titleImage = titleImage;
     }
 
 #if defined(KAMITE_HAS_SCREEN_OVERLAY)
@@ -32,16 +33,22 @@ namespace kamite::options_overlay
         constexpr uint32_t kValue = rgba(0x87, 0x77, 0x6D);         // a value: grey
         constexpr uint32_t kValueOn = rgba(0xFF, 0xFF, 0xFF);       // the selected one: white...
         constexpr uint32_t kValueOnStroke = rgba(0x26, 0x32, 0x4A); // ...with a navy stroke
-        constexpr uint32_t kHelp = rgba(0xF0, 0xF0, 0xF0);          // the help text: white, dark outline
-        constexpr uint32_t kHelpStroke = rgba(0x1A, 0x1A, 0x1A);
+        constexpr uint32_t kHelp = rgba(0xDA, 0xD1, 0xB2);          // the help text: cream (the game's hint text)...
+        constexpr uint32_t kHelpShadow = rgba(0, 0, 0, 190);       // ...with a hard dark drop shadow, no outline
 
         // Placement: x in layout units, y and sizes in lines.
         constexpr float kLabelX = 37.0f, kLabelCap = 21.5f, kStroke = 1.0f;
         constexpr float kFirstRowY = 110.0f, kLastRowY = 347.0f, kRowStep = 34.0f; // row centres (the pause's 8 rows)
         constexpr float kCursorX = 24.0f, kCursorHalfW = 6.0f, kCursorHalfH = 8.0f;
         constexpr float kValueX = 262.0f, kValueGap = 58.0f, kValueCap = 17.0f;
-        constexpr float kHelpX = 29.0f, kHelpTop = 362.0f, kHelpCap = 17.1f, kHelpLine = 26.0f, kHelpScaleX = 0.73f;
-        constexpr float kTitleY = 70.0f, kTitleCap = 30.0f; // a stand-in until K's painted OPTIONS title
+        // The help sits in the wall's lighter band (lines 362..417) as the game's hint text sits in its band: the first
+        // line's caps from about a quarter down, the second line's baseline near the bottom (K's reference, Nov 12).
+        constexpr float kHelpX = 29.0f, kHelpBaseline = 389.5f, kHelpCap = 12.5f, kHelpLine = 23.5f, kHelpScaleX = 0.73f;
+        constexpr float kHelpShadowX = 1.5f, kHelpShadowY = 1.4f;
+        // K's painted title, placed as the original's painted one (its letters x 146..363, y 20..66 of the 512 x 448
+        // screen; K's image is drawn in the same texel shape: 17.44 of its pixels per unit and per line), centred.
+        constexpr float kTitlePixelsPerUnit = 17.44f, kTitleTop = 13.7f, kTitleWidth = 3947.0f, kTitleHeight = 1064.0f;
+        constexpr float kTitleY = 70.0f, kTitleCap = 30.0f; // the text stand-in when the image is missing
         constexpr float kMaxLabel = 190.0f;                  // the longest original (RESTORE DEFAULTS)
 
         // Archivo Narrow fitted to the original's painted row names: horizontal scale, extra tracking (layout units).
@@ -66,11 +73,12 @@ namespace kamite::options_overlay
         // is 7/6 of a line, so horizontal lengths as fractions of the height are units / 384.
         struct Space
         {
-            float wu = 512.0f, left = 0.0f;
+            float wu = 512.0f, area = 512.0f, left = 0.0f;
             explicit Space(float aspect)
             {
                 wu = 384.0f * aspect;
-                left = 0.5f * (wu - 384.0f * std::min(aspect, 21.0f / 9.0f));
+                area = 384.0f * std::min(aspect, 21.0f / 9.0f);
+                left = 0.5f * (wu - area);
             }
             float x(float units) const { return (left + units) / wu; }
             static float y(float lines) { return lines / 448.0f; }
@@ -162,15 +170,33 @@ namespace kamite::options_overlay
             // Two lines at most.
             void help(const char *body)
             {
-                float baseline = kHelpTop + kHelpCap;
+                float baseline = kHelpBaseline;
                 for (const char *line = body; line && *line;)
                 {
                     const char *end = std::strchr(line, '\n');
                     const size_t length = end ? static_cast<size_t>(end - line) : std::strlen(line);
-                    text(line, length, helpFont, kHelpX, baseline, kHelpCap, kHelpScaleX, 0.0f, kHelp, kHelpStroke);
+                    text(line, length, helpFont, kHelpX, baseline, kHelpCap, kHelpScaleX, 0.0f, kHelp, 0u);
+                    Pcsx2GsScreenItem &item = items.back();
+                    item.shadow = faded(kHelpShadow);
+                    item.shadow_x = Space::y(kHelpShadowX);
+                    item.shadow_y = Space::y(kHelpShadowY);
                     baseline += kHelpLine;
                     line = end ? end + 1 : nullptr;
                 }
+            }
+
+            void title(uint32_t path)
+            {
+                Pcsx2GsScreenItem item = base();
+                item.kind = PCSX2GS_SCREEN_IMAGE;
+                item.text = path;
+                item.fill = faded(rgba(255, 255, 255));
+                const float width = kTitleWidth / kTitlePixelsPerUnit, centre = 0.5f * space.area;
+                item.x = space.x(centre - 0.5f * width);
+                item.x1 = space.x(centre + 0.5f * width);
+                item.y = Space::y(kTitleTop);
+                item.y1 = Space::y(kTitleTop + kTitleHeight / kTitlePixelsPerUnit);
+                items.push_back(item);
             }
         };
     }
@@ -185,7 +211,10 @@ namespace kamite::options_overlay
         b.labelFont = b.add(g_labelFont.data(), g_labelFont.size());
         b.helpFont = b.add(g_helpFont.data(), g_helpFont.size());
 
-        b.text("OPTIONS", 7u, b.labelFont, kLabelX, kTitleY, kTitleCap, kNewLabel.scaleX, kNewLabel.tracking, kLabelOn, kLabelOnStroke);
+        if (!g_titleImage.empty())
+            b.title(b.add(g_titleImage.data(), g_titleImage.size()));
+        else
+            b.text("OPTIONS", 7u, b.labelFont, kLabelX, kTitleY, kTitleCap, kNewLabel.scaleX, kNewLabel.tracking, kLabelOn, kLabelOnStroke);
         // The pause's rows fill the original's span; the title's (fewer) keep its spacing.
         const float step = view.pause && view.rowCount > 1 ? std::min(kRowStep, (kLastRowY - kFirstRowY) / static_cast<float>(view.rowCount - 1))
                                                            : kRowStep;

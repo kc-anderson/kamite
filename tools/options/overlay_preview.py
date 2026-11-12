@@ -6,7 +6,7 @@ python tools/options/overlay_preview.py out.png [--size 1920x1080] [--title] [--
 Builds tools/options/overlay_preview.cpp (g++, the repo's ImGui) with the DLL's own drawing code cut from HostStubs.cpp,
 crops resources/options/wall.jpg to the size's shape and draws options_overlay.cpp's list over it. Needs Pillow.
 """
-import argparse, os, re, subprocess, tempfile
+import argparse, os, re, struct, subprocess, tempfile
 from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -43,10 +43,13 @@ def main():
     x = (wall.width - cw) // 2
     raw_in, raw_out = os.path.join(work, 'wall.rgb'), os.path.join(work, 'out.rgb')
     open(raw_in, 'wb').write(wall.crop((x, 0, x + cw, wall.height)).resize((w, h), Image.LANCZOS).tobytes())
+    title = os.path.join(work, 'options_title.png')
+    im = Image.open(os.path.join(ROOT, 'resources/options/options_title.png')).convert('RGBA')
+    open(title + '.rgba', 'wb').write(struct.pack('<II', *im.size) + im.tobytes())
     fonts = os.path.join(ROOT, 'resources/fonts')
     subprocess.check_call([exe, raw_in, str(w), str(h), raw_out, '0' if a.title else '1', str(a.cursor), str(a.confirm),
                            str(a.blur), str(a.shadow), os.path.join(fonts, 'ArchivoNarrow-SemiBold.ttf'),
-                           os.path.join(fonts, 'DejaVuSans-Bold.ttf')])
+                           os.path.join(fonts, 'DejaVuSans-Bold.ttf'), title])
     Image.frombytes('RGB', (w, h), open(raw_out, 'rb').read()).save(a.out)
 
 if __name__ == '__main__':

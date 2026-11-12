@@ -25,7 +25,7 @@ namespace kamite::options_overlay
     struct View
     {
         float aspect = 16.0f / 9.0f; // the picture's
-        float fade = 1.0f;           // the screen's own fade (its backdrop's alpha)
+        float fade = 1.0f;           // the screen's fades (its backdrop's alpha, the game's fade to and from black)
         bool pause = true;           // the pause menu's screen (the title's has fewer rows, spaced wider)
         const Row *rows = nullptr;
         int rowCount = 0;
@@ -44,8 +44,8 @@ namespace kamite::options_overlay
     };
     Look &look();
 
-    // The fonts (resources/fonts), set once at start.
-    void setFonts(const std::string &labelFont, const std::string &helpFont);
+    // The fonts (resources/fonts) and the OPTIONS title (resources/options), set once at start.
+    void setAssets(const std::string &labelFont, const std::string &helpFont, const std::string &titleImage);
 
 #if defined(KAMITE_HAS_SCREEN_OVERLAY)
     void build(const View &view, std::vector<Pcsx2GsScreenItem> &items, std::string &strings);

@@ -2,6 +2,7 @@
 // thirdparty/pcsx2-gs/compat/HostStubs.cpp into screen_snippet.inc) and options_overlay.cpp, drawn with ImGui and
 // rasterised in software over the wall. Built and run by overlay_preview.py.
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "pcsx2gs_api.h"
 #include "kamite/options_overlay.h"
 #include <algorithm>
@@ -27,6 +28,24 @@ namespace
         float capRatio = 0.7f;
     };
     std::vector<std::pair<std::string, ScreenFont>> g_screenFonts;
+    std::vector<std::pair<std::string, ImTextureData *>> g_screenImages;
+    // The DLL decodes PNGs with WIC; here overlay_preview.py hands over "<path>.rgba" (width, height, then RGBA rows).
+    bool LoadScreenImage(const char *path, std::vector<uint8_t> &rgba, int &width, int &height)
+    {
+        FILE *f = fopen((std::string(path) + ".rgba").c_str(), "rb");
+        if (!f)
+            return false;
+        uint32_t size[2] = {};
+        bool ok = fread(size, 4, 2, f) == 2 && size[0] && size[1];
+        if (ok)
+        {
+            width = int(size[0]), height = int(size[1]);
+            rgba.resize(size_t(width) * height * 4);
+            ok = fread(rgba.data(), 1, rgba.size(), f) == rgba.size();
+        }
+        fclose(f);
+        return ok;
+    }
 }
 #include "screen_snippet.inc"
 
@@ -57,7 +76,7 @@ int main(int argc, char **argv)
     g_presentRect[0] = 0; g_presentRect[1] = 0; g_presentRect[2] = float(W); g_presentRect[3] = float(H);
 
     using namespace kamite::options_overlay;
-    setFonts(argv[10], argv[11]);
+    setAssets(argv[10], argv[11], argc > 12 ? argv[12] : "");
     look().blur = atof(argv[8]);
     look().shadowAlpha = atof(argv[9]);
     static const Row pauseRows[] = {{"CONTROLS", "Display controls"}, {"DISPLAY", "Picture and camera."},
@@ -91,14 +110,14 @@ int main(int argc, char **argv)
             ImTextureData *tex = cmd.TexRef._TexData;
             if (!tex || !tex->Pixels) { fprintf(stderr, "no tex data\n"); continue; }
             const int tw = tex->Width, th = tex->Height, bpp = tex->BytesPerPixel;
-            auto sample = [&](float u, float v) -> float /* alpha */ {
+            auto sample = [&](float u, float v, int ch) -> float {
                 float x = u * tw - 0.5f, y = v * th - 0.5f;
                 int x0 = (int)std::floor(x), y0 = (int)std::floor(y);
                 float fx = x - x0, fy = y - y0;
                 auto at = [&](int xx, int yy) -> float {
                     xx = std::clamp(xx, 0, tw - 1); yy = std::clamp(yy, 0, th - 1);
                     const unsigned char *p = (const unsigned char *)tex->Pixels + (size_t(yy) * tw + xx) * bpp;
-                    return (bpp == 4 ? p[3] : p[0]) / 255.0f;
+                    return (bpp == 4 ? p[ch] : (ch == 3 ? p[0] : 255)) / 255.0f;
                 };
                 return (at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx) * (1 - fy) + (at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx) * fy;
             };
@@ -126,9 +145,9 @@ int main(int argc, char **argv)
                                 col[c] += (w0 * (k == 0) + w1 * (k == 1) + w2 * (k == 2)) * ((v3[k]->col >> (8 * c)) & 255) / 255.0f;
                         const float u = w0 * v3[0]->uv.x + w1 * v3[1]->uv.x + w2 * v3[2]->uv.x;
                         const float vv = w0 * v3[0]->uv.y + w1 * v3[1]->uv.y + w2 * v3[2]->uv.y;
-                        const float a = col[3] * sample(u, vv);
+                        const float a = col[3] * sample(u, vv, 3);
                         float *d = &img[(size_t(y) * W + x) * 3];
-                        for (int c = 0; c < 3; ++c) d[c] = d[c] * (1 - a) + col[c] * a;
+                        for (int c = 0; c < 3; ++c) d[c] = d[c] * (1 - a) + col[c] * sample(u, vv, c) * a;
                     }
             }
         }

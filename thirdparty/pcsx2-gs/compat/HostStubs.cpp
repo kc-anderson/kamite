@@ -31,6 +31,7 @@
 #include "common/CrashHandler.h"
 #include "common/Image.h"
 #include "imgui.h"
+#include "imgui_internal.h" // ImGui::RegisterUserTexture (the screen's images)
 #include "imgui_freetype.h"
 
 #include <algorithm>
@@ -89,6 +90,7 @@ namespace
         float capRatio = 0.7f; // cap height / font size ('H')
     };
     std::vector<std::pair<std::string, ScreenFont>> g_screenFonts; // GS thread, by path (font nullptr = failed)
+    std::vector<std::pair<std::string, ImTextureData *>> g_screenImages; // GS thread, by path (nullptr = failed)
 
     int UiBeginWindow(const char *title, int *open, float width, float height)
     {
@@ -723,6 +725,39 @@ void ImGuiManager::SkipFrame()
     NewFrame();
 }
 
+// The screen's images: a PNG decoded by the replacement textures' loader (WIC). Outside the drawing code below, which
+// tools/options/overlay_preview.py builds on its own with a loader of its own.
+namespace
+{
+    bool LoadScreenImage(const char *path, std::vector<uint8_t> &rgba, int &width, int &height)
+    {
+        const int wide = MultiByteToWideChar(CP_UTF8, 0, path, -1, nullptr, 0);
+        if (wide <= 0)
+            return false;
+        std::wstring widePath(static_cast<size_t>(wide), L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, path, -1, widePath.data(), wide);
+        FILE *fp = _wfopen(widePath.c_str(), L"rb");
+        if (!fp)
+            return false;
+        GSTextureReplacements::CFile file(fp);
+        GSTextureReplacements::ReplacementTexture image{};
+        const GSTextureReplacements::ReplacementTextureLoader loader = GSTextureReplacements::GetLoader(path);
+        const bool ok = loader && loader(file, path, &image, true) && image.format == GSTexture::Format::Color &&
+                        image.width > 0u && image.height > 0u && image.pitch >= image.width * 4u &&
+                        image.data.size() >= static_cast<size_t>(image.pitch) * image.height;
+        std::fclose(fp);
+        if (!ok)
+            return false;
+        width = static_cast<int>(image.width);
+        height = static_cast<int>(image.height);
+        rgba.resize(static_cast<size_t>(width) * height * 4u);
+        for (int y = 0; y < height; ++y)
+            std::memcpy(&rgba[static_cast<size_t>(y) * width * 4u], image.data.data() + static_cast<size_t>(y) * image.pitch,
+                        static_cast<size_t>(width) * 4u);
+        return true;
+    }
+}
+
 // --- the port's own screen (pcsx2gs_set_screen): text in the port's fonts, triangles, boxes ---
 namespace
 {
@@ -930,6 +965,61 @@ namespace
             list->AddRectFilled(a, b, item.fill);
     }
 
+    // An image file, loaded on first use and shrunk by a whole factor (a box filter, alpha-weighted) to about the size
+    // it is first drawn at, so the picture's linear filter never minifies it much. A later, larger window draws it
+    // scaled up.
+    ImTextureData *ScreenImageFor(const char *path, float drawnHeight)
+    {
+        if (!path || !*path)
+            return nullptr;
+        for (auto &entry : g_screenImages)
+            if (entry.first == path)
+                return entry.second;
+        g_screenImages.emplace_back(path, nullptr);
+        std::vector<uint8_t> rgba;
+        int w = 0, h = 0;
+        if (!LoadScreenImage(path, rgba, w, h))
+        {
+            std::fprintf(stderr, "[gs] screen image did not load: %s\n", path);
+            return nullptr;
+        }
+        const int f = std::clamp(static_cast<int>(static_cast<float>(h) / std::max(drawnHeight, 1.0f)), 1, 64);
+        const int ow = std::max(1, w / f), oh = std::max(1, h / f);
+        ImTextureData *tex = IM_NEW(ImTextureData)();
+        tex->Create(ImTextureFormat_RGBA32, ow, oh);
+        for (int y = 0; y < oh; ++y)
+            for (int x = 0; x < ow; ++x)
+            {
+                float sum[4] = {};
+                for (int yy = y * f; yy < y * f + f; ++yy)
+                    for (int xx = x * f; xx < x * f + f; ++xx)
+                    {
+                        const uint8_t *p = &rgba[(static_cast<size_t>(yy) * w + xx) * 4u];
+                        const float a = p[3];
+                        sum[0] += p[0] * a;
+                        sum[1] += p[1] * a;
+                        sum[2] += p[2] * a;
+                        sum[3] += a;
+                    }
+                unsigned char *out = static_cast<unsigned char *>(tex->GetPixelsAt(x, y));
+                for (int c = 0; c < 3; ++c)
+                    out[c] = static_cast<unsigned char>(sum[3] > 0.0f ? std::min(255.0f, sum[c] / sum[3] + 0.5f) : 0.0f);
+                out[3] = static_cast<unsigned char>(sum[3] / static_cast<float>(f * f) + 0.5f);
+            }
+        ImGui::RegisterUserTexture(tex);
+        g_screenImages.back().second = tex;
+        return tex;
+    }
+
+    void DrawScreenImage(ImDrawList *list, const Pcsx2GsScreenItem &item, const char *path, float x0, float y0, float w, float h)
+    {
+        const ImVec2 a(x0 + item.x * w, y0 + item.y * h), b(x0 + item.x1 * w, y0 + item.y1 * h);
+        if ((item.fill >> 24) == 0u || b.y - a.y < 1.0f)
+            return;
+        if (ImTextureData *tex = ScreenImageFor(path, b.y - a.y))
+            list->AddImage(tex->GetTexRef(), a, b, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), item.fill);
+    }
+
     // RenderOSD (GS thread): the list over the picture, under the menu and the OSD.
     void DrawScreen()
     {
@@ -957,6 +1047,8 @@ namespace
                 DrawScreenTriangle(list, item, x0, y0, w, h);
             else if (item.kind == PCSX2GS_SCREEN_RECT)
                 DrawScreenRect(list, item, x0, y0, w, h);
+            else if (item.kind == PCSX2GS_SCREEN_IMAGE)
+                DrawScreenImage(list, item, str(item.text), x0, y0, w, h);
         }
         list->PopClipRect();
     }

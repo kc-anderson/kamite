@@ -13,8 +13,9 @@
 // are ours: the pad (the menus' command word at 0x7474A0: +0x1A0 pressed, +0x1B0 repeating; bit 28 OK, 29 Cancel, 21
 // Start, 24 / 25 up / down, 26 / 27 left / right, +32 the left stick's; menu_buttons sets which buttons OK and Cancel
 // are), the game's menu sounds (0x15E OK, 0x15F move, 0x161 back) and every entry hidden but the backdrop. The game
-// draws only the backdrop (K's wall); the text, the cursor and the Yes / No are the renderer's overlay
-// (options_overlay.cpp, pcsx2gs_set_screen), sent every frame and cleared when the screen closes.
+// draws only the backdrop (K's wall); the title, the text, the cursor and the Yes / No are the renderer's overlay
+// (options_overlay.cpp, pcsx2gs_set_screen), sent every frame (faded with the game's screen fade) and cleared when
+// the screen closes.
 //
 // Aspect ratio: while our list is up the screen is the port's own (hud::claimOwnScreen): nothing is narrowed or
 // pillarboxed. The backdrop quad is stretched over the whole picture (the wall image is made for the aspect ratio);
@@ -64,6 +65,10 @@ namespace kamite::options_screen
         namespace fs = std::filesystem;
 
         // ---- the game ------------------------------------------------------------------------------------------
+        // classFADE D_00747470, the screen fade the sub-screen manager runs between screens (col +0x10 -> col2 +0x14
+        // over time +0x18 frames, count +0x1A, state +0x1C: bit 0 = drawn; to black holds, from black stops). Its
+        // sprite is black at alpha 0x80 and above (the GS clamps).
+        constexpr uint32_t kFade = 0x00747470u;
         constexpr uint32_t kIdTrans = 0x2AAC28u;   // cIDBase_trans(layout)
         constexpr uint32_t kIdMove = 0x2AAA40u;    // cIDBase_move(layout)
         constexpr uint32_t kSePlay = 0x2CB8A0u;    // (0x5FEE00, 0, id, -1, -1, 0, 0): the menus' sound calls
@@ -532,6 +537,19 @@ namespace kamite::options_screen
 
         void clearOverlay() { GSPcsx2Backend::SetScreen(nullptr, 0u, nullptr, 0u); }
 
+        // How much of the picture the game's fade lets through (1 = none drawn, 0 = black): our text fades with it.
+        float screenFade()
+        {
+            if ((*at(kFade + 0x1Cu) & 1u) == 0u)
+                return 1.0f;
+            uint16_t time, count;
+            std::memcpy(&time, at(kFade + 0x18u), sizeof(time));
+            std::memcpy(&count, at(kFade + 0x1Au), sizeof(count));
+            const float from = static_cast<float>(rd32(kFade + 0x10u) >> 24), to = static_cast<float>(rd32(kFade + 0x14u) >> 24);
+            const float t = time ? std::min(1.0f, static_cast<float>(count) / static_cast<float>(time)) : 1.0f;
+            return 1.0f - std::clamp((from + (to - from) * t) / 128.0f, 0.0f, 1.0f);
+        }
+
         // OK on a row.
         void act(int kind, Screen &s, uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
@@ -685,8 +703,8 @@ namespace kamite::options_screen
                 s.backdrop = findBackdrop(self);
             hud::claimOwnScreen();
             callGuest(rdram, ctx, runtime, kIdTrans, {self});
-            const float fade = valid(s.backdrop, ent::kSize) ? static_cast<float>(*at(s.backdrop + kEntColour + 3u)) / 128.0f : 1.0f;
-            sendOverlay(N, s, fade);
+            const float backdrop = valid(s.backdrop, ent::kSize) ? static_cast<float>(*at(s.backdrop + kEntColour + 3u)) / 128.0f : 1.0f;
+            sendOverlay(N, s, std::min(backdrop, 1.0f) * screenFade());
             ctx->pc = ra;
         }
 
@@ -749,8 +767,9 @@ namespace kamite::options_screen
             const std::u8string text = path.u8string();
             return std::string(reinterpret_cast<const char *>(text.data()), text.size());
         };
-        options_overlay::setFonts(utf8(exeDir / "resources" / "fonts" / "ArchivoNarrow-SemiBold.ttf"),
-                                  utf8(exeDir / "resources" / "fonts" / "DejaVuSans-Bold.ttf"));
+        options_overlay::setAssets(utf8(exeDir / "resources" / "fonts" / "ArchivoNarrow-SemiBold.ttf"),
+                                   utf8(exeDir / "resources" / "fonts" / "DejaVuSans-Bold.ttf"),
+                                   utf8(exeDir / "resources" / "options" / "options_title.png"));
 #if defined(KAMITE_HAS_SCREEN_OVERLAY)
         ps2x::menu::addPanel("Display", &drawTuningPanel);
 #endif

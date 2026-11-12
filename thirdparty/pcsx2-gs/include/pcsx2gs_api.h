@@ -124,13 +124,14 @@ enum
     PCSX2GS_SCREEN_TEXT = 0,     // text in a font file: the baseline's anchor at x y
     PCSX2GS_SCREEN_TRIANGLE = 1, // filled: points x y, x1 y1, x2 y2
     PCSX2GS_SCREEN_RECT = 2,     // filled: x y top left, x1 y1 bottom right
+    PCSX2GS_SCREEN_IMAGE = 3,    // a PNG (path in text): x y top left, x1 y1 bottom right, tinted by fill
     PCSX2GS_ALIGN_LEFT = 0, PCSX2GS_ALIGN_CENTRE = 1, PCSX2GS_ALIGN_RIGHT = 2,
 };
 typedef struct Pcsx2GsScreenItem
 {
     uint32_t kind;
     uint32_t align;  // text: which end of the line x is
-    uint32_t text;   // text: byte offset of its UTF-8 string in the strings block (one line)
+    uint32_t text;   // text: byte offset of its UTF-8 string in the strings block (one line); image: the file's path
     uint32_t font;   // text: byte offset of the font file's UTF-8 path in the strings block
     uint32_t fill;
     uint32_t stroke; // drawn round the shape (text: round each letter)

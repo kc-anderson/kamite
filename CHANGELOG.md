@@ -4,6 +4,9 @@ Newest first, one line per change; the code comments say how.
 
 ## November 12, 2026
 
+- Options: the screen's text fades in and out with the screen instead of showing early in the 4:3 spot.
+- Options: the help line sits in the wall's lighter band in the game's cream with a drop shadow, like the game's own hints.
+- Options: K's painted OPTIONS title tops the screen.
 - Options: the screen's text, cursor and Yes / No are drawn sharp at any resolution, in fonts matched to the game's own menus.
 - Options: RESET GAME and RESTORE DEFAULTS ask Yes / No first; CONTROLS no longer opens the game's old controller page.
 - Options: the wall's brightness, contrast and colour now match the game's own Options wall, so text reads as clearly.
