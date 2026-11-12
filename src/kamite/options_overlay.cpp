@@ -41,10 +41,11 @@ namespace kamite::options_overlay
         constexpr float kFirstRowY = 110.0f, kLastRowY = 347.0f, kRowStep = 34.0f; // row centres (the pause's 8 rows)
         constexpr float kCursorX = 24.0f, kCursorHalfW = 6.0f, kCursorHalfH = 8.0f;
         constexpr float kValueX = 262.0f, kValueGap = 58.0f, kValueCap = 17.0f;
-        // The help sits in the wall's lighter band (lines 362..417) as the game's hint text sits in its band: the first
-        // line's caps from about a quarter down, the second line's baseline near the bottom (K's reference, Nov 12).
-        constexpr float kHelpX = 29.0f, kHelpBaseline = 389.5f, kHelpCap = 12.5f, kHelpLine = 23.5f, kHelpScaleX = 0.73f;
-        constexpr float kHelpShadowX = 1.5f, kHelpShadowY = 1.4f;
+        // The help is centred up and down in the wall's lower band (lines 363.5..417), one line or two (K, Nov 12: as the
+        // game's own help sits), a little larger than the game's hint text (K). Line pitch as the Techniques hints'.
+        constexpr float kHelpX = 29.0f, kHelpBandTop = 363.5f, kHelpBandBottom = 417.0f;
+        constexpr float kHelpCap = 14.0f, kHelpLine = 22.0f, kHelpScaleX = 0.73f;
+        constexpr float kHelpShadowX = 0.12f * kHelpCap, kHelpShadowY = 0.11f * kHelpCap; // the hints' shadow, to scale
         // K's painted title, placed as the original's painted one (its letters x 146..363, y 20..66 of the 512 x 448
         // screen; K's image is drawn in the same texel shape: 17.44 of its pixels per unit and per line), centred.
         constexpr float kTitlePixelsPerUnit = 17.44f, kTitleTop = 13.7f, kTitleWidth = 3947.0f, kTitleHeight = 1064.0f;
@@ -170,7 +171,11 @@ namespace kamite::options_overlay
             // Two lines at most.
             void help(const char *body)
             {
-                float baseline = kHelpBaseline;
+                int lines = body && *body ? 1 : 0;
+                for (const char *c = body; c && *c; ++c)
+                    lines += *c == '\n' && c[1] ? 1 : 0;
+                const float block = kHelpCap + kHelpLine * static_cast<float>(std::max(lines - 1, 0));
+                float baseline = 0.5f * (kHelpBandTop + kHelpBandBottom - block) + kHelpCap;
                 for (const char *line = body; line && *line;)
                 {
                     const char *end = std::strchr(line, '\n');

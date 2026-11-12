@@ -11,7 +11,7 @@
 //
 // We replace entries 2 (wrapped: our state starts), 3 (wrapped: our text goes), 4, 5 and 6 of both. In mode 0 they
 // are ours: the pad (the menus' command word at 0x7474A0: +0x1A0 pressed, +0x1B0 repeating; bit 28 OK, 29 Cancel, 21
-// Start, 24 / 25 up / down, 26 / 27 left / right, +32 the left stick's; menu_buttons sets which buttons OK and Cancel
+// Start, then up / down / left / right (menuKey.h); menu_buttons sets which buttons OK and Cancel
 // are), the game's menu sounds (0x15E OK, 0x15F move, 0x161 back) and every entry hidden but the backdrop. The game
 // draws only the backdrop (K's wall); the title, the text, the cursor and the Yes / No are the renderer's overlay
 // (options_overlay.cpp, pcsx2gs_set_screen), sent every frame (faded with the game's screen fade) and cleared when
@@ -77,8 +77,9 @@ namespace kamite::options_screen
         constexpr uint32_t kCommand = game::GameWork::address(game::GameWork::kTrg);
         constexpr uint32_t kCommandRepeat = game::GameWork::address(game::GameWork::kRep);
         constexpr uint64_t kOk = 1ull << 28, kCancel = 1ull << 29, kStart = 1ull << 21;
-        constexpr uint64_t kUp = (1ull << 24) | (1ull << 56), kDown = (1ull << 25) | (1ull << 57);
-        constexpr uint64_t kLeft = (1ull << 26) | (1ull << 58), kRight = (1ull << 27) | (1ull << 59);
+        // The decomp's menuKey.h: one bit for the pad, one for the stick (left is bit 27, right 26).
+        constexpr uint64_t kUp = 0x0001000001000000ull, kDown = 0x0002000002000000ull;
+        constexpr uint64_t kLeft = 0x0004000008000000ull, kRight = 0x0008000004000000ull;
         constexpr uint32_t kNoDraw = game::kIdentFlagNoDraw;
         constexpr int32_t kResultBack = 0xA, kResultClose = -1, kResultReset = 0xB, kResultLoad = 0xD;
 

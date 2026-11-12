@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## November 12, 2026
 
+- Options: left / right pick YES / NO the right way round (the left stick too).
+- Options: the help line is a little larger and centred in the wall's lower band.
 - Techniques: a half-typed move text no longer stays stuck under "Attack Str" after closing the move list.
 - Options: the screen's text fades in and out with the screen instead of showing early in the 4:3 spot.
 - Options: the help line sits in the wall's lighter band in the game's cream with a drop shadow, like the game's own hints.
