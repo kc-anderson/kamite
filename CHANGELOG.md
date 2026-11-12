@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 12, 2026
 
+- Options: the wall's brightness, contrast and colour now match the game's own Options wall, so text reads as clearly.
 - Options: the title and pause Options open a new OPTIONS screen on a painted wall that fills any screen shape (category list for now; the pages come next).
 - See Through: when the game takes the camera (e.g. punishes), the game's own wall hiding works again.
 - Sway Bar: the last boss shows the stun gauge beside his vertical health bar, filling from the bottom up.
