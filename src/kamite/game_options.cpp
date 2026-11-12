@@ -952,11 +952,10 @@ namespace kamite
         // the boss, +0xBC the health fill, +0xC0 the damage lag; drawn by IdDrawObj_transIfShown 0x13CF20). Shown once the
         // boss has built any stun (bosses that can't be stunned never show it). After the game's trans (hook at 0x13CFA0,
         // also reached by its early returns: its tests are repeated here) two more passes over the layout: the lag
-        // entry in translucent black (the gauge's background), then the lag (magenta, during / after a stun) and the fill
-        // (yellow, the stun), each half height and moved under the bar by its height and 2 units.
-        constexpr uint32_t kSwayBack = 0x50000000u;  // black, alpha 0x50
+        // copy of the bar's own pieces at half height under it (below).
+        int g_bossSwatch = 0; // F2 (temporary): the boss gauge's palette swatch, 0 = the boss's own fill
         std::unordered_map<uint32_t, uint32_t> g_bossSeen; // bar -> the boss it has seen stun on
-        std::unordered_set<uint32_t> g_bossLogged;
+        std::unordered_set<uint32_t> g_bossLogged, g_bossDrawn;
 
         void bossSwayBar(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
@@ -970,8 +969,14 @@ namespace kamite
                 return;
             const int32_t build = static_cast<int32_t>(ram32(rdram, boss + 0x5B4u));
             float stun = ramF(rdram, boss + 0x17CCu) / kStunTime;
-            if (build > 0 || stun > 0.0f)
+            if (g_bossDrawn.insert(boss).second) // temporary (K, Nov 12: which bosses build stun)
+                KM_INFO(Game, "sway bar: boss " << std::hex << ram32(rdram, boss + 0x564u) << std::dec << " has the boss bar");
+            if ((build > 0 || stun > 0.0f) && g_bossSeen[bar] != boss)
+            {
                 g_bossSeen[bar] = boss;
+                KM_INFO(Game, "sway bar: boss " << std::hex << ram32(rdram, boss + 0x564u) << std::dec << " builds stun (" << build
+                                                << ", " << stun * kStunTime << ")");
+            }
             const auto seen = g_bossSeen.find(bar);
             if (seen == g_bossSeen.end() || seen->second != boss)
                 return;
@@ -1020,32 +1025,57 @@ namespace kamite
             const Saved &fs = savedOf(fillEnt);
             if ((fs.flags & kEntActive) == 0u)
                 return;
-            const float fillBase = ramF(rdram, fillEnt + 0x40u);
-            const float parents = fillBase > 0.001f ? fs.sclX / fillBase : 1.0f;
-            const float drop = ramF(rdram, fillEnt + 0x6Cu) * fs.sclY + 2.0f; // the bar's height + 2 units
-            const auto place = [&](uint32_t e, float width, uint32_t colour) {
-                const Saved &k = savedOf(e);
-                put32(rdram, e + 0x2Cu, k.flags & ~kEntNoDraw);
-                putF(rdram, e + 0x54u, k.y + drop);
-                putF(rdram, e + 0x5Cu, k.sclY * 0.5f);
-                putF(rdram, e + 0x58u, parents * width);
-                put32(rdram, e + 0x64u, colour);
-            };
-            const auto pass = [&](bool background) {
-                for (uint32_t i = 0; i < count; ++i)
-                    put32(rdram, ent + i * 0xACu + 0x2Cu, saved[i].flags | kEntNoDraw);
-                if (background)
-                    place(lagEnt, 1.0f, kSwayBack);
-                else
+            // A copy of the bar (K, Nov 12: like the demons' gauge copies their bar's style): the entries under the fill's
+            // parent (the frame pieces, the background, the fill and the lag; not the parent's ornament nor the portrait)
+            // at half height, moved under the bar; the fill = the stun in a palette swatch (F2 picks it, for now), the lag
+            // during / after the stun.
+            const uint32_t root = ram32(rdram, fillEnt + 0x20u);
+            const float fillBase = ramF(rdram, fillEnt + 0x40u), lagBase = ramF(rdram, lagEnt + 0x40u);
+            const float fillH = ramF(rdram, fillEnt + 0x6Cu) * fs.sclY;
+            const float y0 = fs.y - 0.5f * fillH; // the bar's centre line (the fill's kind 3: drawY = its bottom edge)
+            float tallest = fillH;
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                const uint32_t e = ent + i * 0xACu;
+                if (ram32(rdram, e + 0x20u) == root && (saved[i].flags & kEntActive) != 0u)
+                    tallest = std::max(tallest, ramF(rdram, e + 0x6Cu) * saved[i].sclY);
+            }
+            const float drop = 0.75f * tallest + 2.0f; // its centre: half the bar + 2 + half the copy below the bar's centre
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                const uint32_t e = ent + i * 0xACu;
+                const Saved &k = saved[i];
+                if (ram32(rdram, e + 0x20u) != root || e == root || (k.flags & kEntActive) == 0u)
                 {
-                    if (lag > 0.0f)
-                        place(lagEnt, lag, savedOf(lagEnt).colour);
-                    place(fillEnt, stun, (fs.colour & 0xFF000000u) | kSwayYellow);
+                    put32(rdram, e + 0x2Cu, k.flags | kEntNoDraw);
+                    continue;
                 }
-                callGuest(rdram, ctx, runtime, kIdBaseTrans, {bar});
-            };
-            pass(true);
-            pass(false);
+                putF(rdram, e + 0x54u, y0 + drop + (k.y - y0) * 0.5f);
+                putF(rdram, e + 0x5Cu, k.sclY * 0.5f);
+                if (e == fillEnt)
+                    putF(rdram, e + 0x58u, (fillBase > 0.001f ? k.sclX / fillBase : 1.0f) * stun);
+                else if (e == lagEnt)
+                {
+                    putF(rdram, e + 0x58u, (lagBase > 0.001f ? k.sclX / lagBase : 1.0f) * lag);
+                    if (lag <= 0.0f)
+                        put32(rdram, e + 0x2Cu, k.flags | kEntNoDraw);
+                }
+            }
+            float uv[4];
+            for (int c = 0; c < 4; ++c)
+                uv[c] = ramF(rdram, fillEnt + 0x70u + 4u * c);
+            if (const int sw = g_bossSwatch; sw > 0 && sw <= 12)
+            {
+                constexpr float kU[3][2] = {{0.155f, 0.1715f}, {0.28f, 0.3005f}, {0.405f, 0.4305f}};
+                constexpr float kV[4][2] = {{0.5f, 0.5625f}, {0.625f, 0.6875f}, {0.758f, 0.8125f}, {0.875f, 0.9375f}};
+                const int col = (sw - 1) / 4, row = (sw - 1) % 4;
+                const float pick[4] = {kU[col][0], kV[row][0], kU[col][1], kV[row][1]};
+                for (int c = 0; c < 4; ++c)
+                    putF(rdram, fillEnt + 0x70u + 4u * c, pick[c]);
+            }
+            callGuest(rdram, ctx, runtime, kIdBaseTrans, {bar});
+            for (int c = 0; c < 4; ++c)
+                putF(rdram, fillEnt + 0x70u + 4u * c, uv[c]);
             for (uint32_t i = 0; i < count; ++i)
             {
                 const uint32_t e = ent + i * 0xACu;
@@ -1440,6 +1470,9 @@ namespace kamite
         ps2xSetPatchFlag("ball_buster_women", on);
         setenvFlag("KAMITE_BALL_BUSTER_WOMEN", on);
     }
+
+    int swayBossSwatch() { return g_bossSwatch; }
+    void setSwayBossSwatch(int swatch) { g_bossSwatch = std::clamp(swatch, 0, 12); }
 
     bool swayBar()
     {
