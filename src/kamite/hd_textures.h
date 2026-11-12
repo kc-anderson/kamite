@@ -43,6 +43,10 @@ namespace kamite::hd_textures
     // row-major, TBW = width / 64, width 128 or more), its CLUT as stored (the 16x16 CSM1 block, 1 KB). Checked against
     // the pack's name of the tutorials' stick sheet (432ba500d8d45a46-6d99a9e671d37be4-000059d3).
     std::string name8Linear(const uint8_t *indices, const uint8_t *clut, int width, int height);
+    // A PSMT8 texture uploaded as PSMCT32 (as name8): the width x height indices (row-major) the payload (ctWidth x
+    // ctHeight words) leaves in GS memory, and back.
+    void unpack8(const uint8_t *payload, int ctWidth, int ctHeight, int width, int height, uint8_t *indices);
+    void pack8(const uint8_t *indices, int width, int height, int ctWidth, int ctHeight, uint8_t *payload);
 
     // RGBA8 images (the pack's PNGs keep the PS2's alpha scale: 0x80 = opaque). Load: false when the file is not a
     // readable PNG. Save writes a PNG.

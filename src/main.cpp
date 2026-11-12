@@ -21,6 +21,7 @@
 #include "kamite/menu_buttons.h"
 #include "kamite/radar_glow.h"
 #include "kamite/tutorial_text.h"
+#include "kamite/options_screen.h"
 #include "kamite/style_presets.h"
 #include "kamite/buck_breaker.h"
 #include "kamite/punish_fit.h"
@@ -1039,6 +1040,7 @@ int main(int argc, char *argv[])
         kamite::menu_buttons::install(runtime.memory().getRDRAM()); // [Game] MenuButtons: the menus' confirm/cancel buttons
         kamite::radar_glow::install(runtime.memory().getRDRAM()); // Modern: the radar glows while the free camera is on
         kamite::tutorial_text::install(runtime.memory().getRDRAM()); // Tutorial 1 (Modern's switch and Auto), Tutorial 2 (the roulette's buttons)
+        kamite::options_screen::install(runtime, exeDir); // the title and pause Options open God Hand: Rearmed's own screen
         kamite::hotkeys::install(exeDir / "GHR.ini"); // [Hotkeys]: the port's shortcut keys
         kamite::dev_menu::install(exeDir / "GHR.ini"); // F2: the dev menu's tab order, Display and Gameplay
         kamite::style_presets::install(runtime); // style presets: d-pad swaps in play, the Techniques screen's style row and L2 / R2

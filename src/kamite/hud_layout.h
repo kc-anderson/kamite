@@ -27,6 +27,10 @@ namespace kamite::hud
     // A menu or screen is up (a full-screen background in a non-HUD layout in the last few frames). Tracked at every
     // aspect ratio.
     bool menuActive();
+    // Game thread, while a screen of the port's own is drawn (the OPTIONS screen, options_screen.cpp), every frame:
+    // it lays its 2D out for the aspect ratio itself, so nothing is narrowed, its full-screen background does not make
+    // a menu frame and the picture is not pillarboxed (from the next frame's start). Counts as a menu for menuActive().
+    void claimOwnScreen();
     // The minimap's draw slot last frame (its layout entries' draw list, and their nearest position in it: a lower
     // position is drawn later, over a higher one). False until the minimap has been drawn.
     bool radarSlot(int &list, int &pos);

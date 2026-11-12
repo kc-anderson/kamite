@@ -109,6 +109,11 @@ namespace kamite::hud
         }
 
         bool menuNow() { return g_menuSeen || g_menuHold > 0; }
+        // A screen of the port's own (the OPTIONS screen, options_screen.cpp) lays its 2D out for the aspect ratio
+        // itself: claimed before it draws (this frame's draws after it are left alone), and the next frame's start
+        // keeps the picture its full shape (g_ownScreen).
+        bool g_ownClaimed = false, g_ownScreen = false;
+        bool ownNow() { return g_ownClaimed; }
         bool g_wide = false;
         float g_k = 1.0f;
         float g_edgeShare = 0.0f; // HUD edges: the 16:9 area's edges, as a share of the half width from the centre
@@ -412,7 +417,7 @@ namespace kamite::hud
             {
                 // Full height too: letterbox bars in cutscenes are full width but thin.
                 const float height = 448.0f; // the game's 2D screen (0..448, NTSC)
-                if (g_inIdTrans && !g_ctx.active && !g_menuSeen && y1 - y0 >= 0.8f * height &&
+                if (g_inIdTrans && !g_ctx.active && !g_menuSeen && !ownNow() && !g_ownScreen && y1 - y0 >= 0.8f * height &&
                     g_idCaller != kJukeBoxTransReturn && !petitDevilFade(rdram, g_idCaller) &&
                     (g_subScreenOpen || !tutorialUp(rdram)))
                 {
@@ -434,7 +439,7 @@ namespace kamite::hud
                 }
                 return;
             }
-            if (!g_wide || menuNow())
+            if (!g_wide || menuNow() || ownNow())
             {
                 if (g_inIdTrans)
                     roulette_bar::onPlaced(g_curLayout, g_entry, x0, x1);
@@ -536,7 +541,7 @@ namespace kamite::hud
         // func_0015C410 before "sw $a3,0x40($sp)": one strip vertex's GS x in $a3.
         void stripVertex(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
-            if (!g_wide || menuNow())
+            if (!g_wide || menuNow() || ownNow())
                 return;
             const float width = screenWidth(rdram);
             const int32_t offset = gsOffset(rdram);
@@ -820,7 +825,9 @@ namespace kamite::hud
     bool narrowFont() { return false; }
     bool narrowGauge() { return false; }
 
-    bool menuActive() { return menuNow(); }
+    bool menuActive() { return menuNow() || g_ownClaimed || g_ownScreen; }
+
+    void claimOwnScreen() { g_ownClaimed = true; }
 
     bool radarSlot(int &list, int &pos)
     {
@@ -894,6 +901,10 @@ namespace kamite::hud
         const bool keep = subScreen && (g_menuHold > 0 || g_subScreenFrames >= kSubScreenAlone);
         g_menuHold = (g_menuSeen || keep) ? 8 : std::max(0, g_menuHold - 1);
         g_menuSeen = false;
+        g_ownScreen = g_ownClaimed;
+        g_ownClaimed = false;
+        if (g_ownScreen)
+            g_menuHold = 0; // the port's own screen: drawn for the aspect ratio, never pillarboxed
         if (g_wide)
             setMenuAspect(g_menuHold > 0 && g_menuMode == MenuMode::Pillarbox);
         if (!g_wide)

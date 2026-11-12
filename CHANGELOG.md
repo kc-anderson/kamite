@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 12, 2026
 
+- Options: the title and pause Options open a new OPTIONS screen on a painted wall that fills any screen shape (category list for now; the pages come next).
 - See Through: when the game takes the camera (e.g. punishes), the game's own wall hiding works again.
 - Sway Bar: the last boss shows the stun gauge beside his vertical health bar, filling from the bottom up.
 - Buck Breaker: Spanking on bigger women keeps Gene's holding arm out of her waist (now also for their own punish).

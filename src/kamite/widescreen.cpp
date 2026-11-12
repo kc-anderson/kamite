@@ -99,6 +99,8 @@ namespace kamite
         void gaugeWidth(uint8_t *, R5900Context *ctx, PS2Runtime *) { setAt(ctx, hud::narrowGauge() ? g_gauge : 0x3F800000u); }
     }
 
+    float aspectRatio() { return g_aspect; }
+
     void installWidescreen()
     {
         float aspect = parseAspect(std::getenv("KAMITE_ASPECT"));

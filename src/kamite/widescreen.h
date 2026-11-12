@@ -7,4 +7,6 @@ namespace kamite
     // [Video] AspectRatio (KAMITE_ASPECT): the picture's shape. Before runtime.initialize (the window takes this
     // shape) and before the guest starts (the camera and HUD constants are switched in the game code).
     void installWidescreen();
+    // The picture's shape set by installWidescreen (width / height; 4:3 = 1.3333).
+    float aspectRatio();
 }

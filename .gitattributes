@@ -3,3 +3,4 @@
 *.csv text eol=lf
 *.png binary
 *.bin binary
+*.jpg binary
