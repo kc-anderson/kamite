@@ -9,19 +9,16 @@
 // rows, 1 / 2 / 3 the controller page opening / up / closing (its own layout at +0xE0 / +0xC0), 4 (pause) the
 // reset Yes / No (+0x131: 0 Yes, 1 No; the help entries show message 0x2008).
 //
-// We replace entries 2 (wrapped: our state starts), 4, 5 and 6 of both. In mode 0 they are ours: the pad (the menus'
-// command word at 0x7474A0: +0x1A0 pressed, +0x1B0 repeating; bit 28 OK, 29 Cancel, 21 Start, 24 / 25 up / down and
-// 56 / 57 the left stick's; menu_buttons sets which buttons OK and Cancel are), the game's menu sounds (0x15E OK,
-// 0x15F move, 0x161 back), every entry hidden but the backdrop and the cursor, and our text drawn after the layout
-// through the game's text drawer (the font object 0x5E7510, set up as cIDBase_transText does, its body pointed at our
-// strings in guest scratch 0xFC000..0xFE000). Other modes run the game's own functions (the controller page; the
-// reset Yes / No, drawn over our list).
+// We replace entries 2 (wrapped: our state starts), 3 (wrapped: our text goes), 4, 5 and 6 of both. In mode 0 they
+// are ours: the pad (the menus' command word at 0x7474A0: +0x1A0 pressed, +0x1B0 repeating; bit 28 OK, 29 Cancel, 21
+// Start, 24 / 25 up / down, 26 / 27 left / right, +32 the left stick's; menu_buttons sets which buttons OK and Cancel
+// are), the game's menu sounds (0x15E OK, 0x15F move, 0x161 back) and every entry hidden but the backdrop. The game
+// draws only the backdrop (K's wall); the text, the cursor and the Yes / No are the renderer's overlay
+// (options_overlay.cpp, pcsx2gs_set_screen), sent every frame and cleared when the screen closes.
 //
 // Aspect ratio: while our list is up the screen is the port's own (hud::claimOwnScreen): nothing is narrowed or
 // pillarboxed. The backdrop quad is stretched over the whole picture (the wall image is made for the aspect ratio);
-// everything else is placed here in "4:3 units" of a text area as wide as the picture (at most 21:9, centred), whose
-// left edge is at game x L, one unit = k game units (k = (4/3) / aspect): game x = L + x * k, glyphs and sprites k
-// times as wide. The game's own entries still shown (the cursor, the reset Yes / No) are moved that way while drawn.
+// the overlay places its text in a text area as wide as the picture (at most 21:9, centred).
 //
 // The wall: the backdrop is texture 1 of the layout (a 512x512 PSMT8 picture uploaded as CT32 64x1024 from the file in
 // RAM every frame; rows 0..447 the screen, 448..511 a strip of sprites: the bold row names, the cursor). A thread made
@@ -37,10 +34,12 @@
 #include "kamite/hd_textures.h"
 #include "kamite/hud_layout.h"
 #include "kamite/log.h"
+#include "kamite/options_overlay.h"
 #include "kamite/widescreen.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/ee_scheduler.h"
 #include "runtime/gs/gs_pcsx2_backend.h"
+#include "runtime/ps2_game_menu.h"
 
 // raylib's image functions (CPU only): the wall's JPEG, cropping and resampling. Its ::Image is not hd_textures::Image.
 #include "raylib.h"
@@ -65,9 +64,6 @@ namespace kamite::options_screen
         namespace fs = std::filesystem;
 
         // ---- the game ------------------------------------------------------------------------------------------
-        constexpr uint32_t kFont = game::MessDrawFont::kInstance;
-        constexpr uint32_t kFontFace = 0x2AB9A8u;  // (unused, entry +0x8B): the font face and colour set for that code
-        constexpr uint32_t kFontDraw = 0x2AF728u;  // (font, 0, 0): lays out and queues the body
         constexpr uint32_t kIdTrans = 0x2AAC28u;   // cIDBase_trans(layout)
         constexpr uint32_t kIdMove = 0x2AAA40u;    // cIDBase_move(layout)
         constexpr uint32_t kSePlay = 0x2CB8A0u;    // (0x5FEE00, 0, id, -1, -1, 0, 0): the menus' sound calls
@@ -77,14 +73,15 @@ namespace kamite::options_screen
         constexpr uint32_t kCommandRepeat = game::GameWork::address(game::GameWork::kRep);
         constexpr uint64_t kOk = 1ull << 28, kCancel = 1ull << 29, kStart = 1ull << 21;
         constexpr uint64_t kUp = (1ull << 24) | (1ull << 56), kDown = (1ull << 25) | (1ull << 57);
-        constexpr uint32_t kNoDraw = game::kIdentFlagNoDraw, kActive = 0x80000000u;
+        constexpr uint64_t kLeft = (1ull << 26) | (1ull << 58), kRight = (1ull << 27) | (1ull << 59);
+        constexpr uint32_t kNoDraw = game::kIdentFlagNoDraw;
         constexpr int32_t kResultBack = 0xA, kResultClose = -1, kResultReset = 0xB, kResultLoad = 0xD;
 
         // Sub-screen object fields (both screens).
         constexpr uint32_t kFile = 0x50u, kMode = 0x5Au, kResult = 0x60u, kIds = 0x80u;
-        constexpr uint32_t kLayoutEnt = game::IDBase::kEnt, kLayoutEntNum = game::IDBase::kEntNum, kLayoutMode = 0x46u;
+        constexpr uint32_t kLayoutEnt = game::IDBase::kEnt, kLayoutEntNum = game::IDBase::kEntNum;
         namespace ent = game::IDBaseEnt;
-        constexpr uint32_t kEntPosX = 0x38u, kEntPosY = 0x3Cu, kEntColour = 0x64u, kEntList = 0x8Du, kEntZ = 0x8Eu;
+        constexpr uint32_t kEntPosX = 0x38u, kEntPosY = 0x3Cu, kEntColour = 0x64u;
 
         enum class Action : uint8_t
         {
@@ -99,47 +96,47 @@ namespace kamite::options_screen
             Exit,
         };
 
-        struct Row
-        {
-            Action action;
-            const char *name;
-            const char *help; // two lines at most ('\n')
-        };
+        using Text = options_overlay::Row;
 
         // Help lines: drafts for K's one editing pass (claude/rearmed-options.md).
-        constexpr Row kControlsRow{Action::Controls, "CONTROLS", "Display controls"};
-        constexpr Row kDisplayRow{Action::Display, "DISPLAY", "Picture and camera."};
-        constexpr Row kInterfaceRow{Action::Interface, "INTERFACE", "The HUD, button prompts and gauges."};
-        constexpr Row kGameplayRow{Action::Gameplay, "GAMEPLAY", "Techniques, enemies and new\nways to play."};
-        constexpr Row kSoundRow{Action::Sound, "SOUND", "Sound mode and volume levels."};
-        constexpr Row kLoadRow{Action::LoadGame, "LOAD GAME", "Select a save file and\nrestart the game."};
-        constexpr Row kResetRow{Action::ResetGame, "RESET GAME", "Return to title screen"};
-        constexpr Row kRestoreRow{Action::Restore, "RESTORE DEFAULTS", "Set every option back to\nits default."};
-        constexpr Row kExitRow{Action::Exit, "EXIT", ""};
+        constexpr Text kControlsText{"CONTROLS", "Display controls"};
+        constexpr Text kDisplayText{"DISPLAY", "Picture and camera."};
+        constexpr Text kInterfaceText{"INTERFACE", "The HUD, button prompts and gauges."};
+        constexpr Text kGameplayText{"GAMEPLAY", "Techniques, enemies and new\nways to play."};
+        constexpr Text kSoundText{"SOUND", "Sound mode and volume levels."};
+        constexpr Text kLoadText{"LOAD GAME", "Select a save file and\nrestart the game."};
+        constexpr Text kResetText{"RESET GAME", "Return to title screen"};
+        constexpr Text kRestoreText{"RESTORE DEFAULTS", "Set every option back to\nits default."};
+        constexpr Text kExitText{"EXIT", ""};
+        constexpr const char *kResetQuestion = "Would you really like to reset?"; // the game's own (message 0x2008)
+        constexpr const char *kRestoreQuestion = "Set every option back to its default?";
 
-        constexpr std::array<Row, 9> kPauseRows{kControlsRow, kDisplayRow, kInterfaceRow, kGameplayRow, kSoundRow,
-                                                kLoadRow,     kResetRow,   kRestoreRow,   kExitRow};
-        constexpr std::array<Row, 7> kTitleRows{kControlsRow, kDisplayRow, kInterfaceRow, kGameplayRow, kSoundRow, kRestoreRow, kExitRow};
+        constexpr std::array<Text, 9> kPauseText{kControlsText, kDisplayText, kInterfaceText, kGameplayText, kSoundText,
+                                                 kLoadText,     kResetText,   kRestoreText,   kExitText};
+        constexpr std::array<Action, 9> kPauseActions{Action::Controls, Action::Display,   Action::Interface,
+                                                      Action::Gameplay, Action::Sound,     Action::LoadGame,
+                                                      Action::ResetGame, Action::Restore, Action::Exit};
+        constexpr std::array<Text, 7> kTitleText{kControlsText, kDisplayText, kInterfaceText, kGameplayText, kSoundText, kRestoreText, kExitText};
+        constexpr std::array<Action, 7> kTitleActions{Action::Controls, Action::Display, Action::Interface, Action::Gameplay,
+                                                      Action::Sound,    Action::Restore, Action::Exit};
 
         struct Kind
         {
             const char *name;
             const char *file; // the layout on the disc
-            uint32_t open, update, move, draw; // vtable entries 2, 4, 5, 6
-            uint32_t cursorRow, choice;        // the game's cursor row (s8) and Yes / No (s8) fields
-            uint32_t page;                     // the controller page's layout
-            int ids;                           // entries by id at +0x80
-            int cursorId, helpId, hideUpTo;    // ids: the cursor, the help text; rows, values and cursor are 0..hideUpTo
-            int gameControlsRow;               // the game's row of CONTROLS
-            const Row *rows;
+            uint32_t open, close, update, move, draw; // vtable entries 2, 3, 4, 5, 6
+            uint32_t page;                            // the controller page's layout
+            int ids;                                  // entries by id at +0x80
+            int hideUpTo;                             // ids 0..hideUpTo: rows, values and the cursor
+            const Text *text;
+            const Action *actions;
             int rowCount;
-            float rowStep;
         };
         const Kind kKinds[2] = {
-            {"pause", "idsubscroption_us.idd", 0x166638u, 0x166780u, 0x166BB8u, 0x166B60u, 0x130u, 0x131u, 0xE0u, 24, 15, 16, 15, 0,
-             kPauseRows.data(), static_cast<int>(kPauseRows.size()), 28.0f},
-            {"title", "idsubscroptiont_us.idd", 0x1673D0u, 0x167518u, 0x167908u, 0x1678B8u, 0x110u, 0x111u, 0xC0u, 16, 13, 14, 13, 0,
-             kTitleRows.data(), static_cast<int>(kTitleRows.size()), 34.0f},
+            {"pause", "idsubscroption_us.idd", 0x166638u, 0x166730u, 0x166780u, 0x166BB8u, 0x166B60u, 0xE0u, 24, 15,
+             kPauseText.data(), kPauseActions.data(), static_cast<int>(kPauseText.size())},
+            {"title", "idsubscroptiont_us.idd", 0x1673D0u, 0x1674C8u, 0x167518u, 0x167908u, 0x1678B8u, 0xC0u, 16, 13,
+             kTitleText.data(), kTitleActions.data(), static_cast<int>(kTitleText.size())},
         };
         enum
         {
@@ -466,129 +463,23 @@ namespace kamite::options_screen
         // ---- layout --------------------------------------------------------------------------------------------
         float g_aspect = 4.0f / 3.0f;
 
-        // The text area in 4:3 units (see the top of the file).
-        struct Area
-        {
-            float k = 1.0f, left = 0.0f, width = 512.0f;
-            float x(float units) const { return left + units * k; }
-        };
-        Area area()
-        {
-            Area a;
-            a.k = (4.0f / 3.0f) / g_aspect;
-            a.width = 512.0f * std::min(g_aspect, 21.0f / 9.0f) / (4.0f / 3.0f);
-            a.left = 256.0f - 0.5f * a.width * a.k;
-            return a;
-        }
-
-        constexpr float kRowX = 46.0f, kRowY = 96.0f, kRowScale = 0.9f;
-        constexpr float kCursorX = 30.0f, kCursorDropY = 13.0f; // the cursor's centre against the row's top
-        constexpr float kTitleY = 24.0f, kTitleScale = 1.5f;
-        constexpr float kHelpX = 30.0f, kHelpY = 362.0f, kHelpScale = 0.85f;
-        constexpr float kShadow = 1.2f;
-        constexpr uint32_t kWhite = 0x808080u, kGrey = 0x505050u, kHelpColour = 0x707070u, kTitleColour = 0x104080u; // BGR
-        constexpr uint32_t kBlack = 0x000000u;
-
-        // ---- text ----------------------------------------------------------------------------------------------
-        // Menu font codes (claude/tutorial-text.md); anything else is a space.
-        constexpr uint16_t kSpace = 0x35u, kNewline = 0xA001u, kEnd = 0x8001u, kColour = 0xB203u;
-        uint16_t glyph(char c)
-        {
-            if (c >= 'A' && c <= 'Z')
-                return static_cast<uint16_t>(0x40 + (c - 'A'));
-            if (c >= 'a' && c <= 'z')
-                return static_cast<uint16_t>(0x5A + (c - 'a'));
-            if (c >= '0' && c <= '9')
-                return static_cast<uint16_t>(0x36 + (c - '0'));
-            switch (c)
-            {
-            case '.': return 0x21u;
-            case '?': return 0x22u;
-            case '!': return 0x23u;
-            case '\'': return 0x27u;
-            case ':': return 0x31u;
-            case ',': return 0x7Eu;
-            case '-': return 0x1Fu;
-            case '/': return 0x2Du;
-            case '\n': return kNewline;
-            default: return kSpace;
-            }
-        }
-
-        // Our strings, one slot per draw this frame.
-        constexpr uint32_t kTextRam = 0x000FC000u, kTextSlot = 0x100u, kTextSlots = 32u;
-        uint32_t g_textSlot = 0;
-
-        struct Pen
-        {
-            uint32_t face = 0; // entry +0x8B of the game's help text
-            uint32_t list = 0;
-            float z = 0.0f;
-            float fade = 1.0f; // the screen's own fade (its backdrop's alpha)
-        };
-
-        // One string through the game's text drawer, as cIDBase_transText draws a text entry.
-        void drawText(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, const Pen &pen, float x, float y, float scaleX,
-                      float scaleY, bool centred, uint32_t bgr, const char *text)
-        {
-            if (g_textSlot >= kTextSlots || !text || !*text)
-                return;
-            const uint32_t address = kTextRam + kTextSlot * g_textSlot++;
-            const uint32_t alpha = static_cast<uint32_t>(std::lround(std::clamp(pen.fade, 0.0f, 1.0f) * 128.0f));
-            const uint32_t colour = (alpha << 24) | bgr;
-            std::vector<uint16_t> codes{kColour, static_cast<uint16_t>(colour >> 16), static_cast<uint16_t>(colour & 0xFFFFu)};
-            for (const char *c = text; *c && codes.size() + 2u < kTextSlot / 2u; ++c)
-                codes.push_back(glyph(*c));
-            codes.push_back(kEnd);
-            std::memcpy(at(address), codes.data(), codes.size() * sizeof(uint16_t));
-
-            callGuest(rdram, ctx, runtime, kFontFace, {0u, pen.face});
-            wr32(kFont + 0x58u, pen.list); // draw list
-            wr32(kFont + 0x5Cu, 5u);       // position in it (as every text)
-            wrF(kFont + 0x60u, pen.z);
-            wrF(kFont + game::MessDrawFont::kZoomX, scaleX);
-            wrF(kFont + game::MessDrawFont::kZoomY, scaleY);
-            wrF(kFont + game::MessDrawFont::kCharGapX, 2.0f);
-            wrF(kFont + game::MessDrawFont::kCharGapY, -scaleY * 26.0f + 8.0f);
-            wrF(kFont + 0x20u, x);
-            wrF(kFont + 0x24u, y);
-            wr32(kFont + 0x28u, centred ? 1u : 0u);
-            wr32(kFont + 0x04u, address); // body
-            wr32(kFont + 0x0Cu, address);
-            wr32(kFont + 0x10u, 0u);
-            wr32(kFont + 0x08u, address); // ruby (not drawn: flag 1 off below)
-            wr32(kFont + 0x14u, address);
-            wr32(kFont + 0x18u, 0u);
-            wr32(kFont + 0x1Cu, 0x0FFFFFFFu);
-            const uint32_t flags = rd32(kFont);
-            wr32(kFont, flags & ~0x5u); // no ruby, proportional
-            callGuest(rdram, ctx, runtime, kFontDraw, {kFont, 0u, 0u});
-            wr32(kFont, flags);
-        }
-
-        // With a drop shadow (drawn first: inside one draw slot the last queued is drawn first, so it goes second).
-        void drawLine(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, const Pen &pen, const Area &a, float xUnits, float y,
-                      float scale, bool centred, uint32_t bgr, const char *text)
-        {
-            drawText(rdram, ctx, runtime, pen, a.x(xUnits), y, scale * a.k, scale, centred, bgr, text);
-            drawText(rdram, ctx, runtime, pen, a.x(xUnits + kShadow), y + kShadow, scale * a.k, scale, centred, kBlack, text);
-        }
-
         // ---- the screen ----------------------------------------------------------------------------------------
         struct Screen
         {
             uint32_t self = 0;
             int row = 0;
             uint32_t backdrop = 0; // its backdrop entry (left stretched over the picture)
+            int confirmRow = -1;   // asking Yes / No for this row (-1 = not asking)
+            bool confirmYes = false;
         };
         Screen g_screen[2];
-        GuestFunction g_original[2][4] = {}; // open, update, move, draw
+        GuestFunction g_original[2][5] = {}; // open, close, update, move, draw
 
         Screen &screenOf(int kind, uint32_t self)
         {
             Screen &s = g_screen[kind];
             if (s.self != self)
-                s = Screen{self, 0, 0u};
+                s = Screen{self};
             return s;
         }
 
@@ -610,32 +501,89 @@ namespace kamite::options_screen
             return 0u;
         }
 
+        // ---- the overlay (options_overlay.cpp) ----------------------------------------------------------------
+#if defined(KAMITE_HAS_SCREEN_OVERLAY)
+        std::vector<Pcsx2GsScreenItem> g_items;
+        std::string g_strings;
+#endif
+
+        void sendOverlay(int kind, const Screen &s, float fade)
+        {
+#if defined(KAMITE_HAS_SCREEN_OVERLAY)
+            const Kind &k = kKinds[kind];
+            options_overlay::View view;
+            view.aspect = g_aspect;
+            view.fade = fade;
+            view.pause = kind == kPause;
+            view.rows = k.text;
+            view.rowCount = k.rowCount;
+            view.cursor = s.row;
+            view.confirmRow = s.confirmRow;
+            view.confirmYes = s.confirmYes;
+            if (s.confirmRow >= 0)
+                view.question = k.actions[s.confirmRow] == Action::ResetGame ? kResetQuestion : kRestoreQuestion;
+            options_overlay::build(view, g_items, g_strings);
+            GSPcsx2Backend::SetScreen(g_items.data(), static_cast<uint32_t>(g_items.size()), g_strings.data(),
+                                      static_cast<uint32_t>(g_strings.size()));
+#else
+            (void)kind, (void)s, (void)fade;
+#endif
+        }
+
+        void clearOverlay() { GSPcsx2Backend::SetScreen(nullptr, 0u, nullptr, 0u); }
+
+        // OK on a row.
         void act(int kind, Screen &s, uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const Kind &k = kKinds[kind];
             const uint32_t self = s.self;
-            switch (k.rows[s.row].action)
+            switch (k.actions[s.row])
             {
-            case Action::Controls: // the game's controller page (until ours exists)
-                sound(rdram, ctx, runtime, kSeOk);
-                *at(self + k.cursorRow) = static_cast<uint8_t>(k.gameControlsRow);
-                *at(self + kMode) = 1u;
-                break;
             case Action::LoadGame:
                 sound(rdram, ctx, runtime, kSeOk);
                 wr32(self + kResult, static_cast<uint32_t>(kResultLoad));
                 break;
-            case Action::ResetGame: // the game's own Yes / No (its "No" comes back to mode 0)
+            case Action::ResetGame:
+            case Action::Restore: // Yes / No first (No selected)
                 sound(rdram, ctx, runtime, kSeOk);
-                *at(self + k.choice) = 1u;
-                *at(self + kMode) = 4u;
+                s.confirmRow = s.row;
+                s.confirmYes = false;
                 break;
             case Action::Exit:
                 sound(rdram, ctx, runtime, kSeOk);
                 wr32(self + kResult, static_cast<uint32_t>(kResultBack));
                 break;
-            default: // the pages and RESTORE DEFAULTS: the next build
+            default: // CONTROLS (our Controls screen) and the pages: the next builds
                 break;
+            }
+        }
+
+        // The Yes / No beside RESET GAME or RESTORE DEFAULTS.
+        void confirm(int kind, Screen &s, uint64_t pressed, uint64_t repeat, uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const Kind &k = kKinds[kind];
+            if ((pressed & (kOk | kCancel)) == kCancel || ((pressed & kOk) && !s.confirmYes))
+            {
+                sound(rdram, ctx, runtime, kSeBack);
+                s.confirmRow = -1;
+            }
+            else if (pressed & kOk)
+            {
+                sound(rdram, ctx, runtime, kSeOk);
+                if (k.actions[s.confirmRow] == Action::ResetGame)
+                    wr32(s.self + kResult, static_cast<uint32_t>(kResultReset));
+                // RESTORE DEFAULTS: restores the options once the pages exist (the next build)
+                s.confirmRow = -1;
+            }
+            else if ((repeat & kLeft) && !s.confirmYes)
+            {
+                s.confirmYes = true;
+                sound(rdram, ctx, runtime, kSeMove);
+            }
+            else if ((repeat & kRight) && s.confirmYes)
+            {
+                s.confirmYes = false;
+                sound(rdram, ctx, runtime, kSeMove);
             }
         }
 
@@ -645,7 +593,16 @@ namespace kamite::options_screen
         {
             const uint32_t self = GPR_U32(ctx, 4);
             g_original[N][0](rdram, ctx, runtime);
-            g_screen[N] = Screen{self, 0, 0u};
+            g_screen[N] = Screen{self};
+        }
+
+        // Entry 3 (close: releases the layout), wrapped: our text goes with it.
+        template <int N>
+        void closeHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            clearOverlay();
+            g_screen[N] = Screen{};
+            g_original[N][1](rdram, ctx, runtime);
         }
 
         // Entry 5 (move): the pad.
@@ -654,13 +611,25 @@ namespace kamite::options_screen
         {
             const uint32_t self = GPR_U32(ctx, 4);
             if (mode(self) != 0)
-                return g_original[N][2](rdram, ctx, runtime);
+                return g_original[N][3](rdram, ctx, runtime);
             const uint32_t ra = GPR_U32(ctx, 31);
             Screen &s = screenOf(N, self);
             const Kind &k = kKinds[N];
             const uint64_t pressed = rd64(kCommand), repeat = rd64(kCommandRepeat);
-            if (pressed & kOk)
+            if ((pressed & (kOk | kStart)) == kStart)
+            {
+                sound(rdram, ctx, runtime, kSeBack);
+                wr32(self + kResult, static_cast<uint32_t>(kResultClose));
+            }
+            else if (s.confirmRow >= 0)
+                confirm(N, s, pressed, repeat, rdram, ctx, runtime);
+            else if (pressed & kOk)
                 act(N, s, rdram, ctx, runtime);
+            else if ((pressed & kCancel) != 0u)
+            {
+                sound(rdram, ctx, runtime, kSeBack);
+                wr32(self + kResult, static_cast<uint32_t>(kResultBack));
+            }
             else if ((repeat & kUp) && s.row > 0)
             {
                 --s.row;
@@ -670,16 +639,6 @@ namespace kamite::options_screen
             {
                 ++s.row;
                 sound(rdram, ctx, runtime, kSeMove);
-            }
-            if ((pressed & (kOk | kCancel)) == kCancel)
-            {
-                sound(rdram, ctx, runtime, kSeBack);
-                wr32(self + kResult, static_cast<uint32_t>(kResultBack));
-            }
-            else if ((pressed & (kOk | kStart)) == kStart)
-            {
-                sound(rdram, ctx, runtime, kSeBack);
-                wr32(self + kResult, static_cast<uint32_t>(kResultClose));
             }
             ctx->pc = ra;
         }
@@ -693,7 +652,7 @@ namespace kamite::options_screen
             patchWall(N, self);
             if (mode(self) != 0)
             {
-                g_original[N][1](rdram, ctx, runtime);
+                g_original[N][2](rdram, ctx, runtime);
                 // The game's own modes over our wall: its row names and values (and the cursor) would float on it.
                 for (int id = 0; id <= k.hideUpTo; ++id)
                     setHidden(idEntry(self, id), true);
@@ -703,85 +662,49 @@ namespace kamite::options_screen
             Screen &s = screenOf(N, self);
             if (s.backdrop == 0u)
                 s.backdrop = findBackdrop(self);
-            for (int id = 0; id < k.ids; ++id)
-                setHidden(idEntry(self, id), id != k.cursorId);
+            for (int id = 0; id < k.ids; ++id) // the game draws only the backdrop
+                setHidden(idEntry(self, id), true);
             callGuest(rdram, ctx, runtime, kIdMove, {self + k.page});
             callGuest(rdram, ctx, runtime, kIdMove, {self});
             ctx->pc = ra;
         }
 
-        // Entry 6 (draw).
+        // Entry 6 (draw): the backdrop, and our list for the overlay.
         template <int N>
         void drawHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const uint32_t self = GPR_U32(ctx, 4);
-            const int8_t m = mode(self);
-            if (m != 0 && !(N == kPause && m == 4))
-                return g_original[N][3](rdram, ctx, runtime);
+            if (mode(self) != 0)
+            {
+                clearOverlay();
+                return g_original[N][4](rdram, ctx, runtime);
+            }
             const uint32_t ra = GPR_U32(ctx, 31);
-            const Kind &k = kKinds[N];
             Screen &s = screenOf(N, self);
             if (s.backdrop == 0u)
                 s.backdrop = findBackdrop(self);
             hud::claimOwnScreen();
-            const Area a = area();
-
-            // The game's entries still shown (the cursor; the reset Yes / No) placed in the text area while drawn.
-            struct Saved
-            {
-                uint32_t entry;
-                float x, y, sclX;
-            };
-            std::vector<Saved> saved;
-            const uint32_t entries = rd32(self + kLayoutEnt);
-            const int32_t count = static_cast<int32_t>(rd32(self + kLayoutEntNum));
-            const uint32_t cursor = idEntry(self, k.cursorId);
-            for (int32_t i = 0; valid(entries) && i < count && i < 256; ++i)
-            {
-                const uint32_t e = entries + ent::kSize * static_cast<uint32_t>(i);
-                const uint32_t flags = rd32(e + ent::kFlags);
-                if (e == s.backdrop || (flags & kNoDraw) || !(flags & kActive))
-                    continue;
-                saved.push_back({e, rdF(e + ent::kDrawX), rdF(e + ent::kDrawY), rdF(e + ent::kDrawSclX)});
-                if (e == cursor)
-                {
-                    wrF(e + ent::kDrawX, a.x(kCursorX));
-                    wrF(e + ent::kDrawY, kRowY + k.rowStep * static_cast<float>(s.row) + kCursorDropY);
-                }
-                else
-                    wrF(e + ent::kDrawX, a.x(rdF(e + ent::kDrawX)));
-                wrF(e + ent::kDrawSclX, rdF(e + ent::kDrawSclX) * a.k);
-            }
             callGuest(rdram, ctx, runtime, kIdTrans, {self});
-            for (const Saved &v : saved)
-            {
-                wrF(v.entry + ent::kDrawX, v.x);
-                wrF(v.entry + ent::kDrawY, v.y);
-                wrF(v.entry + ent::kDrawSclX, v.sclX);
-            }
-
-            // Our text: the help text entry's font, list and depth.
-            const uint32_t help = idEntry(self, k.helpId);
-            if (valid(help, ent::kSize))
-            {
-                Pen pen;
-                pen.face = *at(help + ent::kColourSet);
-                const uint8_t layoutMode = *at(self + kLayoutMode);
-                pen.list = layoutMode == 6u ? *at(help + kEntList) : layoutMode;
-                int16_t z;
-                std::memcpy(&z, at(help + kEntZ), sizeof(z));
-                pen.z = static_cast<float>(z);
-                pen.fade = valid(s.backdrop, ent::kSize) ? static_cast<float>(*at(s.backdrop + kEntColour + 3u)) / 128.0f : 1.0f;
-                g_textSlot = 0;
-                drawLine(rdram, ctx, runtime, pen, a, 0.5f * a.width, kTitleY, kTitleScale, true, kTitleColour, "OPTIONS");
-                for (int i = 0; i < k.rowCount; ++i)
-                    drawLine(rdram, ctx, runtime, pen, a, kRowX, kRowY + k.rowStep * static_cast<float>(i), kRowScale, false,
-                             i == s.row && m == 0 ? kWhite : kGrey, k.rows[i].name);
-                if (m == 0) // the reset Yes / No has the help box
-                    drawLine(rdram, ctx, runtime, pen, a, kHelpX, kHelpY, kHelpScale, false, kHelpColour, k.rows[s.row].help);
-            }
+            const float fade = valid(s.backdrop, ent::kSize) ? static_cast<float>(*at(s.backdrop + kEntColour + 3u)) / 128.0f : 1.0f;
+            sendOverlay(N, s, fade);
             ctx->pc = ra;
         }
+
+#if defined(KAMITE_HAS_SCREEN_OVERLAY)
+        // F2 Display, "Options text": the overlay's softening and shadow while K judges them in game (temporary).
+        void drawTuningPanel(const Pcsx2GsUi *ui)
+        {
+            ui->separator_text("Options text (temporary)");
+            options_overlay::Look &look = options_overlay::look();
+            ui->set_next_width(340.0f);
+            ui->slider_float("Softening##optblur", &look.blur, 0.0f, 2.0f, "%.2f PS2 px");
+            ui->set_next_width(340.0f);
+            ui->slider_float("Shadow##optshadow", &look.shadowAlpha, 0.0f, 1.0f, "%.2f");
+            ui->set_next_width(340.0f);
+            ui->slider_float("Shadow offset##optshadowxy", &look.shadowOffset, 0.0f, 4.0f, "%.2f PS2 px");
+            ui->text_disabled("Pause > Options shows the result live. Tell Claude the values you like.");
+        }
+#endif
 
         bool hook(PS2Runtime &runtime, uint32_t address, const char *name, GuestFunction implementation, GuestFunction &original)
         {
@@ -795,10 +718,12 @@ namespace kamite::options_screen
         {
             const Kind &k = kKinds[N];
             GuestFunction *o = g_original[N];
-            return hook(runtime, k.open, N == kPause ? "cSubScrOption open (options screen)" : "cSubScrOptionT open (options screen)", &openHook<N>, o[0]) &&
-                   hook(runtime, k.update, N == kPause ? "cSubScrOption update (options screen)" : "cSubScrOptionT update (options screen)", &updateHook<N>, o[1]) &&
-                   hook(runtime, k.move, N == kPause ? "cSubScrOption move (options screen)" : "cSubScrOptionT move (options screen)", &moveHook<N>, o[2]) &&
-                   hook(runtime, k.draw, N == kPause ? "cSubScrOption draw (options screen)" : "cSubScrOptionT draw (options screen)", &drawHook<N>, o[3]);
+            const bool pause = N == kPause;
+            return hook(runtime, k.open, pause ? "cSubScrOption open (options screen)" : "cSubScrOptionT open (options screen)", &openHook<N>, o[0]) &&
+                   hook(runtime, k.close, pause ? "cSubScrOption close (options screen)" : "cSubScrOptionT close (options screen)", &closeHook<N>, o[1]) &&
+                   hook(runtime, k.update, pause ? "cSubScrOption update (options screen)" : "cSubScrOptionT update (options screen)", &updateHook<N>, o[2]) &&
+                   hook(runtime, k.move, pause ? "cSubScrOption move (options screen)" : "cSubScrOptionT move (options screen)", &moveHook<N>, o[3]) &&
+                   hook(runtime, k.draw, pause ? "cSubScrOption draw (options screen)" : "cSubScrOptionT draw (options screen)", &drawHook<N>, o[4]);
         }
     }
 
@@ -808,7 +733,7 @@ namespace kamite::options_screen
         g_aspect = std::clamp(aspectRatio(), 1.0f, 4.0f);
         // The functions are hooked first: a half-hooked screen would mix the game's and ours.
         for (int kind = 0; kind < 2; ++kind)
-            for (const uint32_t address : {kKinds[kind].open, kKinds[kind].update, kKinds[kind].move, kKinds[kind].draw})
+            for (const uint32_t address : {kKinds[kind].open, kKinds[kind].close, kKinds[kind].update, kKinds[kind].move, kKinds[kind].draw})
                 if (!runtime.hasFunction(address))
                 {
                     KM_WARN(Game, "options screen: 0x" << std::hex << address << std::dec << " is not hookable; the game's own Options screens stay");
@@ -819,6 +744,16 @@ namespace kamite::options_screen
             KM_WARN(Game, "options screen: hooking failed; the Options screens may be the game's");
             return;
         }
+        const auto utf8 = [](const fs::path &path)
+        {
+            const std::u8string text = path.u8string();
+            return std::string(reinterpret_cast<const char *>(text.data()), text.size());
+        };
+        options_overlay::setFonts(utf8(exeDir / "resources" / "fonts" / "ArchivoNarrow-SemiBold.ttf"),
+                                  utf8(exeDir / "resources" / "fonts" / "DejaVuSans-Bold.ttf"));
+#if defined(KAMITE_HAS_SCREEN_OVERLAY)
+        ps2x::menu::addPanel("Display", &drawTuningPanel);
+#endif
         std::thread(prepare, exeDir, g_aspect).detach();
         KM_INFO(Game, "options screen: the title and pause Options open the God Hand: Rearmed screen (aspect " << g_aspect << ")");
     }

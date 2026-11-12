@@ -116,6 +116,36 @@ enum
     PCSX2GS_PAD_ACCEPT = 1u << 4, PCSX2GS_PAD_BACK = 1u << 5, PCSX2GS_PAD_L1 = 1u << 6, PCSX2GS_PAD_R1 = 1u << 7,
 };
 
+// The port's own screens (pcsx2gs_set_screen, exported on its own): items drawn over the picture at each present,
+// under the in-game menu and the OSD. x values are fractions of the picture's width; y values and every size are
+// fractions of its height. Colours are RGBA with R in the low byte; an alpha of 0 turns a stroke or shadow off.
+enum
+{
+    PCSX2GS_SCREEN_TEXT = 0,     // text in a font file: the baseline's anchor at x y
+    PCSX2GS_SCREEN_TRIANGLE = 1, // filled: points x y, x1 y1, x2 y2
+    PCSX2GS_SCREEN_RECT = 2,     // filled: x y top left, x1 y1 bottom right
+    PCSX2GS_ALIGN_LEFT = 0, PCSX2GS_ALIGN_CENTRE = 1, PCSX2GS_ALIGN_RIGHT = 2,
+};
+typedef struct Pcsx2GsScreenItem
+{
+    uint32_t kind;
+    uint32_t align;  // text: which end of the line x is
+    uint32_t text;   // text: byte offset of its UTF-8 string in the strings block (one line)
+    uint32_t font;   // text: byte offset of the font file's UTF-8 path in the strings block
+    uint32_t fill;
+    uint32_t stroke; // drawn round the shape (text: round each letter)
+    uint32_t shadow; // the shape again under it, at shadow_x shadow_y
+    float x, y;
+    float size;     // text: cap height
+    float scale_x;  // text: horizontal scale of the letters (1 = the font's own shape in square pixels)
+    float tracking; // text: extra space after each letter but the last
+    float stroke_width;
+    float shadow_x, shadow_y;
+    float blur;     // softening radius (0 = sharp)
+    float max_width; // text: wider lines are squeezed (letters and tracking) to fit (0 = no limit)
+    float x1, y1, x2, y2;
+} Pcsx2GsScreenItem;
+
 typedef struct Pcsx2GsApi
 {
     uint32_t version;

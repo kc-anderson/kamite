@@ -38,6 +38,9 @@ public:
     // Any thread: labels drawn over the image at each present (pcsx2gs_set_overlay_text: an x y anchor per label in
     // the same coordinates, a colour per label, the texts packed, each ending with its 0; count 0 clears).
     static bool SetOverlayText(const float *xy, const uint32_t *colors, const char *texts, uint32_t count);
+    // Any thread: the port's own screen over the image (pcsx2gs_set_screen: Pcsx2GsScreenItem items, their strings
+    // block; count 0 clears). False = this DLL does not have it.
+    static bool SetScreen(const void *items, uint32_t count, const char *strings, uint32_t bytes);
     static void SetMenuInput(const void *input);
     // Main thread: hides the GS image while a host UI drawn by raylib (the F1 debugger) is open.
     static void SetHostUiVisible(bool visible);

@@ -612,6 +612,12 @@ extern "C" __declspec(dllexport) void pcsx2gs_set_overlay_text(const float *xy, 
     pcsx2gs::SetOverlayText(xy, colors, texts, count);
 }
 
+// The port's own screen over the image (pcsx2gs_host.h SetScreen): the OPTIONS screen's text. Any thread.
+extern "C" __declspec(dllexport) void pcsx2gs_set_screen(const Pcsx2GsScreenItem *items, uint32_t count, const char *strings, uint32_t bytes)
+{
+    pcsx2gs::SetScreen(items, count, strings, bytes);
+}
+
 // The aspect ratio while the game runs (0 = 4:3, 1 = 16:9, 2 = fill the window), read at every present: the port uses
 // it to follow the game's own 4:3 / 16:9 option. Exported on its own so that the API table above stays the same.
 extern "C" __declspec(dllexport) void pcsx2gs_set_aspect(uint32_t mode)

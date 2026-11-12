@@ -35,6 +35,7 @@ namespace
     void(__cdecl *g_setOption)(const char *, const char *) = nullptr; // pcsx2gs_set_option, when the DLL has it
     void(__cdecl *g_setOverlay)(const float *, const uint32_t *, uint32_t) = nullptr; // pcsx2gs_set_overlay, when the DLL has it
     void(__cdecl *g_setOverlayText)(const float *, const uint32_t *, const char *, uint32_t) = nullptr; // pcsx2gs_set_overlay_text
+    void(__cdecl *g_setScreen)(const Pcsx2GsScreenItem *, uint32_t, const char *, uint32_t) = nullptr; // pcsx2gs_set_screen
     const std::chrono::steady_clock::time_point g_processStart = std::chrono::steady_clock::now();
     HWND g_parent = nullptr;
     HWND g_child = nullptr;
@@ -228,6 +229,8 @@ bool GSPcsx2Backend::Requested()
         g_setOverlay = reinterpret_cast<void(__cdecl *)(const float *, const uint32_t *, uint32_t)>(GetProcAddress(module, "pcsx2gs_set_overlay"));
         g_setOverlayText = reinterpret_cast<void(__cdecl *)(const float *, const uint32_t *, const char *, uint32_t)>(
             GetProcAddress(module, "pcsx2gs_set_overlay_text"));
+        g_setScreen = reinterpret_cast<void(__cdecl *)(const Pcsx2GsScreenItem *, uint32_t, const char *, uint32_t)>(
+            GetProcAddress(module, "pcsx2gs_set_screen"));
         if (!g_api)
         {
             std::fprintf(stderr, "[gs] pcsx2gs.dll has no matching pcsx2gs_get_api (version %u); using the built-in GS\n",
@@ -314,6 +317,14 @@ bool GSPcsx2Backend::SetOverlayText(const float *xy, const uint32_t *colors, con
     if (!g_setOverlayText)
         return false;
     g_setOverlayText(xy, colors, texts, count);
+    return true;
+}
+
+bool GSPcsx2Backend::SetScreen(const void *items, uint32_t count, const char *strings, uint32_t bytes)
+{
+    if (!g_setScreen)
+        return false;
+    g_setScreen(static_cast<const Pcsx2GsScreenItem *>(items), count, strings, bytes);
     return true;
 }
 
@@ -651,6 +662,7 @@ void GSPcsx2Backend::SetMenu(void *, void *) {}
 bool GSPcsx2Backend::SetOption(const char *, const char *) { return false; }
 bool GSPcsx2Backend::SetOverlay(const float *, const uint32_t *, uint32_t) { return false; }
 bool GSPcsx2Backend::SetOverlayText(const float *, const uint32_t *, const char *, uint32_t) { return false; }
+bool GSPcsx2Backend::SetScreen(const void *, uint32_t, const char *, uint32_t) { return false; }
 void GSPcsx2Backend::SetMenuInput(const void *) {}
 void GSPcsx2Backend::SetHostUiVisible(bool) {}
 bool GSPcsx2Backend::HostUiVisible() { return false; }

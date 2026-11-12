@@ -34,6 +34,10 @@ namespace pcsx2gs
     // a colour per label, the texts packed one after another, each ending with its 0. Drawn centred on the anchor,
     // with a dark shadow. count 0 clears.
     void SetOverlayText(const float *xy, const uint32_t *colors, const char *texts, uint32_t count);
+    // The port's own screen (pcsx2gs_set_screen; thread-safe): items (pcsx2gs_api.h Pcsx2GsScreenItem) and the
+    // strings block their offsets point into. Replaces the last list; count 0 clears. A list not sent again for a
+    // few presents is dropped (a screen that closed without clearing).
+    void SetScreen(const Pcsx2GsScreenItem *items, uint32_t count, const char *strings, uint32_t bytes);
     // GSRendererHW (GS thread): the XYOFFSET (pixels) of the scene's depth-tested triangle draws, for that mapping.
     void SetSceneOffset(float ox, float oy);
     // GSRenderer::VSync (GS thread): where the frame went in the window (client pixels) and its size in GS pixels.

@@ -77,6 +77,19 @@ namespace
     float g_presentRect[4] = {};             // GS thread: the frame's place in the window at the last present
     float g_presentSize[2] = {640.0f, 448.0f}; // GS thread: the frame's size in GS pixels
 
+    // The port's own screen (set_screen, any thread -> RenderOSD on the GS thread): the OPTIONS screen's text.
+    std::mutex g_screenMutex;
+    std::vector<Pcsx2GsScreenItem> g_screenItems;
+    std::string g_screenStrings;  // the items' strings (ends with a 0)
+    uint32_t g_screenStale = 0;   // presents since the list was last sent
+    constexpr uint32_t kScreenStaleLimit = 8; // a screen gone without clearing its list
+    struct ScreenFont
+    {
+        ImFont *font = nullptr;
+        float capRatio = 0.7f; // cap height / font size ('H')
+    };
+    std::vector<std::pair<std::string, ScreenFont>> g_screenFonts; // GS thread, by path (font nullptr = failed)
+
     int UiBeginWindow(const char *title, int *open, float width, float height)
     {
         // Text and window follow the window's size (sized for ~900 lines; never larger than the screen).
@@ -332,6 +345,21 @@ void pcsx2gs::SetOverlayText(const float *xy, const uint32_t *colors, const char
         g_overlayTexts.emplace_back(texts);
         texts += g_overlayTexts.back().size() + 1u;
     }
+}
+
+void pcsx2gs::SetScreen(const Pcsx2GsScreenItem *items, uint32_t count, const char *strings, uint32_t bytes)
+{
+    std::lock_guard<std::mutex> lock(g_screenMutex);
+    g_screenStale = 0;
+    g_screenItems.clear();
+    g_screenStrings.clear();
+    if (!items || count == 0u)
+        return;
+    count = std::min(count, 1024u);
+    g_screenItems.assign(items, items + count);
+    if (strings && bytes)
+        g_screenStrings.assign(strings, std::min(bytes, 1u << 20));
+    g_screenStrings.push_back('\0'); // an offset past the end reads ""
 }
 
 void pcsx2gs::SetSceneOffset(float ox, float oy)
@@ -695,6 +723,245 @@ void ImGuiManager::SkipFrame()
     NewFrame();
 }
 
+// --- the port's own screen (pcsx2gs_set_screen): text in the port's fonts, triangles, boxes ---
+namespace
+{
+    // One UTF-8 code point (a broken sequence reads as U+FFFD).
+    unsigned int NextCodepoint(const char *&s, const char *end)
+    {
+        const unsigned char lead = static_cast<unsigned char>(*s++);
+        if (lead < 0x80u)
+            return lead;
+        int extra;
+        unsigned int c;
+        if ((lead >> 5) == 0x6u)
+            extra = 1, c = lead & 0x1Fu;
+        else if ((lead >> 4) == 0xEu)
+            extra = 2, c = lead & 0x0Fu;
+        else if ((lead >> 3) == 0x1Eu)
+            extra = 3, c = lead & 0x07u;
+        else
+            return 0xFFFDu;
+        for (; extra > 0; --extra)
+        {
+            if (s >= end || (static_cast<unsigned char>(*s) >> 6) != 0x2u)
+                return 0xFFFDu;
+            c = (c << 6) | (static_cast<unsigned char>(*s++) & 0x3Fu);
+        }
+        return c;
+    }
+
+    // A font file, loaded on first use (GS thread; ImGui 1.92 adds fonts mid-frame).
+    ScreenFont *ScreenFontFor(const char *path)
+    {
+        if (!path || !*path)
+            return nullptr;
+        for (auto &entry : g_screenFonts)
+            if (entry.first == path)
+                return entry.second.font ? &entry.second : nullptr;
+        g_screenFonts.emplace_back(path, ScreenFont{});
+        ScreenFont &f = g_screenFonts.back().second;
+        ImFontConfig config;
+        config.Flags |= ImFontFlags_NoLoadError;
+        config.OversampleH = 2; // the letters are squeezed sideways
+        config.OversampleV = 1;
+        f.font = ImGui::GetIO().Fonts->AddFontFromFileTTF(path, 20.0f, &config);
+        if (!f.font)
+        {
+            std::fprintf(stderr, "[gs] screen font did not load: %s\n", path);
+            return nullptr;
+        }
+        // Sizes come as cap heights: the 'H' at a large size gives the font's ratio.
+        if (ImFontBaked *baked = f.font->GetFontBaked(200.0f))
+            if (const ImFontGlyph *h = baked->FindGlyph(static_cast<ImWchar>('H')); h && h->Y1 > h->Y0)
+                f.capRatio = (h->Y1 - h->Y0) / 200.0f;
+        return &f;
+    }
+
+    struct ScreenRun
+    {
+        ImFontBaked *baked = nullptr;
+        float scale = 1.0f, scaleX = 1.0f; // baked glyph units -> pixels
+        float tracking = 0.0f;             // pixels
+    };
+
+    float ScreenRunWidth(const ScreenRun &run, const char *text, const char *end)
+    {
+        float width = 0.0f;
+        bool first = true;
+        for (const char *s = text; s < end;)
+        {
+            const ImFontGlyph *g = run.baked->FindGlyph(static_cast<ImWchar>(NextCodepoint(s, end)));
+            if (!g)
+                continue;
+            width += g->AdvanceX * run.scaleX + (first ? 0.0f : run.tracking);
+            first = false;
+        }
+        return width;
+    }
+
+    // Glyph by glyph from the atlas (the draw list's texture), so the letters can be squeezed and spaced.
+    void ScreenRunDraw(ImDrawList *list, const ScreenRun &run, const char *text, const char *end, float x, float top, ImU32 colour)
+    {
+        for (const char *s = text; s < end;)
+        {
+            const ImFontGlyph *g = run.baked->FindGlyph(static_cast<ImWchar>(NextCodepoint(s, end)));
+            if (!g)
+                continue;
+            if (g->Visible)
+            {
+                list->PrimReserve(6, 4);
+                list->PrimRectUV(ImVec2(x + g->X0 * run.scaleX, top + g->Y0 * run.scale),
+                                 ImVec2(x + g->X1 * run.scaleX, top + g->Y1 * run.scale), ImVec2(g->U0, g->V0),
+                                 ImVec2(g->U1, g->V1), colour);
+            }
+            x += g->AdvanceX * run.scaleX + run.tracking;
+        }
+    }
+
+    // Offsets on rings out to the radius, a copy about every pixel round each ring (the stroke).
+    template <typename Fn>
+    void ForStrokeOffsets(float radius, Fn fn)
+    {
+        const int rings = std::clamp(static_cast<int>(std::ceil(radius / 1.5f)), 1, 4);
+        for (int r = 1; r <= rings; ++r)
+        {
+            const float rr = radius * static_cast<float>(r) / static_cast<float>(rings);
+            const int n = std::clamp(static_cast<int>(std::ceil(6.2831853f * rr)), 8, 32);
+            for (int i = 0; i < n; ++i)
+            {
+                const float a = 6.2831853f * static_cast<float>(i) / static_cast<float>(n);
+                fn(rr * std::cos(a), rr * std::sin(a));
+            }
+        }
+    }
+
+    void DrawScreenText(ImDrawList *list, const Pcsx2GsScreenItem &item, const char *text, const char *fontPath, float x0,
+                        float y0, float w, float h)
+    {
+        const float cap = item.size * h;
+        ScreenFont *font = cap >= 1.0f && *text ? ScreenFontFor(fontPath) : nullptr;
+        if (!font)
+            return;
+        const float fontSize = cap / std::max(0.05f, font->capRatio);
+        // Softening: the letters baked smaller and drawn larger through the picture's linear filter, like the game's
+        // own upscaled 2D (a blur of r pixels = baked r times smaller).
+        const float soften = std::max(1.0f, item.blur * h);
+        const float bakeSize = std::max(6.0f, std::round(fontSize / soften));
+        ScreenRun run;
+        run.baked = font->font->GetFontBaked(bakeSize);
+        if (!run.baked)
+            return;
+        run.scale = fontSize / bakeSize;
+        run.scaleX = run.scale * std::max(0.05f, item.scale_x);
+        run.tracking = item.tracking * h;
+        const char *end = text + std::strlen(text);
+        float width = ScreenRunWidth(run, text, end); // bakes every glyph before any is drawn
+        if (item.max_width > 0.0f && width > item.max_width * h)
+        {
+            const float squeeze = item.max_width * h / width;
+            run.scaleX *= squeeze;
+            run.tracking *= squeeze;
+            width = item.max_width * h;
+        }
+        const ImFontGlyph *capH = run.baked->FindGlyph(static_cast<ImWchar>('H'));
+        float x = x0 + item.x * w - (item.align == PCSX2GS_ALIGN_CENTRE ? 0.5f * width : item.align == PCSX2GS_ALIGN_RIGHT ? width : 0.0f);
+        float top = y0 + item.y * h - (capH ? capH->Y1 : run.baked->Ascent) * run.scale;
+        if (item.blur <= 0.0f)
+        {
+            x = std::floor(x + 0.5f);
+            top = std::floor(top + 0.5f);
+        }
+        if (item.shadow >> 24)
+            ScreenRunDraw(list, run, text, end, x + item.shadow_x * h, top + item.shadow_y * h, item.shadow);
+        if ((item.stroke >> 24) && item.stroke_width > 0.0f)
+            ForStrokeOffsets(item.stroke_width * h, [&](float dx, float dy) { ScreenRunDraw(list, run, text, end, x + dx, top + dy, item.stroke); });
+        if (item.fill >> 24)
+            ScreenRunDraw(list, run, text, end, x, top, item.fill);
+    }
+
+    void DrawScreenTriangle(ImDrawList *list, const Pcsx2GsScreenItem &item, float x0, float y0, float w, float h)
+    {
+        ImVec2 p[3] = {ImVec2(x0 + item.x * w, y0 + item.y * h), ImVec2(x0 + item.x1 * w, y0 + item.y1 * h),
+                       ImVec2(x0 + item.x2 * w, y0 + item.y2 * h)};
+        const auto cross = [](const ImVec2 &o, const ImVec2 &a, const ImVec2 &b) { return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x); };
+        if (cross(p[0], p[1], p[2]) < 0.0f) // ImGui's anti-aliased fills want clockwise points
+            std::swap(p[1], p[2]);
+        // The stroke: the triangle grown by its width round the incentre (sharp corners).
+        const auto grown = [&](float d, ImVec2 *out)
+        {
+            const auto length = [](const ImVec2 &a, const ImVec2 &b) { return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)); };
+            const float a = length(p[1], p[2]), b = length(p[2], p[0]), c = length(p[0], p[1]), perimeter = a + b + c;
+            const float r = perimeter > 0.0f ? std::fabs(cross(p[0], p[1], p[2])) / perimeter : 0.0f;
+            const float k = r > 0.0f ? (r + d) / r : 1.0f;
+            const ImVec2 centre((a * p[0].x + b * p[1].x + c * p[2].x) / std::max(perimeter, 1e-6f),
+                                (a * p[0].y + b * p[1].y + c * p[2].y) / std::max(perimeter, 1e-6f));
+            for (int i = 0; i < 3; ++i)
+                out[i] = ImVec2(centre.x + (p[i].x - centre.x) * k, centre.y + (p[i].y - centre.y) * k);
+        };
+        const float stroke = (item.stroke >> 24) ? item.stroke_width * h : 0.0f;
+        const float fringe = list->_FringeScale;
+        list->_FringeScale = std::max(1.0f, item.blur * h); // softening = a wider anti-aliased edge
+        ImVec2 outer[3];
+        grown(stroke, outer);
+        if (item.shadow >> 24)
+        {
+            const ImVec2 s(item.shadow_x * h, item.shadow_y * h);
+            list->AddTriangleFilled(ImVec2(outer[0].x + s.x, outer[0].y + s.y), ImVec2(outer[1].x + s.x, outer[1].y + s.y),
+                                    ImVec2(outer[2].x + s.x, outer[2].y + s.y), item.shadow);
+        }
+        if (stroke > 0.0f)
+            list->AddTriangleFilled(outer[0], outer[1], outer[2], item.stroke);
+        if (item.fill >> 24)
+            list->AddTriangleFilled(p[0], p[1], p[2], item.fill);
+        list->_FringeScale = fringe;
+    }
+
+    void DrawScreenRect(ImDrawList *list, const Pcsx2GsScreenItem &item, float x0, float y0, float w, float h)
+    {
+        const ImVec2 a(x0 + item.x * w, y0 + item.y * h), b(x0 + item.x1 * w, y0 + item.y1 * h);
+        const float stroke = (item.stroke >> 24) ? item.stroke_width * h : 0.0f;
+        if (item.shadow >> 24)
+            list->AddRectFilled(ImVec2(a.x - stroke + item.shadow_x * h, a.y - stroke + item.shadow_y * h),
+                                ImVec2(b.x + stroke + item.shadow_x * h, b.y + stroke + item.shadow_y * h), item.shadow);
+        if (stroke > 0.0f)
+            list->AddRectFilled(ImVec2(a.x - stroke, a.y - stroke), ImVec2(b.x + stroke, b.y + stroke), item.stroke);
+        if (item.fill >> 24)
+            list->AddRectFilled(a, b, item.fill);
+    }
+
+    // RenderOSD (GS thread): the list over the picture, under the menu and the OSD.
+    void DrawScreen()
+    {
+        std::lock_guard<std::mutex> lock(g_screenMutex);
+        if (g_screenItems.empty())
+            return;
+        if (++g_screenStale > kScreenStaleLimit)
+        {
+            g_screenItems.clear();
+            g_screenStrings.clear();
+            return;
+        }
+        const float x0 = g_presentRect[0], y0 = g_presentRect[1];
+        const float w = g_presentRect[2] - x0, h = g_presentRect[3] - y0;
+        if (w <= 1.0f || h <= 1.0f)
+            return;
+        const auto str = [](uint32_t offset) { return offset < g_screenStrings.size() ? g_screenStrings.c_str() + offset : ""; };
+        ImDrawList *list = ImGui::GetBackgroundDrawList();
+        list->PushClipRect(ImVec2(x0, y0), ImVec2(x0 + w, y0 + h), true);
+        for (const Pcsx2GsScreenItem &item : g_screenItems)
+        {
+            if (item.kind == PCSX2GS_SCREEN_TEXT)
+                DrawScreenText(list, item, str(item.text), str(item.font), x0, y0, w, h);
+            else if (item.kind == PCSX2GS_SCREEN_TRIANGLE)
+                DrawScreenTriangle(list, item, x0, y0, w, h);
+            else if (item.kind == PCSX2GS_SCREEN_RECT)
+                DrawScreenRect(list, item, x0, y0, w, h);
+        }
+        list->PopClipRect();
+    }
+}
+
 // The port's overlays (the host loop draws them with raylib under its own GS): a message box at the top left
 // (save-state messages, notes) and the F3 FPS line at the bottom left, sized like the raylib ones.
 void ImGuiManager::RenderOSD()
@@ -748,6 +1015,8 @@ void ImGuiManager::RenderOSD()
             list->PopClipRect();
         }
     }
+
+    DrawScreen();
 
     std::string top, bottom;
     uint32_t topRgba;
