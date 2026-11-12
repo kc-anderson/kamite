@@ -64,3 +64,10 @@ after the release (the fits left 1547 at 0). Sets each Cobra fit's 1547 height e
 that lets both legs reach (model units: the world value / the fit's scale; men ~-16 cm, women ~-18, strongman ~-25,
 the tall em07 0). Re-run after adding Cobra fits. Gene's 14th value (after the twist) = lift: the hips and leg IK
 targets 20 / 24 raised together (punish_fit.cpp rewrite; cobra_hold's col 14; emit7.tracks lift=).
+
+stinger_women.py (K, Nov 12): Stinger on the women without the wide-kneed squat: knees and thighs together (the thighs'
+outward turn removed, ankles 60% toward the middle), the seat tipped up 30 deg, hips 5 cm higher and the back straighter,
+feet planted, the head kept where Gene holds it (bend and hips-back solved per body). Eased in over the grab, held
+through the loop; in the slam the hips / seat ease back over frames 0-16 as Gene lifts her, the knees stay together
+until she lies down (60-100). Writes the victim keys' 3rd-5th values (hips back, tilt, legs; punish_fit.cpp). Re-run
+after emit7 (idempotent).

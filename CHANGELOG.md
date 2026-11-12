@@ -2,6 +2,10 @@
 
 Newest first, one line per change; the code comments say how.
 
+## November 12, 2026
+
+- Buck Breaker: Stinger on women holds them knees together, seat up and back straighter instead of a wide squat.
+
 ## November 11, 2026
 
 - Buck Breaker: Cobra Twist on the big suited bruisers (1.20) keeps the headlock at their real size.
