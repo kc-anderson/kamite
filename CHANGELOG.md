@@ -5,8 +5,8 @@ Newest first, one line per change; the code comments say how.
 ## November 12, 2026
 
 - Buck Breaker: Spanking on bigger women keeps Gene's holding arm out of her waist (now also for their own punish).
-- Buck Breaker: Spanking on women tips their seat up; bigger women lie lower so the slaps land on the seat.
-- Sway Bar: bosses that can be stunned show the stun gauge under their health bar, in the boss bar's own style.
+- Buck Breaker: Spanking on women tips their seat up; bigger women lie lower so the slaps land on the seat, Gene's hand on their hip.
+- Sway Bar: bosses that can be stunned show the stun gauge under their health bar, in the boss bar's own style; mid-bosses (e.g. Dr. Ion) show it over their heads instead.
 - Buck Breaker: Spanking on big enemies lays them lower across Gene's thigh, knees on the floor, with Gene's arms refitted.
 - Buck Breaker: Spanking works on big enemies (around 1.30 size, e.g. Dr. Ion) instead of falling back to their own punish.
 - Buck Breaker: Cobra Twist on enemies near 1.30 size (e.g. Dr. Ion) keeps the headlock instead of slipping.

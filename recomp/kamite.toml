@@ -460,6 +460,11 @@ flag = "sway_bar"
 address = "0x001406CC"
 hook = "km_sway_bar_middle"
 flag = "sway_bar"
+# A mid-boss's own enemy health bar draw (func_0028EDD0's +0x616 test): run for its Sway Bar gauge alone.
+[[patches.hooks]]
+address = "0x0028EE38"
+hook = "km_sway_bar_mid_draw"
+flag = "sway_bar"
 # Dead Pan (game_options.cpp): the roulette list builder func_00125048 reads the language (0 = Japanese) to hide reel
 # 0xB; read as 0 once a Kick Me Sign clear earned it (0x747A28 & 0x20000000) or with DBG_ALL_GOD_REEL.
 [[patches.hooks]]

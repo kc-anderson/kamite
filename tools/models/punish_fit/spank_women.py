@@ -11,7 +11,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import pairsim as ps
 from spank130 import KS
 # An "own" fit (K, Nov 12): Spanking is these women's own punish, so it plays when their prompt is unchanged.
-SCALE = 1.15; RAISE, ELBOW = 28.0, -10.0   # K's variant B (Nov 12)
+SCALE = 1.15; RAISE, ELBOW = 10.0, 0.0   # re-solved with the drop and tilt in (K, Nov 12: the hand back on her hip as at 1.00)
 # K (Nov 12, after the seat tilt): past ~1.07 his palm landed on the upper thigh: the bigger body rode high on his thigh
 # like the big men. The victim lowered (model units) until her belly sits on his thigh like the 1.00 pairing's (median
 # gap 3.3 cm, with the tilt): his palm back on the seat, the knees still clear of the floor.
