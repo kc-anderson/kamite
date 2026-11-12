@@ -26,12 +26,13 @@ def verdict(m):
     else: v='off'
     if v=='fitted' and clip>0.03 and m['group']!=10: v='questionable'
     return v,clip
-def own_line(name,keys,file,t,s):
-    return 'fit %s %s scale=%.2f size=1.000   # %s (%s): the game\'s placement at %.2f, the victim lowered onto Gene\'s thigh, both arms refitted (spank130.py)'%(FILE[name],keys,s,file,t,s)
+def own_line(name,keys,file,t,s,note=None):
+    return 'fit %s %s scale=%.2f size=1.000   # %s (%s): the game\'s placement at %.2f, %s'%(FILE[name],keys,s,file,t,s,
+        note or 'the victim lowered onto Gene\'s thigh, both arms refitted (spank130.py)')
 def own_block(name,keys,file,t,s,m,X):
     """spank130's fits: Gene's keys from X, the victim's from the json (height, bend, hips back, tilt, legs, feet back,
     thigh, knee)."""
-    out=[own_line(name,keys,file,t,s)]+[l for l in tracks(name,X,m['ks'],m.get('ltwist',0.0)) if not (m.get('victim') and l.startswith('victim '))]
+    out=[own_line(name,keys,file,t,s,m.get('note'))]+[l for l in tracks(name,X,m['ks'],m.get('ltwist',0.0)) if not (m.get('victim') and l.startswith('victim '))]
     for mo,ks in sorted((m.get('victim') or {}).items()):
         out.append('victim %s %s'%(mo,' '.join('%d:%.3f,%.2f,%.3f,%.1f,%.2f,%.3f,%.1f,%.1f'%(f,*v) for f,v in ks)))
     return out
