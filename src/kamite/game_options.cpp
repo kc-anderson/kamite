@@ -989,7 +989,7 @@ namespace kamite
             }
             stun = std::clamp(stun, 0.0f, 1.0f);
             if (g_bossLogged.insert(boss).second) // temporary: the boss bar's geometry for the first look (K, Nov 12)
-                for (const uint32_t e : {fillEnt, lagEnt})
+                for (uint32_t i = 0, e = ram32(rdram, bar + 0x4u); i < std::min(ram32(rdram, bar + 0xCu), 64u); ++i, e += 0xACu)
                     KM_INFO(Game, "sway bar: boss " << std::hex << ram32(rdram, boss + 0x564u) << " entry " << e << " flags "
                                                     << ram32(rdram, e + 0x2Cu) << " colour " << ram32(rdram, e + 0x64u) << std::dec
                                                     << " id " << int(static_cast<int8_t>(rdram[e + 0x2Au])) << " kind "
@@ -998,7 +998,10 @@ namespace kamite
                                                     << ramF(rdram, e + 0x5Cu) << " size " << ramF(rdram, e + 0x68u) << "x"
                                                     << ramF(rdram, e + 0x6Cu) << " uv " << ramF(rdram, e + 0x70u) << ","
                                                     << ramF(rdram, e + 0x74u) << "-" << ramF(rdram, e + 0x78u) << ","
-                                                    << ramF(rdram, e + 0x7Cu) << " base " << ramF(rdram, e + 0x40u));
+                                                    << ramF(rdram, e + 0x7Cu) << " base " << ramF(rdram, e + 0x40u) << ","
+                                                    << ramF(rdram, e + 0x44u) << " tex " << std::hex << ram32(rdram, e + 0x24u)
+                                                    << " parent " << ram32(rdram, e + 0x20u) << std::dec << " layer "
+                                                    << int(static_cast<int8_t>(rdram[e + 0x2Bu])) << (e == fillEnt ? " FILL" : e == lagEnt ? " LAG" : ""));
             struct Saved
             {
                 uint32_t flags, colour;

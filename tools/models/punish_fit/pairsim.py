@@ -70,6 +70,7 @@ class GEd:
                    7: rz(-a('rr')) @ ry(-a('rs')), 6: rz(-a('rr') / 2) @ ry(-a('rs') / 2), 14: ry(a('le')), 8: ry(-a('re'))}
             M = pre.get(b, np.eye(3)) @ base
             if b in (15, 16): M = base @ rx(a('tw') / 2)
+            if b == 13: M = M @ rx(a('lt'))   # the left upper arm turned about its length (post-rotation)
             s.c[(b, t)] = Rot.from_matrix(M).as_euler('xyz')
         return s.c[(b, t)][c - 3]
 
