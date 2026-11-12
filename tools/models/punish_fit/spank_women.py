@@ -12,13 +12,20 @@ import pairsim as ps
 from spank130 import KS
 # An "own" fit (K, Nov 12): Spanking is these women's own punish, so it plays when their prompt is unchanged.
 SCALE = 1.15; RAISE, ELBOW = 28.0, -10.0   # K's variant B (Nov 12)
-NOTE = "Gene's left arm raised %.0f deg, the elbow %.0f deg (K: the bigger women; spank_women.py)" % (RAISE, ELBOW)
+# K (Nov 12, after the seat tilt): past ~1.07 his palm landed on the upper thigh: the bigger body rode high on his thigh
+# like the big men. The victim lowered (model units) until her belly sits on his thigh like the 1.00 pairing's (median
+# gap 3.3 cm, with the tilt): his palm back on the seat, the knees still clear of the floor.
+DROP = 0.093
+NOTE = "Gene's left arm raised %.0f deg, the elbow %.0f deg, the victim %.1f cm lower (K: the bigger women; spank_women.py)" % (RAISE, ELBOW, DROP * 100)
 def save():
     from fit_pose import OUT
     X = np.zeros((sum(map(len, KS)), 14)); o = 0
     for si, fs in enumerate(KS):
         for f in fs: X[o, 8] = np.radians(RAISE) * ps.wstage(si, f); X[o, 10] = np.radians(ELBOW) * ps.wstage(si, f); o += 1
-    m = dict(name='Spanking', type='women', group=1, scale=SCALE, rep=False, own_placement=True, own=True, ks=KS, size=1.0, note=NOTE)
+    vk = {m_: [(f, [-DROP * ps.wstage(si, f), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]) for f in fs if f <= last]
+          for si, (m_, fs, last) in enumerate(((1327, KS[0], 22), (1329, KS[1], 16), (1331, KS[2], 20)))}
+    m = dict(name='Spanking', type='women', group=1, scale=SCALE, rep=False, own_placement=True, own=True, ks=KS, size=1.0, note=NOTE,
+             victim={str(k): v for k, v in vk.items()})
     np.save(os.path.join(OUT, 'g_Spanking_01_%.2f.npy' % SCALE), X); json.dump(m, open(os.path.join(OUT, 'g_Spanking_01_%.2f.json' % SCALE), 'w'), indent=1)
     return m, X
 def patch(path=os.path.join(HERE, '..', '..', '..', 'resources', 'punish_fit.txt')):

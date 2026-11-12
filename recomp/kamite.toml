@@ -455,6 +455,11 @@ flag = "sway_bar"
 address = "0x0013CFA0"
 hook = "km_sway_bar_boss"
 flag = "sway_bar"
+# The mid-boss bars (cCockMiddleBoss, func_00140638's loop: after each boss's cIDBase_trans).
+[[patches.hooks]]
+address = "0x001406CC"
+hook = "km_sway_bar_middle"
+flag = "sway_bar"
 # Dead Pan (game_options.cpp): the roulette list builder func_00125048 reads the language (0 = Japanese) to hide reel
 # 0xB; read as 0 once a Kick Me Sign clear earned it (0x747A28 & 0x20000000) or with DBG_ALL_GOD_REEL.
 [[patches.hooks]]

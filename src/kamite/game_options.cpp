@@ -956,6 +956,9 @@ namespace kamite
         std::unordered_map<uint32_t, uint32_t> g_bossSeen; // bar -> the boss it has seen stun on
         std::unordered_set<uint32_t> g_bossLogged, g_bossDrawn;
 
+        void bossGauge(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t bar, uint32_t boss, uint32_t fillEnt,
+                       uint32_t lagEnt, const char *what);
+
         void bossSwayBar(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const uint32_t bar = GPR_U32(ctx, 16), boss = inGuest(bar) ? ram32(rdram, bar + 0x9Cu) : 0u;
@@ -966,10 +969,59 @@ namespace kamite
                 static_cast<int16_t>(ram32(rdram, boss + 0x548u) & 0xFFFFu) == 0 || (ram32(rdram, bar + 0xA0u) & 0x20000000u) == 0u ||
                 (inGuest(save) && (ram32(rdram, save + 0xBB8u) >> 16 & 1u) != 0u) || rdram[bar + 0x19u] != 0u)
                 return;
+            bossGauge(rdram, ctx, runtime, bar, boss, ram32(rdram, bar + 0xBCu), ram32(rdram, bar + 0xC0u), "the boss bar");
+        }
+
+        // cCockMiddleBoss (Dr. Ion and the other mid-bosses; K, Nov 12): up to +0x358 bosses (+0x250 + 4i), each with its
+        // own cIDBase (+0x35C + 4i) drawn by func_00140638's loop; the hook sits after each of those trans calls
+        // (0x1406CC: s2 the bar, s0 the index). The fill / lag: the two panels (kind 3) of one size, the fill the one
+        // whose base x scale is nearer the boss's HP ratio.
+        void middleSwayBar(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const uint32_t self = GPR_U32(ctx, 18), i = GPR_U32(ctx, 16) & 0xFFFFu;
+            if (!inGuest(self) || i >= 8u || i >= rdram[self + 0x358u])
+                return;
+            const uint32_t bar = ram32(rdram, self + 0x35Cu + 4u * i), boss = ram32(rdram, self + 0x250u + 4u * i);
+            if (!inGuest(bar) || !inGuest(boss) || rdram[bar + 0x19u] != 0u)
+                return;
+            const int16_t maxHp = static_cast<int16_t>(ram32(rdram, boss + 0x548u) & 0xFFFFu);
+            if (maxHp <= 0)
+                return;
+            const float ratio = static_cast<float>(static_cast<int16_t>(ram32(rdram, boss + 0x54Au) & 0xFFFFu)) / maxHp;
+            const uint32_t ent = ram32(rdram, bar + 0x4u), count = ram32(rdram, bar + 0xCu);
+            if (!inGuest(ent) || count == 0u || count > 64u)
+                return;
+            uint32_t fill = 0u, lag = 0u;
+            float best = 1e9f;
+            for (uint32_t a = 0; a < count; ++a)
+                for (uint32_t b = 0; b < count; ++b)
+                {
+                    const uint32_t ea = ent + a * 0xACu, eb = ent + b * 0xACu;
+                    if (a == b || rdram[ea + 0x89u] != 3u || rdram[eb + 0x89u] != 3u || ramF(rdram, ea + 0x68u) != ramF(rdram, eb + 0x68u) ||
+                        ramF(rdram, ea + 0x6Cu) != ramF(rdram, eb + 0x6Cu) || ram32(rdram, ea + 0x20u) != ram32(rdram, eb + 0x20u))
+                        continue;
+                    const float d = std::fabs(ramF(rdram, ea + 0x40u) - ratio) - (a < b ? 1e-4f : 0.0f);
+                    if (d < best)
+                    {
+                        best = d;
+                        fill = ea;
+                        lag = eb;
+                    }
+                }
+            if (fill)
+                bossGauge(rdram, ctx, runtime, bar, boss, fill, lag, "a mid-boss bar");
+            else if (g_bossDrawn.insert(boss).second)
+                KM_INFO(Game, "sway bar: boss " << std::hex << ram32(rdram, boss + 0x564u) << std::dec << " has a mid-boss bar ("
+                                                << count << " entries) with no fill found");
+        }
+
+        void bossGauge(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t bar, uint32_t boss, uint32_t fillEnt,
+                       uint32_t lagEnt, const char *what)
+        {
             const int32_t build = static_cast<int32_t>(ram32(rdram, boss + 0x5B4u));
             float stun = ramF(rdram, boss + 0x17CCu) / kStunTime;
             if (g_bossDrawn.insert(boss).second) // temporary (K, Nov 12: which bosses build stun)
-                KM_INFO(Game, "sway bar: boss " << std::hex << ram32(rdram, boss + 0x564u) << std::dec << " has the boss bar");
+                KM_INFO(Game, "sway bar: boss " << std::hex << ram32(rdram, boss + 0x564u) << std::dec << " has " << what);
             if ((build > 0 || stun > 0.0f) && g_bossSeen[bar] != boss)
             {
                 g_bossSeen[bar] = boss;
@@ -979,7 +1031,6 @@ namespace kamite
             const auto seen = g_bossSeen.find(bar);
             if (seen == g_bossSeen.end() || seen->second != boss)
                 return;
-            const uint32_t fillEnt = ram32(rdram, bar + 0xBCu), lagEnt = ram32(rdram, bar + 0xC0u);
             const uint32_t ent = ram32(rdram, bar + 0x4u), count = ram32(rdram, bar + 0xCu);
             if (!inGuest(fillEnt) || !inGuest(lagEnt) || !inGuest(ent) || count == 0u || count > 64u)
                 return;
@@ -1389,6 +1440,7 @@ namespace kamite
         ps2xRegisterHostHook("km_sway_bar_s3", &swayBar<19, 2>);
         ps2xRegisterHostHook("km_sway_bar_s2", &swayBar<18, 3>);
         ps2xRegisterHostHook("km_sway_bar_boss", &bossSwayBar);
+        ps2xRegisterHostHook("km_sway_bar_middle", &middleSwayBar);
         ps2xSetPatchFlag("sway_bar", envOn("KAMITE_SWAY_BAR"));
         ps2xSetPatchFlag("roulette_cycle", envOn("KAMITE_ROULETTE_CYCLE"));
         if (!runtime.hasFunction(kSetCommandList) || !(g_setCommandList = runtime.lookupFunction(kSetCommandList)) ||
