@@ -871,6 +871,7 @@ namespace kamite
 
         constexpr float kSwayLagStep = 0.08f;         // the magenta's shrink after a stun, of the width a draw
         std::unordered_map<uint32_t, float> g_swayLag; // game thread: enemy -> the magenta's width (0..1)
+        std::unordered_set<uint32_t> g_midBosses, g_midDrawLogged; // temporary (K, Nov 12): mid-bosses seen, logged
 
         // EnemyReg: the register holding the enemy; LagId: the bar's damage lag entry (2, or 3 in the flash layout).
         template <int EnemyReg, int LagId>
@@ -879,6 +880,9 @@ namespace kamite
             const uint32_t enemy = GPR_U32(ctx, EnemyReg);
             if (!inGuest(enemy))
                 return;
+            if (g_midBosses.count(enemy) && g_midDrawLogged.insert(enemy).second) // temporary (K, Nov 12)
+                KM_INFO(Game, "sway bar: mid-boss " << std::hex << ram32(rdram, enemy + 0x564u) << std::dec
+                                                    << " reaches the enemy health bar's draw");
             const uint32_t layout = ram32(rdram, enemy + 0x660u);
             if (!inGuest(layout) || rdram[layout + 0x19u] != 0u) // cIDBase hide
                 return;
@@ -1008,11 +1012,25 @@ namespace kamite
                         lag = eb;
                     }
                 }
-            if (fill)
-                bossGauge(rdram, ctx, runtime, bar, boss, fill, lag, "a mid-boss bar");
-            else if (g_bossDrawn.insert(boss).second)
-                KM_INFO(Game, "sway bar: boss " << std::hex << ram32(rdram, boss + 0x564u) << std::dec << " has a mid-boss bar ("
-                                                << count << " entries) with no fill found");
+            // K (Nov 12): no HUD gauge for mid-bosses (several at once would crowd the HUD): the gauge goes over their
+            // heads instead, like the enemies'. For now a log of what each carries for that (its own enemy health bar
+            // layout +0x660, whether the enemy bar's draw reaches it), read before building it.
+            (void)fill;
+            (void)lag;
+            (void)runtime;
+            g_midBosses.insert(boss);
+            if (g_bossDrawn.insert(boss).second)
+            {
+                const uint32_t own = ram32(rdram, boss + 0x660u);
+                const bool ok = inGuest(own);
+                KM_INFO(Game, "sway bar: mid-boss " << std::hex << ram32(rdram, boss + 0x564u) << " at " << boss << " (" << i
+                                                    << " of " << int(rdram[self + 0x358u]) << ") +0x660 " << own << std::dec
+                                                    << " entries " << (ok ? ram32(rdram, own + 0xCu) : 0u) << " hide "
+                                                    << (ok ? int(rdram[own + 0x19u]) : -1) << " +0x614 "
+                                                    << ram32(rdram, boss + 0x614u) << " +0x630 " << ramF(rdram, boss + 0x630u)
+                                                    << " +0x644 " << ramF(rdram, boss + 0x644u) << " build "
+                                                    << static_cast<int32_t>(ram32(rdram, boss + 0x5B4u)));
+            }
         }
 
         void bossGauge(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime, uint32_t bar, uint32_t boss, uint32_t fillEnt,
