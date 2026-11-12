@@ -104,6 +104,7 @@ def main(path):
                 if m.get('model_heights'): X=X.copy(); X[:,4]/=s   # the victim's heights in the model's units (newer fits)
                 if not off: lines+=tracks(name,X,m['ks'],lift=np.load(os.path.join(FITS,m['lift'])) if m.get('lift') else None)
                 summary.append((name,g,file,t,s,v,m))
+    import odd_bodies; lines+=odd_bodies.lines()   # non-human skeletons (K, Nov 12)
     open(path,'w').write('\n'.join(lines)+'\n')
     return summary
 if __name__=='__main__':

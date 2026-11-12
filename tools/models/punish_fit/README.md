@@ -71,3 +71,8 @@ feet planted, the head kept where Gene holds it (bend and hips-back solved per b
 through the loop; in the slam the hips / seat ease back over frames 0-16 as Gene lifts her, the knees stay together
 until she lies down (60-100). Writes the victim keys' 3rd-5th values (hips back, tilt, legs; punish_fit.cpp). Re-run
 after emit7 (idempotent).
+
+odd_bodies.py (K, Nov 12): non-human skeletons, written by hand (emit7 appends its block; run it alone to patch the
+file). em23, the snake demon: Spanking with Gene's left arm raised 60 deg off the back, Stinger and Cobra Twist off,
+Suplex as the game plays it, label type "snake". The punish motions drive bones by number, so these bodies get human
+channels on whatever bones carry them; offline renders of them are rough (the tail is not posed as in the game).

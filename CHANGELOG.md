@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 12, 2026
 
+- Buck Breaker: the snake demon keeps his own punish for Stinger and Cobra Twist picks; Gene's arm no longer sinks into his back when Spanking.
 - Buck Breaker: Stinger on women holds them knees together, seat up and back straighter instead of a wide squat.
 
 ## November 11, 2026
