@@ -56,9 +56,11 @@ namespace kamite::buck_breaker
         constexpr uint32_t kPickIndex[kPickCount] = {0u, 0x209u - 0x205u, 0x21Au - 0x205u, kCases, 0x20Au - 0x205u, 0u};
         // The generic punishes' cases (K, Nov 7: only these are replaced): Suplex (and the default), Stinger, Pummel
         // (0x218's own branch to the shared callback, the 17-number group), Spanking, the nine that flip Suplex / Pummel
-        // (+0x621), Cobra Twist. Left alone: Stake Driver 0x2DD070 (the midgets), 0x246's Gorilla Suplex + Pummel
-        // 0x2DD0B0, Gorilla Suplex 0x2DD128, the four Pummels with their own motions 0x2DD1C0 / 1D4 / 1E8 / 1FC.
-        constexpr uint32_t kGenericCases[] = {kSuplexCase, 0x2DD090u, 0x2DD118u, 0x2DD148u, 0x2DD168u, 0x2DD17Cu, 0x2DD22Cu};
+        // (+0x621), Cobra Twist, and 0x246's 0x2DD0B0 (K, Nov 12: the stage 4 wrestler on the strongman's body; it sets
+        // GORILLA SUPLEX and then PUMMEL over it on +0x621 == 0, PUMMEL on 1, so players only ever get a Pummel). Left
+        // alone: Stake Driver 0x2DD070 (the midgets), Gorilla Suplex 0x2DD128, the four Pummels with their own motions
+        // 0x2DD1C0 / 1D4 / 1E8 / 1FC.
+        constexpr uint32_t kGenericCases[] = {kSuplexCase, 0x2DD090u, 0x2DD0B0u, 0x2DD118u, 0x2DD148u, 0x2DD168u, 0x2DD17Cu, 0x2DD22Cu};
 
         std::atomic<int> g_pick{Normal}; // the pick in force (EE thread: each vblank and on a change)
         int g_tableOk = 0;                // 0 not checked yet, 1 the disc's table, -1 not (every pick acts as Normal)
