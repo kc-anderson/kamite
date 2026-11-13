@@ -4,6 +4,8 @@ Newest first, one line per change; the code comments say how.
 
 ## November 13, 2026
 
+- Options: Aspect Ratio, Internal Resolution, Post Effects and a RESTORE DEFAULTS that changes them apply behind the game's own fade to black; the menu waits until it is done.
+- Options: Aspect Ratio applies when the cursor leaves its line.
 - Options: changing the aspect ratio no longer crashes the game, and the OPTIONS wall stays sharp after it.
 - Options: Display Mode, Aspect Ratio, Internal Resolution and Post Effects can be changed in game.
 - Options: Internal Resolution and Post Effects apply when the cursor leaves their line (one hitch, not one per step).

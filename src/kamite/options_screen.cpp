@@ -86,6 +86,11 @@ namespace kamite::options_screen
         // over time +0x18 frames, count +0x1A, state +0x1C: bit 0 = drawn; to black holds, from black stops). Its
         // sprite is black at alpha 0x80 and above (the GS clamps).
         constexpr uint32_t kFade = 0x00747470u;
+        // classFADE_start(self, kind, state, type, col, col2, time); the sub-screen manager's own calls (0x1602E8,
+        // 0x1603F4): to black and hold = state 0xA, col 0 -> 0xFF000000; back in = state 8, the colours swapped; 15 frames
+        // (the game scales them at 60 FPS). State bit 0x4: the fade has run out.
+        constexpr uint32_t kFadeStart = 0x00307208u;
+        constexpr uint32_t kFadeFrames = 15u;
         constexpr uint32_t kIdTrans = 0x2AAC28u;   // cIDBase_trans(layout)
         constexpr uint32_t kIdMove = 0x2AAA40u;    // cIDBase_move(layout)
         constexpr uint32_t kSePlay = 0x2CB8A0u;    // (0x5FEE00, 0, id, -1, -1, 0, 0): the menus' sound calls
@@ -245,6 +250,7 @@ namespace kamite::options_screen
             uint32_t payloadOffset = 0; // in the file
             std::vector<uint8_t> original, ours; // the payload (CT32 words)
             std::vector<uint8_t> previous;       // the last shape's (the aspect ratio changed while playing)
+            std::atomic<uint32_t> published{0u}; // the prepare generation now shown
             bool warned = false;
         };
         Wall g_wall[2];
@@ -417,6 +423,7 @@ namespace kamite::options_screen
                     w.payloadOffset = header + 0xE0u;
                 }
                 w.ready.store(true, std::memory_order_release);
+                w.published.store(generation, std::memory_order_release);
             };
             // At start the stand-in goes up at once (the screen is not open yet; the full image follows). A new shape
             // while playing (the aspect ratio changed) waits for its full image to be handed to the GS: the GS caches
@@ -474,7 +481,7 @@ namespace kamite::options_screen
 
         // live: the aspect ratio changed while playing (generation > 0). The cache keeps every shape until the next
         // start: the GS has the earlier shapes' images on its list and loads them by path (a removed one crashed it).
-        void prepare(fs::path exeDir, float aspect, uint32_t generation)
+        void prepare(fs::path exeDir, float aspect, uint32_t generation, int first)
         {
             const bool live = generation != 0u;
             std::lock_guard<std::mutex> one(g_prepareMutex);
@@ -510,7 +517,7 @@ namespace kamite::options_screen
             std::error_code ec;
             fs::create_directories(cacheDir, ec);
             std::vector<std::string> keep;
-            for (int kind = 0; kind < 2; ++kind)
+            for (const int kind : {first, 1 - first}) // the screen that is up first (the fade waits for it)
                 prepareKind(kind, standIn, wall, cacheDir, keep, generation, live);
             UnloadImage(standIn);
             UnloadImage(wall);
@@ -524,6 +531,27 @@ namespace kamite::options_screen
         // ---- layout --------------------------------------------------------------------------------------------
         float g_aspect = 4.0f / 3.0f;
         const settings::Setting *g_pendingApply = nullptr; // saved, applied when the cursor leaves its row
+        std::string g_pendingFrom;                         // its value before (back to it: nothing to apply)
+
+        // A change behind the game's own screen fade (K, Nov 13: hides the swap and gives it time): to black, the
+        // change, held until it is done (an aspect change: the screen's new wall up), back in. Menu input waits.
+        enum class FadeStep
+        {
+            Idle,
+            Out,
+            Hold,
+            In
+        };
+        struct FadeRun
+        {
+            FadeStep step = FadeStep::Idle;
+            const settings::Setting *setting = nullptr; // the change, or
+            bool restore = false;                       // RESTORE DEFAULTS
+            bool aspect = false;                        // it changes the aspect ratio: hold for the wall
+            uint32_t generation = 0;                    // the wall's prepare to wait for
+            int64_t stepMs = 0, readyMs = 0;
+        };
+        FadeRun g_fade;
 
         // ---- the screen ----------------------------------------------------------------------------------------
         struct Screen
@@ -645,6 +673,8 @@ namespace kamite::options_screen
             applyVolumes();
         }
 
+        int g_visibleKind = 0; // the screen up (pause / title): its wall is made first after an aspect change
+
         // Aspect Ratio while playing: the widescreen hooks, camera, HUD and display (widescreen.cpp), this screen's own
         // layout, a plain window's shape, and the wall made again in the new shape (a thread; the old one stays up
         // until it is ready).
@@ -654,7 +684,7 @@ namespace kamite::options_screen
             g_aspect = std::clamp(aspectRatio(), 1.0f, 4.0f);
             ps2_host_display::requestWindowShape();
             if (!g_exeDir.empty())
-                std::thread(prepare, g_exeDir, g_aspect, g_wallGeneration.fetch_add(1u) + 1u).detach();
+                std::thread(prepare, g_exeDir, g_aspect, g_wallGeneration.fetch_add(1u) + 1u, g_visibleKind).detach();
         }
 
         // F11 (main thread) switched the window: saved as the Display Mode at the next game frame (onFrame).
@@ -765,6 +795,7 @@ namespace kamite::options_screen
                 return false;
             const settings::Setting &s = *d.setting[static_cast<size_t>(row)];
             const options_overlay::PageRow &r = d.rows[static_cast<size_t>(row)];
+            const std::string before = settings::value(g_ini, s);
             std::string value;
             switch (s.kind)
             {
@@ -829,23 +860,116 @@ namespace kamite::options_screen
             if (!g_ini.save())
                 KM_WARN(Game, "options screen: could not write GHR.ini");
             if (s.applyOnLeave)
-                g_pendingApply = &s; // a renderer rebuild: once, when the cursor leaves the row (K, Nov 13)
+            {
+                // A rebuild: once, behind a fade, when the cursor leaves the row (K, Nov 13).
+                if (g_pendingApply != &s)
+                    g_pendingFrom = before;
+                g_pendingApply = &s;
+            }
             else
                 apply(s);
             return true;
         }
 
-        // The row's change waiting for the cursor to leave it (Internal Resolution, Post Effects).
+        // The row's change waiting for the cursor to leave it (Aspect Ratio, Internal Resolution, Post Effects), at once
+        // (the screen is closing: the game's own closing fade covers it).
         void flushPending()
         {
             if (const settings::Setting *s = g_pendingApply)
             {
                 g_pendingApply = nullptr;
-                apply(*s);
+                if (settings::value(g_ini, *s) != g_pendingFrom)
+                    apply(*s);
+            }
+        }
+
+        int64_t nowMs()
+        {
+            return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        }
+
+        void startFade(bool toBlack, uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            callGuest(rdram, ctx, runtime, kFadeStart,
+                      {kFade, 0u, toBlack ? 0xAu : 0x8u, 0u, toBlack ? 0u : 0xFF000000u, toBlack ? 0xFF000000u : 0u, kFadeFrames});
+            g_fade.stepMs = nowMs();
+        }
+
+        bool fadeRunOut() { return (*at(kFade + 0x1Cu) & 0x4u) != 0u; }
+
+        // The cursor left a row with a change waiting: the fade starts (nothing to do if it is back to its value).
+        void leavePending(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const settings::Setting *s = g_pendingApply;
+            g_pendingApply = nullptr;
+            if (!s || settings::value(g_ini, *s) == g_pendingFrom)
+                return;
+            g_fade = FadeRun{};
+            g_fade.setting = s;
+            g_fade.aspect = std::strcmp(s->id, "AspectRatio") == 0;
+            g_fade.step = FadeStep::Out;
+            startFade(true, rdram, ctx, runtime);
+        }
+
+        void restoreDefaults();
+
+        // Each frame of the screen while a fade runs (its input waits). Each wait has a ceiling, so the menu never
+        // stays dark.
+        void stepFade(int kind, uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const int64_t now = nowMs();
+            switch (g_fade.step)
+            {
+            case FadeStep::Idle:
+                return;
+            case FadeStep::Out:
+                if (!fadeRunOut() && now - g_fade.stepMs < 1500)
+                    return;
+                if (g_fade.restore)
+                    restoreDefaults();
+                else if (g_fade.setting)
+                    apply(*g_fade.setting);
+                g_fade.generation = g_wallGeneration.load(std::memory_order_relaxed);
+                g_fade.step = FadeStep::Hold;
+                g_fade.stepMs = now;
+                g_fade.readyMs = 0;
+                return;
+            case FadeStep::Hold:
+            {
+                bool ready = now - g_fade.stepMs >= 300; // the renderer's rebuild is done by its next present
+                if (g_fade.aspect)
+                {
+                    // The screen's new wall up, and a moment for its full image to load.
+                    if (g_fade.readyMs == 0 && g_wall[kind].published.load(std::memory_order_acquire) >= g_fade.generation)
+                        g_fade.readyMs = now;
+                    ready = (g_fade.readyMs != 0 && now - g_fade.readyMs >= 250) || now - g_fade.stepMs >= 4000;
+                }
+                if (!ready)
+                    return;
+                g_fade.step = FadeStep::In;
+                startFade(false, rdram, ctx, runtime);
+                return;
+            }
+            case FadeStep::In:
+                if (fadeRunOut() || now - g_fade.stepMs >= 1500)
+                    g_fade = FadeRun{};
+                return;
             }
         }
 
         // RESTORE DEFAULTS: every setting the screen shows back to its shipped default.
+        // A setting RESTORE DEFAULTS would change that rebuilds something (the fade ones), or nullptr.
+        const settings::Setting *restoreNeedsFade()
+        {
+            for (size_t i = 0; i < settings::kSettingCount; ++i)
+            {
+                const settings::Setting &s = settings::kSettings[i];
+                if (s.live && s.applyOnLeave && settings::value(g_ini, s) != s.fallback)
+                    return &s;
+            }
+            return nullptr;
+        }
+
         void restoreDefaults()
         {
             g_pendingApply = nullptr; // everything is applied below
@@ -1016,7 +1140,7 @@ namespace kamite::options_screen
             const int row = s.row, cursor = s.pageCursor;
             pageInputMoves(kind, s, pressed, repeat, rdram, ctx, runtime);
             if (!s.inPage || s.row != row || s.pageCursor != cursor)
-                flushPending();
+                leavePending(rdram, ctx, runtime);
         }
 
         // OK on a row.
@@ -1060,6 +1184,17 @@ namespace kamite::options_screen
                 sound(rdram, ctx, runtime, kSeOk);
                 if (k.actions[s.confirmRow] == Action::ResetGame)
                     wr32(s.self + kResult, static_cast<uint32_t>(kResultReset));
+                else if (restoreNeedsFade())
+                {
+                    // One fade round the whole reset when it rebuilds something (K, Nov 13).
+                    const settings::Setting *aspect = settings::find("AspectRatio");
+                    g_pendingApply = nullptr;
+                    g_fade = FadeRun{};
+                    g_fade.restore = true;
+                    g_fade.aspect = aspect && settings::value(g_ini, *aspect) != aspect->fallback;
+                    g_fade.step = FadeStep::Out;
+                    startFade(true, rdram, ctx, runtime);
+                }
                 else
                     restoreDefaults();
                 s.confirmRow = -1;
@@ -1091,6 +1226,15 @@ namespace kamite::options_screen
         template <int N>
         void closeHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
+            // Closed mid-fade (the game's own closing fade takes over): a change not made yet is made now.
+            if (g_fade.step == FadeStep::Out)
+            {
+                if (g_fade.restore)
+                    restoreDefaults();
+                else if (g_fade.setting)
+                    apply(*g_fade.setting);
+            }
+            g_fade = FadeRun{};
             flushPending(); // the screen closed on a row with a change waiting
             clearOverlay();
             g_screen[N] = Screen{};
@@ -1107,6 +1251,13 @@ namespace kamite::options_screen
             const uint32_t ra = GPR_U32(ctx, 31);
             Screen &s = screenOf(N, self);
             const Kind &k = kKinds[N];
+            g_visibleKind = N;
+            if (g_fade.step != FadeStep::Idle)
+            {
+                stepFade(N, rdram, ctx, runtime); // the menu's input waits for the fade
+                ctx->pc = ra;
+                return;
+            }
             const uint64_t pressed = rd64(kCommand), repeat = rd64(kCommandRepeat);
             if ((pressed & (kOk | kStart)) == kStart)
             {
@@ -1238,7 +1389,7 @@ namespace kamite::options_screen
         options_overlay::setSliderFill(utf8(exeDir / "resources" / "options" / "slider_fill.png"));
         g_exeDir = exeDir;
         ps2_host_display::setModeListener(&onWindowMode);
-        std::thread(prepare, exeDir, g_aspect, g_wallGeneration.load()).detach();
+        std::thread(prepare, exeDir, g_aspect, g_wallGeneration.load(), 0).detach();
         KM_INFO(Game, "options screen: the title and pause Options open the God Hand: Rearmed screen (aspect " << g_aspect << ")");
     }
 

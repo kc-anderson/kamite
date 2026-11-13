@@ -131,10 +131,11 @@ namespace kamite::settings
                           "The window's size when it opens (not maximized or fullscreen).", "Video", "WindowSize", "auto",
                           kWindowSizes),
                    "DisplayMode", "window")),
-        live(choice(Tab::Display, "Game Window", "Aspect Ratio",
-                    "The picture's shape. Wider than 4:3 shows more of the scene to the sides; menus keep the PS2's "
-                    "proportions.",
-                    "Video", "AspectRatio", "16:9", kAspects)),
+        live(onLeave(gameNote(choice(Tab::Display, "Game Window", "Aspect Ratio",
+                                     "The picture's shape. Wider than 4:3 shows more of the scene to the sides; menus "
+                                     "keep the PS2's proportions.",
+                                     "Video", "AspectRatio", "16:9", kAspects),
+                              "Applies when you leave this line."))),
         live(note(choice(Tab::Display, "Camera", "Camera & FOV",
                          "How much the gameplay camera shows and how it frames Gene (widescreen already widens it "
                          "sideways). Cutscenes keep their framing. Custom starts from Action's values.",
