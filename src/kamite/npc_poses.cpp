@@ -39,6 +39,7 @@
 #include "kamite/npc_motions.inc"
 #include "kamite/function_hooks.h"
 #include "kamite/game_layout.h"
+#include "kamite/ini_file.h"
 #include "kamite/log.h"
 #include "kamite/mot_edit.h"
 #include "ps2_runtime_macros.h" // GPR_U32 / SET_GPR_U32
@@ -1025,8 +1026,8 @@ namespace kamite::npc_poses
                 return; // a fold-out section at the bottom of the NPCs tab (K, Oct 27)
             std::lock_guard<std::mutex> lock(g_mutex);
             if (!g_enabled)
-                ui->text_colored(0xFF60C0FFu, "Better shop & casino poses is off (launcher: Gameplay), so the poses set "
-                                              "here don't play.");
+                ui->text_colored(0xFF60C0FFu, "Better Shop & Casino Poses is off (OPTIONS > Gameplay, or F2 > Gameplay), "
+                                              "so the poses set here don't play.");
             ui->text_wrapped("Walk up to a bystander who stands at a counter (with \"Keep playing\" on), then set her "
                              "here. Changes show at once; Save keeps them in npc_poses.txt.");
             const auto it = g_npcs.find(g_nearest);
@@ -1292,5 +1293,24 @@ namespace kamite::npc_poses
             }
         }
         g_nearestDistance = best;
+    }
+
+    bool enabled()
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        return g_enabled;
+    }
+
+    void setEnabled(bool on)
+    {
+        // Switched live (K, Nov 13): every posed or poseable bystander of the room is written again at the next frame
+        // (into her pose, or back to the game's idle).
+        {
+            std::lock_guard<std::mutex> lock(g_mutex);
+            g_enabled = on;
+            for (auto &[actor, npc] : g_npcs)
+                npc.dirty = true;
+        }
+        setEnvValue("KAMITE_NPC_POSES", on ? "1" : "0");
     }
 }

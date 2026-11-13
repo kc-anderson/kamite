@@ -1369,6 +1369,7 @@ namespace kamite::test_mode
             bool toggle = false;        // a press of the hotkey, taken at the next frame hook
             uint32_t casesWritten = 0;
             std::string cheats;         // the F2 switches that change play, when the state was saved
+            std::string settings;       // the env.* lines, taken at the start (they can change in play: OPTIONS, F2)
         };
         Recorder g_rec;
 
@@ -1426,6 +1427,18 @@ namespace kamite::test_mode
             rec.polling = false;
             rec.readsThisFrame = 0;
             rec.cheats = debug_tools::cheatState() + (npc_tools::aiOff() ? " aioff=1" : " aioff=0");
+            // The settings that change what the game does (the camera's reach, the enemies' view, the controls): the
+            // replay runs with the recorder's (applyCaseSettings), not the replaying machine's GHR.ini. Taken here, with
+            // the state: the OPTIONS screen and F2 change them in play and keep the environment up to date.
+            rec.settings.clear();
+            for (const char *name : kCaseSettings)
+            {
+                const char *value = std::getenv(name);
+                if (!value)
+                    value = caseDefault(name); // unset = the game's default: written out, so the case says what ran
+                if (value)
+                    rec.settings += std::string("env.") + name + "=" + value + "\n";
+            }
             {
                 char text[48];
                 std::snprintf(text, sizeof(text), " target=%X cantdie=%d", npc_tools::target(), npc_tools::targetCantDie() ? 1 : 0);
@@ -1474,16 +1487,7 @@ namespace kamite::test_mode
             c.meta += hex;
             c.meta += "\nenemies=" + std::to_string(kDefaultEnemies) + "\n";
             c.meta += "enemyorder=near\n"; // the em<i> columns hold the nearest enemies (nearestEnemies), not the list's first
-            // The settings that change what the game does (the camera's reach, the enemies' view, the controls): the replay
-            // runs with the recorder's (applyCaseSettings), not the replaying machine's GHR.ini.
-            for (const char *name : kCaseSettings)
-            {
-                const char *value = std::getenv(name);
-                if (!value)
-                    value = caseDefault(name); // unset = the game's default: written out, so the case says what ran
-                if (value)
-                    c.meta += std::string("env.") + name + "=" + value + "\n";
-            }
+            c.meta += rec.settings; // taken at the start, with the state
             c.meta += "cheats=" + rec.cheats + "\n"; // God mode etc.: the replay sets the same (readCaseForReplay)
             // The build that recorded it (GHR.exe's size and time): a replay with another build may differ from the
             // live log where a fix changed the game, and the report says so.

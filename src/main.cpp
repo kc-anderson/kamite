@@ -32,6 +32,7 @@
 #include "kamite/hitbox_overlay.h"
 #include "kamite/dev_menu.h"
 #include "kamite/hotkeys.h"
+#include "kamite/ini_file.h"
 #include "kamite/texture_slots.h"
 #include "kamite/jukebox.h"
 #include "kamite/message_guard.h"
@@ -720,6 +721,19 @@ namespace
                   << "settings: GHR.ini next to GHR.exe (environment variables of the same name win)\n"
                   << "exit codes: 0 ok, 1 init failed, 2 no disc, 3 wrong disc, 4 CPU, 5 missing function (stop), 6 crash, 7 test failed,\n"
                   << "            124 time limit\n";
+    }
+}
+
+namespace kamite
+{
+    // ini_file.h: the variable GHR.ini's [section] key sets (the table above), for the OPTIONS screen's live changes.
+    const char *iniEnvVariable(const std::string &section, const std::string &key)
+    {
+        const std::string s = lowerText(section), k = lowerText(key);
+        for (const IniSetting &setting : kIniSettings)
+            if (s == setting.section && k == setting.key)
+                return setting.variable;
+        return nullptr;
     }
 }
 

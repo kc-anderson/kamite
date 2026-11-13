@@ -41,6 +41,13 @@ namespace kamite::style_presets
     // ps2_host_input's pad filter, player 1 (window thread): called by modern_controls' filter before its own work.
     void padFilter(uint32_t player, ps2x::iop::PadInputState &state);
 
+    // [Game] StyleSwitching (Moveset Presets) and StyleSignal (Signal Style Switch), switched live (the OPTIONS
+    // screen, F2). Off: None, the style that was on kept in the save and brought back when it is on again.
+    bool enabled();
+    void setEnabled(bool on);
+    bool signal();
+    void setSignal(bool on);
+
     // EE thread: 0 for None (also with Style switching off), 1..4 for the style on (S..Y). Buck Breaker's per-style pick.
     int activePosition();
 }

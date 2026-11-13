@@ -42,6 +42,11 @@ namespace kamite
     bool rouletteTargetCycle();
     void setRouletteTargetCycle(bool on);
     // The F2 menu (any thread): Cunt Punter, live (the next Ball Buster hit).
+    // Wild Curry Funk (chairs liftable; the next room's chairs follow a change) and Dry Spinning, switched live.
+    bool liftChairs();
+    void setLiftChairs(bool on);
+    bool rouletteNoOrbs();
+    void setRouletteNoOrbs(bool on);
     bool ballBusterWomen();
     void setBallBusterWomen(bool on);
     // The F2 menu (any thread): Sway Bar, live.

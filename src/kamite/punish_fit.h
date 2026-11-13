@@ -30,8 +30,10 @@ namespace kamite::punish_fit
     inline constexpr uint32_t kRewriteArea = 0x00810000u;
     inline constexpr uint32_t kRewriteAreaEnd = 0x00860000u;
 
-    // With [Game] BuckBreaker on: wraps the pair placement, observes motion starts, loads the fits.
+    // Wraps the pair placement, observes motion starts, loads the fits; they act while [Game] BuckBreaker is on.
     void install(PS2Runtime &runtime, const std::filesystem::path &exeDir);
+    // Buck Breaker switched live (buck_breaker::setEnabled): a punish under way keeps the setting it began with.
+    void setEnabled(bool on);
 
     // EE thread, from Buck Breaker's punish switch (each time an enemy's punish prompt is set): whether the punish it now
     // offers is one Buck Breaker changed. Only those pairs are fitted (K, Nov 11: a pairing the game already had plays

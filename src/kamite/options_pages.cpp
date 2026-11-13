@@ -87,7 +87,8 @@ namespace kamite::options_pages
             }
             options_overlay::PageRow row;
             row.name = d.keep(upper(s.name));
-            row.help = d.keep(wrapHelp(s.description, aspect));
+            row.help = d.keep(wrapHelp(s.gameNote ? (std::string(s.description) + " " + s.gameNote).c_str() : s.description,
+                                       aspect));
             row.sub = s.parent != nullptr;
             const std::string value = settings::value(ini, s);
             std::vector<const char *> choices;

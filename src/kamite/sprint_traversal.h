@@ -18,9 +18,11 @@ namespace kamite::sprint_traversal
     inline constexpr int kSlide = 2; // sprint + A (the slide)
 
     // Before the game loop: reads resources/sprint_traversal.txt (shipped) and sprint_traversal.txt (K's marks, next
-    // to the exe, which win), and with the option on registers the two hooks round Gene's wall check.
+    // to the exe, which win), and registers the hooks round Gene's wall check (they act while the option is on).
     void install(PS2Runtime &runtime, const std::filesystem::path &exeDir);
     bool enabled();
+    // [Game] SprintTraversal (Busta-Chan Jive), switched live: a sprint attack under way keeps the setting it began with.
+    void setEnabled(bool on);
     // The F2 panel (GS thread): a group's marks in a room, and changing them (saved to sprint_traversal.txt at once;
     // false if the file could not be written).
     int marks(uint16_t room, const std::string &group);

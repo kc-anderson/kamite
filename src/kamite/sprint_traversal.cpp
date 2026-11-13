@@ -21,11 +21,13 @@
 #include "kamite/sprint_traversal.h"
 #include "kamite/debug_tools.h"
 #include "kamite/game_layout.h"
+#include "kamite/ini_file.h"
 #include "kamite/log.h"
 #include "runtime/ps2_memory.h"
 #include "ps2_runtime_macros.h" // GPR_U32
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -63,7 +65,9 @@ namespace kamite::sprint_traversal
         constexpr int kJumpMotions[] = {kDiveMotion, 390}; // sprint + X, sprint + Y
         constexpr int kSlideMotions[] = {525};             // sprint + A
 
-        bool g_enabled = false;
+        std::atomic<bool> g_enabled{false}; // [Game] SprintTraversal (Busta-Chan Jive), switched live (K, Nov 13)
+        int g_latchKind = 0;                // the sprint attack in play and whether it began with the option on
+        bool g_latchOn = false;
         fs::path g_file, g_shipped;
         using Key = std::pair<uint16_t, std::string>; // (room, group)
         std::mutex g_mutex;                          // guards the three below and g_version
@@ -310,6 +314,19 @@ namespace kamite::sprint_traversal
             return 0;
         }
 
+        // A move keeps the setting it began with (K, Nov 13: a vault or slide under way finishes as it started); 0 when
+        // it began with Busta-Chan Jive off (the game's walls).
+        int liveKind(const uint8_t *rdram, uint32_t gene)
+        {
+            const int kind = moveKind(rdram, gene);
+            if (kind != g_latchKind)
+            {
+                g_latchKind = kind;
+                g_latchOn = g_enabled.load(std::memory_order_relaxed);
+            }
+            return kind && g_latchOn ? kind : 0;
+        }
+
         // Before Gene's wall check.
         void switchOff(uint8_t *rdram, R5900Context *, PS2Runtime *)
         {
@@ -317,7 +334,7 @@ namespace kamite::sprint_traversal
             const uint32_t gene = rd32(rdram, game::GameWork::address(game::GameWork::kPlayerObj));
             if (!inRam(gene, 0x600u))
                 return;
-            const int kind = moveKind(rdram, gene);
+            const int kind = liveKind(rdram, gene);
             if (!kind)
                 return;
             const uint32_t header = rd32(rdram, kScroll + kScrHeader);
@@ -381,7 +398,7 @@ namespace kamite::sprint_traversal
         void windowPass(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
             const uint32_t gene = GPR_U32(ctx, 17); // s1
-            const int kind = inRam(gene, 0x600u) ? moveKind(rdram, gene) : 0;
+            const int kind = inRam(gene, 0x600u) ? liveKind(rdram, gene) : 0;
             if (!kind)
                 return;
             const uint32_t pos = rd32(rdram, gene + game::GameObj::kPos);
@@ -476,7 +493,7 @@ namespace kamite::sprint_traversal
         {
             g_liftPos = 0u;
             const uint32_t gene = GPR_U32(ctx, 17); // s1
-            const bool jumping = inRam(gene, 0x600u) && moveKind(rdram, gene) == kJump;
+            const bool jumping = inRam(gene, 0x600u) && liveKind(rdram, gene) == kJump;
             const uint32_t pos = jumping ? rd32(rdram, gene + game::GameObj::kPos) : 0u;
             if (!jumping || !inRam(pos, 12u))
             {
@@ -588,17 +605,23 @@ namespace kamite::sprint_traversal
         ps2xRegisterHostHook("km_trav_window", &windowPass);
         ps2xRegisterHostHook("km_trav_lift", &liftStart);
         ps2xRegisterHostHook("km_trav_lift_end", &liftEnd);
-        ps2xSetPatchFlag("sprint_traversal", g_enabled);
+        ps2xSetPatchFlag("sprint_traversal", true); // the hooks always run; off (liveKind 0) they leave the walls alone
         KM_INFO(Game, "sprint attack traversal: " << (g_enabled ? "on" : "off") << ", " << g_marks.size() << " groups marked, "
                                                    << [] { size_t n = 0; for (const auto &w : g_windows) n += w.second.size(); return n; }()
                                                    << " windows");
     }
 
-    bool enabled() { return g_enabled; }
+    bool enabled() { return g_enabled.load(std::memory_order_relaxed); }
+
+    void setEnabled(bool on)
+    {
+        g_enabled.store(on, std::memory_order_relaxed);
+        setEnvValue("KAMITE_SPRINT_TRAVERSAL", on ? "1" : "0");
+    }
 
     void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
-        if (!g_enabled || !rdram || !ctx)
+        if (!rdram || !ctx || (!g_enabled.load(std::memory_order_relaxed) && !g_latchOn && g_pending.room == 0xFFFFu))
             return;
         const uint16_t room = rd16(rdram, game::GameWork::address(game::GameWork::kRoom));
         if (g_pending.room != 0xFFFFu)
@@ -614,7 +637,7 @@ namespace kamite::sprint_traversal
         const uint32_t gene = rd32(rdram, game::GameWork::address(game::GameWork::kPlayerObj));
         if (!inRam(gene, 0x600u))
             return;
-        const int kind = moveKind(rdram, gene);
+        const int kind = liveKind(rdram, gene);
         // Gene entering a window in a jump move: past its near face, from in front of it the frame before (K, Nov 7:
         // a dive at an angle or from a tight spot could stop short of the far face and skip the jump).
         Windows linked;

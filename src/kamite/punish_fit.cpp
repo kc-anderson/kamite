@@ -58,6 +58,7 @@
 #include "runtime/ps2_pnach.h"
 #include "runtime/ps2_save_state.h"
 
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -242,13 +243,21 @@ namespace kamite::punish_fit
         };
 
         uint8_t *g_ram = nullptr;
-        bool g_on = false;
+        std::atomic<bool> g_on{false}; // [Game] BuckBreaker, switched live (setEnabled)
+        bool g_ready = false;          // the placement is hooked (install)
+        bool g_pairOn = false;         // the setting the pair in play began with (EE thread)
         PS2Runtime::RecompiledFunction g_align = nullptr;
         fs::path g_file, g_shippedFile;
         std::map<uint64_t, Fits> g_fits; // punish << 32 | body, by size; read at start, then only read
         std::map<uint64_t, Fits> g_ownFits; // the same for the enemy's own punish (fits marked own)
         std::map<uint32_t, std::string> g_bodyNames; // body -> its type ("men", ...), punish_fit.txt's body lines
         Pair g_pair;
+
+        // A punish keeps the setting it began with (K, Nov 13: what is under way plays out as it started).
+        bool pairOn(uint32_t enemy, int punish, bool starts)
+        {
+            return !starts && g_pair.enemy == enemy && g_pair.punish == punish ? g_pairOn : g_on.load(std::memory_order_relaxed);
+        }
         Resize g_resize[2]; // the victim, Gene
         std::map<std::tuple<uint32_t, int, uint16_t, bool, int>, uint32_t> g_copies; // (body, punish, motion, gene, size) -> copy
         uint32_t g_areaAt = kRewriteArea;
@@ -565,7 +574,24 @@ namespace kamite::punish_fit
             }
             const uint32_t body = bodyOf(rdram, enemy);
             const bool first = call->geneMotion == kMotions[call->punish].gene[0];
-            if (first || g_pair.enemy != enemy || g_pair.punish != call->punish || g_pair.gene != gene)
+            const bool newPair = first || g_pair.enemy != enemy || g_pair.punish != call->punish || g_pair.gene != gene;
+            if (newPair)
+                g_pairOn = g_on.load(std::memory_order_relaxed);
+            if (!g_pairOn)
+            {
+                // Buck Breaker off when this punish began: the game's own placement, exactly.
+                if (newPair)
+                {
+                    finishResizes(rdram);
+                    g_pair = Pair{};
+                    g_pair.punish = call->punish;
+                    g_pair.gene = gene;
+                    g_pair.enemy = enemy;
+                }
+                g_align(rdram, ctx, runtime);
+                return;
+            }
+            if (newPair)
             {
                 // A new pair: the fit whose size needs the least change, Gene and the enemy scaled to meet it (any size
                 // change still easing out ends first).
@@ -794,6 +820,8 @@ namespace kamite::punish_fit
                 {
                     if (entry(rdram, enemy, list[i]) != motion)
                         continue;
+                    if (!pairOn(enemy, p, i == 0))
+                        return; // Buck Breaker off for this punish: the game's motion as it is
                     const uint32_t body = bodyOf(rdram, enemy);
                     int sizeKey = 100;
                     const Fit *fit = fitNow(rdram, enemy, p, sizeKey);
@@ -896,6 +924,7 @@ namespace kamite::punish_fit
 
         void afterLoad()
         {
+            g_pairOn = g_on.load(std::memory_order_relaxed);
             if (!g_stateLoaded)
             {
                 g_copies.clear();
@@ -1129,23 +1158,27 @@ namespace kamite::punish_fit
     {
         g_file = exeDir / "punish_fit.txt";
         g_shippedFile = exeDir / "resources" / "punish_fit.txt";
-        g_on = envOn("KAMITE_BUCK_BREAKER");
-        if (!g_on)
-            return;
+        // Installed always and switched live with Buck Breaker (K, Nov 13); off, every punish is the game's own.
         g_ram = runtime.memory().getRDRAM();
         if (!g_ram || !runtime.hasFunction(kAlign) || !(g_align = runtime.lookupFunction(kAlign)) ||
             !FunctionHooks::instance().replace(kAlign, "punish placement (Buck Breaker's punish fit)", &alignHook,
                                                ReplacementStatus::Native, "[Game] BuckBreaker: per-body punish fits"))
         {
-            g_on = false;
             KM_WARN(Game, "punish fit: func_001299F0 is not hookable; no punish fits");
             return;
         }
+        g_ready = true;
+        g_on = envOn("KAMITE_BUCK_BREAKER");
         if (!FunctionHooks::instance().observeEntry(kStartMotion, "punish fit: motion start", &onStartMotion))
             KM_WARN(Game, "punish fit: func_002A8578 is not hookable; placement only, no heights or bend");
         load();
         ps2x::pnach::addFrameHook(&onVblank);
         ps2x::savestate::registerExtension("kamite.punish_fit", &saveState, &loadState);
         ps2x::savestate::onLoaded(&afterLoad);
+    }
+
+    void setEnabled(bool on)
+    {
+        g_on.store(on && g_ready, std::memory_order_relaxed);
     }
 }

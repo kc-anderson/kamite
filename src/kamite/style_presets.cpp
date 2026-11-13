@@ -8,6 +8,7 @@
 #include "kamite/debug_tools.h"
 #include "kamite/function_hooks.h"
 #include "kamite/game_layout.h"
+#include "kamite/ini_file.h"
 #include "kamite/log.h"
 #include "runtime/ps2_game_menu.h"
 #include "runtime/ps2_pnach.h"
@@ -198,6 +199,9 @@ namespace kamite::style_presets
         constexpr uint8_t kStoreVersion = 2u;
         constexpr uint8_t kNoStyle = 0xFFu;
         constexpr uint8_t kNoneKept = 1u; // Store::flags: `none` holds the None moves (kept while a style is on)
+        // Store::flags bits 4..6: the style that was on when Moveset Presets went off (1..4 = S..Y), put back when it is
+        // switched on again (K, Nov 13). Older builds read only kNoneKept.
+        constexpr uint8_t kParkedShift = 4u, kParkedMask = 0x70u;
         // Version 2 (Nov 7, K): Style None = the game's own moves, the default; L2 / R2 on the Techniques screen cycle
         // None, S, E, X, Y; edits save to the style on show; a style first visited copies the equipped moves. While a
         // style is on, the None moves wait in `none`.
@@ -267,7 +271,8 @@ namespace kamite::style_presets
         // ticks: the hook runs once a game frame, so a tick count made the blinking last twice as long at 30 fps
         // (Thinso, Oct 27: "saving a style takes twice as long on 30fps").
         std::atomic<int> g_lastStyle{-1};
-        bool g_signalOn = false;        // [Game] StyleSignal (Signal Style Switch)
+        std::atomic<bool> g_enabled{false};  // [Game] StyleSwitching (Moveset Presets), switched live (K, Nov 13)
+        std::atomic<bool> g_signalOn{false}; // [Game] StyleSignal (Signal Style Switch)
         std::atomic<int> g_signal{0};   // a switch in play to signal: 1..4 = S..Y (onVblank -> onGeneUpdate)
         std::atomic<bool> g_switchedInPlay{false}; // a d-pad switch in play (onVblank -> onGeneUpdate: the chain window)
         std::atomic<int64_t> g_lastActionMs{-100000};
@@ -354,6 +359,20 @@ namespace kamite::style_presets
             return true;
         }
 
+        // The checkpoint slot when it holds this game's record (every move it owns is owned now), else 0.
+        uint32_t checkpointOf(uint32_t data)
+        {
+            const uint32_t checkpoint = rd32(kCheckpointPointer);
+            if (!validPointer(checkpoint, kSaveSize) || checkpoint == data)
+                return 0u;
+            const int8_t *was = reinterpret_cast<const int8_t *>(g_ram + checkpoint + kSkills);
+            const int8_t *now = reinterpret_cast<const int8_t *>(g_ram + data + kSkills);
+            for (int id = 0; id < 0x80; ++id)
+                if (was[id] >= 0 && now[id] < 0)
+                    return 0u;
+            return checkpoint;
+        }
+
         void writeStore(uint32_t data, Store &store)
         {
             store.checksum = checksumOf(store);
@@ -364,17 +383,8 @@ namespace kamite::style_presets
             // bought or won since the room change left the styles out of the slot and a death took them back to the
             // room's start (T2, Nov 4). After such a Continue the styles keep the new move; a load leaves it out while
             // the save does not own it (as for any unowned move), the rest of the style stays.
-            const uint32_t checkpoint = rd32(kCheckpointPointer);
-            if (validPointer(checkpoint, kSaveSize) && checkpoint != data)
-            {
-                const int8_t *was = reinterpret_cast<const int8_t *>(g_ram + checkpoint + kSkills);
-                const int8_t *now = reinterpret_cast<const int8_t *>(g_ram + data + kSkills);
-                bool sameGame = true;
-                for (int id = 0; id < 0x80 && sameGame; ++id)
-                    sameGame = was[id] < 0 || now[id] >= 0;
-                if (sameGame)
-                    std::memcpy(g_ram + checkpoint + kStoreOffset, &store, sizeof(Store));
-            }
+            if (const uint32_t checkpoint = checkpointOf(data))
+                std::memcpy(g_ram + checkpoint + kStoreOffset, &store, sizeof(Store));
         }
 
         // A move the save can equip: owned (skill[id] >= 0), or any move while F2 > Debug "Every technique owned"
@@ -477,6 +487,53 @@ namespace kamite::style_presets
             return true;
         }
 
+        void refreshSnapshot(uint32_t data, bool now)
+        {
+            if (!now && g_vblanks % 15u != 0u)
+                return;
+            std::lock_guard<std::mutex> lock(g_mutex);
+            g_snapshot.valid = data != 0u;
+            g_snapshot.data = data;
+            if (data)
+            {
+                read(data, g_snapshot.combos);
+                g_snapshot.storeValid = readStore(data, g_snapshot.store);
+            }
+        }
+
+        // Moveset Presets switched off with a style on: its moves give way to None's, the style is remembered.
+        void park(uint32_t data, Store &store)
+        {
+            const int slot = store.active;
+            if (store.flags & kNoneKept)
+                load(data, store.none);
+            // A Continue puts the checkpoint's record back: it gets None's moves too, or the style's would return.
+            if (const uint32_t checkpoint = checkpointOf(data))
+                std::memcpy(g_ram + checkpoint + kCombos, g_ram + data + kCombos, kComboBytes);
+            store.flags = static_cast<uint8_t>((store.flags & ~kParkedMask) | ((slot + 1) << kParkedShift));
+            store.active = kNoStyle;
+            writeStore(data, store);
+            KM_INFO(Game, "styles: Moveset Presets off: None, style " << g_letters[slot] << " kept for when it is on again");
+        }
+
+        // Switched on again: the parked style comes back (None's moves wait again).
+        void unpark(uint32_t data, Store &store)
+        {
+            const int slot = ((store.flags & kParkedMask) >> kParkedShift) - 1;
+            store.flags = static_cast<uint8_t>(store.flags & ~kParkedMask);
+            if (slot >= 0 && slot < kStyles && (store.used & (1u << slot)))
+            {
+                read(data, store.none);
+                store.flags = static_cast<uint8_t>(store.flags | kNoneKept);
+                load(data, store.styles[slot]);
+                store.active = static_cast<uint8_t>(slot);
+                g_lastStyle = slot;
+                g_lastActionMs = steadyMs();
+                KM_INFO(Game, "styles: Moveset Presets on: style " << g_letters[slot] << " back");
+            }
+            writeStore(data, store);
+        }
+
         void onVblank()
         {
             ++g_vblanks;
@@ -492,13 +549,14 @@ namespace kamite::style_presets
                 else if (inPlay(subScr, subScreenOpen))
                     moment = Play;
             }
-            g_moment.store(moment, std::memory_order_relaxed);
+            const bool enabled = g_enabled.load(std::memory_order_relaxed);
+            g_moment.store(enabled ? moment : Elsewhere, std::memory_order_relaxed);
 
             // "Every technique owned" switched off: the equipped moves the save does not own come off, as a load
             // would leave them (K, Oct 30).
             static bool everyBefore = false;
             const bool everyNow = everyTechnique();
-            if (data && everyBefore && !everyNow)
+            if (enabled && data && everyBefore && !everyNow)
             {
                 Combo now[kSets];
                 read(data, now);
@@ -517,6 +575,17 @@ namespace kamite::style_presets
                 writeStore(data, store);
                 KM_INFO(Game, "styles: record converted to version 2 (None = the equipped moves)");
             }
+            if (!enabled)
+            {
+                // Moveset Presets off (K, Nov 13): None, the style that was on parked in the record until it is switched
+                // on again; a save loaded with the option off opens the same way.
+                if (data && store.active < kStyles)
+                    park(data, store);
+                refreshSnapshot(data, request != 0);
+                return;
+            }
+            if (data && store.active >= kStyles && (store.flags & kParkedMask))
+                unpark(data, store);
             // While the switch is off the saved styles hold only owned moves (also a record saved with the switch on
             // and loaded later with it off).
             if (data && store.used && !everyNow)
@@ -632,17 +701,7 @@ namespace kamite::style_presets
                     KM_INFO(Game, "styles: " << text << " (save data 0x" << std::hex << data << std::dec << ")");
                 }
             }
-            if (request != 0 || g_vblanks % 15u == 0u)
-            {
-                std::lock_guard<std::mutex> lock(g_mutex);
-                g_snapshot.valid = data != 0u;
-                g_snapshot.data = data;
-                if (data)
-                {
-                    read(data, g_snapshot.combos);
-                    g_snapshot.storeValid = readStore(data, g_snapshot.store);
-                }
-            }
+            refreshSnapshot(data, request != 0);
         }
 
         // ---- input (ps2_host_input's pad filter, window thread, player 1) ----
@@ -999,6 +1058,24 @@ namespace kamite::style_presets
             const int state = hudLayoutState(layout, text, shadow);
             if (state == 0)
                 return;
+            if (!g_enabled.load(std::memory_order_relaxed))
+            {
+                // Moveset Presets off: entries we used go back to the game (hidden, as spare ones are); never ours: untouched.
+                if (g_hudWas[0].entry == 0u && g_hudWas[1].entry == 0u)
+                    return;
+                if (state == 2)
+                    releaseHudEntries();
+                else
+                {
+                    setNoDraw(text, true);
+                    setNoDraw(shadow, true);
+                    g_hudWas[0].entry = g_hudWas[1].entry = 0u;
+                    g_hudShown = false;
+                }
+                restoreFromSource(text);
+                restoreFromSource(shadow);
+                return;
+            }
             if (state == 2)
             {
                 releaseHudEntries();
@@ -1047,7 +1124,8 @@ namespace kamite::style_presets
                 return;
             const uint32_t waza = wazaScreen(subScr);
             const uint32_t data = dataPointer();
-            const bool show = data && static_cast<int32_t>(rd32(subScr + game::SubScr::kKind)) == kTechniquesKind &&
+            const bool enabled = g_enabled.load(std::memory_order_relaxed);
+            const bool show = enabled && data && static_cast<int32_t>(rd32(subScr + game::SubScr::kKind)) == kTechniquesKind &&
                               g_ram[waza + kWazaState] == 0u;
             const uint32_t text = part(waza, 0x23), shadow = part(waza, 0x24),
                            hintEntry = part(waza, 57), hintShadow = part(waza, 58);
@@ -1063,6 +1141,14 @@ namespace kamite::style_presets
                 for (const uint32_t entry : {hintEntry, hintShadow})
                     if (validPointer(entry, ent::kSize) && rd16(entry + ent::kMsg) == kHintMessage)
                         wr16(entry + ent::kMsg, kBlankMessage);
+                // Moveset Presets off: our Style row (left in the group from an earlier visit) goes too.
+                if (!enabled)
+                    for (const uint32_t e : {text, shadow})
+                        if (validPointer(e, ent::kSize) && (rd16(e + ent::kMsg) == kRowMessage || rd16(e + ent::kMsg) == kRowShadowMessage))
+                        {
+                            setNoDraw(e, true);
+                            restoreFromSource(e);
+                        }
                 return;
             }
             if (!validPointer(text, ent::kSize) || !validPointer(shadow, ent::kSize))
@@ -1315,6 +1401,8 @@ namespace kamite::style_presets
             if (ui->version >= 4u && !ui->collapsing_header("Styles", 0))
                 return; // a fold-out section of the Gameplay tab (K, Oct 27)
             std::lock_guard<std::mutex> lock(g_mutex);
+            if (!g_enabled.load(std::memory_order_relaxed))
+                ui->text_colored(0xFF60C0FFu, "Moveset Presets is off: None, with the style that was on kept for when it is on again.");
             ui->text_wrapped("Styles are kept in the save (they go to the memory card with it). On the Techniques screen "
                              "L2 / R2 cycle None, S, E, X, Y; changes save to the style shown; None = styles off. In play "
                              "a d-pad tap switches style (up, right, down, left) while one is on.");
@@ -1374,6 +1462,8 @@ namespace kamite::style_presets
         const uint16_t triggers = static_cast<uint16_t>(state.buttons & kTriggers);
         const uint16_t pulled = static_cast<uint16_t>(triggers & ~g_triggersWas);
         g_triggersWas = triggers;
+        if (!g_enabled.load(std::memory_order_relaxed))
+            return; // Moveset Presets off: the d-pad and the triggers are the game's
         const int moment = g_moment.load(std::memory_order_relaxed);
         if (moment == Techniques)
         {
@@ -1396,7 +1486,7 @@ namespace kamite::style_presets
 
     int activePosition()
     {
-        if (!g_ram)
+        if (!g_ram || !g_enabled.load(std::memory_order_relaxed))
             return 0;
         const uint32_t data = dataPointer();
         Store store{};
@@ -1405,7 +1495,25 @@ namespace kamite::style_presets
         return store.active < kStyles && (store.used & (1u << store.active)) ? store.active + 1 : 0;
     }
 
-    bool lettersOnRadar() { return g_ram != nullptr; }
+    bool lettersOnRadar() { return g_ram != nullptr && g_enabled.load(std::memory_order_relaxed); }
+
+    bool enabled() { return g_enabled.load(std::memory_order_relaxed); }
+
+    void setEnabled(bool on)
+    {
+        // Takes effect at the next vblank: off parks the style on (None), on brings it back (onVblank).
+        g_enabled.store(on, std::memory_order_relaxed);
+        ps2xSetPatchFlag("styles", on);
+        setEnvValue("KAMITE_STYLE_SWITCHING", on ? "1" : "0");
+    }
+
+    bool signal() { return g_signalOn.load(std::memory_order_relaxed); }
+
+    void setSignal(bool on)
+    {
+        g_signalOn.store(on, std::memory_order_relaxed);
+        setEnvValue("KAMITE_STYLE_SIGNAL", on ? "1" : "0");
+    }
 
     int hudGlyph(uint32_t entry, int index, float &dx, float &dy)
     {
@@ -1437,13 +1545,10 @@ namespace kamite::style_presets
 
     void install(PS2Runtime &runtime)
     {
-        // [Game] StyleSwitching ("Style switching" in the launcher, off by default): without it nothing here is
-        // installed and g_ram stays empty, which the entry points the other modules call check first.
-        if (const char *on = std::getenv("KAMITE_STYLE_SWITCHING"); !on || !*on || *on == '0')
-        {
-            KM_INFO(Game, "style switching: off ([Game] StyleSwitching=0)");
-            return;
-        }
+        // [Game] StyleSwitching ("Moveset Presets" in the launcher, off by default): installed always and switched live
+        // (K, Nov 13: the OPTIONS screen and F2); off, every entry point leaves the game alone and a style on is parked.
+        if (const char *on = std::getenv("KAMITE_STYLE_SWITCHING"); on && *on && *on != '0')
+            g_enabled = true;
         g_ram = runtime.memory().getRDRAM();
         if (!g_ram)
             return;
@@ -1453,15 +1558,14 @@ namespace kamite::style_presets
         // [Game] StyleSignal ("Signal Style Switch", under Moveset Presets): a voice line and the arm flash per switch.
         if (const char *signal = std::getenv("KAMITE_STYLE_SIGNAL"); signal && *signal && *signal != '0')
             g_signalOn = true;
-        KM_INFO(Game, "style switching: on" << (g_signalOn ? ", signal style switch" : ""));
+        KM_INFO(Game, "style switching: " << (g_enabled ? "on" : "off") << (g_signalOn ? ", signal style switch" : ""));
         ps2x::pnach::addFrameHook(&onVblank);
         FunctionHooks::instance().observeEntry(0x14FB48u, "cObjBase_SetSeqEffect (styles: chain window, signal)", &onGeneUpdate);
-        if (g_signalOn)
-            style_pose::install(runtime);
+        style_pose::install(runtime); // idle until a signalled switch
         FunctionHooks::instance().observeEntry(0x2AAA40u, "cIDBase_move (style list)", &onLayoutMove);
         FunctionHooks::instance().observeEntry(0x16DC18u, "cSubScrWaza draw (style list)", &onWazaDraw);
         ps2xRegisterHostHook("km_styles_text", &onTextSetup);
-        ps2xSetPatchFlag("styles", true);
+        ps2xSetPatchFlag("styles", g_enabled);
 #if defined(KAMITE_HAS_GS_MENU)
         ps2x::menu::addPanel("Gameplay", &drawPanel); // a section of the Gameplay tab
 #endif

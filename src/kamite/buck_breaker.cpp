@@ -5,6 +5,7 @@
 #include "kamite/disc_files.h"
 #include "kamite/function_hooks.h"
 #include "kamite/game_layout.h"
+#include "kamite/ini_file.h"
 #include "kamite/log.h"
 #include "kamite/punish_fit.h"
 #include "kamite/style_presets.h"
@@ -63,6 +64,7 @@ namespace kamite::buck_breaker
         constexpr uint32_t kGenericCases[] = {kSuplexCase, 0x2DD090u, 0x2DD0B0u, 0x2DD118u, 0x2DD148u, 0x2DD168u, 0x2DD17Cu, 0x2DD22Cu};
 
         std::atomic<int> g_pick{Normal}; // the pick in force (EE thread: each vblank and on a change)
+        std::atomic<bool> g_enabled{false}; // [Game] BuckBreaker, switched live (K, Nov 13); off: the game's punishes
         int g_tableOk = 0;                // 0 not checked yet, 1 the disc's table, -1 not (every pick acts as Normal)
 
         uint32_t ram32(const uint8_t *rdram, uint32_t address)
@@ -623,8 +625,8 @@ namespace kamite::buck_breaker
         // chain's top, leaving).
         void onWazaInput(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
-            if (!g_ram)
-                return;
+            if (!g_ram || !g_enabled.load(std::memory_order_relaxed))
+                return; // off: no slot (its draw hook is off with the flag too)
             const uint32_t waza = GPR_U32(ctx, 4) & 0x1FFFFFFu;
             if (waza != techniquesScreen())
                 return;
@@ -868,17 +870,16 @@ namespace kamite::buck_breaker
 
     void install(PS2Runtime &runtime)
     {
-        // RDRAM even when off: a style first visited still takes its punish (styleCreated), for when it is turned on.
+        // Installed always and switched live (K, Nov 13: the OPTIONS screen, F2). Off: the game's own punishes for every
+        // enemy and no slot; the picks stay in the save (base and styles) and play again when it is on. A style first
+        // visited still takes its punish (styleCreated).
         g_ram = runtime.memory().getRDRAM();
         ps2xRegisterHostHook("km_buck_breaker_case", &punishCase);
         ps2xRegisterHostHook("km_buck_breaker_slot", &onSlotDraw);
-        const bool on = g_ram && envOn("KAMITE_BUCK_BREAKER");
-        ps2xSetPatchFlag("buck_breaker", on);
-        if (!on)
-        {
-            KM_INFO(Game, "buck breaker: off ([Game] BuckBreaker=0)");
+        if (!g_ram)
             return;
-        }
+        g_enabled = envOn("KAMITE_BUCK_BREAKER");
+        ps2xSetPatchFlag("buck_breaker", g_enabled);
         loadMotionSets();
         ps2x::pnach::addFrameHook(&onVblank);
         ps2x::savestate::onLoaded(&refreshPick); // before the game's first frame after a load
@@ -887,6 +888,18 @@ namespace kamite::buck_breaker
         hooks.observeEntry(0x16DF38u, "cSubScrWaza input (Buck Breaker)", &onWazaInput);
         hooks.observeEntry(0x2AAA40u, "cIDBase_move (Buck Breaker)", &onLayoutMove);
         hooks.observeEntry(0x1F7858u, "cActionButton_set (Buck Breaker: SUPLEX over a Gorilla Suplex)", &onPromptSet);
-        KM_INFO(Game, "buck breaker: on (punish slot on the Techniques screen)");
+        KM_INFO(Game, "buck breaker: " << (g_enabled ? "on (punish slot on the Techniques screen)" : "off ([Game] BuckBreaker=0)"));
+    }
+
+    bool enabled() { return g_enabled.load(std::memory_order_relaxed); }
+
+    void setEnabled(bool on)
+    {
+        // The prompt's case reads the flag when an enemy is stunned, so a punish already under way plays out as it began
+        // (punish_fit keeps its fit to the end of the pair too).
+        g_enabled.store(on, std::memory_order_relaxed);
+        ps2xSetPatchFlag("buck_breaker", on && g_ram);
+        punish_fit::setEnabled(on);
+        setEnvValue("KAMITE_BUCK_BREAKER", on ? "1" : "0");
     }
 }

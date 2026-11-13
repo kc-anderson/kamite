@@ -28,4 +28,10 @@ namespace kamite
         std::vector<std::string> m_lines;
         std::string m_newline = "\r\n";
     };
+
+    // A setting changed in play (the OPTIONS screen, F2) also sets its environment variable, so what reads the
+    // environment later (a test case's recorded settings) sees the value in force.
+    void setEnvValue(const char *name, const std::string &value);
+    // main.cpp: the environment variable GHR.ini's [section] key sets at start, nullptr for none.
+    const char *iniEnvVariable(const std::string &section, const std::string &key);
 }

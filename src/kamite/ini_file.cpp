@@ -1,6 +1,7 @@
 #include "kamite/ini_file.h"
 
 #include <cctype>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 
@@ -150,5 +151,17 @@ namespace kamite
         if (insertAt < 0)
             insertAt = sectionLine + 1;
         m_lines.insert(m_lines.begin() + insertAt, key + "=" + value);
+    }
+}
+
+namespace kamite
+{
+    void setEnvValue(const char *name, const std::string &value)
+    {
+#ifdef _WIN32
+        _putenv_s(name, value.c_str());
+#else
+        setenv(name, value.c_str(), 1);
+#endif
     }
 }

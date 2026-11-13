@@ -4,6 +4,10 @@ Newest first, one line per change; the code comments say how.
 
 ## November 13, 2026
 
+- Options: Moveset Presets, Signal Style Switch, Buck Breaker, Busta-Chan Jive, Wild Curry Funk, Dry Spinning and Better Shop & Casino Poses can be switched in game.
+- Moveset Presets off switches to None and remembers the style that was on for when it is switched back on.
+- F2: the Gameplay enhancements are checkboxes instead of "At start" lines.
+- Test cases: settings changed in game before recording are recorded correctly.
 - Options: Music at 0 % no longer stops the music for good.
 - Options: Camera & FOV has a Custom preset (starts from Action's values) with its four values under it.
 - Options: Enemies Follow the View is always on (no longer a setting).

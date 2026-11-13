@@ -11,14 +11,18 @@
 //   mute music                     game_options: the patch flag, at the music's next volume call
 // What cannot (shown with "set in the launcher"): the aspect ratio (the window's shape and the widescreen hooks),
 // the internal resolution and post effects (the renderer opens with them), the texture pack (loaded at start), the
-// character (a disc overlay), style switching and NPC poses (their hooks are installed at start).
+// character (a disc overlay). The Gameplay enhancements are all live (Nov 13; Wild Curry Funk from the next room).
 #include "kamite/dev_menu.h"
+#include "kamite/buck_breaker.h"
 #include "kamite/frame_patches.h"
 #include "kamite/game_options.h"
 #include "kamite/bone_tweaks.h"
 #include "kamite/hud_layout.h"
 #include "kamite/ini_file.h"
 #include "kamite/log.h"
+#include "kamite/npc_poses.h"
+#include "kamite/sprint_traversal.h"
+#include "kamite/style_presets.h"
 #include "runtime/ps2_game_menu.h"
 #include "runtime/ps2_hotkeys.h"
 
@@ -175,13 +179,34 @@ namespace kamite::dev_menu
             if (ui->checkbox("Sway Bar: a stun gauge under the enemies' health bars##swaybar", &sway))
                 setSwayBar(sway != 0);
 
-            ui->separator_text("At start");
-            launcherOnly(ui, "Moveset Presets", envOn("KAMITE_STYLE_SWITCHING", false) ? "on" : "off");
-            launcherOnly(ui, "Signal Style Switch",
-                         envOn("KAMITE_STYLE_SWITCHING", false) && envOn("KAMITE_STYLE_SIGNAL", false) ? "on" : "off");
-            launcherOnly(ui, "Buck Breaker", envOn("KAMITE_BUCK_BREAKER", false) ? "on" : "off");
-            launcherOnly(ui, "Better Shop & Casino Poses", envOn("KAMITE_NPC_POSES", false) ? "on" : "off");
-            launcherOnly(ui, "Busta-Chan Jive", envOn("KAMITE_SPRINT_TRAVERSAL", false) ? "on" : "off");
+            int chairs = liftChairs() ? 1 : 0;
+            if (ui->checkbox("Wild Curry Funk: chairs can be lifted (from the next room)##liftchairs", &chairs))
+                setLiftChairs(chairs != 0);
+
+            ui->separator_text("Style Shuffle");
+            int presets = style_presets::enabled() ? 1 : 0;
+            if (ui->checkbox("Moveset Presets: the styles S, E, X, Y (off: None, the style on kept)##styles", &presets))
+                style_presets::setEnabled(presets != 0);
+            if (presets)
+            {
+                int signal = style_presets::signal() ? 1 : 0;
+                if (ui->checkbox("Signal Style Switch: Gene's line and the arm flash##stylesignal", &signal))
+                    style_presets::setSignal(signal != 0);
+            }
+            int buck = buck_breaker::enabled() ? 1 : 0;
+            if (ui->checkbox("Buck Breaker: the punish slot (off: the game's punishes)##buckbreaker", &buck))
+                buck_breaker::setEnabled(buck != 0);
+
+            ui->separator_text("More");
+            int jive = sprint_traversal::enabled() ? 1 : 0;
+            if (ui->checkbox("Busta-Chan Jive: sprint attacks over / under the marked railings##sprinttraversal", &jive))
+                sprint_traversal::setEnabled(jive != 0);
+            int dry = rouletteNoOrbs() ? 1 : 0;
+            if (ui->checkbox("Dry Spinning: R1 opens the roulette with no orbs##roulettenoorbs", &dry))
+                setRouletteNoOrbs(dry != 0);
+            int poses = npc_poses::enabled() ? 1 : 0;
+            if (ui->checkbox("Better Shop & Casino Poses##npcposes", &poses))
+                npc_poses::setEnabled(poses != 0);
 
             ui->separator_text("GHR.ini");
             if (ui->button("Save##gameplay"))
@@ -197,6 +222,13 @@ namespace kamite::dev_menu
                     ini.setBool("Game", "OffTheCuff", offTheCuff());
                     ini.setBool("Game", "BallBusterWomen", ballBusterWomen());
                     ini.setBool("Game", "SwayBar", swayBar());
+                    ini.setBool("Game", "LiftChairs", liftChairs());
+                    ini.setBool("Game", "StyleSwitching", style_presets::enabled());
+                    ini.setBool("Game", "StyleSignal", style_presets::signal());
+                    ini.setBool("Game", "BuckBreaker", buck_breaker::enabled());
+                    ini.setBool("Game", "SprintTraversal", sprint_traversal::enabled());
+                    ini.setBool("Game", "RouletteNoOrbs", rouletteNoOrbs());
+                    ini.setBool("Game", "NpcPoses", npc_poses::enabled());
                     ini.set("Game", "Money", std::to_string(static_cast<int>(std::lround(bone_tweaks::money() * 100.0f))));
                     saveIni(ini, g_gameplayStatus);
                 }

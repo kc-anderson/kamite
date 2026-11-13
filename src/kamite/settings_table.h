@@ -51,6 +51,7 @@ namespace kamite::settings
         const char *name = "";        // the launcher's name (upper case in game)
         const char *description = ""; // shared: the launcher's help, the in-game help line
         const char *note = nullptr;   // the launcher's "NOTE:" line
+        const char *gameNote = nullptr; // in game only, after the description ("Applies in the next room.")
         const char *section = "";
         const char *key = "";
         const char *fallback = "";    // the shipped default

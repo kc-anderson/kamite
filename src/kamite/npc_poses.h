@@ -15,4 +15,7 @@ namespace kamite::npc_poses
     // Game frame start (frame_patches.cpp): applies edits, starts a changed motion again, tracks the nearest NPC.
     // The registers are the game's at that point; a motion restarted there runs on them and gets them back after.
     void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
+    // [Game] NpcPoses (Better Shop & Casino Poses), switched live: the room's bystanders change at the next frame.
+    bool enabled();
+    void setEnabled(bool on);
 }

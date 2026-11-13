@@ -445,11 +445,16 @@ namespace kamite
         constexpr uint32_t kParkChairId = 0x414u;                      // r300 x4 (stage 3), cOl14 -> cOmScrfix
         constexpr uint32_t kFruitSignId = 0x319u;                      // r500 (stage 5), cOm19 -> cOmScrfix
         uint32_t g_liftSp = 0, g_liftId = 0; // the factory call (its sp) building a prop as a crate, and the prop's id
+        // [Game] LiftChairs (Wild Curry Funk), switched live (K, Nov 13): read when a room builds its props, so a change
+        // shows in the next room; the hooks stay on (a chair built liftable keeps its hold however the option is set).
+        std::atomic<bool> g_liftChairs{false};
 
         // Before sq s1,0x30(sp) at 0x30FE7C (func_0030FE68, flag lift_chairs): s0 = the id the switch reads.
         void liftChairsSwitch(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
             const uint32_t id = GPR_U32(ctx, 16);
+            if (!g_liftChairs.load(std::memory_order_relaxed))
+                return;
             if (id != kChairId && id != kPubSignId && id != kBarStoolId && id != kFancyChairId && id != kParkChairId &&
                 id != kFruitSignId)
                 return;
@@ -762,8 +767,8 @@ namespace kamite
 
         void drawChairPanel(const Pcsx2GsUi *ui)
         {
-            if (!envOn("KAMITE_LIFT_CHAIRS"))
-                return;
+            if (!g_liftChairs.load(std::memory_order_relaxed) && heldProp() < 0)
+                return; // off, and no chair built liftable in Gene's hands
             if (ui->version >= 4u && !ui->collapsing_header("Held items (Wild Curry Funk)", 0))
                 return;
             const int pi = heldProp();
@@ -1581,7 +1586,8 @@ namespace kamite
 #ifdef KAMITE_HAS_GS_MENU
         ps2x::menu::addPanel("Gameplay", &drawChairPanel);
 #endif
-        ps2xSetPatchFlag("lift_chairs", liftChairs);
+        g_liftChairs.store(liftChairs, std::memory_order_relaxed);
+        ps2xSetPatchFlag("lift_chairs", true); // the switch, the id and the hold pair up: never flipped between them
         ps2xSetPatchFlag("skip_intro", skipIntro);
         ps2xRegisterHostHook("km_roulette_no_orbs", &rouletteNoOrbs);
         ps2xRegisterHostHook("km_roulette_grey_no_orbs", &rouletteGreyWithoutOrbs);
@@ -1691,6 +1697,29 @@ namespace kamite
     {
         g_offTheCuff.store(on, std::memory_order_relaxed);
         setenvFlag("KAMITE_OFF_THE_CUFF", on);
+    }
+
+    bool liftChairs()
+    {
+        return g_liftChairs.load(std::memory_order_relaxed);
+    }
+
+    void setLiftChairs(bool on)
+    {
+        g_liftChairs.store(on, std::memory_order_relaxed);
+        setenvFlag("KAMITE_LIFT_CHAIRS", on);
+    }
+
+    bool rouletteNoOrbs()
+    {
+        return ps2xPatchFlag("roulette_no_orbs");
+    }
+
+    void setRouletteNoOrbs(bool on)
+    {
+        // Read when R1 asks for the wheel and when its reels are greyed: lands at the next opening.
+        ps2xSetPatchFlag("roulette_no_orbs", on);
+        setenvFlag("KAMITE_ROULETTE_NO_ORBS", on);
     }
 
     bool ballBusterWomen()

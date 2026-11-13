@@ -24,4 +24,9 @@ namespace kamite::buck_breaker
     // style_presets (EE thread): a style first visited took the equipped moves of position `from` (0 None, 1..4 S..Y)
     // into position `to`; it takes that position's punish too.
     void styleCreated(int from, int to);
+
+    // [Game] BuckBreaker, switched live (the OPTIONS screen, F2): off, every enemy gets the game's punishes and the slot
+    // goes; the picks stay saved.
+    bool enabled();
+    void setEnabled(bool on);
 }

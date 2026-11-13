@@ -92,6 +92,7 @@ namespace kamite::settings
         // Modifiers.
         constexpr Setting live(Setting s) { return s.live = true, s; }
         constexpr Setting note(Setting s, const char *text) { return s.note = text, s; }
+        constexpr Setting gameNote(Setting s, const char *text) { return s.gameNote = text, s; }
         constexpr Setting sub(Setting s, const char *parent, const char *value = nullptr)
         {
             return s.parent = parent, s.parentValue = value, s;
@@ -221,21 +222,23 @@ namespace kamite::settings
                              "Game", "MouseCamera", true),
                       "ControlStyle", "modern"),
                   "F2 > Controls sets the sensitivity.")),
-        note(toggle(Tab::Gameplay, "Move & Groove", "Busta-Chan Jive",
-                    "Sprint attacks carry Gene over or through the railings marked for them: the diving attack and the "
-                    "flying kick jump over, the slide goes under.",
-                    "Game", "SprintTraversal", false),
-             "F2 > Debug > Stage collision marks them."),
-        toggle(Tab::Gameplay, "Style Shuffle", "Moveset Presets",
-               "Keep up to four sets of techniques as presets (the styles S, E, X and Y) and swap between them in play "
-               "with the d-pad. On the Techniques screen, L2 / R2 cycle them.",
-               "Game", "StyleSwitching", false),
-        sub(toggle(Tab::Gameplay, "Style Shuffle", "Signal Style Switch",
-                   "Gene calls out each style as you switch to it, and his God Hand flashes.", "Game", "StyleSignal", false),
-            "StyleSwitching"),
-        toggle(Tab::Gameplay, "Style Shuffle", "Buck Breaker",
-               "Choose how to punish stunned enemies with a new slot on the Techniques screen. Works with Moveset Presets.",
-               "Game", "BuckBreaker", false),
+        live(note(toggle(Tab::Gameplay, "Move & Groove", "Busta-Chan Jive",
+                         "Sprint attacks carry Gene over or through the railings marked for them: the diving attack and the "
+                         "flying kick jump over, the slide goes under.",
+                         "Game", "SprintTraversal", false),
+                  "F2 > Debug > Stage collision marks them.")),
+        live(toggle(Tab::Gameplay, "Style Shuffle", "Moveset Presets",
+                    "Keep up to four sets of techniques as presets (the styles S, E, X and Y) and swap between them in play "
+                    "with the d-pad. On the Techniques screen, L2 / R2 cycle them.",
+                    "Game", "StyleSwitching", false)),
+        live(sub(toggle(Tab::Gameplay, "Style Shuffle", "Signal Style Switch",
+                        "Gene calls out each style as you switch to it, and his God Hand flashes.", "Game", "StyleSignal",
+                        false),
+                 "StyleSwitching")),
+        live(toggle(Tab::Gameplay, "Style Shuffle", "Buck Breaker",
+                    "Choose how to punish stunned enemies with a new slot on the Techniques screen. Works with Moveset "
+                    "Presets.",
+                    "Game", "BuckBreaker", false)),
         live(toggle(Tab::Gameplay, "Fightin' Excitement", "Cunt Punter",
                     "Ball Buster works on female enemies too, the same as on men.", "Game", "BallBusterWomen", false)),
         live(toggle(Tab::Gameplay, "Fightin' Excitement", "Tension is Placable",
@@ -247,8 +250,9 @@ namespace kamite::settings
                         "God Hand with a full meter makes Gene invulnerable.",
                         "Game", "OffTheCuff", false),
                  "TensionPlacable")),
-        toggle(Tab::Gameplay, "Fightin' Excitement", "Wild Curry Funk", "Lets you pick up, carry, and throw chairs.", "Game",
-               "LiftChairs", false),
+        live(gameNote(toggle(Tab::Gameplay, "Fightin' Excitement", "Wild Curry Funk",
+                             "Lets you pick up, carry, and throw chairs.", "Game", "LiftChairs", false),
+                      "Applies in the next room.")),
         live(choice(Tab::Gameplay, "Roulette Wheel & Reel", "Roulette Timer",
                     "How long you have to pick a roulette move. Double time gives twice as long (the dial runs half as "
                     "fast), at 30 and 60 FPS.",
@@ -257,21 +261,21 @@ namespace kamite::settings
                     "While the roulette wheel is up, flick the right stick or press the d-pad left or right to aim it at "
                     "the next enemy that way.",
                     "Game", "RouletteTargetCycle", false)),
-        toggle(Tab::Gameplay, "Roulette Wheel & Reel", "Dry Spinning",
-               "R1 opens the roulette even with no orbs left. Nothing can be picked without orbs, but the roulette camera "
-               "still turns Gene (Classic camera).",
-               "Game", "RouletteNoOrbs", false),
+        live(toggle(Tab::Gameplay, "Roulette Wheel & Reel", "Dry Spinning",
+                    "R1 opens the roulette even with no orbs left. Nothing can be picked without orbs, but the roulette camera "
+                    "still turns Gene (Classic camera).",
+                    "Game", "RouletteNoOrbs", false)),
         toggle(Tab::Gameplay, "Skip Poker", "Intro Skipper",
                "Start at the main menu: no Capcom and Clover logos and no \"Press Start\" screen.", "Game", "SkipIntro",
                false),
         toggle(Tab::Gameplay, "Skip Poker", "Hard-On",
                "Hard can be picked from the start instead of after a clear. Your save is not changed.", "Game",
                "UnlockHard", false),
-        note(toggle(Tab::Gameplay, "Misc. & Risk", "Better Shop & Casino Poses",
-                    "The shop and casino girls lean on their counters and tables in poses made for each, instead of the "
-                    "game's standing idle.",
-                    "Game", "NpcPoses", false),
-             "F2 > NPCs sets the poses."),
+        live(note(toggle(Tab::Gameplay, "Misc. & Risk", "Better Shop & Casino Poses",
+                         "The shop and casino girls lean on their counters and tables in poses made for each, instead of the "
+                         "game's standing idle.",
+                         "Game", "NpcPoses", false),
+                  "F2 > NPCs sets the poses.")),
 
         // ---- Sound ----------------------------------------------------------------------------------------------
         live(choice(Tab::Sound, "Sound", "Mode", "Select between monaural,\nstereo, or surround sound.", "Sound", "Mode",

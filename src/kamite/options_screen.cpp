@@ -29,6 +29,7 @@
 // there is one, else the disc's scaled up) into cache/hd-options (kept between runs) and hands it to the GS.
 #include "kamite/options_screen.h"
 
+#include "kamite/buck_breaker.h"
 #include "kamite/button_prompts.h"
 #include "kamite/camera.h"
 #include "kamite/disc_files.h"
@@ -42,10 +43,13 @@
 #include "kamite/log.h"
 #include "kamite/menu_buttons.h"
 #include "kamite/modern_controls.h"
+#include "kamite/npc_poses.h"
 #include "kamite/options_overlay.h"
 #include "kamite/options_pages.h"
 #include "kamite/prompt_hd.h"
 #include "kamite/settings_table.h"
+#include "kamite/sprint_traversal.h"
+#include "kamite/style_presets.h"
 #include "kamite/widescreen.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/ee_scheduler.h"
@@ -601,8 +605,24 @@ namespace kamite::options_screen
             applyVolumes();
         }
 
+        // The setting's environment variable follows the change (main.cpp read GHR.ini into them at start): a test case
+        // records the settings from there, and a change made here before recording was lost (Nov 13).
+        void syncEnv(const settings::Setting &s)
+        {
+            const auto one = [](const char *section, const char *key) {
+                if (const char *variable = iniEnvVariable(section, key))
+                    setEnvValue(variable, g_ini.get(section, key, ""));
+            };
+            if (std::strcmp(s.key, "CameraPreset") == 0)
+                for (const char *key : {"FieldOfView", "FightFieldOfView", "CameraZoomOut", "CameraTilt"})
+                    one("Video", key);
+            else if (*s.key)
+                one(s.section, s.key);
+        }
+
         void apply(const settings::Setting &s)
         {
+            syncEnv(s);
             const std::string id = s.id, value = settings::value(g_ini, s);
             const bool on = s.kind == settings::Kind::Toggle && settings::on(g_ini, s);
             if (id == "MenuButtons")
@@ -644,6 +664,20 @@ namespace kamite::options_screen
                 setRouletteTimerDouble(value == "double");
             else if (id == "RouletteTargetCycle")
                 setRouletteTargetCycle(on);
+            else if (id == "RouletteNoOrbs")
+                setRouletteNoOrbs(on);
+            else if (id == "LiftChairs")
+                setLiftChairs(on); // the next room's chairs
+            else if (id == "StyleSwitching")
+                style_presets::setEnabled(on);
+            else if (id == "StyleSignal")
+                style_presets::setSignal(on);
+            else if (id == "BuckBreaker")
+                buck_breaker::setEnabled(on);
+            else if (id == "SprintTraversal")
+                sprint_traversal::setEnabled(on);
+            else if (id == "NpcPoses")
+                npc_poses::setEnabled(on);
             else if (id == "EnemyLifeGauge" || id == "Vibration" || id == "Mode")
                 readGameOptions(); // onFrame writes them into the game
             else if (id == "MusicVolume" || id == "EffectsVolume" || id == "VoicesVolume")
