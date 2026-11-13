@@ -3,13 +3,54 @@
 
 #include <algorithm>
 #include <cstring>
+#include <iterator>
+#include <utility>
 
 namespace kamite::options_overlay
 {
     namespace
     {
         Look g_look;
-        std::string g_labelFont, g_helpFont, g_titleImage;
+        std::string g_labelFont, g_helpFont, g_titleImage, g_scrollTrack, g_scrollThumb;
+
+        // A page's rows (y in lines): centres from the list's first row, the span the pause's list fills.
+        constexpr float kPageTop = 110.0f - 0.5f * 29.625f, kPageBottom = 347.0f + 0.5f * 29.625f;
+        constexpr float kPageStep = 29.625f, kHeaderStep = 24.0f;
+        float rowHeight(const PageRow &row) { return row.header ? kHeaderStep : kPageStep; }
+    }
+
+    // The first and last row centres a page shows from scroll.
+    static std::pair<float, float> pageExtent(const Page &page, int scroll)
+    {
+        float y = kPageTop, first = kPageTop, last = kPageTop;
+        const int from = std::clamp(scroll, 0, std::max(page.rowCount - 1, 0)), shown = pageRowsShown(page, from);
+        for (int i = from; i < from + shown; ++i)
+        {
+            const float centre = y + 0.5f * rowHeight(page.rows[i]);
+            first = i == from ? centre : first;
+            last = centre;
+            y += rowHeight(page.rows[i]);
+        }
+        return {first, last};
+    }
+
+    int pageRowsShown(const Page &page, int scroll)
+    {
+        float y = kPageTop;
+        int shown = 0;
+        for (int i = std::max(scroll, 0); i < page.rowCount; ++i, ++shown)
+        {
+            y += rowHeight(page.rows[i]);
+            if (y > kPageBottom + 0.01f)
+                break;
+        }
+        return shown;
+    }
+
+    void setScrollBar(const std::string &track, const std::string &thumb)
+    {
+        g_scrollTrack = track;
+        g_scrollThumb = thumb;
     }
 
     Look &look() { return g_look; }
@@ -51,6 +92,30 @@ namespace kamite::options_overlay
         constexpr float kTitlePixelsPerUnit = 17.44f, kTitleTop = 13.7f, kTitleWidth = 3947.0f, kTitleHeight = 1064.0f;
         constexpr float kTitleY = 70.0f, kTitleCap = 30.0f; // the text stand-in when the image is missing
         constexpr float kMaxLabel = 190.0f;                  // the longest original (RESTORE DEFAULTS)
+
+        // The page beside the list (16:10 and wider): the bracket's upright just past the list's longest name, the
+        // page's cursor and names after it as the list's are after the screen's edge; its right end at the text area's
+        // margin, at most kPageWidth on. Values sit in a block at the right, choices centred in equal slots.
+        constexpr float kSplitAspect = 1.595f;
+        constexpr float kBracketX = 240.0f, kBracketTick = 9.0f, kBracketGap = 7.0f, kBracketReach = 12.0f;
+        constexpr float kPageCursorGap = kLabelX - kCursorX, kPageNameGap = kLabelX - kCursorX + kLabelX - kCursorX;
+        constexpr float kPageWidth = 470.0f, kValueBlock = 136.0f, kScrollWidth = 8.0f, kScrollGap = 14.0f;
+        constexpr float kSubIndent = 12.0f, kSubCap = 18.5f, kHeaderCap = 13.0f, kHeaderTracking = 3.0f;
+        constexpr float kLinesToUnits = 6.0f / 7.0f;
+
+        // The bracket's looks (Look::bracket), each a stack of layers drawn widest first: a thickness in lines and an
+        // offset toward the top / left (the lit side).
+        struct BracketLayer
+        {
+            uint32_t colour;
+            float thickness, lift;
+        };
+        constexpr BracketLayer kConnector[] = {{rgba(0xB6, 0x1A, 0x00, 110), 6.0f, 0.0f}, // the Techniques connector: a red fringe,
+                                               {rgba(0xB8, 0x4F, 0x25), 4.0f, 0.0f},      // rust edges,
+                                               {rgba(0xFF, 0xFE, 0x11), 2.0f, 0.0f},      // a yellow core
+                                               {rgba(0xFF, 0xFE, 0xC4), 1.0f, 0.5f}};     // lit cream on top
+        constexpr BracketLayer kCursorLook[] = {{rgba(0xA1, 0x2E, 0x02), 3.2f, 0.0f}, {rgba(0xFF, 0xF8, 0xCE), 1.2f, 0.0f}};
+        constexpr BracketLayer kTanLook[] = {{rgba(0xBC, 0x79, 0x48), 1.6f, 0.0f}};
 
         // Archivo Narrow fitted to the original's painted row names: horizontal scale, extra tracking (layout units).
         struct Fit
@@ -94,6 +159,7 @@ namespace kamite::options_overlay
             const Space space;
             float fade;
             uint32_t labelFont = 0, helpFont = 0;
+            float dim = 1.0f; // a page shown before it is opened (Look::preview 2)
 
             uint32_t add(const char *text, size_t length)
             {
@@ -104,7 +170,7 @@ namespace kamite::options_overlay
             }
             uint32_t faded(uint32_t colour, float alpha = 1.0f) const
             {
-                const float a = static_cast<float>(colour >> 24) * std::clamp(fade * alpha, 0.0f, 1.0f);
+                const float a = static_cast<float>(colour >> 24) * std::clamp(fade * alpha * dim, 0.0f, 1.0f);
                 return (colour & 0x00FFFFFFu) | (static_cast<uint32_t>(a + 0.5f) << 24);
             }
             Pcsx2GsScreenItem base() const
@@ -139,31 +205,99 @@ namespace kamite::options_overlay
                 items.push_back(item);
             }
 
-            void label(const char *name, float centre, bool on)
+            void label(const char *name, float centre, bool on, float x = kLabelX, float maxWidth = kMaxLabel, float cap = kLabelCap)
             {
                 const Fit &f = fitFor(name);
-                text(name, std::strlen(name), labelFont, kLabelX, centre + 0.5f * kLabelCap, kLabelCap, f.scaleX, f.tracking,
-                     on ? kLabelOn : kLabel, on ? kLabelOnStroke : 0u, kMaxLabel);
+                text(name, std::strlen(name), labelFont, x, centre + 0.5f * cap, cap, f.scaleX, f.tracking,
+                     on ? kLabelOn : kLabel, on ? kLabelOnStroke : 0u, maxWidth);
             }
 
-            void value(const char *name, float x, float centre, bool on)
+            void value(const char *name, float x, float centre, bool on, float maxWidth = 0.0f, uint32_t align = PCSX2GS_ALIGN_LEFT)
             {
                 text(name, std::strlen(name), labelFont, x, centre + 0.5f * kValueCap, kValueCap, kNewLabel.scaleX,
-                     kNewLabel.tracking, on ? kValueOn : kValue, on ? kValueOnStroke : 0u);
+                     kNewLabel.tracking, on ? kValueOn : kValue, on ? kValueOnStroke : 0u, maxWidth, align);
             }
 
-            void cursor(float centre)
+            // A small arrow either side of a value with more than three choices.
+            void arrow(float x, float centre, bool right, bool on)
+            {
+                Pcsx2GsScreenItem item = base();
+                item.kind = PCSX2GS_SCREEN_TRIANGLE;
+                item.fill = faded(on ? kValueOn : kValue);
+                item.stroke = on ? faded(kValueOnStroke) : 0u;
+                item.stroke_width = Space::y(kStroke);
+                const float tip = right ? x + 4.5f : x - 4.5f, back = right ? x - 4.5f : x + 4.5f;
+                item.x = space.x(back);
+                item.y = Space::y(centre - 6.0f);
+                item.x1 = space.x(tip);
+                item.y1 = Space::y(centre);
+                item.x2 = space.x(back);
+                item.y2 = Space::y(centre + 6.0f);
+                items.push_back(item);
+            }
+
+            void rect(float x0, float y0, float x1, float y1, uint32_t colour, bool afterText = false)
+            {
+                Pcsx2GsScreenItem item{};
+                item.kind = PCSX2GS_SCREEN_RECT;
+                item.align = afterText ? PCSX2GS_ALIGN_AFTER_TEXT : PCSX2GS_ALIGN_LEFT;
+                item.fill = faded(colour);
+                item.x = afterText ? Space::h(x0) : space.x(x0);
+                item.x1 = space.x(x1);
+                item.y = Space::y(y0);
+                item.y1 = Space::y(y1);
+                items.push_back(item);
+            }
+
+            void bar(uint32_t path, float x0, float y0, float x1, float y1)
+            {
+                Pcsx2GsScreenItem item{};
+                item.kind = PCSX2GS_SCREEN_IMAGE;
+                item.text = path;
+                item.fill = faded(rgba(255, 255, 255));
+                item.size = 0.25f; // the rounded ends (tools/options/make_scrollbar.py)
+                item.x = space.x(x0);
+                item.x1 = space.x(x1);
+                item.y = Space::y(y0);
+                item.y1 = Space::y(y1);
+                items.push_back(item);
+            }
+
+            // "-[": from the end of the last label drawn (the open category's) to an upright at x spanning top..bottom,
+            // with short ticks into the page at both ends.
+            void bracket(float x, float row, float top, float bottom)
+            {
+                const BracketLayer *layers = kConnector;
+                size_t count = std::size(kConnector);
+                if (g_look.bracket == 1)
+                    layers = kCursorLook, count = std::size(kCursorLook);
+                else if (g_look.bracket == 2)
+                    layers = kTanLook, count = std::size(kTanLook);
+                for (size_t i = 0; i < count; ++i)
+                {
+                    const float t = 0.5f * layers[i].thickness, lift = layers[i].lift;
+                    const float tu = t * kLinesToUnits, lu = lift * kLinesToUnits, ux = x - lu;
+                    const float wide = 0.5f * layers[0].thickness * kLinesToUnits; // the widest layer's half
+                    rect(kBracketGap * kLinesToUnits - tu + wide, row - lift - t, ux + tu, row - lift + t, layers[i].colour, true);
+                    rect(ux - tu, top - lift - t, ux + tu, bottom - lift + t, layers[i].colour);
+                    const float tick = x + kBracketTick - (wide - tu); // the wider layers cap the ticks' ends
+                    rect(ux - tu, top - lift - t, tick, top - lift + t, layers[i].colour);
+                    rect(ux - tu, bottom - lift - t, tick, bottom - lift + t, layers[i].colour);
+                }
+            }
+
+            void cursor(float centre, float x = kCursorX)
             {
                 Pcsx2GsScreenItem item = base();
                 item.kind = PCSX2GS_SCREEN_TRIANGLE;
                 item.fill = faded(kLabelOn);
                 item.stroke = faded(kLabelOnStroke);
                 item.stroke_width = Space::y(kStroke);
-                item.x = space.x(kCursorX - kCursorHalfW);
+                item.x = space.x(x - kCursorHalfW);
                 item.y = Space::y(centre - kCursorHalfH);
-                item.x1 = space.x(kCursorX + kCursorHalfW);
+                item.x1 = space.x(x + kCursorHalfW);
                 item.y1 = Space::y(centre);
-                item.x2 = space.x(kCursorX - kCursorHalfW);
+                item.x2 = space.x(x - kCursorHalfW);
                 item.y2 = Space::y(centre + kCursorHalfH);
                 items.push_back(item);
             }
@@ -187,6 +321,68 @@ namespace kamite::options_overlay
                     item.shadow_y = Space::y(kHelpShadowY);
                     baseline += kHelpLine;
                     line = end ? end + 1 : nullptr;
+                }
+            }
+
+            // A page's rows between left (its cursor's x) and right (the scroll bar's right edge). selected < 0: no row
+            // highlighted.
+            void page(const Page &p, int scroll, int selected, float left, float right)
+            {
+                const float names = left + kPageNameGap - kPageCursorGap, values = right - kScrollWidth - kScrollGap - kValueBlock;
+                float y = kPageTop;
+                scroll = std::clamp(scroll, 0, std::max(p.rowCount - 1, 0));
+                const int shown = pageRowsShown(p, scroll);
+                for (int i = scroll; i < scroll + shown; ++i)
+                {
+                    const PageRow &row = p.rows[i];
+                    const float centre = y + 0.5f * rowHeight(row);
+                    y += rowHeight(row);
+                    if (row.header)
+                    {
+                        text(row.name, std::strlen(row.name), labelFont, names, centre + 0.5f * kHeaderCap, kHeaderCap, kNewLabel.scaleX,
+                             kHeaderTracking, kHelp, 0u, right - names);
+                        Pcsx2GsScreenItem &item = items.back();
+                        item.shadow = faded(kHelpShadow);
+                        item.shadow_x = Space::y(0.12f * kHeaderCap);
+                        item.shadow_y = Space::y(0.11f * kHeaderCap);
+                        continue;
+                    }
+                    const bool on = i == selected;
+                    const float x = names + (row.sub ? kSubIndent : 0.0f);
+                    label(row.name, centre, on, x, values - 10.0f - x, row.sub ? kSubCap : kLabelCap);
+                    if (on)
+                        cursor(centre, left + (row.sub ? kSubIndent : 0.0f));
+                    if (row.choiceCount <= 0)
+                        continue;
+                    if (row.choiceCount <= 3)
+                    {
+                        const float slot = kValueBlock / static_cast<float>(row.choiceCount);
+                        for (int c = 0; c < row.choiceCount; ++c)
+                            value(row.choices[c], values + slot * (static_cast<float>(c) + 0.5f), centre, c == row.choice,
+                                  slot - 8.0f, PCSX2GS_ALIGN_CENTRE);
+                    }
+                    else
+                    {
+                        const int c = std::clamp(row.choice, 0, row.choiceCount - 1);
+                        arrow(values + 5.0f, centre, false, on);
+                        value(row.choices[c], values + 0.5f * kValueBlock, centre, true, kValueBlock - 40.0f, PCSX2GS_ALIGN_CENTRE);
+                        arrow(values + kValueBlock - 5.0f, centre, true, on);
+                    }
+                }
+                // The scroll bar, when the page is longer than it shows: the thumb's share and place by height.
+                float total = 0.0f, before = 0.0f;
+                for (int i = 0; i < p.rowCount; ++i)
+                {
+                    total += rowHeight(p.rows[i]);
+                    before += i < scroll ? rowHeight(p.rows[i]) : 0.0f;
+                }
+                if (total > kPageBottom - kPageTop + 0.01f && !g_scrollTrack.empty())
+                {
+                    const float x0 = right - kScrollWidth, top = kPageTop + 2.0f, span = kPageBottom - kPageTop - 4.0f;
+                    bar(add(g_scrollTrack.data(), g_scrollTrack.size()), x0, top, right, top + span);
+                    const float length = std::max(span * (kPageBottom - kPageTop) / total, 18.0f);
+                    const float at = top + (span - length) * std::clamp(before / std::max(total - (kPageBottom - kPageTop), 1.0f), 0.0f, 1.0f);
+                    bar(add(g_scrollThumb.data(), g_scrollThumb.size()), x0, at, right, at + length);
                 }
             }
 
@@ -215,19 +411,53 @@ namespace kamite::options_overlay
         Builder b{items, strings, Space(std::clamp(view.aspect, 1.0f, 4.0f)), std::min(view.fade, 1.0f)};
         b.labelFont = b.add(g_labelFont.data(), g_labelFont.size());
         b.helpFont = b.add(g_helpFont.data(), g_helpFont.size());
+        const bool split = view.aspect >= kSplitAspect;
+        const Page *page = view.page && view.page->rowCount > 0 ? view.page : nullptr;
+        const bool open = page && view.inPage;
 
-        if (!g_titleImage.empty())
+        // The title: OPTIONS, or the open category's name (its painted splash comes later: a stand-in for now).
+        if (open)
+            b.text(page->name, std::strlen(page->name), b.labelFont, 0.5f * b.space.area, kTitleY, kTitleCap, kNewLabel.scaleX,
+                   kNewLabel.tracking, kLabelOn, kLabelOnStroke, 0.0f, PCSX2GS_ALIGN_CENTRE);
+        else if (!g_titleImage.empty())
             b.title(b.add(g_titleImage.data(), g_titleImage.size()));
         else
             b.text("OPTIONS", 7u, b.labelFont, kLabelX, kTitleY, kTitleCap, kNewLabel.scaleX, kNewLabel.tracking, kLabelOn, kLabelOnStroke);
+
+        const float pageRight = std::min(b.space.area - kLabelX, kBracketX + kPageWidth);
+        if (open && !split)
+        {
+            // Narrow: the page replaces the list.
+            b.page(*page, view.pageScroll, view.pageCursor, kCursorX, b.space.area - kLabelX);
+            b.help(view.pageCursor >= 0 && view.pageCursor < page->rowCount ? page->rows[view.pageCursor].help : "");
+            return;
+        }
+
         // The pause's rows fill the original's span; the title's (fewer) keep its spacing.
         const float step = view.pause && view.rowCount > 1 ? std::min(kRowStep, (kLastRowY - kFirstRowY) / static_cast<float>(view.rowCount - 1))
                                                            : kRowStep;
         const int cursor = std::clamp(view.cursor, 0, view.rowCount - 1);
         for (int i = 0; i < view.rowCount; ++i)
-            b.label(view.rows[i].name, kFirstRowY + step * static_cast<float>(i), i == cursor);
+            if (i != cursor)
+                b.label(view.rows[i].name, kFirstRowY + step * static_cast<float>(i), false);
         const float centre = kFirstRowY + step * static_cast<float>(cursor);
-        b.cursor(centre);
+        b.label(view.rows[cursor].name, centre, true); // last, so the bracket starts at its end
+        if (!open)
+            b.cursor(centre);
+
+        if (split && page && open)
+        {
+            const auto [first, last] = pageExtent(*page, view.pageScroll);
+            b.bracket(kBracketX, centre, std::min(first, centre) - kBracketReach, std::max(last, centre) + kBracketReach);
+            b.page(*page, view.pageScroll, view.pageCursor, kBracketX + kPageCursorGap, pageRight);
+        }
+        else if (split && page && g_look.preview != 0)
+        {
+            b.dim = g_look.preview == 2 ? 0.5f : 1.0f;
+            b.page(*page, 0, -1, kBracketX + kPageCursorGap, pageRight);
+            b.dim = 1.0f;
+        }
+
         if (view.confirmRow >= 0 && view.confirmRow < view.rowCount)
         {
             const float at = kFirstRowY + step * static_cast<float>(view.confirmRow);
@@ -235,6 +465,8 @@ namespace kamite::options_overlay
             b.value("NO", kValueX + kValueGap, at, !view.confirmYes);
             b.help(view.question);
         }
+        else if (open)
+            b.help(view.pageCursor >= 0 && view.pageCursor < page->rowCount ? page->rows[view.pageCursor].help : "");
         else
             b.help(view.rows[cursor].help);
     }

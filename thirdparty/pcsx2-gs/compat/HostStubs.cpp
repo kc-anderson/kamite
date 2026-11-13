@@ -813,6 +813,8 @@ namespace
         return &f;
     }
 
+    float g_lastTextEnd = 0.0f; // the right end of the last text item drawn (PCSX2GS_ALIGN_AFTER_TEXT), pixels
+
     struct ScreenRun
     {
         ImFontBaked *baked = nullptr;
@@ -913,6 +915,7 @@ namespace
             ForStrokeOffsets(item.stroke_width * h, [&](float dx, float dy) { ScreenRunDraw(list, run, text, end, x + dx, top + dy, item.stroke); });
         if (item.fill >> 24)
             ScreenRunDraw(list, run, text, end, x, top, item.fill);
+        g_lastTextEnd = x + width;
     }
 
     void DrawScreenTriangle(ImDrawList *list, const Pcsx2GsScreenItem &item, float x0, float y0, float w, float h)
@@ -954,7 +957,10 @@ namespace
 
     void DrawScreenRect(ImDrawList *list, const Pcsx2GsScreenItem &item, float x0, float y0, float w, float h)
     {
-        const ImVec2 a(x0 + item.x * w, y0 + item.y * h), b(x0 + item.x1 * w, y0 + item.y1 * h);
+        const ImVec2 a(item.align == PCSX2GS_ALIGN_AFTER_TEXT ? g_lastTextEnd + item.x * h : x0 + item.x * w, y0 + item.y * h),
+            b(x0 + item.x1 * w, y0 + item.y1 * h);
+        if (b.x <= a.x)
+            return;
         const float stroke = (item.stroke >> 24) ? item.stroke_width * h : 0.0f;
         if (item.shadow >> 24)
             list->AddRectFilled(ImVec2(a.x - stroke + item.shadow_x * h, a.y - stroke + item.shadow_y * h),
@@ -968,7 +974,7 @@ namespace
     // An image file, loaded on first use and shrunk by a whole factor (a box filter, alpha-weighted) to about the size
     // it is first drawn at, so the picture's linear filter never minifies it much. A later, larger window draws it
     // scaled up.
-    ImTextureData *ScreenImageFor(const char *path, float drawnHeight)
+    ImTextureData *ScreenImageFor(const char *path, float drawnHeight, float drawnWidth = 0.0f)
     {
         if (!path || !*path)
             return nullptr;
@@ -983,7 +989,10 @@ namespace
             std::fprintf(stderr, "[gs] screen image did not load: %s\n", path);
             return nullptr;
         }
-        const int f = std::clamp(static_cast<int>(static_cast<float>(h) / std::max(drawnHeight, 1.0f)), 1, 64);
+        // A bar with fixed ends (drawnWidth set) is shrunk to its width; anything else to its height.
+        const int f = std::clamp(static_cast<int>(drawnWidth > 0.0f ? static_cast<float>(w) / drawnWidth
+                                                                     : static_cast<float>(h) / std::max(drawnHeight, 1.0f)),
+                                 1, 64);
         const int ow = std::max(1, w / f), oh = std::max(1, h / f);
         ImTextureData *tex = IM_NEW(ImTextureData)();
         tex->Create(ImTextureFormat_RGBA32, ow, oh);
@@ -1016,8 +1025,21 @@ namespace
         const ImVec2 a(x0 + item.x * w, y0 + item.y * h), b(x0 + item.x1 * w, y0 + item.y1 * h);
         if ((item.fill >> 24) == 0u || b.y - a.y < 1.0f)
             return;
-        if (ImTextureData *tex = ScreenImageFor(path, b.y - a.y))
-            list->AddImage(tex->GetTexRef(), a, b, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), item.fill);
+        if (item.size <= 0.0f)
+        {
+            if (ImTextureData *tex = ScreenImageFor(path, b.y - a.y))
+                list->AddImage(tex->GetTexRef(), a, b, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), item.fill);
+            return;
+        }
+        // Ends kept in proportion (at most half the drawn height each), the middle stretched.
+        ImTextureData *tex = ScreenImageFor(path, 0.0f, std::max(b.x - a.x, 1.0f));
+        if (!tex)
+            return;
+        const float v = std::min(item.size, 0.5f);
+        const float end = std::min(v * static_cast<float>(tex->Height) * (b.x - a.x) / static_cast<float>(tex->Width), 0.5f * (b.y - a.y));
+        list->AddImage(tex->GetTexRef(), a, ImVec2(b.x, a.y + end), ImVec2(0.0f, 0.0f), ImVec2(1.0f, v), item.fill);
+        list->AddImage(tex->GetTexRef(), ImVec2(a.x, a.y + end), ImVec2(b.x, b.y - end), ImVec2(0.0f, v), ImVec2(1.0f, 1.0f - v), item.fill);
+        list->AddImage(tex->GetTexRef(), ImVec2(a.x, b.y - end), b, ImVec2(0.0f, 1.0f - v), ImVec2(1.0f, 1.0f), item.fill);
     }
 
     // RenderOSD (GS thread): the list over the picture, under the menu and the OSD.
