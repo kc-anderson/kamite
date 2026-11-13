@@ -1,7 +1,6 @@
 #include "kamite/launcher.h"
 #include "kamite/launcher_bark.h"
 
-#include "kamite/camera_presets.h"
 #include "kamite/character_mods.h"
 #include "kamite/disc_files.h"
 #include "kamite/game_disc.h"
@@ -1543,51 +1542,6 @@ void main()
                 state.ini.setBool(section, key, value);
         }
 
-        // Display > Camera: the presets of camera_presets.h; "Custom" when the four values match none of them.
-        void cameraPresetCombo(State &state)
-        {
-            const auto value = [&](const char *key, float fallback)
-            {
-                const std::string text = state.ini.get("Video", key, "");
-                return text.empty() ? fallback : static_cast<float>(std::atof(text.c_str()));
-            };
-            const float fov = value("FieldOfView", 100.0f), fight = value("FightFieldOfView", 100.0f);
-            const float distance = value("CameraZoomOut", 0.0f), tilt = value("CameraTilt", 0.0f);
-            const auto same = [](float a, float b) { return std::fabs(a - b) < 0.05f; };
-            int current = -1;
-            for (size_t i = 0; i < std::size(kCameraPresets); ++i)
-            {
-                const CameraPreset &preset = kCameraPresets[i];
-                if (same(fov, preset.fieldOfView) && same(fight, preset.fightFieldOfView) &&
-                    same(distance, preset.cameraZoomOut) && same(tilt, preset.cameraTilt))
-                    current = static_cast<int>(i);
-            }
-            ImGui::SetNextItemWidth(-1.0f);
-            const bool comboOpen = ImGui::BeginCombo("##camera", current >= 0 ? kCameraPresets[current].name : "Custom");
-            tickItem();
-            if (comboOpen)
-            {
-                for (size_t i = 0; i < std::size(kCameraPresets); ++i)
-                {
-                    const CameraPreset &preset = kCameraPresets[i];
-                    if (ImGui::Selectable(preset.name, static_cast<int>(i) == current))
-                    {
-                        const auto text = [](float number)
-                        {
-                            char buffer[32];
-                            std::snprintf(buffer, sizeof(buffer), "%g", number);
-                            return std::string(buffer);
-                        };
-                        state.ini.set("Video", "FieldOfView", text(preset.fieldOfView));
-                        state.ini.set("Video", "FightFieldOfView", text(preset.fightFieldOfView));
-                        state.ini.set("Video", "CameraZoomOut", text(preset.cameraZoomOut));
-                        state.ini.set("Video", "CameraTilt", text(preset.cameraTilt));
-                    }
-                }
-                ImGui::EndCombo();
-            }
-        }
-
         // ---- Controls: player 1's bindings (controls.ini through ps2_host_input's model, as the F1 screen) ----------
         namespace pc = ps2_host_input::controls;
         namespace gp = ps2_host_gamepads;
@@ -2138,7 +2092,7 @@ void main()
             return true;
         }
 
-        // The settings drawn by hand: Display Mode (two keys), Camera & FOV (presets), Character, texture packs.
+        // The settings drawn by hand: Display Mode (two keys), Character, texture packs.
         void customControl(State &state, const settings::Setting &setting)
         {
             const std::string id = setting.id;
@@ -2153,8 +2107,6 @@ void main()
                     state.ini.setBool("Video", "StartMaximized", mode == "maximized");
                 }
             }
-            else if (id == "CameraPreset")
-                cameraPresetCombo(state);
             else if (id == "Character")
             {
                 static std::vector<characters::Character> list;
@@ -2211,7 +2163,12 @@ void main()
             {
                 std::string value = settings::value(state.ini, setting);
                 if (tableCombo(id.c_str(), setting, value))
-                    state.ini.set(setting.section, setting.key, value);
+                {
+                    if (std::strcmp(setting.key, "CameraPreset") == 0)
+                        settings::writeCameraPreset(state.ini, value); // its four values (Custom: from Action's)
+                    else
+                        state.ini.set(setting.section, setting.key, value);
+                }
                 break;
             }
             case settings::Kind::Slider:
@@ -2236,18 +2193,17 @@ void main()
             }
         }
 
-        // One tab: its settings in the table's order, a heading per category. Sub-options show while their parent is
-        // on (Window Size greyed instead), Camera's advanced ones only with "Show advanced settings".
+        // One tab: its settings in the table's order, a heading per category. Sub-options show while their parent
+        // allows them (Window Size greyed instead; Camera & FOV's values only with Custom).
         void drawTab(State &state, settings::Tab tab)
         {
-            const bool advanced = state.ini.getBool("Launcher", "ShowAdvanced", false);
             const bool narrow = lower(state.ini.get("Video", "AspectRatio", "16:9")) == "4:3";
             const char *category = nullptr;
             bool table = false;
             for (size_t i = 0; i < settings::kSettingCount; ++i)
             {
                 const settings::Setting &s = settings::kSettings[i];
-                if (s.tab != tab || (s.advanced && !advanced))
+                if (s.tab != tab)
                     continue;
                 const bool allowed = settings::parentAllows(state.ini, s);
                 if (!allowed && !s.greyed)
@@ -2261,11 +2217,8 @@ void main()
                 }
                 if (!table)
                     continue;
-                if (s.parent || s.advanced)
+                if (s.parent)
                     subSetting(s.name, s.description, s.note);
-                else if (std::strcmp(s.id, "CameraPreset") == 0)
-                    settingLabel(s.name, s.description, s.note,
-                                 [&] { iniCheckbox(state, "Show advanced settings##advanced", "Launcher", "ShowAdvanced", false); });
                 else
                     settingLabel(s.name, s.description, s.note);
                 ImGui::BeginDisabled(!allowed || (s.wideOnly && narrow));
@@ -2292,7 +2245,11 @@ void main()
             g_categories = 0;
             if (ImGui::BeginTabBar("tabs"))
             {
-                for (const settings::Tab tab : settings::kTabs)
+                // The launcher's own order (K, Nov 13: Controls after Sound; the game keeps Controls first).
+                constexpr settings::Tab kLauncherTabs[] = {settings::Tab::Display, settings::Tab::Interface,
+                                                           settings::Tab::Gameplay, settings::Tab::Sound,
+                                                           settings::Tab::Controls, settings::Tab::Mods};
+                for (const settings::Tab tab : kLauncherTabs)
                 {
                     if (!ImGui::BeginTabItem(settings::tabName(tab)))
                         continue;

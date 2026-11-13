@@ -19,8 +19,9 @@
 // while playing.
 //
 // Enemies (docs/enemy-ai.md). They never test the camera; they go by the angle between Gene's facing and the enemy
-// (+0x768). With [Game] EnemiesFollowView, the angles they compare it with grow by how much further round Gene the
-// picture now reaches: at the enemy's distance r (+0x618 = r squared), the screen's edge passes Gene's facing at
+// (+0x768). Following the view (always since K, Nov 13; KAMITE_ENEMY_VIEW=0 only from an old test case), the angles
+// they compare it with grow by how much further round Gene the picture now reaches: at the enemy's distance r
+// (+0x618 = r squared), the screen's edge passes Gene's facing at
 //   edge(r) = phi + asin(D sin(phi) / r)   (180 degrees when D sin(phi) >= r)
 // with phi = atan(A tan(fov/2)) (A = the picture's aspect) and D = the camera's distance on the floor. Every angle is
 // scaled by edge_now / edge_ps2 (the PS2: the game's own fov and distance, 4:3), so an enemy keeps the place it had
@@ -31,6 +32,7 @@
 #include "kamite/camera.h"
 #include "kamite/hitbox_overlay.h"
 #include "kamite/camera_presets.h"
+#include "kamite/settings_table.h"
 #include "kamite/ini_file.h"
 #include "kamite/modern_controls.h"
 #include "kamite/near_geometry.h"
@@ -1115,7 +1117,8 @@ namespace kamite
             ini.set("Video", "CameraZoomOut", number(100.0f - g_closerPercent.load()));
             ini.set("Video", "CameraTilt", number(g_tiltDegrees.load()));
             ini.setBool("Video", "SteadyIdleCamera", g_steadyIdle.load());
-            ini.setBool("Game", "EnemiesFollowView", g_enemyView.load());
+            ini.set("Video", "CameraPreset", settings::cameraPresetId(g_fovPercent.load(), g_fightPercent.load(),
+                                                                   100.0f - g_closerPercent.load(), g_tiltDegrees.load()));
             ini.setBool("Video", "DepthOfField", g_depthOfField.load());
             ini.setBool("Video", "PreciseDepth", g_preciseDepth.load());
             ini.setBool("Video", "PerspectiveShading", g_perspectiveShading.load());
@@ -1149,7 +1152,6 @@ namespace kamite
                                   : 100.0f - iniValue(ini, "Video", "CameraZoomOut", 0.0f, 0.0f, 100.0f);
             g_tiltDegrees = iniValue(ini, "Video", "CameraTilt", 0.0f, -30.0f, 30.0f);
             g_steadyIdle = ini.getBool("Video", "SteadyIdleCamera", false);
-            g_enemyView = ini.getBool("Game", "EnemiesFollowView", true);
             g_depthOfField = ini.getBool("Video", "DepthOfField", true);
             g_preciseDepth = ini.getBool("Video", "PreciseDepth", true);
             g_perspectiveShading = ini.getBool("Video", "PerspectiveShading", true);
@@ -1358,7 +1360,7 @@ namespace kamite
         // [Video] FieldOfView / FightFieldOfView: percent of the game's own (100 = the PS2's), 50..200;
         // CameraZoomOut: 0..100 (0 = Gene keeps his size on screen; the older CameraDistance = 100 - it, read when
         // CameraZoomOut is missing); CameraTilt: degrees, -30..30;
-        // [Game] EnemiesFollowView: 0/1 (default 1)
+        // Enemies follow the view: always (K, Nov 13: no longer a setting); KAMITE_ENEMY_VIEW=0 only from a test case
         g_fovPercent = envValue("KAMITE_FOV", 100.0f, 50.0f, 200.0f);
         g_fightPercent = envValue("KAMITE_FIGHT_FOV", 100.0f, 50.0f, 200.0f);
         {

@@ -444,7 +444,6 @@ namespace
         {"game", "buckbreaker", "KAMITE_BUCK_BREAKER"},
         {"game", "npcposes", "KAMITE_NPC_POSES"},
         {"game", "sprinttraversal", "KAMITE_SPRINT_TRAVERSAL"},
-        {"game", "enemiesfollowview", "KAMITE_ENEMY_VIEW"},
         {"game", "controlstyle", "KAMITE_CONTROL_STYLE"},
         {"game", "menubuttons", "KAMITE_MENU_BUTTONS"},
         {"game", "buttonprompts", "KAMITE_BUTTON_PROMPTS"},

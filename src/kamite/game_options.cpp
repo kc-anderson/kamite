@@ -36,10 +36,12 @@
 // channel a2, volume f12) for a node with 2+ channels (node+0x58 > 1; the stereo music takes this one, which the
 // first version of this option missed): volume x the cSnd category levels (0x5FEE00) -> the dB table at 0x3F2060 ->
 // ADXT_SetOutVol (0x32A9F0) / func_0032EC78 per channel. Music streams are the cSndBgmNode pool inside cSnd
-// (0x601180, 16 nodes of 0xDC bytes; decomp cSnd.h); at both functions' entry the volume asked for is scaled by Music
-// (0 -> table[0] = -96.0 dB, silent), except bank 1, the cutscene streams (their voices are in the same stream: they
-// follow Voices, K). Every other stream node is a voice line (pl00.afs, the enemies'): Voices. Each node's last asked
-// volume is kept so a volume change re-applies at once (reapplyStreamVolumes). Sound effects are the SPU2's voices, not
+// (0x601180, 16 nodes of 0xDC bytes; decomp cSnd.h). The volume they reach (f20, 0..127, before the clamp to 127 and
+// the dB table) is scaled by Music (0 -> table[0] = -96.0 dB, silent), except bank 1, the cutscene streams (their
+// voices are in the same stream: they follow Voices, K). Every other stream node is a voice line (pl00.afs, the
+// enemies'): Voices. NOT at the entry: the setters keep the asked volume on the node (+0x14 per channel), and a 0 kept
+// there stopped the music for good (K, Nov 13: Music at 0 %, then up again, stayed silent). At the entry each node's
+// asked volume is only noted, so a volume change re-applies at once (reapplyStreamVolumes). Sound effects are the SPU2's voices, not
 // streams: their volume is the IOP's voice gain (ps2x::iop::setVoiceGain). Movies use Sofdec's own ADXT handles.
 // KAMITE_TRACE=GAME logs the first calls (node, vtable, category, volume) to check the match.
 //
@@ -264,7 +266,7 @@ namespace kamite
         }
 
         // Before the first instruction of func_00373FF0 (Channels false: node a0, category a1, volume f12) and of
-        // func_003745C0 (true: node a0, category a1, channel a2, volume f12), the stream volume setters.
+        // func_003745C0 (true: node a0, category a1, channel a2, volume f12), the stream volume setters: noted only.
         template <bool Channels>
         void streamVolume(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
         {
@@ -281,7 +283,6 @@ namespace kamite
                     *it = {node, category, channel, asked};
             }
             const bool music = musicNode(rdram, node);
-            ctx->f[12] = asked * (music ? g_musicGain : g_voicesGain).load(std::memory_order_relaxed);
             static int logged = 0;
             if (logged < 40)
             {
@@ -289,6 +290,15 @@ namespace kamite
                 KM_TRACE(Game, "[volume] stream call: node 0x" << std::hex << node << std::dec << " category " << category
                                    << " channel " << channel << " volume " << asked << (music ? " (music)" : " (voices)"));
             }
+        }
+
+        // At the setters' clamp (0x374070 in func_00373FF0, node s0; 0x374650 in func_003745C0, node s2): the volume
+        // reached, f20 (0..127), times the player's Music or Voices.
+        template <int NodeReg>
+        void streamGain(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t node = GPR_U32(ctx, NodeReg);
+            ctx->f[20] *= (musicNode(rdram, node) ? g_musicGain : g_voicesGain).load(std::memory_order_relaxed);
         }
     }
 
@@ -1582,6 +1592,8 @@ namespace kamite
         ps2xSetPatchFlag("dead_pan", true);
         ps2xRegisterHostHook("km_stream_volume_1", &streamVolume<false>);
         ps2xRegisterHostHook("km_stream_volume_n", &streamVolume<true>);
+        ps2xRegisterHostHook("km_stream_gain_1", &streamGain<16>);
+        ps2xRegisterHostHook("km_stream_gain_n", &streamGain<18>);
         ps2xSetPatchFlag("stream_volume", true);
         ps2xRegisterHostHook("km_tension_r2_mode", &tensionR2Mode);
         ps2xRegisterHostHook("km_tension_r2_phase", &tensionR2Phase);

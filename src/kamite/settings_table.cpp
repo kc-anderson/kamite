@@ -1,8 +1,11 @@
 #include "kamite/settings_table.h"
 
+#include "kamite/camera_presets.h"
 #include "kamite/ini_file.h"
 
 #include <cctype>
+#include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <iterator>
 
@@ -23,6 +26,11 @@ namespace kamite::settings
         constexpr Choice kAspects[] = {{"4:3", "4:3 (the PS2's)", "4:3"},    {"16:9", "16:9", "16:9"},
                                        {"16:10", "16:10", "16:10"},         {"21:9", "21:9", "21:9"},
                                        {"32:9", "32:9", "32:9"},            {"auto", "Match the screen", "MATCH SCREEN"}};
+        // Camera & FOV: camera_presets.h's presets in their order, then Custom (the four values as set).
+        constexpr Choice kCameraPresetChoices[] = {{"ps2", "As on the PS2", "AS ON THE PS2"}, {"wider", "Wider", "WIDER"},
+                                                   {"widest", "Widest", "WIDEST"},              {"action", "Action", "ACTION"},
+                                                   {"custom", "Custom", "CUSTOM"}};
+        static_assert(std::size(kCameraPresetChoices) == std::size(kCameraPresets) + 1);
         constexpr Choice kFovs[] = {{"100", "100%: as on the PS2", "100"}, {"110", "110%", "110"}, {"120", "120%", "120"},
                                     {"130", "130%", "130"},                {"140", "140%", "140"}, {"150", "150%", "150"}};
         constexpr Choice kCameraDistances[] = {{"0", "0%: Gene keeps his size", "0"},
@@ -88,7 +96,6 @@ namespace kamite::settings
         {
             return s.parent = parent, s.parentValue = value, s;
         }
-        constexpr Setting advanced(Setting s) { return s.advanced = true, s; }
         constexpr Setting greyed(Setting s) { return s.greyed = true, s; }
         constexpr Setting wideOnly(Setting s) { return s.wideOnly = true, s; }
         constexpr Setting slider(Setting s, const char *unit) { return s.gameSlider = true, s.unit = unit, s; }
@@ -100,11 +107,11 @@ namespace kamite::settings
     const Setting kSettings[] = {
         // ---- Controls -------------------------------------------------------------------------------------------
         live(choice(Tab::Controls, "Controller", "Menu Controls",
-                    "Western: the bottom button confirms and the right one cancels (A / B, or cross / circle). Japanese: "
-                    "the right button confirms and the bottom one cancels (circle / cross). Classic: as on the PS2, circle "
-                    "and cross confirm and triangle cancels. Menus, dialogs and the roulette.",
+                    "Western: bottom button confirms; right button cancels.\nJapanese: right button confirms; bottom "
+                    "button cancels.",
                     "Game", "MenuButtons", "western", kMenuButtons)),
-        live(toggle(Tab::Controls, "Controller", "Vibration", "The controller's rumble.", "Game", "Vibration", true)),
+        live(toggle(Tab::Controls, "Controller", "Vibration", "Controller rumble. Girls know what it's for.", "Game",
+                    "Vibration", true)),
 
         // ---- Display --------------------------------------------------------------------------------------------
         note(custom("DisplayMode", Tab::Display, "Game Window", "Display Mode", "How the game opens."),
@@ -117,33 +124,33 @@ namespace kamite::settings
                "The picture's shape. Wider than 4:3 shows more of the scene to the sides; menus keep the PS2's "
                "proportions.",
                "Video", "AspectRatio", "16:9", kAspects),
-        live(note(custom("CameraPreset", Tab::Display, "Camera", "Camera & FOV",
+        live(note(choice(Tab::Display, "Camera", "Camera & FOV",
                          "How much the gameplay camera shows and how it frames Gene (widescreen already widens it "
-                         "sideways). Cutscenes keep their framing."),
+                         "sideways). Cutscenes keep their framing. Custom starts from Action's values.",
+                         "Video", "CameraPreset", "ps2", kCameraPresetChoices),
                   "F2 while playing tunes it live.")),
-        live(advanced(slider(choice(Tab::Display, "Camera", "Field of View",
-                                    "How much the camera shows, both ways, outside fights.", "Video", "FieldOfView", "100",
-                                    kFovs),
-                             "%"))),
-        live(advanced(slider(choice(Tab::Display, "Camera", "Field of View in Fights",
-                                    "The same while the game's battle camera is on (Gene has an enemy targeted). 100% "
-                                    "frames fights as on the PS2.",
-                                    "Video", "FightFieldOfView", "100", kFovs),
-                             "%"))),
-        live(advanced(slider(choice(Tab::Display, "Camera", "Camera Distance",
-                                    "At a wider field of view, how far back the camera stays. 0% keeps Gene the size he "
-                                    "is at 100%; 100% shows more round him.",
-                                    "Video", "CameraZoomOut", "0", kCameraDistances),
-                             "%"))),
-        live(advanced(slider(choice(Tab::Display, "Camera", "Camera Tilt",
-                                    "At a wider field of view, the camera also rises and looks down at Gene by this much: "
-                                    "more of the floor ahead, less sky.",
-                                    "Video", "CameraTilt", "0", kCameraTilts),
-                             kDegrees))),
-        live(advanced(toggle(Tab::Display, "Camera", "Enemies Follow the View",
-                             "The angles round Gene in which enemies close in and lunge widen with the picture, so the "
-                             "ones you can see at the edges join in as on the PS2. Off: the original angles.",
-                             "Game", "EnemiesFollowView", true))),
+        live(sub(slider(choice(Tab::Display, "Camera", "Field of View",
+                               "How much the camera shows, both ways, outside fights.", "Video", "FieldOfView", "100", kFovs),
+                        "%"),
+                 "CameraPreset", "custom")),
+        live(sub(slider(choice(Tab::Display, "Camera", "Field of View in Fights",
+                               "The same while the game's battle camera is on (Gene has an enemy targeted). 100% frames "
+                               "fights as on the PS2.",
+                               "Video", "FightFieldOfView", "100", kFovs),
+                        "%"),
+                 "CameraPreset", "custom")),
+        live(sub(slider(choice(Tab::Display, "Camera", "Camera Distance",
+                               "At a wider field of view, how far back the camera stays. 0% keeps Gene the size he is at "
+                               "100%; 100% shows more round him.",
+                               "Video", "CameraZoomOut", "0", kCameraDistances),
+                        "%"),
+                 "CameraPreset", "custom")),
+        live(sub(slider(choice(Tab::Display, "Camera", "Camera Tilt",
+                               "At a wider field of view, the camera also rises and looks down at Gene by this much: more "
+                               "of the floor ahead, less sky.",
+                               "Video", "CameraTilt", "0", kCameraTilts),
+                        kDegrees),
+                 "CameraPreset", "custom")),
         live(note(toggle(Tab::Display, "Camera", "Steady Idle Camera",
                          "While Gene stands idle, the camera stops rocking and shaking with his stomps.", "Video",
                          "SteadyIdleCamera", false),
@@ -172,8 +179,8 @@ namespace kamite::settings
                   "F2 switches it while playing.")),
 
         // ---- Interface ------------------------------------------------------------------------------------------
-        live(toggle(Tab::Interface, "HUD", "Enemy Life Gauge", "The health bars over the enemies' heads.", "Game",
-                    "EnemyLifeGauge", true)),
+        live(toggle(Tab::Interface, "HUD", "Enemy Life Gauge", "Select whether to display\nan enemy's life gauge.", "Game",
+                    "EnemyLifeGauge", true)), // the game's own help
         live(wideOnly(note(choice(Tab::Interface, "HUD", "HUD Layout",
                                   "Where the health bar, radar and the rest of the in-game HUD go on a wide screen. Wider "
                                   "than 16:9 keeps them at the edges of a 16:9 area.",
@@ -209,7 +216,7 @@ namespace kamite::settings
                         "camera.",
                         "Game", "ModernAuto", true),
                  "ControlStyle", "modern")),
-        live(note(sub(toggle(Tab::Gameplay, "Move & Groove", "Modern: Mouse Camera",
+        live(note(sub(toggle(Tab::Gameplay, "Move & Groove", "Modern: Mouse Look",
                              "The mouse turns the free camera. Click in the game to capture the mouse, Esc frees it.",
                              "Game", "MouseCamera", true),
                       "ControlStyle", "modern"),
@@ -267,8 +274,8 @@ namespace kamite::settings
              "F2 > NPCs sets the poses."),
 
         // ---- Sound ----------------------------------------------------------------------------------------------
-        live(choice(Tab::Sound, "Sound", "Mode", "Mono, stereo or Dolby Pro Logic II surround.", "Sound", "Mode", "stereo",
-                    kSoundModes)),
+        live(choice(Tab::Sound, "Sound", "Mode", "Select between monaural,\nstereo, or surround sound.", "Sound", "Mode",
+                    "stereo", kSoundModes)), // the game's own help (its SOUND row)
         live(volume("Music", "The stage, boss, menu and minigame music. 0% mutes it.", "MusicVolume")),
         live(volume("Sound Effects", "Hits, steps, the menus and the rest of the game's sounds.", "EffectsVolume")),
         live(volume("Voices",
@@ -335,6 +342,15 @@ namespace kamite::settings
             return text;
         if (std::strcmp(setting.key, "MusicVolume") == 0 && ini.getBool("Sound", "MuteMusic", false))
             return "0"; // Music 0 replaces Mute Music (K, Nov 12)
+        if (std::strcmp(setting.key, "CameraPreset") == 0) // before Nov 13 the preset was the four values' match
+        {
+            const auto number = [&](const char *key, float fallback) {
+                const std::string v = ini.get("Video", key, "");
+                return v.empty() ? fallback : static_cast<float>(std::atof(v.c_str()));
+            };
+            return cameraPresetId(number("FieldOfView", 100.0f), number("FightFieldOfView", 100.0f),
+                                  number("CameraZoomOut", 0.0f), number("CameraTilt", 0.0f));
+        }
         return setting.fallback;
     }
 
@@ -364,5 +380,38 @@ namespace kamite::settings
         if (setting.parentValue)
             return same(value(ini, *parent), setting.parentValue);
         return on(ini, *parent);
+    }
+
+    const char *cameraPresetId(float fov, float fight, float zoomOut, float tilt)
+    {
+        const auto same = [](float a, float b) { return std::fabs(a - b) < 0.05f; };
+        for (size_t i = 0; i < std::size(kCameraPresets); ++i)
+        {
+            const CameraPreset &p = kCameraPresets[i];
+            if (same(fov, p.fieldOfView) && same(fight, p.fightFieldOfView) && same(zoomOut, p.cameraZoomOut) &&
+                same(tilt, p.cameraTilt))
+                return kCameraPresetChoices[i].value;
+        }
+        return "custom";
+    }
+
+    void writeCameraPreset(IniFile &ini, const std::string &id)
+    {
+        // A preset writes its four values; Custom starts from Action's (K, Nov 13).
+        size_t index = std::size(kCameraPresets) - 1; // Action
+        for (size_t i = 0; i < std::size(kCameraPresets); ++i)
+            if (same(id, kCameraPresetChoices[i].value))
+                index = i;
+        const CameraPreset &p = kCameraPresets[index];
+        const auto text = [](float v) {
+            char out[32];
+            std::snprintf(out, sizeof(out), "%g", std::round(v * 100.0f) / 100.0f);
+            return std::string(out);
+        };
+        ini.set("Video", "CameraPreset", id);
+        ini.set("Video", "FieldOfView", text(p.fieldOfView));
+        ini.set("Video", "FightFieldOfView", text(p.fightFieldOfView));
+        ini.set("Video", "CameraZoomOut", text(p.cameraZoomOut));
+        ini.set("Video", "CameraTilt", text(p.cameraTilt));
     }
 }

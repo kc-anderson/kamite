@@ -503,6 +503,17 @@ address = "0x003745C0"
 hook = "km_stream_volume_n"
 flag = "stream_volume"
 
+# The volume the setters reach (f20, before the clamp to 127): times Music / Voices (game_options.cpp streamGain).
+[[patches.hooks]]
+address = "0x00374070"
+hook = "km_stream_gain_1"
+flag = "stream_volume"
+
+[[patches.hooks]]
+address = "0x00374650"
+hook = "km_stream_gain_n"
+flag = "stream_volume"
+
 # Cloth diagnostics: after the player's init attaches Gene's coat (SetParent(coat, player, 17) at 0x108068), before
 # lui a2,0x3C at 0x108088 (src/kamite/character_mods.cpp, [cloth] log lines).
 [[patches.hooks]]

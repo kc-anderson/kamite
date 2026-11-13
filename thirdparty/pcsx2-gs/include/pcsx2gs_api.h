@@ -123,7 +123,7 @@ enum
 {
     PCSX2GS_SCREEN_TEXT = 0,     // text in a font file: the baseline's anchor at x y
     PCSX2GS_SCREEN_TRIANGLE = 1, // filled: points x y, x1 y1, x2 y2
-    PCSX2GS_SCREEN_RECT = 2,     // filled: x y top left, x1 y1 bottom right
+    PCSX2GS_SCREEN_RECT = 2,     // filled: x y top left, x1 y1 bottom right (blur > 0: a softened edge)
     PCSX2GS_SCREEN_IMAGE = 3,    // a PNG (path in text): x y top left, x1 y1 bottom right, tinted by fill. size > 0:
                                  // that fraction of the image's height at its top and at its bottom keeps the image's
                                  // proportions and only the middle stretches (a bar with rounded ends)

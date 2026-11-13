@@ -33,7 +33,7 @@ namespace kamite::settings
         Toggle, // 0 / 1
         Choice, // one of `choices` (by value)
         Slider, // one of `values` (a number; the volumes)
-        Custom, // drawn by hand on each side (the launcher's Display Mode, Camera & FOV, Character, texture packs)
+        Custom, // drawn by hand (the launcher's Display Mode, Character, texture packs)
     };
 
     struct Choice
@@ -63,7 +63,6 @@ namespace kamite::settings
         const char *parent = nullptr;      // a sub-option of this id: listed while it is on (a Toggle) or set to
         const char *parentValue = nullptr; // this value (a Choice)
         bool live = false;       // on the in-game screen, applied at once
-        bool advanced = false;   // the launcher shows it only with "Show advanced settings" (the game always does)
         bool greyed = false;     // the launcher shows it greyed (not hidden) while its parent is off
         bool wideOnly = false;   // greyed in the launcher / left out in game at 4:3
         bool gameSlider = false; // a Choice of numbers: a slider in game (its choices' values are the stops)
@@ -79,4 +78,8 @@ namespace kamite::settings
     // Whether a sub-option's parent lets it show.
     bool parentAllows(const IniFile &ini, const Setting &setting);
     int choiceIndex(const Setting &setting, const std::string &value); // -1: none of them
+    // Camera & FOV ([Video] CameraPreset): the preset four camera values match ("custom" for none), and a pick written
+    // (a preset's four values; Custom starts from Action's).
+    const char *cameraPresetId(float fov, float fight, float zoomOut, float tilt);
+    void writeCameraPreset(IniFile &ini, const std::string &id);
 }

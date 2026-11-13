@@ -968,6 +968,10 @@ namespace
             const ImVec2 corners[4] = {p, ImVec2(q.x, p.y), q, ImVec2(p.x, q.y)};
             list->AddConvexPolyFilled(corners, 4, colour);
         };
+        // Softening (blur > 0, the text's look): a wider anti-aliased edge, as the triangles get.
+        const float fringe = list->_FringeScale;
+        if (item.blur > 0.0f)
+            list->_FringeScale = std::max(1.0f, item.blur * h);
         if (item.shadow >> 24)
             box(ImVec2(a.x - stroke + item.shadow_x * h, a.y - stroke + item.shadow_y * h),
                 ImVec2(b.x + stroke + item.shadow_x * h, b.y + stroke + item.shadow_y * h), item.shadow);
@@ -975,6 +979,7 @@ namespace
             box(ImVec2(a.x - stroke, a.y - stroke), ImVec2(b.x + stroke, b.y + stroke), item.stroke);
         if (item.fill >> 24)
             box(a, b, item.fill);
+        list->_FringeScale = fringe;
     }
 
     // An image file, loaded on first use and shrunk by a whole factor (a box filter, alpha-weighted) to about the size

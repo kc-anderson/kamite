@@ -4,6 +4,12 @@ Newest first, one line per change; the code comments say how.
 
 ## November 13, 2026
 
+- Options: Music at 0 % no longer stops the music for good.
+- Options: Camera & FOV has a Custom preset (starts from Action's values) with its four values under it.
+- Options: Enemies Follow the View is always on (no longer a setting).
+- Options: categories open with confirm only; sub-option lines get the text's softening and shadow.
+- Options: Enemy Life Gauge and Mode keep the game's own help text; new texts for Menu Controls and Vibration.
+- Launcher: the Controls tab comes after Sound; Modern: Mouse Camera is now Modern: Mouse Look.
 - Options: the categories open their pages: left / right change a setting, saved to GHR.ini and applied at once.
 - Options: L1 / R1 switch category inside a page; B goes back to the list.
 - Options: RESTORE DEFAULTS sets every in-game setting back to its default.

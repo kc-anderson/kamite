@@ -31,7 +31,6 @@
 
 #include "kamite/button_prompts.h"
 #include "kamite/camera.h"
-#include "kamite/camera_presets.h"
 #include "kamite/disc_files.h"
 #include "kamite/frame_patches.h"
 #include "kamite/function_hooks.h"
@@ -568,11 +567,9 @@ namespace kamite::options_screen
         // The pages (options_pages.cpp), from the GHR.ini read as the screen opened.
         using options_pages::firstOption;
         using options_pages::nextOption;
-        using options_pages::numberText;
         using options_pages::PageData;
         PageData g_page;
         void buildPage(PageData &d, settings::Tab tab) { options_pages::buildPage(d, tab, g_ini, g_aspect); }
-        int cameraPreset() { return options_pages::cameraPreset(g_ini); }
 
         // A changed setting takes effect at once (the game thread; the modules' own setters, as F2 uses them).
         void applyVolumes()
@@ -613,7 +610,7 @@ namespace kamite::options_screen
                                        : value == "classic" ? menu_buttons::Style::Classic
                                                             : menu_buttons::Style::Western);
             else if (id == "CameraPreset" || id == "FieldOfView" || id == "FightFieldOfView" || id == "CameraZoomOut" ||
-                     id == "CameraTilt" || id == "EnemiesFollowView" || id == "SteadyIdleCamera" || id == "SeeThrough" ||
+                     id == "CameraTilt" || id == "SteadyIdleCamera" || id == "SeeThrough" ||
                      id == "DepthOfField")
                 reloadCameraSettings();
             else if (id == "HudLayout")
@@ -707,24 +704,13 @@ namespace kamite::options_screen
                 value = s.choices[next].value;
                 break;
             }
-            case settings::Kind::Custom: // Camera & FOV: the four values of the next / previous preset
-            {
-                const int n = static_cast<int>(std::size(kCameraPresets)), now = cameraPreset();
-                int next = now < 0 ? (dir < 0 ? n - 1 : 0) : now + (ok ? 1 : dir);
-                next = (next % n + n) % n;
-                if (next == now)
-                    return false;
-                const CameraPreset &p = kCameraPresets[next];
-                g_ini.set("Video", "FieldOfView", numberText(p.fieldOfView));
-                g_ini.set("Video", "FightFieldOfView", numberText(p.fightFieldOfView));
-                g_ini.set("Video", "CameraZoomOut", numberText(p.cameraZoomOut));
-                g_ini.set("Video", "CameraTilt", numberText(p.cameraTilt));
-                g_ini.save();
-                apply(s);
-                return true;
+            case settings::Kind::Custom: // the launcher's own (never on this screen)
+                return false;
             }
-            }
-            g_ini.set(s.section, s.key, value);
+            if (std::strcmp(s.key, "CameraPreset") == 0)
+                settings::writeCameraPreset(g_ini, value); // its four values (Custom: from Action's)
+            else
+                g_ini.set(s.section, s.key, value);
             if (!g_ini.save())
                 KM_WARN(Game, "options screen: could not write GHR.ini");
             apply(s);
@@ -816,7 +802,7 @@ namespace kamite::options_screen
             return 1.0f - std::clamp((from + (to - from) * t) / 128.0f, 0.0f, 1.0f);
         }
 
-        // Into the page of the category under the cursor (OK or Right), its first option selected.
+        // Into the page of the category under the cursor (OK; K, Nov 13: confirm / cancel only), its first option.
         void enterPage(int kind, Screen &s, uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const Kind &k = kKinds[kind];
@@ -914,7 +900,7 @@ namespace kamite::options_screen
                 sound(rdram, ctx, runtime, kSeOk);
                 wr32(self + kResult, static_cast<uint32_t>(kResultBack));
                 break;
-            default: // a category: its page (Right does the same)
+            default: // a category: its page
                 enterPage(kind, s, rdram, ctx, runtime);
                 break;
             }
@@ -992,8 +978,6 @@ namespace kamite::options_screen
                 pageInput(N, s, pressed, repeat, rdram, ctx, runtime);
             else if (pressed & kOk)
                 act(N, s, rdram, ctx, runtime);
-            else if ((repeat & kRight) && isCategory(k.actions[s.row]))
-                enterPage(N, s, rdram, ctx, runtime);
             else if ((pressed & kCancel) != 0u)
             {
                 sound(rdram, ctx, runtime, kSeBack);

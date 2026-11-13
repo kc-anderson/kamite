@@ -44,6 +44,10 @@ namespace kamite::options_overlay
             if (y > kPageBottom + 0.01f)
                 break;
         }
+        // A header never ends the page with its options below the edge.
+        const int first = std::max(scroll, 0);
+        if (shown > 1 && first + shown < page.rowCount && page.rows[first + shown - 1].header)
+            --shown;
         return shown;
     }
 
@@ -246,6 +250,16 @@ namespace kamite::options_overlay
                 items.push_back(item);
             }
 
+            // A shape in the text's look: the same softening and drop shadow (base()).
+            void textLook(Pcsx2GsScreenItem &item) const
+            {
+                const Pcsx2GsScreenItem look = base();
+                item.blur = look.blur;
+                item.shadow = look.shadow;
+                item.shadow_x = look.shadow_x;
+                item.shadow_y = look.shadow_y;
+            }
+
             void rect(float x0, float y0, float x1, float y1, uint32_t colour, bool afterText = false)
             {
                 Pcsx2GsScreenItem item{};
@@ -395,9 +409,12 @@ namespace kamite::options_overlay
                     if (row.sub)
                     {
                         // An elbow from under the parent's first letter to just before the sub-option's name.
+                        // In the text's look (K): its softening and drop shadow.
                         const float t = 0.5f * kElbowThickness, tu = t * kLinesToUnits, ex = names + 5.0f;
                         rect(ex - tu, parent + 0.5f * kLabelCap + 3.0f, ex + tu, centre + t, kLabel);
+                        textLook(items.back());
                         rect(ex - tu, centre - t, x - 5.0f, centre + t, kLabel);
+                        textLook(items.back());
                     }
                     label(row.name, centre, on, x, values - 10.0f - x, row.sub ? kSubCap : kLabelCap);
                     if (on)

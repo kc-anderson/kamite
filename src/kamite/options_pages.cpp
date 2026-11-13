@@ -1,6 +1,5 @@
 #include "kamite/options_pages.h"
 
-#include "kamite/camera_presets.h"
 #include "kamite/ini_file.h"
 
 #include <algorithm>
@@ -67,33 +66,6 @@ namespace kamite::options_pages
 
     // Numbers in a choice's values (the camera's), and the value as GHR.ini holds it.
     float number(const std::string &text) { return static_cast<float>(std::atof(text.c_str())); }
-    std::string numberText(float v)
-    {
-        char text[32];
-        std::snprintf(text, sizeof(text), "%g", std::round(v * 100.0f) / 100.0f);
-        return text;
-    }
-
-    // Camera & FOV: the preset the four values match (-1: none, "CUSTOM").
-    int cameraPreset(const IniFile &ini)
-    {
-        const auto value = [&](const char *key, float fallback) {
-            const std::string text = ini.get("Video", key, "");
-            return text.empty() ? fallback : number(text);
-        };
-        const float fov = value("FieldOfView", 100.0f), fight = value("FightFieldOfView", 100.0f);
-        const float zoomOut = value("CameraZoomOut", 0.0f), tilt = value("CameraTilt", 0.0f);
-        const auto same = [](float a, float b) { return std::fabs(a - b) < 0.05f; };
-        for (size_t i = 0; i < std::size(kCameraPresets); ++i)
-        {
-            const CameraPreset &p = kCameraPresets[i];
-            if (same(fov, p.fieldOfView) && same(fight, p.fightFieldOfView) && same(zoomOut, p.cameraZoomOut) &&
-                same(tilt, p.cameraTilt))
-                return static_cast<int>(i);
-        }
-        return -1;
-    }
-
     void buildPage(PageData &d, settings::Tab tab, const IniFile &ini, float aspect)
     {
         d = PageData{};
@@ -165,18 +137,8 @@ namespace kamite::options_pages
                 row.unit = s.unit;
                 break;
             }
-            case settings::Kind::Custom: // Camera & FOV: the presets
-            {
-                for (const CameraPreset &p : kCameraPresets)
-                    choices.push_back(d.keep(upper(p.name)));
-                row.choice = cameraPreset(ini);
-                if (row.choice < 0)
-                {
-                    choices.push_back("CUSTOM");
-                    row.choice = static_cast<int>(choices.size()) - 1;
-                }
+            case settings::Kind::Custom: // the launcher's own (never live)
                 break;
-            }
             }
             if (!choices.empty())
             {

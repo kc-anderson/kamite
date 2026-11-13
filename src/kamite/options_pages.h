@@ -47,7 +47,4 @@ namespace kamite::options_pages
     std::string upper(const char *text);
     // A description as the help box shows it: two lines at most at the text area's width ("..." past that).
     std::string wrapHelp(const char *text, float aspect);
-    // Camera & FOV: the camera preset (camera_presets.h) GHR.ini's four values match, -1 for none ("CUSTOM").
-    int cameraPreset(const IniFile &ini);
-    std::string numberText(float v); // a number as GHR.ini holds it ("%g", two decimals at most)
 }
