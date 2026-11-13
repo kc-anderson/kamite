@@ -121,12 +121,26 @@ int main(int argc, char **argv)
     v.pageScroll = argc > 16 ? atoi(argv[16]) : 0;
     if (argc > 17)
         setSliderFill(argv[17]);
-    // The confirm / cancel hints: KAMITE_PREVIEW_HINTS="confirm|confirm2|cancel" (image paths, overlay_preview.py).
-    static std::string hintPaths[3];
+    // The button hints: KAMITE_PREVIEW_HINTS="confirm|confirm2|cancel|l1|r1" (image paths, overlay_preview.py); the
+    // titles' letters: KAMITE_PREVIEW_TITLES="name:left:right;...".
+    if (const char *titles = getenv("KAMITE_PREVIEW_TITLES"))
+    {
+        std::string all = titles;
+        while (!all.empty())
+        {
+            const size_t end = all.find(';');
+            const std::string one = all.substr(0, end);
+            all = end == std::string::npos ? std::string() : all.substr(end + 1);
+            const size_t a = one.find(':'), b = one.rfind(':');
+            if (a != std::string::npos && b > a)
+                setTitleLetters(one.substr(0, a), float(atof(one.substr(a + 1, b - a - 1).c_str())), float(atof(one.substr(b + 1).c_str())));
+        }
+    }
+    static std::string hintPaths[5];
     if (const char *hints = getenv("KAMITE_PREVIEW_HINTS"))
     {
         std::string all = hints;
-        for (int i = 0; i < 3; ++i)
+        for (int i = 0; i < 5; ++i)
         {
             const size_t bar = all.find('|');
             hintPaths[i] = all.substr(0, bar);
@@ -137,6 +151,20 @@ int main(int argc, char **argv)
         v.confirmHint.word = "Confirm";
         v.cancelHint.art[0] = hintPaths[2].c_str();
         v.cancelHint.word = "Cancel";
+        // An open page: L1 / R1 and the neighbouring categories (the list's first five rows).
+        if (v.inPage && page >= 0 && page < 5)
+        {
+            if (page > 0)
+            {
+                v.prevHint.art[0] = hintPaths[3].c_str();
+                v.prevHint.word = pauseRows[page - 1].name;
+            }
+            if (page < 4)
+            {
+                v.nextHint.art[0] = hintPaths[4].c_str();
+                v.nextHint.word = pauseRows[page + 1].name;
+            }
+        }
     }
     std::vector<Pcsx2GsScreenItem> items;
     std::string strings;

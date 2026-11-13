@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iterator>
+#include <map>
 #include <utility>
 
 namespace kamite::options_overlay
@@ -12,6 +13,7 @@ namespace kamite::options_overlay
     namespace
     {
         std::string g_labelFont, g_helpFont, g_titleDir, g_scrollTrack, g_scrollThumb, g_sliderFill;
+        std::map<std::string, std::pair<float, float>> g_titleLetters; // setTitleLetters
 
         // A page's rows (y in lines): centres from the list's first row, the span the pause's list fills.
         constexpr float kPageTop = 110.0f - 0.5f * 29.625f, kPageBottom = 347.0f + 0.5f * 29.625f;
@@ -59,6 +61,8 @@ namespace kamite::options_overlay
 
     void setSliderFill(const std::string &fill) { g_sliderFill = fill; }
 
+    void setTitleLetters(const std::string &name, float left, float right) { g_titleLetters[name] = {left, right}; }
+
     void setAssets(const std::string &labelFont, const std::string &helpFont, const std::string &titleDir)
     {
         g_labelFont = labelFont;
@@ -99,17 +103,23 @@ namespace kamite::options_overlay
         constexpr float kHelpX = 29.0f, kHelpBandTop = 363.5f, kHelpBandBottom = 417.0f;
         constexpr float kHelpCap = 14.0f, kHelpLine = 22.0f, kHelpScaleX = 0.73f;
         constexpr float kHelpShadowX = 0.12f * kHelpCap, kHelpShadowY = 0.11f * kHelpCap; // the hints' shadow, to scale
-        // The confirm / cancel hints: the help's text centred in the darker strip under its band (lines 417..448),
-        // right-aligned kHintRight units in from the text area's edge; each button image kHintArt lines square (the
+        // The confirm / cancel hints: the help's text in the darker strip under its band (K, Nov 13: half-way up from
+        // the strip's centre toward the help's last line), right-aligned kHintRight units in from the text area's edge; each button image kHintArt lines square (the
         // pack's 100 x 100 buttons fill about 84 % of theirs), kHintArtGap units before its word, the two hints
         // kHintGap apart.
-        constexpr float kHintY = 432.5f, kHintRight = 16.0f, kHintArt = 24.0f, kHintArtGap = 1.5f, kHintGap = 14.0f;
+        constexpr float kHintY = 428.0f, kHintRight = 16.0f, kHintArt = 24.0f, kHintArtGap = 1.5f, kHintGap = 14.0f;
+        // The L1 / R1 hints beside an open page's title (K, Nov 13): each button kTitleHintGap units out from the
+        // letters, centred on them (kTitleHintY), then the neighbouring category's name kTitleNameGap further out, in
+        // the list's unselected tan at kTitleNameCap (squeezed to stay kTitleNameMargin in from the text area's edge).
+        constexpr float kTitleHintY = 43.0f, kTitleHintArt = 36.0f, kTitleHintGap = 6.0f, kTitleNameGap = 3.0f;
+        constexpr float kTitleNameCap = 17.0f, kTitleNameMargin = 8.0f;
         // The titles (title_<name>.png: K's painted OPTIONS and the categories made to match by
         // tools/options/make_splash.py), placed as the original's painted one (its letters x 146..363, y 20..66 of the
         // 512 x 448 screen): one canvas for all, the letters centred across it at one height, 8.72 of its pixels per
         // unit and per line (K's lettering at half size), so a page's title swaps in exactly where OPTIONS was.
         constexpr float kTitlePixelsPerUnit = 8.72f, kTitleTop = 12.32f, kTitleWidth = 2467.0f, kTitleHeight = 535.0f;
         constexpr float kTitleY = 70.0f, kTitleCap = 30.0f; // the text stand-in when the image is missing
+        constexpr float kLettersLeft = 0.12f, kLettersRight = 0.88f; // of the canvas, for a title never measured
         constexpr float kMaxLabel = 190.0f;                  // the longest original (RESTORE DEFAULTS)
 
         // The page beside the list (16:10 and wider): the bracket's upright just past the list's longest name, the
@@ -524,6 +534,54 @@ namespace kamite::options_overlay
                 }
             }
 
+            // L1 / R1 beside the open page's title, the neighbours' names outside them.
+            void titleHints(const char *name, const Hint &prev, const Hint &next)
+            {
+                std::string key;
+                for (const char *c = name; *c; ++c)
+                    key.push_back(static_cast<char>(*c >= 'A' && *c <= 'Z' ? *c - 'A' + 'a' : *c));
+                const auto found = g_titleLetters.find(key);
+                const float l = found != g_titleLetters.end() ? found->second.first : kLettersLeft * kTitleWidth;
+                const float r = found != g_titleLetters.end() ? found->second.second : kLettersRight * kTitleWidth;
+                const float canvas = 0.5f * space.area - 0.5f * kTitleWidth / kTitlePixelsPerUnit;
+                const float lettersLeft = canvas + l / kTitlePixelsPerUnit, lettersRight = canvas + r / kTitlePixelsPerUnit;
+                const float art = kTitleHintArt * kLinesToUnits;
+                const auto image = [&](const char *path, float x0)
+                {
+                    Pcsx2GsScreenItem item{};
+                    item.kind = PCSX2GS_SCREEN_IMAGE;
+                    item.text = add(path, std::strlen(path));
+                    item.fill = faded(rgba(255, 255, 255));
+                    item.x = space.x(x0);
+                    item.x1 = space.x(x0 + art);
+                    item.y = Space::y(kTitleHintY - 0.5f * kTitleHintArt);
+                    item.y1 = Space::y(kTitleHintY + 0.5f * kTitleHintArt);
+                    items.push_back(item);
+                };
+                const auto label = [&](const char *word, float x, uint32_t align, float room)
+                {
+                    if (room <= 4.0f)
+                        return;
+                    text(word, std::strlen(word), labelFont, x, kTitleHintY + 0.5f * kTitleNameCap, kTitleNameCap, kNewLabel.scaleX,
+                         kNewLabel.tracking, kLabel, 0u, room, align);
+                };
+                if (*prev.word)
+                {
+                    const float x0 = lettersLeft - kTitleHintGap - art;
+                    if (prev.art[0] && *prev.art[0])
+                        image(prev.art[0], x0);
+                    label(prev.word, x0 - kTitleNameGap, PCSX2GS_ALIGN_RIGHT, x0 - kTitleNameGap - kTitleNameMargin);
+                }
+                if (*next.word)
+                {
+                    const float x0 = lettersRight + kTitleHintGap;
+                    if (next.art[0] && *next.art[0])
+                        image(next.art[0], x0);
+                    label(next.word, x0 + art + kTitleNameGap, PCSX2GS_ALIGN_LEFT,
+                          space.area - kTitleNameMargin - (x0 + art + kTitleNameGap));
+                }
+            }
+
             void title(uint32_t path)
             {
                 Pcsx2GsScreenItem item = base();
@@ -579,6 +637,8 @@ namespace kamite::options_overlay
         else
             b.text(title, std::strlen(title), b.labelFont, 0.5f * b.space.area, kTitleY, kTitleCap, kNewLabel.scaleX,
                    kNewLabel.tracking, kLabelOn, kLabelOnStroke, 0.0f, PCSX2GS_ALIGN_CENTRE);
+        if (open)
+            b.titleHints(title, view.prevHint, view.nextHint);
 
         const float pageRight = std::min(b.space.area - kLabelX, kBracketX + kPageWidth);
         if (open && !split)

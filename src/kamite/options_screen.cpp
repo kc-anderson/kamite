@@ -121,11 +121,11 @@ namespace kamite::options_screen
 
         using Text = options_overlay::Row;
 
-        // Help lines: drafts for K's one editing pass (claude/rearmed-options.md).
-        constexpr Text kControlsText{"CONTROLS", "Display controls"};
-        constexpr Text kDisplayText{"DISPLAY", "Picture and camera."};
-        constexpr Text kInterfaceText{"INTERFACE", "The HUD, button prompts and gauges."};
-        constexpr Text kGameplayText{"GAMEPLAY", "Techniques, enemies and new\nways to play."};
+        // Help lines (K's, Nov 13; SOUND and the game's own rows: drafts / the game's wording).
+        constexpr Text kControlsText{"CONTROLS", "Camera and input settings."};
+        constexpr Text kDisplayText{"DISPLAY", "Rendering and graphics settings."};
+        constexpr Text kInterfaceText{"INTERFACE", "HUD options and button prompts."};
+        constexpr Text kGameplayText{"GAMEPLAY", "Framerate and optional gameplay enhancements."};
         constexpr Text kSoundText{"SOUND", "Sound mode and volume levels."};
         constexpr Text kLoadText{"LOAD GAME", "Select a save file and\nrestart the game."};
         constexpr Text kResetText{"RESET GAME", "Return to title screen"};
@@ -991,7 +991,7 @@ namespace kamite::options_screen
             if (!api)
                 return;
             const std::string wanted = settings::value(g_ini, *api);
-            const char *wantedName = wanted == "vulkan" ? "Vulkan" : "Direct3D 11";
+            const char *wantedName = wanted == "vulkan" ? "Vulkan" : "DX11";
             if (result > 0)
             {
                 KM_INFO(Game, "options screen: graphics API " << (result == 2 ? "already " : "now ") << wantedName);
@@ -1008,7 +1008,7 @@ namespace kamite::options_screen
                 KM_WARN(Game, "options screen: could not write GHR.ini");
             syncEnv(*api);
             const std::string note = std::string(wantedName) + " could not start. Still using " +
-                                     (running == "vulkan" ? "Vulkan" : "Direct3D 11") + ".";
+                                     (running == "vulkan" ? "Vulkan" : "DX11") + ".";
             ps2x::menu::notify(note, 4.0f);
             KM_WARN(Game, "options screen: " << note);
         }
@@ -1131,7 +1131,7 @@ namespace kamite::options_screen
             menu_buttons::Style style = menu_buttons::Style::Western;
             button_prompts::MenuArt art;
             bool made = false;
-            std::string confirm[2], cancel;
+            std::string confirm[2], cancel, l1, r1;
         };
         HintArt g_hintArt;
 
@@ -1140,10 +1140,10 @@ namespace kamite::options_screen
             const menu_buttons::Style style = menu_buttons::style();
             button_prompts::MenuArt art = button_prompts::menuArt();
             if (!art.known) // prompts off or not built yet: the PlayStation buttons in their places
-                art = button_prompts::MenuArt{false, prompt_hd::Set::PlayStation, "A", "B", "Y"};
+                art = button_prompts::MenuArt{false, prompt_hd::Set::PlayStation, "A", "B", "Y", "LB", "RB"};
             HintArt &h = g_hintArt;
             if (h.made && h.style == style && h.art.set == art.set && h.art.cross == art.cross && h.art.circle == art.circle &&
-                h.art.triangle == art.triangle)
+                h.art.triangle == art.triangle && h.art.l1 == art.l1 && h.art.r1 == art.r1)
                 return h;
             const auto file = [&](const std::string &label)
             {
@@ -1160,6 +1160,8 @@ namespace kamite::options_screen
             h.cancel = style == menu_buttons::Style::Western ? file(art.circle)
                        : style == menu_buttons::Style::Japanese ? file(art.cross)
                                                                 : file(art.triangle);
+            h.l1 = file(art.l1);
+            h.r1 = file(art.r1);
             KM_INFO(Game, "options screen: hints in " << prompt_hd::setName(art.set) << " art (" << menu_buttons::styleName(style)
                                                       << " menu buttons)");
             return h;
@@ -1196,6 +1198,20 @@ namespace kamite::options_screen
             view.confirmHint.word = "Confirm";
             view.cancelHint.art[0] = hints.cancel.c_str();
             view.cancelHint.word = "Cancel";
+            // An open page: L1 / R1 beside its title with the neighbouring categories (none past the ends: L1 / R1 stop).
+            if (s.inPage)
+            {
+                if (s.row > 0 && isCategory(k.actions[s.row - 1]))
+                {
+                    view.prevHint.art[0] = hints.l1.c_str();
+                    view.prevHint.word = k.text[s.row - 1].name;
+                }
+                if (s.row + 1 < k.rowCount && isCategory(k.actions[s.row + 1]))
+                {
+                    view.nextHint.art[0] = hints.r1.c_str();
+                    view.nextHint.word = k.text[s.row + 1].name;
+                }
+            }
             options_overlay::build(view, g_items, g_strings);
             if (const float black = blackout(); black > 0.0f)
                 options_overlay::appendBlackout(black, g_items); // over everything, the menu as it is
@@ -1549,6 +1565,19 @@ namespace kamite::options_screen
         options_overlay::setScrollBar(utf8(exeDir / "resources" / "options" / "scroll_track.png"),
                                       utf8(exeDir / "resources" / "options" / "scroll_thumb.png"));
         options_overlay::setSliderFill(utf8(exeDir / "resources" / "options" / "slider_fill.png"));
+        // The titles' letters (their glow left out): where the L1 / R1 hints go beside them.
+        for (const char *name : {"controls", "display", "interface", "gameplay", "sound"})
+        {
+            const std::string path = utf8(exeDir / "resources" / "options" / (std::string("title_") + name + ".png"));
+            ::Image title = LoadImage(path.c_str());
+            if (title.data)
+            {
+                const Rectangle letters = GetImageAlphaBorder(title, 0.5f);
+                if (letters.width > 0.0f)
+                    options_overlay::setTitleLetters(name, letters.x, letters.x + letters.width);
+                UnloadImage(title);
+            }
+        }
         g_exeDir = exeDir;
         ps2_host_display::setModeListener(&onWindowMode);
         std::thread(prepare, exeDir, g_aspect, g_wallGeneration.load(), 0).detach();

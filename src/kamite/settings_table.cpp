@@ -45,7 +45,7 @@ namespace kamite::settings
                                           {"4:3", "4:3: HUD where the PS2 had it", "4:3"}};
         constexpr Choice kMenuLayouts[] = {{"4:3", "4:3: as on the PS2, with side bars", "4:3"},
                                            {"stretch", "Stretched to the screen", "STRETCHED"}};
-        constexpr Choice kGraphicsApis[] = {{"vulkan", "Vulkan", "VULKAN"}, {"dx11", "Direct3D 11", "DIRECT3D 11"}};
+        constexpr Choice kGraphicsApis[] = {{"vulkan", "Vulkan", "VULKAN"}, {"dx11", "Direct3D 11", "DX11"}};
         constexpr Choice kResolutions[] = {{"1", "1x  native (512x448)", "1X"}, {"2", "2x  1024x896", "2X"},
                                            {"3", "3x  1536x1344", "3X"},        {"4", "4x  2048x1792", "4X"},
                                            {"5", "5x  2560x2240", "5X"},        {"6", "6x  3072x2688", "6X"},
@@ -102,6 +102,9 @@ namespace kamite::settings
         }
         constexpr Setting greyed(Setting s) { return s.greyed = true, s; }
         constexpr Setting onLeave(Setting s) { return s.applyOnLeave = true, s; }
+        // The in-game help's second line for the rows applied when the cursor leaves them (K, Nov 13); the launcher
+        // shows the description alone.
+        constexpr const char *kOnLeaveNote = "\nChanges when you leave this line.";
         constexpr Setting withChoices(Setting s, const Choice *choices, int count, const char *fallback)
         {
             return s.choices = choices, s.choiceCount = count, s.fallback = fallback, s;
@@ -150,19 +153,20 @@ namespace kamite::settings
                          "Instead of removing walls, the camera sees\nthrough them around Gene and enemies.",
                          "Video", "SeeThrough", true),
                   "F2 > Camera sizes it while playing.")),
+        live(toggle(Tab::Controls, "Controller", "Vibration", "Controller rumble. Girls know what it's for.", "Game",
+                    "Vibration", true)),
         live(choice(Tab::Controls, "Controller", "Menu Controls",
                     "Western: bottom button confirms; right cancels.\nJapanese: right button confirms; bottom cancels.",
                     "Game", "MenuButtons", "western", kMenuButtons)),
-        live(toggle(Tab::Controls, "Controller", "Vibration", "Controller rumble. Girls know what it's for.", "Game",
-                    "Vibration", true)),
 
         // ---- Display --------------------------------------------------------------------------------------------
-        live(onLeave(choice(Tab::Display, "Renderer", "Graphics API",
-                            "Vulkan is the default. If Vulkan fails to start, the game uses Direct3D 11 instead.", "Video",
-                            "GraphicsAPI", "vulkan", kGraphicsApis))),
-        live(onLeave(choice(Tab::Display, "Renderer", "Internal Resolution",
-                            "How many pixels the game renders.\n1x: 448p | 2x: 896p | 3x: 1344p | 4x: 1792p", "Video",
-                            "InternalResolution", "3", kResolutions))),
+        live(onLeave(gameNote(choice(Tab::Display, "Renderer", "Graphics API", "Default: Vulkan | Fallback: DX11", "Video",
+                                     "GraphicsAPI", "vulkan", kGraphicsApis),
+                              kOnLeaveNote))),
+        live(onLeave(gameNote(choice(Tab::Display, "Renderer", "Internal Resolution",
+                                     "1x: 448p | 2x: 896p | 3x: 1344p | 4x: 1792p", "Video", "InternalResolution", "3",
+                                     kResolutions),
+                              kOnLeaveNote))),
         // Launcher-only (K, Nov 13: Upscaled has caused no issues; a dev option, clutter in game).
         live(withChoices(custom("DisplayMode", Tab::Display, "Game Window", "Display Mode",
                                 "Window, max window, or borderless fullscreen.\nYou can also use F11, if you're into that."),
@@ -171,9 +175,10 @@ namespace kamite::settings
                           "The window's size when it opens (not maximized or fullscreen).", "Video", "WindowSize", "auto",
                           kWindowSizes),
                    "DisplayMode", "window")),
-        live(onLeave(choice(Tab::Display, "Game Window", "Aspect Ratio",
-                            "Select screen width.\nGoes from 4:3 to wider than yo momma!", "Video", "AspectRatio",
-                            "16:9", kAspects))),
+        live(onLeave(gameNote(choice(Tab::Display, "Game Window", "Aspect Ratio",
+                                     "Screen width from 4:3 to wider than yo momma!", "Video", "AspectRatio", "16:9",
+                                     kAspects),
+                              kOnLeaveNote))),
         choice(Tab::Display, "Effects", "Post Effects",
                "The blur effects (depth of field, heat haze) are drawn from small copies of the frame. PS2 resolution "
                "keeps them aligned but grainy at high internal resolutions; Upscaled draws them sharp.",

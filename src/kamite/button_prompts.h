@@ -18,13 +18,13 @@ namespace kamite::button_prompts
     void requestRebuild();
 
     // The art set the prompts use now (the device last used and [Game] ButtonPrompts) and the labels of the PS2's cross,
-    // circle and triangle in it (prompt_hd::artFile), for the OPTIONS screen's confirm / cancel hints. known = false
+    // circle, triangle, L1 and R1 in it (prompt_hd::artFile), for the OPTIONS screen's button hints. known = false
     // until the builder has run once (or with KAMITE_PROMPTS=0). Any thread.
     struct MenuArt
     {
         bool known = false;
         prompt_hd::Set set = prompt_hd::Set::PlayStation;
-        std::string cross, circle, triangle;
+        std::string cross, circle, triangle, l1, r1;
     };
     MenuArt menuArt();
 }

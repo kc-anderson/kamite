@@ -76,6 +76,9 @@ namespace kamite::options_overlay
         // The menu buttons' hints, laid out from the strip's right end: confirm, then cancel (K, Nov 13: as the game's
         // load menu words them, in the help text's look, on the list, in pages and while asking Yes / No).
         Hint confirmHint, cancelHint;
+        // While a page is open: L1 / R1 beside its title, each with the neighbouring category's name outside it
+        // (K, Nov 13). A side with no neighbour (word "") shows nothing.
+        Hint prevHint, nextHint;
     };
 
     // The fonts (resources/fonts) and the titles' folder (resources/options: title_options.png, title_<category>.png),
@@ -85,6 +88,9 @@ namespace kamite::options_overlay
     void setScrollBar(const std::string &track, const std::string &thumb);
     // The sliders' fill (resources/options/slider_fill.png: tools/options/make_slider.py).
     void setSliderFill(const std::string &fill);
+    // A title image's letters (title_<name>.png, name in lower case): their left and right pixel columns in its canvas,
+    // measured once at start (the glow left out), so the L1 / R1 hints sit beside the letters whatever their width.
+    void setTitleLetters(const std::string &name, float left, float right);
     // The rows a page shows at once (scrolling keeps the cursor among them).
     int pageRowsShown(const Page &page, int scroll);
 

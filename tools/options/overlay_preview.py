@@ -32,24 +32,35 @@ def build(work):
     return exe
 
 # The default bindings' cross, circle and triangle in each set (prompt_hd.cpp's tables: Nintendo by place).
-HINT_ART = {'xbox': ('xbox360', '360_A', '360_B', '360_Y'),
-            'playstation': ('ps3', 'PS3_Cross', 'PS3_Circle', 'PS3_Triangle'),
-            'nintendo': ('switch', 'Switch_B', 'Switch_A', 'Switch_X'),
-            'steam': ('steamdeck', 'SteamDeck_A', 'SteamDeck_B', 'SteamDeck_Y'),
-            'keys': ('keyboard', 'K_Key_Light', 'L_Key_Light', 'I_Key_Light')}
+HINT_ART = {'xbox': ('xbox360', '360_A', '360_B', '360_Y', '360_LB', '360_RB'),
+            'playstation': ('ps3', 'PS3_Cross', 'PS3_Circle', 'PS3_Triangle', 'PS3_L1', 'PS3_R1'),
+            'nintendo': ('switch', 'Switch_B', 'Switch_A', 'Switch_X', 'Switch_LB', 'Switch_RB'),
+            'steam': ('steamdeck', 'SteamDeck_A', 'SteamDeck_B', 'SteamDeck_Y', 'SteamDeck_L1', 'SteamDeck_R1'),
+            'keys': ('keyboard', 'K_Key_Light', 'L_Key_Light', 'I_Key_Light', 'Q_Key_Light', 'E_Key_Light')}
+
+def title_letters():
+    """Each title's letters (alpha over half, as options_screen measures them): name:left:right;..."""
+    out = []
+    for name in ('controls', 'display', 'interface', 'gameplay', 'sound'):
+        im = Image.open(os.path.join(ROOT, 'resources/options', 'title_%s.png' % name)).convert('RGBA')
+        box = im.getchannel('A').point(lambda a: 255 if a > 127 else 0).getbbox()
+        if box:
+            out.append('%s:%d:%d' % (name, box[0], box[2]))
+    return ';'.join(out)
 
 def hint_paths(work, menu, prompts):
-    folder, cross, circle, triangle = HINT_ART[prompts]
+    folder, cross, circle, triangle, l1, r1 = HINT_ART[prompts]
     def path(name):
         out = os.path.join(work, name + '.png')
         im = Image.open(os.path.join(ROOT, 'resources/prompts/xelu', folder, name + '.png')).convert('RGBA')
         open(out + '.rgba', 'wb').write(struct.pack('<II', *im.size) + im.tobytes())
         return out
+    shoulders = [path(l1), path(r1)]
     if menu == 'japanese':
-        return [path(circle), '', path(cross)]
+        return [path(circle), '', path(cross)] + shoulders
     if menu == 'classic':
-        return [path(cross), path(circle), path(triangle)]
-    return [path(cross), '', path(circle)]
+        return [path(cross), path(circle), path(triangle)] + shoulders
+    return [path(cross), '', path(circle)] + shoulders
 
 def main():
     ap = argparse.ArgumentParser()
@@ -87,7 +98,8 @@ def main():
         bars.append(path)
     fonts = os.path.join(ROOT, 'resources/fonts')
     page = {'controls': 0, 'display': 1, 'interface': 2, 'gameplay': 3, 'sound': 4}.get(a.page, -1)
-    env = dict(os.environ, KAMITE_PREVIEW_HINTS='|'.join(hint_paths(work, a.menu, a.prompts)))
+    env = dict(os.environ, KAMITE_PREVIEW_HINTS='|'.join(hint_paths(work, a.menu, a.prompts)),
+               KAMITE_PREVIEW_TITLES=title_letters())
     subprocess.check_call([exe, raw_in, str(w), str(h), raw_out, '0' if a.title else '1', str(a.cursor), str(a.confirm),
                            os.path.join(fonts, 'ArchivoNarrow-SemiBold.ttf'),
                            os.path.join(fonts, 'DejaVuSans-Bold.ttf'), title] + bars[:2] +

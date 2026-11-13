@@ -719,7 +719,8 @@ namespace kamite::button_prompts
                 const sheets::PromptLabels labels = labelsFor(bindings::snapshot(), device);
                 {
                     std::lock_guard<std::mutex> lock(g_menuArtMutex);
-                    g_menuArt = MenuArt{true, set, labels.icon[sheets::Cross], labels.icon[sheets::Circle], labels.icon[sheets::Triangle]};
+                    g_menuArt = MenuArt{true, set, labels.icon[sheets::Cross], labels.icon[sheets::Circle], labels.icon[sheets::Triangle],
+                                        labels.icon[sheets::L1], labels.icon[sheets::R1]};
                 }
                 std::string summary = std::string(prompt_hd::setName(set)) + " prompts";
                 // Every set starts from the disc's art. PlayStation keeps it; the others get full-resolution images
