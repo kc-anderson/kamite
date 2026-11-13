@@ -79,7 +79,14 @@ def track():
     depth = np.clip(-outer / 2.0, 0, 1)[..., None]  # 0 at the outside of the rail, 1 at its inside
     rgb = (left_o * (1 - depth) + left_i * depth) * (1 - side) + (right_o * (1 - depth) + right_i * depth) * side
     px = 1.0 / S
-    alpha = np.clip(0.5 - outer / px, 0, 1) * np.clip(0.5 + inner / px, 0, 1)
+    rail = np.clip(0.5 - outer / px, 0, 1) * np.clip(0.5 + inner / px, 0, 1)
+    # The channel the thumb rides in (K, Nov 13): the sliders' dark band (the enemy gauge's 3B231F), a touch darker
+    # under the left rail where the light falls from.
+    inside = np.clip(0.5 - inner / px, 0, 1)
+    shade = np.clip((x - 2.0) / 2.0, 0, 1)[..., None]
+    channel = hexcol('2a1812') * (1 - shade) + hexcol('3b231f') * shade
+    rgb = rgb * rail[..., None] + channel * (inside * (1 - rail))[..., None]
+    alpha = np.maximum(rail, inside * 0.92)
     return downsample(np.dstack([rgb / 255, alpha]))
 
 

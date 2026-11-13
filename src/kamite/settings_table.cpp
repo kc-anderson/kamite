@@ -116,29 +116,24 @@ namespace kamite::settings
     const Setting kSettings[] = {
         // ---- Controls -------------------------------------------------------------------------------------------
         live(choice(Tab::Controls, "Controller", "Menu Controls",
-                    "Western: bottom button confirms; right button cancels.\nJapanese: right button confirms; bottom "
-                    "button cancels.",
+                    "Western: bottom button confirms; right cancels\nJapanese: right button confirms; bottom cancels",
                     "Game", "MenuButtons", "western", kMenuButtons)),
         live(toggle(Tab::Controls, "Controller", "Vibration", "Controller rumble. Girls know what it's for.", "Game",
                     "Vibration", true)),
 
         // ---- Display --------------------------------------------------------------------------------------------
         live(withChoices(custom("DisplayMode", Tab::Display, "Game Window", "Display Mode",
-                                "Window, maximized window or borderless fullscreen. F11 switches between window and "
-                                "fullscreen too."),
+                                "Window, max window or borderless fullscreen.\nYou can also use F11, if you're into that."),
                          kDisplayModes, static_cast<int>(std::size(kDisplayModes)), "fullscreen")),
         greyed(sub(choice(Tab::Display, "Game Window", "Window Size",
                           "The window's size when it opens (not maximized or fullscreen).", "Video", "WindowSize", "auto",
                           kWindowSizes),
                    "DisplayMode", "window")),
-        live(onLeave(gameNote(choice(Tab::Display, "Game Window", "Aspect Ratio",
-                                     "The picture's shape. Wider than 4:3 shows more of the scene to the sides; menus "
-                                     "keep the PS2's proportions.",
-                                     "Video", "AspectRatio", "16:9", kAspects),
-                              "Applies when you leave this line."))),
+        live(onLeave(choice(Tab::Display, "Game Window", "Aspect Ratio",
+                            "Select screen width.\nGoes from 4:3 to wider than yo momma.", "Video", "AspectRatio",
+                            "16:9", kAspects))),
         live(note(choice(Tab::Display, "Camera", "Camera & FOV",
-                         "How much the gameplay camera shows and how it frames Gene (widescreen already widens it "
-                         "sideways). Cutscenes keep their framing. Custom starts from Action's values.",
+                         "How far you see to the side.\nWorks with Aspect Ratio; enemies adapt.",
                          "Video", "CameraPreset", "ps2", kCameraPresetChoices),
                   "F2 while playing tunes it live.")),
         live(sub(slider(choice(Tab::Display, "Camera", "Field of View",
@@ -163,34 +158,27 @@ namespace kamite::settings
                                "Video", "CameraTilt", "0", kCameraTilts),
                         kDegrees),
                  "CameraPreset", "custom")),
-        live(note(toggle(Tab::Display, "Camera", "Steady Idle Camera",
-                         "While Gene stands idle, the camera stops rocking and shaking with his stomps.", "Video",
+        live(note(toggle(Tab::Display, "Camera", "Steady Idle Cam",
+                         "Whether the camera bobs with Gene.", "Video",
                          "SteadyIdleCamera", false),
                   "F2 > Camera switches it while playing.")),
         live(note(toggle(Tab::Display, "Camera", "See Through",
-                         "When walls or pillars block the view of Gene or the enemies about him, they dissolve in an oval "
-                         "round him, so the fight stays in view. Walls next to the camera, which the PS2 drops, are drawn "
-                         "too. Known: a banded blur where hazy distance shows through (the depth of field reads the "
-                         "dissolve).",
+                         "Instead of removing walls, the camera sees\nthrough them around Gene and enemies.",
                          "Video", "SeeThrough", true),
                   "F2 > Camera sizes it while playing.")),
         choice(Tab::Display, "Renderer", "Graphics API",
                "Vulkan is the default. If Vulkan fails to start, the game uses Direct3D 11 instead.", "Video",
                "GraphicsAPI", "vulkan", kGraphicsApis),
-        live(onLeave(gameNote(choice(Tab::Display, "Renderer", "Internal Resolution",
-                                     "How sharp the 3D is drawn. 3x suits a 1440p screen, 4x and up a 4K one; higher "
-                                     "costs more GPU time.",
-                                     "Video", "InternalResolution", "3", kResolutions),
-                              "Applies when you leave this line."))),
-        live(onLeave(gameNote(choice(Tab::Display, "Effects", "Post Effects",
-                                     "The blur effects (depth of field, heat haze) are drawn from small copies of the "
-                                     "frame. PS2 resolution keeps them aligned but grainy at high internal resolutions; "
-                                     "Upscaled draws them sharp.",
-                                     "Video", "PostEffects", "ps2", kPostEffects),
-                              "Applies when you leave this line."))),
+        live(onLeave(choice(Tab::Display, "Renderer", "Internal Resolution",
+                            "How many pixels the game renders.\n1x: 448p | 2x: 896p | 3x: 1344p | 4x: 1792p", "Video",
+                            "InternalResolution", "3", kResolutions))),
+        // Launcher-only (K, Nov 13: Upscaled has caused no issues; a dev option, clutter in game).
+        choice(Tab::Display, "Effects", "Post Effects",
+               "The blur effects (depth of field, heat haze) are drawn from small copies of the frame. PS2 resolution "
+               "keeps them aligned but grainy at high internal resolutions; Upscaled draws them sharp.",
+               "Video", "PostEffects", "upscaled", kPostEffects),
         live(note(toggle(Tab::Display, "Effects", "Depth of Field",
-                         "The game's blur of the distance. At high internal resolutions its edges can show dark, "
-                         "shimmering fringes.",
+                         "Blur in the distance.\nIt can't hurt you.",
                          "Video", "DepthOfField", true),
                   "F2 switches it while playing.")),
 
@@ -203,82 +191,70 @@ namespace kamite::settings
                                   "Video", "HudLayout", "16:9", kHudLayouts),
                            "F7 switches it while playing."))),
         live(toggle(Tab::Interface, "HUD", "Sway Bar",
-                    "A stun gauge under each enemy's health bar: it fills as you hit them and drains while they are "
-                    "stunned.",
+                    "Stun gauge for enemies and bosses.\nFills up till they're stunned, then drains.",
                     "Game", "SwayBar", false)),
         live(wideOnly(choice(Tab::Interface, "Menus & Prompts", "Menu Width",
                              "Menus and screens (pause, options, roulette setup) are drawn for 4:3: shown 4:3 with side "
                              "bars, or stretched to the screen.",
                              "Video", "MenuLayout", "4:3", kMenuLayouts))),
         live(choice(Tab::Interface, "Menus & Prompts", "Button Prompts",
-                    "The buttons the game shows for a controller. Automatic picks them from the controller you use; keys "
-                    "and mouse always show keys. Prompt art: Xelu's free prompts (CC0).",
+                    "Controller button hint style.\nThis choice reflects your value as a person.",
                     "Game", "ButtonPrompts", "auto", kButtonPrompts)),
 
         // ---- Gameplay -------------------------------------------------------------------------------------------
         live(toggle(Tab::Gameplay, "Speed & Feed", "60 FPS",
-                    "Runs the game at 60 frames a second instead of 30, with its timers kept at the PS2's speed.", "Game",
+                    "Play at a smooth sexy silky 60FPS.\nLeave OFF if you want the OG experience.", "Game",
                     "Fps60", false)),
-        live(toggle(Tab::Gameplay, "Move & Groove", "Click-Stick Dash",
-                    "Clicking the left stick dashes (where the stick points, or straight ahead).", "Game", "L3Dash", false)),
         live(note(choice(Tab::Gameplay, "Move & Groove", "Control Style",
-                         "Classic: as on the PS2. Modern: the free camera: the right stick turns the camera and Gene moves "
-                         "where you point; pressing the right stick switches to brawl mode (classic controls) and back "
-                         "(the radar glows while the free camera is on).",
+                         "Classic: PS2's OG fixed facing brawling.\nModern: Toggle third-person freecam.",
                          "Game", "ControlStyle", "classic", kControlStyles),
                   "F2 > Controls changes it while playing.")),
         live(sub(toggle(Tab::Gameplay, "Move & Groove", "Modern: Auto",
-                        "Fighting starts brawl mode automatically; pressing the right stick switches back to the free "
-                        "camera.",
+                        "Brawling starts when dealing or taking damage.\nPress the stick (rebindable) to go back to freecam.",
                         "Game", "ModernAuto", true),
                  "ControlStyle", "modern")),
         live(note(sub(toggle(Tab::Gameplay, "Move & Groove", "Modern: Mouse Look",
-                             "The mouse turns the free camera. Click in the game to capture the mouse, Esc frees it.",
+                             "Freak...",
                              "Game", "MouseCamera", true),
                       "ControlStyle", "modern"),
                   "F2 > Controls sets the sensitivity.")),
+        live(toggle(Tab::Gameplay, "Move & Groove", "Click-Stick Dash",
+                    "Press and hold the stick to dash.\nRebindable in Controls.", "Game", "L3Dash", false)),
         live(note(toggle(Tab::Gameplay, "Move & Groove", "Busta-Chan Jive",
-                         "Sprint attacks carry Gene over or through the railings marked for them: the diving attack and the "
-                         "flying kick jump over, the slide goes under.",
+                         "Sprint attacks go through 99% of obstacles.\nSlide right through, swooce right over.",
                          "Game", "SprintTraversal", false),
                   "F2 > Debug > Stage collision marks them.")),
         live(toggle(Tab::Gameplay, "Style Shuffle", "Moveset Presets",
-                    "Keep up to four sets of techniques as presets (the styles S, E, X and Y) and swap between them in play "
-                    "with the d-pad. On the Techniques screen, L2 / R2 cycle them.",
+                    "Configure up to 4 styles; switch with the d-pad.\nLetters around the radar show sweet sexy styles.",
                     "Game", "StyleSwitching", false)),
         live(sub(toggle(Tab::Gameplay, "Style Shuffle", "Signal Style Switch",
                         "Gene calls out each style as you switch to it, and his God Hand flashes.", "Game", "StyleSignal",
                         false),
                  "StyleSwitching")),
         live(toggle(Tab::Gameplay, "Style Shuffle", "Buck Breaker",
-                    "Choose how to punish stunned enemies with a new slot on the Techniques screen. Works with Moveset "
-                    "Presets.",
+                    "Pick how to punish stunned enemies.\nWorks with Moveset Presets. Some restrictions apply.",
                     "Game", "BuckBreaker", false)),
         live(toggle(Tab::Gameplay, "Fightin' Excitement", "Cunt Punter",
-                    "Ball Buster works on female enemies too, the same as on men.", "Game", "BallBusterWomen", false)),
+                    "Ball Buster works on women. Name change on target.\nThis also works IRL, though your mileage may vary.", "Game", "BallBusterWomen", false)),
         live(toggle(Tab::Gameplay, "Fightin' Excitement", "Tension is Placable",
-                    "Pressing R2 / RT again while the God Hand is unleashed ends it and keeps the tension left in the "
-                    "meter.",
+                    "After unleashing the God Hand, pull the trigger again\nto leash it early and keep your remaining Tension.",
                     "Game", "TensionPlacable", false)),
         live(sub(toggle(Tab::Gameplay, "Fightin' Excitement", "Off the Cuff",
-                        "The God Hand unleashes with any tension in the meter, not only a full one.\nOnly unleashing the "
-                        "God Hand with a full meter makes Gene invulnerable.",
+                        "Unleash the God Hand with any Tension, not just full.\nGene is invulnerable only when unleashing at full Tension.",
                         "Game", "OffTheCuff", false),
                  "TensionPlacable")),
-        live(gameNote(toggle(Tab::Gameplay, "Fightin' Excitement", "Wild Curry Funk",
-                             "Lets you pick up, carry, and throw chairs.", "Game", "LiftChairs", false),
-                      "Applies in the next room.")),
+        live(toggle(Tab::Gameplay, "Fightin' Excitement", "Wild Curry Funk",
+                    "Carry and throw more types of objects. Mostly chairs.\nIf it's not obvious, this makes the game "
+                    "easier.",
+                    "Game", "LiftChairs", false)),
         live(choice(Tab::Gameplay, "Roulette Wheel & Reel", "Roulette Timer",
-                    "How long you have to pick a roulette move. Double time gives twice as long (the dial runs half as "
-                    "fast), at 30 and 60 FPS.",
+                    "Time limit to select a move after opening the Roulette.\nTechniques fire off automatically at the end of the timer.",
                     "Game", "RouletteTimer", "normal", kRouletteTimers)),
         live(toggle(Tab::Gameplay, "Roulette Wheel & Reel", "Target Select",
-                    "While the roulette wheel is up, flick the right stick or press the d-pad left or right to aim it at "
-                    "the next enemy that way.",
+                    "Switch Roulette targets with the right stick and the d-pad.\nHINT: You can also use the d-pad to cycle Roulette moves.",
                     "Game", "RouletteTargetCycle", false)),
         live(toggle(Tab::Gameplay, "Roulette Wheel & Reel", "Dry Spinning",
-                    "R1 opens the roulette even with no orbs left. Nothing can be picked without orbs, but the roulette camera "
-                    "still turns Gene (Classic camera).",
+                    "You can open the Roulette even when you don't have balls.\nHINT: You can use the Roulette camera as a quick-turn.",
                     "Game", "RouletteNoOrbs", false)),
         toggle(Tab::Gameplay, "Skip Poker", "Intro Skipper",
                "Start at the main menu: no Capcom and Clover logos and no \"Press Start\" screen.", "Game", "SkipIntro",
@@ -287,19 +263,17 @@ namespace kamite::settings
                "Hard can be picked from the start instead of after a clear. Your save is not changed.", "Game",
                "UnlockHard", false),
         live(note(toggle(Tab::Gameplay, "Misc. & Risk", "Better Shop & Casino Poses",
-                         "The shop and casino girls lean on their counters and tables in poses made for each, instead of the "
-                         "game's standing idle.",
+                         "Give the shop and casino people better poses.\nNot sure what else you were expecting...",
                          "Game", "NpcPoses", false),
                   "F2 > NPCs sets the poses.")),
 
         // ---- Sound ----------------------------------------------------------------------------------------------
         live(choice(Tab::Sound, "Sound", "Mode", "Select between monaural,\nstereo, or surround sound.", "Sound", "Mode",
                     "stereo", kSoundModes)), // the game's own help (its SOUND row)
-        live(volume("Music", "The stage, boss, menu and minigame music. 0% mutes it.", "MusicVolume")),
-        live(volume("Sound Effects", "Hits, steps, the menus and the rest of the game's sounds.", "EffectsVolume")),
+        live(volume("Music", "Set stage, boss, menu, and minigame music volume.", "MusicVolume")),
+        live(volume("Sound Effects", "Set the volume of ingame sound effects.", "EffectsVolume")),
         live(volume("Voices",
-                    "Gene, the enemies and the cutscenes (a cutscene's voices and music are one track, so it follows "
-                    "this).",
+                    "Set the volume of ingame voice lines.\nCutscene music and voices are one track.",
                     "VoicesVolume")),
 
         // ---- Mods (the launcher only) ---------------------------------------------------------------------------

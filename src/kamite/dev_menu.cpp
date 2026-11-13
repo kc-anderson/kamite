@@ -142,7 +142,7 @@ namespace kamite::dev_menu
             launcherOnly(ui, "Renderer", env("PS2X_GS_RENDERER", "pcsx2"));
             launcherOnly(ui, "Graphics API", env("PS2X_PCSX2_API", "vulkan") != "dx11" ? "Vulkan" : "Direct3D 11");
             inOptions(ui, "Internal resolution", env("PS2X_GS_SCALE", "3") + "x");
-            inOptions(ui, "Post effects", env("PS2X_PCSX2_NATIVE_SCALING", "ps2"));
+            launcherOnly(ui, "Post effects", env("PS2X_PCSX2_NATIVE_SCALING", "upscaled"));
             launcherOnly(ui, "HD textures", envOn("PS2X_PCSX2_TEXTURES", true) ? "on, " + env("PS2X_PCSX2_TEXTURE_DIR", "textures/SLUS-21503") : "off");
             launcherOnly(ui, "Character", env("KAMITE_CHARACTER", "gene"));
         }

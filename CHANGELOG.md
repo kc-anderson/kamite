@@ -4,6 +4,11 @@ Newest first, one line per change; the code comments say how.
 
 ## November 13, 2026
 
+- Options: the fade behind a change now covers the whole screen; the menu stays as it is until black and the new wall is made during the fade.
+- Options: Post Effects defaults to Upscaled and is set in the launcher only.
+- Options: new help texts; Steady Idle Camera is now Steady Idle Cam; Control Style sits above Click-Stick Dash.
+- Options: help lines keep their line breaks (squeezed to fit instead of rewrapped).
+- Options: the scroll bar's thumb runs in a dark channel.
 - Options: Aspect Ratio, Internal Resolution, Post Effects and a RESTORE DEFAULTS that changes them apply behind the game's own fade to black; the menu waits until it is done.
 - Options: Aspect Ratio applies when the cursor leaves its line.
 - Options: changing the aspect ratio no longer crashes the game, and the OPTIONS wall stays sharp after it.

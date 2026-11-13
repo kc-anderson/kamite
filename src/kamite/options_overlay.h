@@ -79,5 +79,7 @@ namespace kamite::options_overlay
 
 #if defined(KAMITE_HAS_SCREEN_OVERLAY)
     void build(const View &view, std::vector<Pcsx2GsScreenItem> &items, std::string &strings);
+    // Black over the whole picture at this strength (0..1): the fade behind an OPTIONS change.
+    void appendBlackout(float alpha, std::vector<Pcsx2GsScreenItem> &items);
 #endif
 }

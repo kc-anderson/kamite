@@ -428,7 +428,7 @@ bool GSPcsx2Backend::EnsureOpen()
         {"PS2X_PCSX2_BLENDING", "blending", nullptr},
         {"PS2X_PCSX2_TEXTURE_PRECACHE", "texture_precache", nullptr},
         {"PS2X_PCSX2_ASPECT", "aspect", nullptr},
-        {"PS2X_PCSX2_NATIVE_SCALING", "native_scaling", nullptr},     // post effects: ps2 (the game's fix) / upscaled / off
+        {"PS2X_PCSX2_NATIVE_SCALING", "native_scaling", "upscaled"},  // post effects: upscaled (default, Nov 13) / ps2 (PCSX2's fix) / off
         {"PS2X_PCSX2_HALF_PIXEL_OFFSET", "half_pixel_offset", nullptr}, // dev: 0..5, the game's fix is 2
         // Performance experiments (Oct 26, the casino): the GS thread's cost per draw and per texture upload.
         {"PS2X_PCSX2_GPU_PALETTE", "gpu_palette", nullptr},                   // 1: 4/8-bit textures converted on the GPU

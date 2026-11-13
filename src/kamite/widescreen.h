@@ -10,6 +10,8 @@ namespace kamite
     // [Video] AspectRatio changed while playing (the OPTIONS screen; EE thread): the hooks' values, the camera and the
     // enemies' cones, the HUD's narrowing, the host display and PCSX2's custom aspect, as installWidescreen sets them.
     void setWidescreenAspect(const char *value);
+    // [Video] AspectRatio's value as the picture's aspect (1..4), as setWidescreenAspect would set it.
+    float parseAspectSetting(const char *value);
     // The picture's shape set by installWidescreen (width / height; 4:3 = 1.3333).
     float aspectRatio();
 }

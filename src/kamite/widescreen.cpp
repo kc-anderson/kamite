@@ -153,6 +153,11 @@ namespace kamite
         KM_INFO(Game, "aspect ratio " << aspect << (wide ? " (widescreen: camera, font and gauge widths adjusted)" : " (the PS2's 4:3)"));
     }
 
+    float parseAspectSetting(const char *value)
+    {
+        return std::fmin(std::fmax(parseAspect(value), 1.0f), 4.0f);
+    }
+
     void setWidescreenAspect(const char *value)
     {
         const float aspect = std::fmin(std::fmax(parseAspect(value), 1.0f), 4.0f);

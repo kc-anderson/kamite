@@ -40,9 +40,14 @@ namespace kamite::options_pages
             lines.back() += word;
             word.clear();
         };
+        // Lines broken by hand (K's help texts, the game's own) are kept as written: a long one is squeezed to fit by the
+        // overlay rather than wrapped onto a third line.
+        const bool byHand = text && std::strchr(text, '\n');
         for (const char *c = text; c && *c; ++c)
         {
-            if (*c == ' ')
+            if (*c == ' ' && byHand)
+                word += ' ';
+            else if (*c == ' ')
                 place();
             else if (*c == '\n')
             {

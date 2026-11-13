@@ -367,7 +367,7 @@ namespace kamite::options_overlay
                 {
                     const char *end = std::strchr(line, '\n');
                     const size_t length = end ? static_cast<size_t>(end - line) : std::strlen(line);
-                    text(line, length, helpFont, kHelpX, baseline, kHelpCap, kHelpScaleX, 0.0f, kHelp, 0u);
+                    text(line, length, helpFont, kHelpX, baseline, kHelpCap, kHelpScaleX, 0.0f, kHelp, 0u, space.area - 2.0f * kHelpX);
                     Pcsx2GsScreenItem &item = items.back();
                     item.shadow = faded(kHelpShadow);
                     item.shadow_x = Space::y(kHelpShadowX);
@@ -474,6 +474,19 @@ namespace kamite::options_overlay
                 items.push_back(item);
             }
         };
+    }
+
+    void appendBlackout(float alpha, std::vector<Pcsx2GsScreenItem> &items)
+    {
+        Pcsx2GsScreenItem item{};
+        item.kind = PCSX2GS_SCREEN_RECT;
+        item.align = PCSX2GS_ALIGN_LEFT;
+        item.fill = rgba(0, 0, 0, static_cast<uint32_t>(std::clamp(alpha, 0.0f, 1.0f) * 255.0f + 0.5f));
+        item.x = -0.01f;
+        item.x1 = 1.01f;
+        item.y = -0.01f;
+        item.y1 = 1.01f;
+        items.push_back(item);
     }
 
     void build(const View &view, std::vector<Pcsx2GsScreenItem> &items, std::string &strings)
