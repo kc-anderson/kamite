@@ -1087,50 +1087,24 @@ namespace kamite
 
         // cCockMiddleBoss (Dr. Ion and the other mid-bosses; K, Nov 12): up to +0x358 bosses (+0x250 + 4i), each with its
         // own cIDBase (+0x35C + 4i) drawn by func_00140638's loop; the hook sits after each of those trans calls
-        // (0x1406CC: s2 the bar, s0 the index). The fill / lag: the two panels (kind 3) of one size, the fill the one
-        // whose base x scale is nearer the boss's HP ratio.
+        // (0x1406CC: s2 the bar, s0 the index).
         void middleSwayBar(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
+            (void)runtime;
             const uint32_t self = GPR_U32(ctx, 18), i = GPR_U32(ctx, 16) & 0xFFFFu;
             if (!inGuest(self) || i >= 8u || i >= rdram[self + 0x358u])
                 return;
             const uint32_t bar = ram32(rdram, self + 0x35Cu + 4u * i), boss = ram32(rdram, self + 0x250u + 4u * i);
             if (!inGuest(bar) || !inGuest(boss) || rdram[bar + 0x19u] != 0u)
                 return;
-            const int16_t maxHp = static_cast<int16_t>(ram32(rdram, boss + 0x548u) & 0xFFFFu);
-            if (maxHp <= 0)
+            if (static_cast<int16_t>(ram32(rdram, boss + 0x548u) & 0xFFFFu) <= 0)
                 return;
-            const float ratio = static_cast<float>(static_cast<int16_t>(ram32(rdram, boss + 0x54Au) & 0xFFFFu)) / maxHp;
-            const uint32_t ent = ram32(rdram, bar + 0x4u), count = ram32(rdram, bar + 0xCu);
-            if (!inGuest(ent) || count == 0u || count > 64u)
-                return;
-            uint32_t fill = 0u, lag = 0u;
-            float best = 1e9f;
-            for (uint32_t a = 0; a < count; ++a)
-                for (uint32_t b = 0; b < count; ++b)
-                {
-                    const uint32_t ea = ent + a * 0xACu, eb = ent + b * 0xACu;
-                    if (a == b || rdram[ea + 0x89u] != 3u || rdram[eb + 0x89u] != 3u || ramF(rdram, ea + 0x68u) != ramF(rdram, eb + 0x68u) ||
-                        ramF(rdram, ea + 0x6Cu) != ramF(rdram, eb + 0x6Cu) || ram32(rdram, ea + 0x20u) != ram32(rdram, eb + 0x20u))
-                        continue;
-                    const float d = std::fabs(ramF(rdram, ea + 0x40u) - ratio) - (a < b ? 1e-4f : 0.0f);
-                    if (d < best)
-                    {
-                        best = d;
-                        fill = ea;
-                        lag = eb;
-                    }
-                }
             // K (Nov 12): no HUD gauge for mid-bosses (several at once would crowd the HUD): the stun gauge alone over each
             // one's head, like the enemies'. A mid-boss keeps an enemy health bar layout (+0x660) whose draw
             // func_0028EDD0 (in the 3D pass) skips while byte +0x616 is set. Once the boss has built stun, midBossDraw (a
             // hook at that test, 0x28EE38) clears +0x616 and hides the layout for the draw (cIDBase_move still places it,
             // the trans draws nothing), so only Sway Bar's copy shows (swayBar, gaugeOnly); here, in the HUD pass after
             // it, both go back (the game's update never sees them changed).
-            (void)fill;
-            (void)lag;
-            (void)runtime;
-            (void)ctx;
             if (static_cast<int32_t>(ram32(rdram, boss + 0x5B4u)) > 0 || ramF(rdram, boss + 0x17CCu) > 0.0f)
                 g_midStun.insert(boss);
             midBossRestore(rdram);
