@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 13, 2026
 
+- Options: Graphics API can be changed in game (behind the fade); if the new one fails to start, the old one stays and a notice says so.
 - Options: Confirm / Cancel button hints at the bottom right, matching Menu Controls and the button prompts (PlayStation pads get Xelu's PS3 buttons here).
 - Options: Renderer leads the Display page; the Camera settings moved to the top of Controls.
 - Aspect ratios within 3% of the screen's own shape use the screen's exact shape (no thin bars on ultrawides).

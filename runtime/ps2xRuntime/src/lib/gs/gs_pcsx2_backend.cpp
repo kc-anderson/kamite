@@ -36,6 +36,7 @@ namespace
     void(__cdecl *g_setOverlay)(const float *, const uint32_t *, uint32_t) = nullptr; // pcsx2gs_set_overlay, when the DLL has it
     void(__cdecl *g_setOverlayText)(const float *, const uint32_t *, const char *, uint32_t) = nullptr; // pcsx2gs_set_overlay_text
     void(__cdecl *g_setScreen)(const Pcsx2GsScreenItem *, uint32_t, const char *, uint32_t) = nullptr; // pcsx2gs_set_screen
+    int(__cdecl *g_setApi)(const char *, void *, uint32_t, uint32_t) = nullptr; // pcsx2gs_set_api, when the DLL has it
     const std::chrono::steady_clock::time_point g_processStart = std::chrono::steady_clock::now();
     HWND g_parent = nullptr;
     HWND g_child = nullptr;
@@ -43,6 +44,22 @@ namespace
     std::atomic<uint32_t> g_clientWidth{0u};
     std::atomic<float> g_pendingScale{0.0f}; // SetScale: > 0 until the GS thread hands it over
     std::atomic<uint32_t> g_clientHeight{0u};
+
+    // SetGraphicsApi's steps: Window (the main thread makes the new child window, under the old one), Reopen (the GS
+    // thread reopens into it at its next present), Swap (the main thread drops the old window, showing the new one).
+    enum class ApiStep : int
+    {
+        Idle,
+        Window,
+        Reopen,
+        Swap
+    };
+    std::atomic<ApiStep> g_apiStep{ApiStep::Idle};
+    std::atomic<int> g_apiResult{1};
+    std::mutex g_apiMutex;
+    std::string g_apiWanted; // guarded by g_apiMutex
+    HWND g_newChild = nullptr; // made in Window, handed over by the steps' order (acquire / release)
+    bool g_hostUiVisible = false; // SetHostUiVisible (main thread)
 
     std::filesystem::path exeDirectory()
     {
@@ -232,6 +249,7 @@ bool GSPcsx2Backend::Requested()
             GetProcAddress(module, "pcsx2gs_set_overlay_text"));
         g_setScreen = reinterpret_cast<void(__cdecl *)(const Pcsx2GsScreenItem *, uint32_t, const char *, uint32_t)>(
             GetProcAddress(module, "pcsx2gs_set_screen"));
+        g_setApi = reinterpret_cast<int(__cdecl *)(const char *, void *, uint32_t, uint32_t)>(GetProcAddress(module, "pcsx2gs_set_api"));
         if (!g_api)
         {
             std::fprintf(stderr, "[gs] pcsx2gs.dll has no matching pcsx2gs_get_api (version %u); using the built-in GS\n",
@@ -244,6 +262,33 @@ bool GSPcsx2Backend::Requested()
     return requested;
 }
 
+namespace
+{
+    // Main thread: a child window the GS presents into, the size of the parent's client area.
+    HWND makeChild(uint32_t &width, uint32_t &height)
+    {
+        static const wchar_t *const kClass = []
+        {
+            WNDCLASSW wc{};
+            wc.lpfnWndProc = ChildProc;
+            wc.hInstance = GetModuleHandleW(nullptr);
+            wc.lpszClassName = L"ps2x_pcsx2_gs";
+            RegisterClassW(&wc);
+            return wc.lpszClassName;
+        }();
+        RECT rect{};
+        GetClientRect(g_parent, &rect);
+        width = static_cast<uint32_t>(std::max<LONG>(1, rect.right - rect.left));
+        height = static_cast<uint32_t>(std::max<LONG>(1, rect.bottom - rect.top));
+        HWND child = CreateWindowExW(WS_EX_NOPARENTNOTIFY, kClass, L"", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS, 0, 0,
+                                     static_cast<int>(width), static_cast<int>(height), g_parent, nullptr,
+                                     GetModuleHandleW(nullptr), nullptr);
+        if (!child)
+            std::fprintf(stderr, "[gs] PCSX2 GS: child window creation failed (error %lu)\n", GetLastError());
+        return child;
+    }
+}
+
 void GSPcsx2Backend::AttachHostWindow(void *parentHwnd)
 {
     if (!Requested() || !parentHwnd || g_child)
@@ -251,22 +296,10 @@ void GSPcsx2Backend::AttachHostWindow(void *parentHwnd)
     g_parent = static_cast<HWND>(parentHwnd);
     // The game window must not paint over its child (GLFW already sets WS_CLIPCHILDREN; made sure here).
     SetWindowLongPtrW(g_parent, GWL_STYLE, GetWindowLongPtrW(g_parent, GWL_STYLE) | WS_CLIPCHILDREN);
-    WNDCLASSW wc{};
-    wc.lpfnWndProc = ChildProc;
-    wc.hInstance = GetModuleHandleW(nullptr);
-    wc.lpszClassName = L"ps2x_pcsx2_gs";
-    RegisterClassW(&wc);
-    RECT rect{};
-    GetClientRect(g_parent, &rect);
-    const uint32_t width = static_cast<uint32_t>(std::max<LONG>(1, rect.right - rect.left));
-    const uint32_t height = static_cast<uint32_t>(std::max<LONG>(1, rect.bottom - rect.top));
-    g_child = CreateWindowExW(WS_EX_NOPARENTNOTIFY, wc.lpszClassName, L"", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS, 0, 0,
-                              static_cast<int>(width), static_cast<int>(height), g_parent, nullptr, wc.hInstance, nullptr);
+    uint32_t width = 0u, height = 0u;
+    g_child = makeChild(width, height);
     if (!g_child)
-    {
-        std::fprintf(stderr, "[gs] PCSX2 GS: child window creation failed (error %lu)\n", GetLastError());
         return;
-    }
     g_clientWidth.store(width);
     g_clientHeight.store(height);
 }
@@ -275,6 +308,38 @@ void GSPcsx2Backend::HostTick()
 {
     if (!g_child)
         return;
+    // A graphics API switch: the new window under the old one (the old one keeps showing the picture until the GS
+    // presents into the new one), then, once the GS has, the old one goes.
+    if (g_apiStep.load(std::memory_order_acquire) == ApiStep::Window)
+    {
+        uint32_t width = 0u, height = 0u;
+        g_newChild = makeChild(width, height);
+        if (g_newChild)
+        {
+            SetWindowPos(g_newChild, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            if (g_hostUiVisible)
+                ShowWindow(g_newChild, SW_HIDE);
+            g_apiStep.store(ApiStep::Reopen, std::memory_order_release);
+        }
+        else
+        {
+            g_apiResult.store(0, std::memory_order_relaxed);
+            g_apiStep.store(ApiStep::Idle, std::memory_order_release);
+        }
+    }
+    else if (g_apiStep.load(std::memory_order_acquire) == ApiStep::Swap)
+    {
+        if (g_newChild && g_apiResult.load(std::memory_order_relaxed) == 2)
+            DestroyWindow(g_newChild); // that API already ran: the GS stays in its window
+        else if (g_newChild)
+        {
+            HWND old = g_child;
+            g_child = g_newChild;
+            DestroyWindow(old);
+        }
+        g_newChild = nullptr;
+        g_apiStep.store(ApiStep::Idle, std::memory_order_release);
+    }
     RECT rect{};
     GetClientRect(g_parent, &rect);
     const uint32_t width = static_cast<uint32_t>(std::max<LONG>(1, rect.right - rect.left));
@@ -282,8 +347,34 @@ void GSPcsx2Backend::HostTick()
     if (width == g_clientWidth.load(std::memory_order_relaxed) && height == g_clientHeight.load(std::memory_order_relaxed))
         return;
     SetWindowPos(g_child, nullptr, 0, 0, static_cast<int>(width), static_cast<int>(height), SWP_NOZORDER | SWP_NOACTIVATE);
+    if (g_newChild)
+        SetWindowPos(g_newChild, nullptr, 0, 0, static_cast<int>(width), static_cast<int>(height), SWP_NOZORDER | SWP_NOACTIVATE);
     g_clientWidth.store(width, std::memory_order_relaxed);
     g_clientHeight.store(height, std::memory_order_relaxed);
+}
+
+bool GSPcsx2Backend::SetGraphicsApi(const char *api)
+{
+    if (!g_setApi || !g_child || !api || !*api)
+        return false;
+    {
+        std::lock_guard<std::mutex> lock(g_apiMutex);
+        g_apiWanted = api;
+    }
+    // A switch already under way takes the latest choice if it has not reopened yet.
+    ApiStep idle = ApiStep::Idle;
+    g_apiStep.compare_exchange_strong(idle, ApiStep::Window, std::memory_order_acq_rel);
+    return true;
+}
+
+bool GSPcsx2Backend::GraphicsApiBusy()
+{
+    return g_apiStep.load(std::memory_order_acquire) != ApiStep::Idle;
+}
+
+int GSPcsx2Backend::GraphicsApiResult()
+{
+    return g_apiResult.load(std::memory_order_relaxed);
 }
 
 bool GSPcsx2Backend::Active()
@@ -350,11 +441,6 @@ void GSPcsx2Backend::SetMenuInput(const void *input)
 uint64_t GSPcsx2Backend::Presents()
 {
     return g_presents.load(std::memory_order_relaxed);
-}
-
-namespace
-{
-    bool g_hostUiVisible = false;
 }
 
 void GSPcsx2Backend::SetHostUiVisible(bool visible)
@@ -613,6 +699,30 @@ void GSPcsx2Backend::VSync(const GSVSyncRegs &regs)
     // The OPTIONS screen's Internal Resolution (the DLL's GSUpdateConfig runs here, on the GS thread).
     if (const float scale = g_pendingScale.exchange(0.0f, std::memory_order_relaxed); scale >= 1.0f)
         g_api->set_scale(scale);
+    // Its Graphics API: the DLL's device and renderer made again in the new window (SetGraphicsApi).
+    if (g_apiStep.load(std::memory_order_acquire) == ApiStep::Reopen)
+    {
+        std::string api;
+        {
+            std::lock_guard<std::mutex> lock(g_apiMutex);
+            api = g_apiWanted;
+        }
+        const int result = g_setApi(api.c_str(), g_newChild, width, height);
+        g_apiResult.store(result, std::memory_order_relaxed);
+        std::fprintf(stderr, "[gs] graphics API %s: %s\n", api.c_str(),
+                     result == 2   ? "already running"
+                     : result > 0  ? "switched"
+                     : result == 0 ? "could not start; the previous one runs"
+                                   : "failed; nothing is drawn");
+        if (result < 0)
+        {
+            m_open = false;
+            m_failed = true;
+        }
+        g_apiStep.store(ApiStep::Swap, std::memory_order_release);
+        if (result < 0)
+            return;
+    }
     const auto presentStart = std::chrono::steady_clock::now();
     g_api->vsync(reinterpret_cast<const Pcsx2GsPrivRegs *>(&regs));
     WriteFrameTime(presentStart);
@@ -671,6 +781,9 @@ void GSPcsx2Backend::SetOsd(const char *, uint32_t, float, const char *) {}
 void GSPcsx2Backend::SetMenu(void *, void *) {}
 bool GSPcsx2Backend::SetOption(const char *, const char *) { return false; }
 void GSPcsx2Backend::SetScale(float) {}
+bool GSPcsx2Backend::SetGraphicsApi(const char *) { return false; }
+bool GSPcsx2Backend::GraphicsApiBusy() { return false; }
+int GSPcsx2Backend::GraphicsApiResult() { return 1; }
 bool GSPcsx2Backend::SetOverlay(const float *, const uint32_t *, uint32_t) { return false; }
 bool GSPcsx2Backend::SetOverlayText(const float *, const uint32_t *, const char *, uint32_t) { return false; }
 bool GSPcsx2Backend::SetScreen(const void *, uint32_t, const char *, uint32_t) { return false; }

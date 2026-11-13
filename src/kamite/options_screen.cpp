@@ -569,9 +569,11 @@ namespace kamite::options_screen
             bool restore = false;                       // RESTORE DEFAULTS
             bool aspect = false;                        // it changes the aspect ratio: hold for the wall
             uint32_t generation = 0;                    // the wall's prepare to wait for
-            int64_t stepMs = 0, readyMs = 0;
+            bool api = false;                           // a graphics API switch is under way: hold for it
+            int64_t stepMs = 0, readyMs = 0, apiMs = 0;
         };
         FadeRun g_fade;
+        bool g_apiWatch = false; // a graphics API switch was asked for: graphicsApiSwitched() when it ends (EE thread)
 
         // ---- the screen ----------------------------------------------------------------------------------------
         struct Screen
@@ -755,6 +757,14 @@ namespace kamite::options_screen
                 setAspectLive(value);
             else if (id == "InternalResolution")
                 GSPcsx2Backend::SetScale(std::clamp(static_cast<float>(std::atof(value.c_str())), 1.0f, 8.0f));
+            else if (id == "GraphicsAPI")
+            {
+                if (GSPcsx2Backend::SetGraphicsApi(value.c_str()))
+                    g_apiWatch = true;
+                else
+                    KM_WARN(Game, "options screen: the graphics API cannot change while running (an older pcsx2gs.dll?); "
+                                  "it applies at the next start");
+            }
             else if (id == "MenuButtons")
                 menu_buttons::setStyle(value == "japanese" ? menu_buttons::Style::Japanese
                                        : value == "classic" ? menu_buttons::Style::Classic
@@ -971,6 +981,38 @@ namespace kamite::options_screen
 
         void restoreDefaults();
 
+        // A graphics API switch ended. If the API asked for could not start, the one before runs again (the DLL put it
+        // back): GHR.ini and the row say so too, and a notice tells the player (K, Nov 13).
+        void graphicsApiSwitched()
+        {
+            g_apiWatch = false;
+            const int result = GSPcsx2Backend::GraphicsApiResult();
+            const settings::Setting *api = settings::find("GraphicsAPI");
+            if (!api)
+                return;
+            const std::string wanted = settings::value(g_ini, *api);
+            const char *wantedName = wanted == "vulkan" ? "Vulkan" : "Direct3D 11";
+            if (result > 0)
+            {
+                KM_INFO(Game, "options screen: graphics API " << (result == 2 ? "already " : "now ") << wantedName);
+                return;
+            }
+            if (result < 0)
+            {
+                KM_WARN(Game, "options screen: the graphics API switch to " << wantedName << " failed and nothing is drawn");
+                return;
+            }
+            const std::string running = wanted == "vulkan" ? "dx11" : "vulkan";
+            g_ini.set(api->section, api->key, running);
+            if (!g_ini.save())
+                KM_WARN(Game, "options screen: could not write GHR.ini");
+            syncEnv(*api);
+            const std::string note = std::string(wantedName) + " could not start. Still using " +
+                                     (running == "vulkan" ? "Vulkan" : "Direct3D 11") + ".";
+            ps2x::menu::notify(note, 4.0f);
+            KM_WARN(Game, "options screen: " << note);
+        }
+
         // Each frame of the screen while a fade runs (its input waits). Each wait has a ceiling, so the menu never
         // stays dark.
         void stepFade(int kind, uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
@@ -989,9 +1031,11 @@ namespace kamite::options_screen
                 else if (g_fade.setting)
                     apply(*g_fade.setting);
                 g_wallStarted = false;
+                g_fade.api = GSPcsx2Backend::GraphicsApiBusy();
                 g_fade.step = FadeStep::Hold;
                 g_fade.stepMs = now;
                 g_fade.readyMs = 0;
+                g_fade.apiMs = 0;
                 return;
             case FadeStep::Hold:
             {
@@ -1002,6 +1046,18 @@ namespace kamite::options_screen
                     if (g_fade.readyMs == 0 && g_wall[kind].published.load(std::memory_order_acquire) >= g_fade.generation)
                         g_fade.readyMs = now;
                     ready = (g_fade.readyMs != 0 && now - g_fade.readyMs >= 250) || now - g_fade.stepMs >= 4000;
+                }
+                if (g_fade.api)
+                {
+                    // The new device and renderer up in their new window, and a moment for the wall's image to load
+                    // again (the replacements are read anew).
+                    if (g_fade.apiMs == 0 && !GSPcsx2Backend::GraphicsApiBusy())
+                    {
+                        g_fade.apiMs = now;
+                        if (g_apiWatch)
+                            graphicsApiSwitched();
+                    }
+                    ready = ready && ((g_fade.apiMs != 0 && now - g_fade.apiMs >= 400) || now - g_fade.stepMs >= 10000);
                 }
                 if (!ready)
                     return;
@@ -1503,6 +1559,9 @@ namespace kamite::options_screen
     {
         if (!g_ram)
             return;
+        // A graphics API switch that ended outside the screen's fade (the screen closed with it waiting).
+        if (g_apiWatch && !GSPcsx2Backend::GraphicsApiBusy())
+            graphicsApiSwitched();
         if (const int mode = g_windowMode.exchange(-1, std::memory_order_relaxed); mode >= 0)
         {
             // F11: kept as the Display Mode (K, Nov 13), as if the row had changed.

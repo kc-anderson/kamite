@@ -85,6 +85,16 @@ namespace
         return text;
     }
 
+    // Every texture_add applied so far, in order (a path given again moves to the end): a reopen of the renderer
+    // (pcsx2gs_set_api) starts the replacement list again from the folders, so these go back in after it. GS thread.
+    std::vector<std::string> g_textureAdded;
+
+    void RememberTextureAdd(const std::string &path)
+    {
+        g_textureAdded.erase(std::remove(g_textureAdded.begin(), g_textureAdded.end(), path), g_textureAdded.end());
+        g_textureAdded.push_back(path);
+    }
+
     // Pcsx2GsOpenParams::options: "key=value;key=value".
     float g_customAspect = 0.0f; // options "aspect=<width/height>": the image shown in that shape (0 = the open's choice)
     GSRendererType g_graphicsApi = GSRendererType::VK; // options "api=vulkan|dx11" ([Video] GraphicsAPI; Vulkan by default)
@@ -324,6 +334,65 @@ namespace
         return 1;
     }
 
+    const char *ApiName(RenderAPI api) { return api == RenderAPI::Vulkan ? "Vulkan" : api == RenderAPI::D3D11 ? "DX11" : "?"; }
+
+    // The graphics API while running (pcsx2gs_set_api).
+    int ReopenApi(const char *api, void *hwnd, uint32_t width, uint32_t height)
+    {
+        const HostFpuMode fpu;
+        if (!g_open || !api || !g_gs_device || !g_gs_renderer)
+            return -1;
+        const std::string name = lower(api);
+        const GSRendererType want = (name == "vulkan" || name == "vk") ? GSRendererType::VK : GSRendererType::DX11;
+        const RenderAPI wantApi = want == GSRendererType::VK ? RenderAPI::Vulkan : RenderAPI::D3D11;
+        if (g_gs_device->GetRenderAPI() == wantApi)
+            return 2; // already running (the new window is not used)
+        // One window cannot carry both kinds of swap chain (PCSX2 makes a new one for this too): the port's new window.
+        if (hwnd)
+        {
+            g_window.window_handle = hwnd;
+            g_window.surface_width = std::max(1u, width);
+            g_window.surface_height = std::max(1u, height);
+            pcsx2gs::SetRenderWindow(g_window);
+        }
+        const Pcsx2Config::GSOptions old = GSConfig;
+        const GSRendererType had = old.Renderer;
+        GSConfig.Renderer = want;
+        EmuConfig.GS.Renderer = want;
+        // The GS state frozen and thawed round a new device and renderer. If the new device fails, PCSX2 opens the old
+        // one again (with the old options) but still makes the renderer for the new type.
+        if (!GSreopen(true, true, want, &old))
+        {
+            std::fprintf(stderr, "[pcsx2-gs] graphics API: the switch to %s failed and the old one did not come back\n",
+                         want == GSRendererType::VK ? "Vulkan" : "DX11");
+            g_open = false;
+            return -1;
+        }
+        const RenderAPI now = g_gs_device->GetRenderAPI();
+        int result = 1;
+        if (now != wantApi)
+        {
+            // Back on the old device: the renderer made again for its type (the texture cache asks which one it is).
+            GSConfig.Renderer = had;
+            EmuConfig.GS.Renderer = had;
+            if (!GSreopen(false, true, had, std::nullopt))
+            {
+                g_open = false;
+                return -1;
+            }
+            result = 0;
+        }
+        // The replacement list was read again from the folders: the images the port added while running go back in
+        // before anything is drawn (the GS decides a texture's replacement the first time it hashes it).
+        for (const std::string &path : g_textureAdded)
+            GSTextureReplacements::AddReplacementFile(path);
+        int w = 0, h = 0;
+        GSgetInternalResolution(&w, &h);
+        std::fprintf(stderr, "[pcsx2-gs] graphics API: %s%s (%dx%d), %zu added replacements restored\n", ApiName(now),
+                     result ? "" : " (the switch failed; kept)", w, h, g_textureAdded.size());
+        return result;
+    }
+
     void Close()
     {
         const HostFpuMode fpu;
@@ -411,7 +480,10 @@ namespace
                 adds.swap(pcsx2gs::g_textureAdds);
             }
             for (const std::string &path : adds)
+            {
                 GSTextureReplacements::AddReplacementFile(path);
+                RememberTextureAdd(path);
+            }
         }
         ApplyLiveOptions();
         GSvsync((regs->csr & 0x2000u) ? 0u : 1u, true);
@@ -687,6 +759,16 @@ extern "C" __declspec(dllexport) void pcsx2gs_set_overlay_text(const float *xy, 
 extern "C" __declspec(dllexport) void pcsx2gs_set_screen(const Pcsx2GsScreenItem *items, uint32_t count, const char *strings, uint32_t bytes)
 {
     pcsx2gs::SetScreen(items, count, strings, bytes);
+}
+
+// The graphics API while the game runs ("vulkan" / "dx11"; the OPTIONS screen's Graphics API). GS thread only, between
+// vsyncs. hwnd: a new window of width x height for the GS to present into from now on (one window cannot carry both
+// kinds of swap chain; the port swaps it in for the old one after this returns). Returns 1 when the API asked for
+// runs, 2 when it already ran (nothing changed, the new window is not used), 0 when it could not start and the one
+// before runs again (in the new window), -1 when neither runs (nothing is drawn from then on).
+extern "C" __declspec(dllexport) int pcsx2gs_set_api(const char *api, void *hwnd, uint32_t width, uint32_t height)
+{
+    return ReopenApi(api, hwnd, width, height);
 }
 
 // The aspect ratio while the game runs (0 = 4:3, 1 = 16:9, 2 = fill the window), read at every present: the port uses

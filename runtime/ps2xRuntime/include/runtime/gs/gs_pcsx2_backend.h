@@ -34,6 +34,15 @@ public:
     static bool SetOption(const char *key, const char *value);
     // Any thread: a new internal resolution multiplier, handed to the DLL on the GS thread at its next present.
     static void SetScale(float scale);
+    // Any thread: another graphics API ("vulkan" / "dx11") while running. The main thread makes a new child window (one
+    // window cannot carry both kinds of swap chain), the GS thread reopens the DLL's device and renderer into it at its
+    // next present (pcsx2gs_set_api), then the main thread swaps the windows. False = this DLL cannot do it.
+    static bool SetGraphicsApi(const char *api);
+    // Any thread: a switch asked for is still under way.
+    static bool GraphicsApiBusy();
+    // Any thread: how the last switch ended: 1 = the API asked for runs, 2 = it already ran, 0 = it could not start
+    // and the one before runs again, -1 = neither runs (nothing is drawn).
+    static int GraphicsApiResult();
     // Any thread: lines drawn over the image at each present (pcsx2gs_set_overlay: x0 y0 x1 y1 per line in GS pixel
     // coordinates, a colour per line with R in the low byte; count 0 clears). False = this DLL does not have it.
     static bool SetOverlay(const float *lines, const uint32_t *colors, uint32_t count);

@@ -16,6 +16,7 @@
 #include "GS/GSCapture.h"
 #include "GS/GSDump.h"
 #include "GS/GSPng.h"
+#include "GS/Renderers/Common/GSDevice.h" // g_gs_device (ImGuiManager::Shutdown)
 #include "GS/Renderers/HW/GSTextureReplacements.h"
 #include "GSDumpReplayer.h"
 #include "Host.h"
@@ -691,10 +692,25 @@ bool ImGuiManager::Initialize()
     return true;
 }
 
+// Also on a reopen (pcsx2gs_set_api: a new device): the device's copies of ImGui's textures go back to it first, then
+// the screen's fonts (the atlas's) and images (ours, registered with the context) go with the context, to be loaded
+// again on their next use.
 void ImGuiManager::Shutdown(bool clear_state)
 {
-    if (ImGui::GetCurrentContext())
-        ImGui::DestroyContext();
+    if (!ImGui::GetCurrentContext())
+        return;
+    if (g_gs_device)
+        g_gs_device->DestroyImGuiTextures();
+    for (auto &entry : g_screenImages)
+        if (entry.second)
+        {
+            ImGui::UnregisterUserTexture(entry.second);
+            IM_DELETE(entry.second);
+        }
+    g_screenImages.clear();
+    g_screenFonts.clear();
+    g_osdFont = nullptr;
+    ImGui::DestroyContext();
 }
 
 void ImGuiManager::WindowResized()

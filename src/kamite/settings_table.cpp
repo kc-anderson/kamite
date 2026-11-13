@@ -157,9 +157,9 @@ namespace kamite::settings
                     "Vibration", true)),
 
         // ---- Display --------------------------------------------------------------------------------------------
-        choice(Tab::Display, "Renderer", "Graphics API",
-               "Vulkan is the default. If Vulkan fails to start, the game uses Direct3D 11 instead.", "Video",
-               "GraphicsAPI", "vulkan", kGraphicsApis),
+        live(onLeave(choice(Tab::Display, "Renderer", "Graphics API",
+                            "Vulkan is the default. If Vulkan fails to start, the game uses Direct3D 11 instead.", "Video",
+                            "GraphicsAPI", "vulkan", kGraphicsApis))),
         live(onLeave(choice(Tab::Display, "Renderer", "Internal Resolution",
                             "How many pixels the game renders.\n1x: 448p | 2x: 896p | 3x: 1344p | 4x: 1792p", "Video",
                             "InternalResolution", "3", kResolutions))),
