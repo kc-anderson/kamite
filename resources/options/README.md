@@ -11,3 +11,9 @@ game's painted title sat (`src/kamite/options_overlay.cpp`). `title_controls.png
 styles, their inner pattern grown from OPTIONS' by `tools/options/make_splash.py`. All on one canvas, at half the PSD's size.
 
 `scroll_track.png`, `scroll_thumb.png`: the pages' scroll bar (`tools/options/make_scrollbar.py`).
+
+`mapping/`: CONTROLS > BUTTON MAPPING (`src/kamite/mapping_page.cpp`, drawn by `options_overlay.cpp`). `pad_xbox.png`,
+`pad_playstation.png`, `pad_nintendo.png`: K's own pad renders (no credit). Everything else is made from them by
+`tools/options/make_pad_art.py`: each pad's flame outline (`flames_*.png`) and data (`pad_*.txt`: where its buttons are,
+the columns, its outline), the lines' brush (`brush.png`, `brush_lit.png`), the label panels' wash (`panel.png`), and the
+stick icons without the click arrow (`stick_*.png`, from Xelu's CC0 pack, credited with it).

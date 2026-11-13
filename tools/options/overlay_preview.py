@@ -3,13 +3,16 @@
 python tools/options/overlay_preview.py out.png [--size 1920x1080] [--title] [--cursor N] [--confirm N]
     [--page controls|display|interface|gameplay|sound] [--open] [--row N] [--scroll N] [--set Section.Key=Value ...]
     [--menu western|japanese|classic] [--prompts xbox|playstation|nintendo|steam|keys]
+    [--page mapping [--line PLACE] [--swap A:B ...] [--hot PLACE=NAME ...] [--readonly]]
 
 Builds tools/options/overlay_preview.cpp (g++, the repo's ImGui) with the DLL's own drawing code cut from HostStubs.cpp,
 crops resources/options/wall.jpg to the size's shape and draws options_overlay.cpp's list over it. The pages are the
 game's own (options_pages.cpp from the shared settings list over the repo's GHR.ini; --set changes a value, e.g.
 --set Game.ControlStyle=modern). --row is the page row (headers count). --menu / --prompts pick the confirm / cancel
 hints' buttons (the default bindings: cross / circle / triangle on the bottom / right / top buttons, keys K / L / I).
-Needs Pillow.
+--page mapping: CONTROLS > BUTTON MAPPING (mapping_page.cpp) for the --prompts set's pad over the repo's GHR.ini;
+--line the selected button (south, east, l1 ...), --swap exchanges two buttons' actions, --hot puts a hotkey's name on a
+button, --readonly shows a launcher layout. Needs Pillow.
 """
 import argparse, os, re, struct, subprocess, tempfile
 from PIL import Image
@@ -27,7 +30,8 @@ def build(work):
                            '-I' + os.path.join(ROOT, 'thirdparty/pcsx2-gs/include'), '-I' + os.path.join(ROOT, 'src'),
                            '-o', exe, os.path.join(ROOT, 'tools/options/overlay_preview.cpp')] +
                           [os.path.join(ROOT, 'src/kamite', f) for f in ('options_overlay.cpp', 'options_pages.cpp',
-                                                                         'settings_table.cpp', 'ini_file.cpp')] +
+                                                                         'settings_table.cpp', 'ini_file.cpp',
+                                                                         'mapping_page.cpp')] +
                           [os.path.join(IMGUI, 'src', f) for f in ('imgui.cpp', 'imgui_draw.cpp', 'imgui_widgets.cpp', 'imgui_tables.cpp')])
     return exe
 
@@ -69,7 +73,11 @@ def main():
     ap.add_argument('--title', action='store_true', help='the title screen\'s list (else the pause\'s)')
     ap.add_argument('--cursor', type=int, default=0)
     ap.add_argument('--confirm', type=int, default=-1, help='row asking Yes / No')
-    ap.add_argument('--page', choices=['controls', 'display', 'interface', 'gameplay', 'sound'], help='the mockup page beside the list (or open)')
+    ap.add_argument('--page', choices=['controls', 'display', 'interface', 'gameplay', 'sound', 'mapping'], help='the mockup page beside the list (or open)')
+    ap.add_argument('--line', default='', help='mapping: the selected button')
+    ap.add_argument('--swap', action='append', default=[], help='mapping: A:B exchanges two buttons\' actions')
+    ap.add_argument('--hot', action='append', default=[], help='mapping: PLACE=NAME, a hotkey on that button')
+    ap.add_argument('--readonly', action='store_true', help='mapping: a layout set in the launcher')
     ap.add_argument('--open', action='store_true', help='the cursor in the page')
     ap.add_argument('--row', type=int, default=1, help="the page's cursor row")
     ap.add_argument('--scroll', type=int, default=0)
@@ -97,9 +105,30 @@ def main():
         open(path + '.rgba', 'wb').write(struct.pack('<II', *im.size) + im.tobytes())
         bars.append(path)
     fonts = os.path.join(ROOT, 'resources/fonts')
-    page = {'controls': 0, 'display': 1, 'interface': 2, 'gameplay': 3, 'sound': 4}.get(a.page, -1)
+    page = {'controls': 0, 'display': 1, 'interface': 2, 'gameplay': 3, 'sound': 4, 'mapping': 0}.get(a.page, -1)
     env = dict(os.environ, KAMITE_PREVIEW_HINTS='|'.join(hint_paths(work, a.menu, a.prompts)),
                KAMITE_PREVIEW_TITLES=title_letters())
+    menu = {'western': 'western', 'japanese': 'japanese', 'classic': 'classic'}[a.menu]
+    a.set.insert(0, 'Game.MenuButtons=' + menu)  # the page's menu words follow it (a --set wins)
+    if a.page == 'mapping':
+        folder = {'xbox': 'xbox360', 'playstation': 'ps3', 'nintendo': 'switch', 'steam': 'steamdeck', 'keys': 'xbox360'}[a.prompts]
+        pad = {'ps3': 'playstation', 'switch': 'nintendo'}.get(folder, 'xbox')
+        art_dir = os.path.join(work, 'resources/options/mapping')
+        os.makedirs(art_dir, exist_ok=True)
+        src = os.path.join(ROOT, 'resources/options/mapping')
+        for name in os.listdir(src):
+            if name.endswith('.txt'):
+                open(os.path.join(art_dir, name), 'w').write(open(os.path.join(src, name)).read())
+            elif name.endswith('.png'):
+                im = Image.open(os.path.join(src, name)).convert('RGBA')
+                open(os.path.join(art_dir, name) + '.rgba', 'wb').write(struct.pack('<II', *im.size) + im.tobytes())
+        icons = os.path.join(work, 'resources/prompts/xelu', folder)
+        os.makedirs(icons, exist_ok=True)
+        for name in os.listdir(os.path.join(ROOT, 'resources/prompts/xelu', folder)):
+            im = Image.open(os.path.join(ROOT, 'resources/prompts/xelu', folder, name)).convert('RGBA')
+            open(os.path.join(icons, name) + '.rgba', 'wb').write(struct.pack('<II', *im.size) + im.tobytes())
+        env['KAMITE_PREVIEW_MAPPING'] = '|'.join([work, os.path.join(art_dir, 'pad_%s.txt' % pad), folder, a.line,
+                                                  '1' if a.readonly else '0', ','.join(a.swap), ';'.join(a.hot)])
     subprocess.check_call([exe, raw_in, str(w), str(h), raw_out, '0' if a.title else '1', str(a.cursor), str(a.confirm),
                            os.path.join(fonts, 'ArchivoNarrow-SemiBold.ttf'),
                            os.path.join(fonts, 'DejaVuSans-Bold.ttf'), title] + bars[:2] +

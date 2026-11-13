@@ -656,6 +656,28 @@ namespace kamite::menu_buttons
         return padBit;
     }
 
+    uint8_t inputOnPlace(const bindings::Snapshot &snapshot, uint8_t place, uint8_t from)
+    {
+        if (place >= kButtons || snapshot.generation == 0u)
+            return 0xFFu;
+        const Place &want = kDefaultPlace[place];
+        for (uint8_t i = from; i < Input::InputCount; ++i)
+        {
+            const bindings::Binding &b = snapshot.controller[i];
+            if (b.type == want.type && b.code == want.code && (want.type != bindings::Type::PadAxis || b.sign == want.sign))
+                return i;
+        }
+        return 0xFFu;
+    }
+
+    uint8_t placeOfPadBit(uint16_t padBit)
+    {
+        for (uint8_t i = 0; i < kButtons; ++i)
+            if (kPadBit[i] == padBit)
+                return i;
+        return 0xFFu;
+    }
+
     void noteRightStick(uint8_t x) { g_rightX.store(x, std::memory_order_relaxed); }
 
     const char *styleName(Style style)

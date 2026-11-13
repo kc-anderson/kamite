@@ -41,6 +41,7 @@
 #include "kamite/hud_layout.h"
 #include "kamite/ini_file.h"
 #include "kamite/log.h"
+#include "kamite/mapping_page.h"
 #include "kamite/menu_buttons.h"
 #include "kamite/modern_controls.h"
 #include "kamite/npc_poses.h"
@@ -51,6 +52,7 @@
 #include "kamite/sprint_traversal.h"
 #include "kamite/style_presets.h"
 #include "runtime/ps2_display_options.h"
+#include "runtime/ps2_hotkeys.h"
 #include "kamite/widescreen.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/ee_scheduler.h"
@@ -70,6 +72,7 @@
 #include <deque>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -586,6 +589,8 @@ namespace kamite::options_screen
             bool inPage = false;   // the cursor is in the category's page (Right / A in, B out)
             int pageCursor = 0;    // its row (headers skipped)
             int pageScroll = 0;    // the first row shown
+            bool inMapping = false; // CONTROLS > BUTTON MAPPING is open (B back to its row)
+            uint8_t mapCursor = mapping_page::kNone; // its selected button (a place)
         };
         Screen g_screen[2];
         GuestFunction g_original[2][5] = {}; // open, close, update, move, draw
@@ -1167,6 +1172,104 @@ namespace kamite::options_screen
             return h;
         }
 
+        // ---- CONTROLS > BUTTON MAPPING (mapping_page.h; claude/button-mapping.md) ----------------------------------
+        mapping_page::PageData g_mapping;
+        std::map<std::string, mapping_page::PadArt> g_padArt; // by pad name, loaded on first use
+
+        // The controller's prompt set (the page is for the controller whatever was pressed last): [Game] ButtonPrompts,
+        // or with Auto the pad's type, as button_prompts picks it for a controller.
+        const char *mappingSetFolder()
+        {
+            namespace bindings = ps2_host_input::prompts;
+            switch (prompt_hd::choice())
+            {
+            case prompt_hd::Choice::Xbox: return "xbox360";
+            case prompt_hd::Choice::PlayStation: return "ps3";
+            case prompt_hd::Choice::Nintendo: return "switch";
+            case prompt_hd::Choice::Steam: return "steamdeck";
+            default: break;
+            }
+            switch (bindings::padStyle())
+            {
+            case bindings::PadStyle::PlayStation: return "ps3";
+            case bindings::PadStyle::Nintendo: return "switch";
+            case bindings::PadStyle::Steam: return "steamdeck";
+            default: return "xbox360";
+            }
+        }
+
+        // What is on each button now: player 1's controller bindings as the prompts read them (the first controller
+        // binding of each PS2 button). The page edits only clean layouts (each of the ten remappable buttons carrying
+        // exactly one of their ten PS2 buttons and nothing else); anything else was set in the launcher: read-only.
+        // Stage 2 sees first bindings only: a second controller binding of a PS2 button is checked in stage 3.
+        mapping_page::State mappingState()
+        {
+            namespace bindings = ps2_host_input::prompts;
+            const bindings::Snapshot snapshot = bindings::snapshot();
+            mapping_page::State state;
+            for (uint8_t place = 0; place < mapping_page::kRemappable; ++place)
+            {
+                const uint8_t first = menu_buttons::inputOnPlace(snapshot, place);
+                state.onPlace[place] = first < mapping_page::kRemappable ? first : mapping_page::kNone;
+                const uint8_t second = first == 0xFFu ? 0xFFu : menu_buttons::inputOnPlace(snapshot, place, static_cast<uint8_t>(first + 1u));
+                if (first >= mapping_page::kRemappable || second != 0xFFu)
+                    state.readOnly = true;
+            }
+            for (int a = 0; a < static_cast<int>(ps2x::hotkeys::Action::Count); ++a)
+            {
+                const auto action = static_cast<ps2x::hotkeys::Action>(a);
+                const uint8_t place = menu_buttons::placeOfPadBit(ps2x::hotkeys::binding(action).pad);
+                if (place < mapping_page::kRemappable)
+                    state.hot[place] = ps2x::hotkeys::info(action).label;
+            }
+            return state;
+        }
+
+        void buildMapping(const Screen &s)
+        {
+            const std::string folder = mappingSetFolder(), pad = mapping_page::padFor(folder);
+            const fs::path artDir = g_exeDir / "resources" / "options" / "mapping";
+            auto found = g_padArt.find(pad);
+            if (found == g_padArt.end())
+            {
+                std::string error;
+                found = g_padArt.emplace(pad, mapping_page::PadArt{}).first;
+                const std::u8string path = (artDir / ("pad_" + pad + ".txt")).u8string();
+                if (!mapping_page::loadArt(std::string(path.begin(), path.end()), found->second, error))
+                    KM_WARN(Game, "options screen: button mapping art not loaded: " << error);
+            }
+            mapping_page::Options options = mapping_page::optionsFrom(g_ini);
+            options.menuStyle = static_cast<int>(menu_buttons::style());
+            const std::u8string dir = artDir.u8string(), root = g_exeDir.u8string();
+            mapping_page::build(g_mapping, found->second, std::string(dir.begin(), dir.end()), std::string(root.begin(), root.end()),
+                                folder, mappingState(), options, s.mapCursor);
+        }
+
+        // The pad on the page: d-pad / stick between the ten lines, B back to the BUTTON MAPPING row. (Stage 3: A opens
+        // the drum, Square / X resets, A on a HOT button clears its hotkey.)
+        void mappingInput(Screen &s, uint64_t pressed, uint64_t repeat, uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if ((pressed & kCancel) != 0u && (pressed & kOk) == 0u)
+            {
+                s.inMapping = false;
+                sound(rdram, ctx, runtime, kSeBack);
+                return;
+            }
+            buildMapping(s);
+            if (s.mapCursor == mapping_page::kNone)
+                s.mapCursor = mapping_page::firstLine(g_mapping);
+            const int dy = (repeat & kUp) ? -1 : (repeat & kDown) ? 1 : 0;
+            const int dx = dy != 0 ? 0 : (repeat & kLeft) ? -1 : (repeat & kRight) ? 1 : 0;
+            if (dx == 0 && dy == 0)
+                return;
+            const uint8_t next = mapping_page::move(g_mapping, s.mapCursor, dx, dy);
+            if (next != s.mapCursor)
+            {
+                s.mapCursor = next;
+                sound(rdram, ctx, runtime, kSeMove);
+            }
+        }
+
         void sendOverlay(int kind, const Screen &s, float fade)
         {
 #if defined(KAMITE_HAS_SCREEN_OVERLAY)
@@ -1211,6 +1314,11 @@ namespace kamite::options_screen
                     view.nextHint.art[0] = hints.r1.c_str();
                     view.nextHint.word = k.text[s.row + 1].name;
                 }
+            }
+            if (s.inMapping)
+            {
+                buildMapping(s);
+                view.mapping = &g_mapping.view;
             }
             options_overlay::build(view, g_items, g_strings);
             if (const float black = blackout(); black > 0.0f)
@@ -1301,6 +1409,14 @@ namespace kamite::options_screen
                     s.pageCursor = next;
                     sound(rdram, ctx, runtime, kSeMove);
                 }
+            }
+            else if ((pressed & kOk) && s.pageCursor == g_page.mappingRow && g_page.mappingRow >= 0)
+            {
+                s.inMapping = true; // BUTTON MAPPING: its own page, the cursor on its first line (top left)
+                buildMapping(s);
+                s.mapCursor = mapping_page::firstLine(g_mapping);
+                sound(rdram, ctx, runtime, kSeOk);
+                return;
             }
             else if ((pressed & kOk) && change(g_page, s.pageCursor, 1, true))
                 sound(rdram, ctx, runtime, kSeMove);
@@ -1444,6 +1560,8 @@ namespace kamite::options_screen
             }
             else if (s.confirmRow >= 0)
                 confirm(N, s, pressed, repeat, rdram, ctx, runtime);
+            else if (s.inPage && s.inMapping)
+                mappingInput(s, pressed, repeat, rdram, ctx, runtime);
             else if (s.inPage)
                 pageInput(N, s, pressed, repeat, rdram, ctx, runtime);
             else if (pressed & kOk)

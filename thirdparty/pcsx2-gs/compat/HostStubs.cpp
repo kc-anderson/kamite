@@ -1076,6 +1076,30 @@ namespace
         list->AddImage(tex->GetTexRef(), ImVec2(a.x, b.y - end), b, ImVec2(0.0f, 1.0f - v), ImVec2(1.0f, 1.0f), item.fill);
     }
 
+    // A line (the BUTTON MAPPING page's leaders): an image laid along it when there is one (a brushed stroke, its u
+    // range x2..y2), else a plain anti-aliased line. The image is kept at full size (it is stretched along lines of any
+    // length; its height is the stroke's).
+    void DrawScreenLine(ImDrawList *list, const Pcsx2GsScreenItem &item, const char *path, float x0, float y0, float w, float h)
+    {
+        const ImVec2 a(x0 + item.x * w, y0 + item.y * h), b(x0 + item.x1 * w, y0 + item.y1 * h);
+        const float thickness = item.stroke_width * h, dx = b.x - a.x, dy = b.y - a.y;
+        const float length = std::sqrt(dx * dx + dy * dy);
+        if ((item.fill >> 24) == 0u || thickness <= 0.0f || length < 0.5f)
+            return;
+        if (path && *path)
+            if (ImTextureData *tex = ScreenImageFor(path, 1.0e6f))
+            {
+                const ImVec2 n(-dy / length * 0.5f * thickness, dx / length * 0.5f * thickness); // across, to the right
+                const float u0 = item.x2 == 0.0f && item.y2 == 0.0f ? 0.0f : item.x2;
+                const float u1 = item.x2 == 0.0f && item.y2 == 0.0f ? 1.0f : item.y2;
+                list->AddImageQuad(tex->GetTexRef(), ImVec2(a.x - n.x, a.y - n.y), ImVec2(b.x - n.x, b.y - n.y),
+                                   ImVec2(b.x + n.x, b.y + n.y), ImVec2(a.x + n.x, a.y + n.y), ImVec2(u0, 0.0f), ImVec2(u1, 0.0f),
+                                   ImVec2(u1, 1.0f), ImVec2(u0, 1.0f), item.fill);
+                return;
+            }
+        list->AddLine(a, b, item.fill, thickness);
+    }
+
     // RenderOSD (GS thread): the list over the picture, under the menu and the OSD.
     void DrawScreen()
     {
@@ -1105,6 +1129,8 @@ namespace
                 DrawScreenRect(list, item, x0, y0, w, h);
             else if (item.kind == PCSX2GS_SCREEN_IMAGE)
                 DrawScreenImage(list, item, str(item.text), x0, y0, w, h);
+            else if (item.kind == PCSX2GS_SCREEN_LINE)
+                DrawScreenLine(list, item, str(item.text), x0, y0, w, h);
         }
         list->PopClipRect();
     }

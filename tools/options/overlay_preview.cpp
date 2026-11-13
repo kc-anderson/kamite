@@ -7,6 +7,7 @@
 #include "kamite/ini_file.h"
 #include "kamite/options_overlay.h"
 #include "kamite/options_pages.h"
+#include "kamite/mapping_page.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -165,6 +166,60 @@ int main(int argc, char **argv)
                 v.nextHint.word = pauseRows[page + 1].name;
             }
         }
+    }
+    // BUTTON MAPPING: KAMITE_PREVIEW_MAPPING="root|art|setFolder|cursor|readOnly|swaps|hots" (overlay_preview.py):
+    // swaps "south:west,..." exchange two places' PS2 buttons, hots "r3=Save state;...".
+    static kamite::mapping_page::PageData mapping;
+    if (const char *spec = getenv("KAMITE_PREVIEW_MAPPING"))
+    {
+        std::vector<std::string> f;
+        std::string all = spec;
+        for (size_t at = 0;;)
+        {
+            const size_t bar = all.find('|', at);
+            f.push_back(all.substr(at, bar == std::string::npos ? std::string::npos : bar - at));
+            if (bar == std::string::npos)
+                break;
+            at = bar + 1;
+        }
+        f.resize(7);
+        using namespace kamite::mapping_page;
+        static PadArt art;
+        std::string error;
+        if (!loadArt(f[1], art, error))
+            fprintf(stderr, "mapping art: %s\n", error.c_str());
+        const auto place = [](const std::string &name) {
+            for (int i = 0; i < PlaceCount; ++i)
+                if (name == placeName(static_cast<Place>(i)))
+                    return static_cast<uint8_t>(i);
+            return kNone;
+        };
+        State state = defaultState();
+        state.readOnly = f[4] == "1";
+        for (size_t at = 0; at < f[5].size();)
+        {
+            size_t comma = f[5].find(',', at);
+            const std::string pair = f[5].substr(at, comma == std::string::npos ? std::string::npos : comma - at);
+            const size_t colon = pair.find(':');
+            const uint8_t a = place(pair.substr(0, colon)), b = colon == std::string::npos ? kNone : place(pair.substr(colon + 1));
+            if (a < kRemappable && b < kRemappable)
+                std::swap(state.onPlace[a], state.onPlace[b]);
+            at = comma == std::string::npos ? f[5].size() : comma + 1;
+        }
+        for (size_t at = 0; at < f[6].size();)
+        {
+            size_t semi = f[6].find(';', at);
+            const std::string one = f[6].substr(at, semi == std::string::npos ? std::string::npos : semi - at);
+            const size_t eq = one.find('=');
+            const uint8_t a = place(one.substr(0, eq));
+            if (a < kRemappable && eq != std::string::npos)
+                state.hot[a] = one.substr(eq + 1);
+            at = semi == std::string::npos ? f[6].size() : semi + 1;
+        }
+        const std::string artDir = f[1].substr(0, f[1].find_last_of('/'));
+        build(mapping, art, artDir, f[0], f[2], state, optionsFrom(ini), f[3].empty() ? kNone : place(f[3]));
+        v.mapping = &mapping.view;
+        v.prevHint = v.nextHint = Hint{};
     }
     std::vector<Pcsx2GsScreenItem> items;
     std::string strings;

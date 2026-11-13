@@ -26,9 +26,10 @@ namespace kamite::options_pages
         std::deque<std::vector<const char *>> choiceLists;
         std::deque<std::vector<int>> valueLists;
         std::vector<options_overlay::PageRow> rows;
-        std::vector<const settings::Setting *> setting; // nullptr: a header
+        std::vector<const settings::Setting *> setting; // nullptr: a header (or the BUTTON MAPPING row)
         options_overlay::Page page;
         std::string name;
+        int mappingRow = -1; // CONTROLS: the BUTTON MAPPING row (opens its page; no value)
 
         const char *keep(std::string value)
         {
@@ -45,6 +46,10 @@ namespace kamite::options_pages
     int nextOption(const PageData &d, int from, int step);
 
     std::string upper(const char *text);
+    // CONTROLS > BUTTON MAPPING: the row's help (in game only: the launcher keeps its own bindings table).
+    constexpr const char *kMappingName = "BUTTON MAPPING";
+    constexpr const char *kMappingHelp = "Swap what the buttons do in play.\nMenus keep their buttons (Menu Controls).";
+
     // A description as the help box shows it: two lines at most at the text area's width ("..." past that).
     std::string wrapHelp(const char *text, float aspect);
 }

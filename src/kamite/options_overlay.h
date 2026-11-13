@@ -48,6 +48,34 @@ namespace kamite::options_overlay
         int rowCount = 0;
     };
 
+    // CONTROLS > BUTTON MAPPING (mapping_page.cpp fills it): the pad's picture in its flames and, in a column either
+    // side, a label for each button joined to it by a line, in the look of the game's own controller page
+    // (claude/button-mapping.md: its panels, lines and underscores, measured from the disc).
+    struct MappingLine
+    {
+        float px = 0.0f, py = 0.0f; // the button on the pad's picture (fractions of its width and height)
+        float reach = 0.0f;         // the line stops this far short of it (a fraction of the picture's height)
+        bool right = false;         // the right-hand column (lines are listed left column first, each top to bottom)
+        const char *icon = "";      // the button's prompt image
+        const char *text[3] = {"", "", ""}; // the label's lines: the action's, then the menu's word
+        uint8_t align[3] = {};      // per line: 0 from the start, 1 pushed in (THE GODHAND), 2 to the end (CANCEL)
+        int count = 0;
+        const char *hot = "";       // "HOT: Save state": a hotkey on this button (locked)
+    };
+    struct MappingView
+    {
+        const char *pad = "", *flames = ""; // the pad's picture and its flame outline (round it, flamesMargin out)
+        const char *brush = "", *brushLit = "", *panel = ""; // the lines' stroke (normal, selected), the panels' wash
+        float padAspect = 4.0f / 3.0f;      // the picture's width / height
+        float flamesMargin = 0.0f;          // a fraction of the picture's height
+        const float *silhouette = nullptr;  // the pad's left and right ends per band from the top (fractions of the
+        int bands = 0;                      // width; negative: an empty band)
+        const MappingLine *lines = nullptr;
+        int lineCount = 0;
+        int cursor = -1;         // the selected line (-1: none, the read-only layout)
+        const char *notice = ""; // the help band's text
+    };
+
     // A button hint in the strip under the help band ("[A] Confirm"): the button's images (PNG paths: one, or two for
     // Classic's two confirm buttons; null = none) and the word.
     struct Hint
@@ -79,6 +107,8 @@ namespace kamite::options_overlay
         // While a page is open: L1 / R1 beside its title, each with the neighbouring category's name outside it
         // (K, Nov 13). A side with no neighbour (word "") shows nothing.
         Hint prevHint, nextHint;
+        // CONTROLS > BUTTON MAPPING open: the whole picture is that page (title CONTROLS, no list, no L1 / R1).
+        const MappingView *mapping = nullptr;
     };
 
     // The fonts (resources/fonts) and the titles' folder (resources/options: title_options.png, title_<category>.png),

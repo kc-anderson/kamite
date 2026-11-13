@@ -160,6 +160,16 @@ namespace kamite::options_pages
             }
             d.rows.push_back(row);
             d.setting.push_back(&s);
+            if (tab == settings::Tab::Controls && std::strcmp(s.key, "MenuButtons") == 0)
+            {
+                // BUTTON MAPPING under Menu Controls: a row with no value that opens its own page.
+                options_overlay::PageRow link;
+                link.name = kMappingName;
+                link.help = d.keep(wrapHelp(kMappingHelp, aspect));
+                d.mappingRow = static_cast<int>(d.rows.size());
+                d.rows.push_back(link);
+                d.setting.push_back(nullptr);
+            }
         }
         d.page.name = d.name.c_str();
         d.page.rows = d.rows.data();

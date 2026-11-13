@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 13, 2026
 
+- Controls: new BUTTON MAPPING page under Menu Controls, showing what each controller button does on the pad (editing comes next).
 - Controls: menus keep confirm, cancel and the d-pad on the same physical buttons (as Menu Controls sets them) whatever the button mapping; their hints and the roulette follow.
 - Controls: a hotkey on a controller button stays on that physical button whatever the button mapping.
 - Controls: removed the old F1 Controls screen and its Back + Start shortcut; F1 can be bound as a hotkey.

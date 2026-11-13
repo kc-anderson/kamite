@@ -61,6 +61,12 @@ namespace kamite::menu_buttons
     // A pad hotkey's button (a ps2x::iop::PadButton bit, naming its place on the default layout) -> the PS2 bit the
     // controller's button at that place gives now: hotkeys stay on their physical button (K, Nov 13).
     uint16_t padBitAtPlace(uint16_t padBit);
+    // The Button Mapping page (mapping_page.h): the PS2 input (prompts::Input, searched from `from` on) whose first
+    // controller binding is the physical button that PS2 button `place` (0..15) has on the default layout; 0xFF: none.
+    uint8_t inputOnPlace(const ps2_host_input::prompts::Snapshot &snapshot, uint8_t place, uint8_t from = 0);
+    // A pad hotkey's button (a ps2x::iop::PadButton bit naming a place on the default layout) -> that place (0..15, the
+    // PS2 button that sits there by default); 0xFF: none.
+    uint8_t placeOfPadBit(uint16_t padBit);
 
     // modern_controls' pad filter (window thread), player 1: the right stick's x (0..255), which turns Gene on the
     // Techniques screen (every menu style; turnTechniquesGene).

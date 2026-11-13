@@ -127,6 +127,9 @@ enum
     PCSX2GS_SCREEN_IMAGE = 3,    // a PNG (path in text): x y top left, x1 y1 bottom right, tinted by fill. size > 0:
                                  // that fraction of the image's height at its top and at its bottom keeps the image's
                                  // proportions and only the middle stretches (a bar with rounded ends)
+    PCSX2GS_SCREEN_LINE = 4,     // from x y to x1 y1, stroke_width thick (a fraction of the height), in fill. With a
+                                 // PNG (path in text) the image is laid along it: u from x2 to y2 (both 0: the whole
+                                 // width) along the line, its height across, tinted by fill
     PCSX2GS_ALIGN_LEFT = 0, PCSX2GS_ALIGN_CENTRE = 1, PCSX2GS_ALIGN_RIGHT = 2,
     PCSX2GS_ALIGN_AFTER_TEXT = 3, // a rect: x is how far (a fraction of the height) after the right end of the last
                                   // text item drawn it starts
