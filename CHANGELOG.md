@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 13, 2026
 
+- Options: changing the aspect ratio no longer crashes the game, and the OPTIONS wall stays sharp after it.
 - Options: Display Mode, Aspect Ratio, Internal Resolution and Post Effects can be changed in game.
 - Options: Internal Resolution and Post Effects apply when the cursor leaves their line (one hitch, not one per step).
 - F11 now saves the window mode as the Display Mode.

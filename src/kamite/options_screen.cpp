@@ -348,7 +348,7 @@ namespace kamite::options_screen
         }
 
         void prepareKind(int kind, const ::Image &standIn, const ::Image &full, const fs::path &cacheDir, std::vector<std::string> &keep,
-                         uint32_t generation)
+                         uint32_t generation, bool live)
         {
             const Kind &k = kKinds[kind];
             const auto found = disc_files::find(k.file);
@@ -407,15 +407,22 @@ namespace kamite::options_screen
             const std::string name = hd_textures::name8(packed.data(), kCtW, kCtH, clut, kTexW, kTexH);
             if (generation != g_wallGeneration.load(std::memory_order_relaxed))
                 return; // the aspect ratio changed again meanwhile
-            {
-                std::lock_guard<std::mutex> lock(w.lock);
-                if (w.ready.load(std::memory_order_relaxed))
-                    w.previous = std::move(w.ours);
-                w.original.assign(payload, payload + kPayloadBytes);
-                w.ours = std::move(packed);
-                w.payloadOffset = header + 0xE0u;
-            }
-            w.ready.store(true, std::memory_order_release);
+            const auto publish = [&] {
+                {
+                    std::lock_guard<std::mutex> lock(w.lock);
+                    if (w.ready.load(std::memory_order_relaxed))
+                        w.previous = std::move(w.ours);
+                    w.original.assign(payload, payload + kPayloadBytes);
+                    w.ours = std::move(packed);
+                    w.payloadOffset = header + 0xE0u;
+                }
+                w.ready.store(true, std::memory_order_release);
+            };
+            // At start the stand-in goes up at once (the screen is not open yet; the full image follows). A new shape
+            // while playing (the aspect ratio changed) waits for its full image to be handed to the GS: the GS caches
+            // a texture's replacement the first time it sees it, so a stand-in shown first stayed low-res (K, Nov 13).
+            if (!live)
+                publish();
 
             // The full image (kept between runs: its name follows the wall, the aspect ratio and the disc).
             const fs::path path = cacheDir / (name + ".png");
@@ -438,6 +445,8 @@ namespace kamite::options_screen
                 if (!hd_textures::savePng(path, image))
                 {
                     KM_WARN(Game, "options screen: could not write " << path.string() << "; the " << k.name << " wall stays at the PS2's resolution");
+                    if (live && generation == g_wallGeneration.load(std::memory_order_relaxed))
+                        publish();
                     return;
                 }
                 KM_INFO(Game, "options screen: the " << k.name << " wall written ("
@@ -450,14 +459,24 @@ namespace kamite::options_screen
                 if (GSPcsx2Backend::SetOption("texture_add", std::string(native.begin(), native.end()).c_str()))
                 {
                     KM_INFO(Game, "options screen: the " << k.name << " wall is " << name);
+                    if (live)
+                    {
+                        // The DLL takes the file at its next present: a few frames before the new stand-in goes up.
+                        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+                        if (generation == g_wallGeneration.load(std::memory_order_relaxed))
+                            publish();
+                    }
                     return;
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(250));
             }
         }
 
+        // live: the aspect ratio changed while playing (generation > 0). The cache keeps every shape until the next
+        // start: the GS has the earlier shapes' images on its list and loads them by path (a removed one crashed it).
         void prepare(fs::path exeDir, float aspect, uint32_t generation)
         {
+            const bool live = generation != 0u;
             std::lock_guard<std::mutex> one(g_prepareMutex);
             if (generation != g_wallGeneration.load(std::memory_order_relaxed))
                 return; // a newer shape is waiting
@@ -492,13 +511,14 @@ namespace kamite::options_screen
             fs::create_directories(cacheDir, ec);
             std::vector<std::string> keep;
             for (int kind = 0; kind < 2; ++kind)
-                prepareKind(kind, standIn, wall, cacheDir, keep, generation);
+                prepareKind(kind, standIn, wall, cacheDir, keep, generation, live);
             UnloadImage(standIn);
             UnloadImage(wall);
-            // Images of other aspect ratios or walls go.
-            for (const auto &entry : fs::directory_iterator(cacheDir, ec))
-                if (entry.is_regular_file(ec) && std::find(keep.begin(), keep.end(), entry.path().filename().string()) == keep.end())
-                    fs::remove(entry.path(), ec);
+            // Images of other aspect ratios or walls go (at start only, before the GS has any of them).
+            if (!live)
+                for (const auto &entry : fs::directory_iterator(cacheDir, ec))
+                    if (entry.is_regular_file(ec) && std::find(keep.begin(), keep.end(), entry.path().filename().string()) == keep.end())
+                        fs::remove(entry.path(), ec);
         }
 
         // ---- layout --------------------------------------------------------------------------------------------

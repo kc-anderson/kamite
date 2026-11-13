@@ -783,6 +783,13 @@ std::optional<GSTextureReplacements::ReplacementTexture> GSTextureReplacements::
 		if (!loader)
 			return std::nullopt;
 		FileSystem::ManagedCFilePtr fp = FileSystem::OpenManagedCFile(file.path.c_str(), "rb");
+		if (!fp)
+		{
+			// Kamite: a file gone since it was listed (removed or renamed while running) is skipped, not read from a
+			// null FILE (the C runtime's invalid-parameter crash, Nov 13).
+			Console.Warning("Replacement texture %s is gone", file.path.c_str());
+			return std::nullopt;
+		}
 		CFile cfile(fp.get());
 		if (!loader(cfile, file.path.c_str(), &rtex, only_base_image))
 		{
