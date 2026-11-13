@@ -69,6 +69,7 @@ namespace kamite::prompt_hd
             case Set::SteamDeck: return "steamdeck";
             case Set::Switch: return "switch";
             case Set::Keyboard: return "keyboard";
+            case Set::PlayStation: return "ps3"; // the OPTIONS screen's hints only (the game's prompts keep the disc's art)
             default: return "";
             }
         }
@@ -101,6 +102,15 @@ namespace kamite::prompt_hd
             {"LS", "Switch_Left_Stick_Click"}, {"RS", "Switch_Right_Stick_Click"},
             {"\xE2\x86\x91", "Switch_Dpad_Up"}, {"\xE2\x86\x93", "Switch_Dpad_Down"}, {"\xE2\x86\x90", "Switch_Dpad_Left"},
             {"\xE2\x86\x92", "Switch_Dpad_Right"},
+        };
+        // The PlayStation 3 set, by place like the others (the bottom button is the cross): only the OPTIONS screen's
+        // confirm / cancel hints draw it (K, Nov 13); the game's own prompts keep the disc's art.
+        constexpr Pair kPs3[] = {
+            {"A", "PS3_Cross"},     {"B", "PS3_Circle"},     {"X", "PS3_Square"},     {"Y", "PS3_Triangle"},
+            {"LB", "PS3_L1"},       {"RB", "PS3_R1"},        {"LT", "PS3_L2"},        {"RT", "PS3_R2"},
+            {"View", "PS3_Select"}, {"Menu", "PS3_Start"},   {"LS", "PS3_Left_Stick_Click"}, {"RS", "PS3_Right_Stick_Click"},
+            {"\xE2\x86\x91", "PS3_Dpad_Up"}, {"\xE2\x86\x93", "PS3_Dpad_Down"}, {"\xE2\x86\x90", "PS3_Dpad_Left"},
+            {"\xE2\x86\x92", "PS3_Dpad_Right"},
         };
         // prompt_art::keyLabel's compact names -> the pack's key (<name>_Key_Light.png).
         constexpr Pair kKeys[] = {
@@ -405,6 +415,16 @@ namespace kamite::prompt_hd
         if (text == "steam" || text == "steamdeck")
             return Choice::Steam;
         return Choice::Auto;
+    }
+
+    std::filesystem::path artFile(Set set, const std::string &label)
+    {
+        const std::string file = set == Set::PlayStation ? lookup(kPs3, label) : fileFor(set, label);
+        if (file.empty())
+            return {};
+        const fs::path path = hd_textures::exeDirectory() / "resources" / "prompts" / "xelu" / folder(set) / (file + ".png");
+        std::error_code ec;
+        return fs::exists(path, ec) ? path : fs::path();
     }
 
     const char *setName(Set set)

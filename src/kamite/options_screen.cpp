@@ -1068,6 +1068,47 @@ namespace kamite::options_screen
         std::string g_strings;
 #endif
 
+        // The confirm / cancel hints' images: the menu buttons (menu_buttons' style) in the prompts' art set and
+        // bindings (button_prompts), looked up again only when one of those changes.
+        struct HintArt
+        {
+            menu_buttons::Style style = menu_buttons::Style::Western;
+            button_prompts::MenuArt art;
+            bool made = false;
+            std::string confirm[2], cancel;
+        };
+        HintArt g_hintArt;
+
+        const HintArt &hintArt()
+        {
+            const menu_buttons::Style style = menu_buttons::style();
+            button_prompts::MenuArt art = button_prompts::menuArt();
+            if (!art.known) // prompts off or not built yet: the PlayStation buttons in their places
+                art = button_prompts::MenuArt{false, prompt_hd::Set::PlayStation, "A", "B", "Y"};
+            HintArt &h = g_hintArt;
+            if (h.made && h.style == style && h.art.set == art.set && h.art.cross == art.cross && h.art.circle == art.circle &&
+                h.art.triangle == art.triangle)
+                return h;
+            const auto file = [&](const std::string &label)
+            {
+                const std::u8string path = prompt_hd::artFile(art.set, label).u8string();
+                return std::string(path.begin(), path.end());
+            };
+            h.style = style;
+            h.art = art;
+            h.made = true;
+            // Western: the cross confirms, the circle cancels; Japanese the other way round; Classic as the US release:
+            // circle and cross confirm (the load menu's order: cross first), triangle cancels.
+            h.confirm[0] = style == menu_buttons::Style::Japanese ? file(art.circle) : file(art.cross);
+            h.confirm[1] = style == menu_buttons::Style::Classic ? file(art.circle) : std::string();
+            h.cancel = style == menu_buttons::Style::Western ? file(art.circle)
+                       : style == menu_buttons::Style::Japanese ? file(art.cross)
+                                                                : file(art.triangle);
+            KM_INFO(Game, "options screen: hints in " << prompt_hd::setName(art.set) << " art (" << menu_buttons::styleName(style)
+                                                      << " menu buttons)");
+            return h;
+        }
+
         void sendOverlay(int kind, const Screen &s, float fade)
         {
 #if defined(KAMITE_HAS_SCREEN_OVERLAY)
@@ -1093,6 +1134,12 @@ namespace kamite::options_screen
                 view.pageCursor = s.inPage ? s.pageCursor : -1;
                 view.pageScroll = s.inPage ? s.pageScroll : 0;
             }
+            const HintArt &hints = hintArt();
+            view.confirmHint.art[0] = hints.confirm[0].c_str();
+            view.confirmHint.art[1] = hints.confirm[1].c_str();
+            view.confirmHint.word = "Confirm";
+            view.cancelHint.art[0] = hints.cancel.c_str();
+            view.cancelHint.word = "Cancel";
             options_overlay::build(view, g_items, g_strings);
             if (const float black = blackout(); black > 0.0f)
                 options_overlay::appendBlackout(black, g_items); // over everything, the menu as it is

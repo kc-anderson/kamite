@@ -130,6 +130,9 @@ enum
     PCSX2GS_ALIGN_LEFT = 0, PCSX2GS_ALIGN_CENTRE = 1, PCSX2GS_ALIGN_RIGHT = 2,
     PCSX2GS_ALIGN_AFTER_TEXT = 3, // a rect: x is how far (a fraction of the height) after the right end of the last
                                   // text item drawn it starts
+    PCSX2GS_ALIGN_BEFORE_LAST = 4, // text or image: it ends x (a fraction of the height) before the left end of the
+                                   // last text or image drawn (a line laid out from its right end); an image is x1
+                                   // (a fraction of the height) wide
 };
 typedef struct Pcsx2GsScreenItem
 {

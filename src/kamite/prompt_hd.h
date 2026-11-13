@@ -42,6 +42,9 @@ namespace kamite::prompt_hd
         Keyboard
     };
     const char *setName(Set set);
+    // The pack's image for a label (a controller's positional name or prompt_art's key name) in a set, "" when the pack
+    // has none or the file is missing. PlayStation gets Xelu's PS3 buttons here (the OPTIONS screen's hints only).
+    std::filesystem::path artFile(Set set, const std::string &label);
 
     // The full-resolution image (kScale x the sheet) of sheet 0 (icons) or 1 (action prompt) for these labels: the PS2
     // sheet given (as the game has it, patched or not) scaled up underneath, every cell the pack has art for drawn over

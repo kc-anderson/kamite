@@ -121,6 +121,23 @@ int main(int argc, char **argv)
     v.pageScroll = argc > 16 ? atoi(argv[16]) : 0;
     if (argc > 17)
         setSliderFill(argv[17]);
+    // The confirm / cancel hints: KAMITE_PREVIEW_HINTS="confirm|confirm2|cancel" (image paths, overlay_preview.py).
+    static std::string hintPaths[3];
+    if (const char *hints = getenv("KAMITE_PREVIEW_HINTS"))
+    {
+        std::string all = hints;
+        for (int i = 0; i < 3; ++i)
+        {
+            const size_t bar = all.find('|');
+            hintPaths[i] = all.substr(0, bar);
+            all = bar == std::string::npos ? std::string() : all.substr(bar + 1);
+        }
+        v.confirmHint.art[0] = hintPaths[0].c_str();
+        v.confirmHint.art[1] = hintPaths[1].c_str();
+        v.confirmHint.word = "Confirm";
+        v.cancelHint.art[0] = hintPaths[2].c_str();
+        v.cancelHint.word = "Cancel";
+    }
     std::vector<Pcsx2GsScreenItem> items;
     std::string strings;
     build(v, items, strings);

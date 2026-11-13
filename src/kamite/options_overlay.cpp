@@ -99,6 +99,11 @@ namespace kamite::options_overlay
         constexpr float kHelpX = 29.0f, kHelpBandTop = 363.5f, kHelpBandBottom = 417.0f;
         constexpr float kHelpCap = 14.0f, kHelpLine = 22.0f, kHelpScaleX = 0.73f;
         constexpr float kHelpShadowX = 0.12f * kHelpCap, kHelpShadowY = 0.11f * kHelpCap; // the hints' shadow, to scale
+        // The confirm / cancel hints: the help's text centred in the darker strip under its band (lines 417..448),
+        // right-aligned kHintRight units in from the text area's edge; each button image kHintArt lines square (the
+        // pack's 100 x 100 buttons fill about 84 % of theirs), kHintArtGap units before its word, the two hints
+        // kHintGap apart.
+        constexpr float kHintY = 432.5f, kHintRight = 16.0f, kHintArt = 24.0f, kHintArtGap = 1.5f, kHintGap = 14.0f;
         // The titles (title_<name>.png: K's painted OPTIONS and the categories made to match by
         // tools/options/make_splash.py), placed as the original's painted one (its letters x 146..363, y 20..66 of the
         // 512 x 448 screen): one canvas for all, the letters centred across it at one height, 8.72 of its pixels per
@@ -460,6 +465,65 @@ namespace kamite::options_overlay
                 }
             }
 
+            // One help-look line, from the right: the word ends at right (units) or, with right < 0, gap units before
+            // the last text or image drawn.
+            void hintWord(const char *word, float right, float gap)
+            {
+                const size_t length = std::strlen(word);
+                if (length == 0u)
+                    return;
+                Pcsx2GsScreenItem item = base();
+                item.kind = PCSX2GS_SCREEN_TEXT;
+                item.align = right < 0.0f ? PCSX2GS_ALIGN_BEFORE_LAST : PCSX2GS_ALIGN_RIGHT;
+                item.text = add(word, length);
+                item.font = helpFont;
+                item.fill = faded(kHelp);
+                item.stroke = 0u;
+                item.x = right < 0.0f ? Space::h(gap) : space.x(right);
+                item.y = Space::y(kHintY + 0.5f * kHelpCap);
+                item.size = Space::y(kHelpCap);
+                item.scale_x = Space::scale(kHelpScaleX);
+                item.shadow = faded(kHelpShadow);
+                item.shadow_x = Space::y(kHelpShadowX);
+                item.shadow_y = Space::y(kHelpShadowY);
+                items.push_back(item);
+            }
+
+            // A button image gap units before the last text or image drawn.
+            void hintArt(const char *path, float gap)
+            {
+                Pcsx2GsScreenItem item{};
+                item.kind = PCSX2GS_SCREEN_IMAGE;
+                item.align = PCSX2GS_ALIGN_BEFORE_LAST;
+                item.text = add(path, std::strlen(path));
+                item.fill = faded(rgba(255, 255, 255));
+                item.x = Space::h(gap);
+                item.x1 = Space::y(kHintArt);
+                item.y = Space::y(kHintY - 0.5f * kHintArt);
+                item.y1 = Space::y(kHintY + 0.5f * kHintArt);
+                items.push_back(item);
+            }
+
+            // "[A] Confirm  [B] Cancel", laid out from the right end.
+            void hints(const Hint &confirm, const Hint &cancel)
+            {
+                float gap = -1.0f; // the first word: at the edge
+                for (const Hint *h : {&cancel, &confirm})
+                {
+                    if (!*h->word)
+                        continue;
+                    hintWord(h->word, gap < 0.0f ? space.area - kHintRight : -1.0f, gap);
+                    float artGap = kHintArtGap;
+                    for (int i = 1; i >= 0; --i) // drawn right to left: art[1] beside the word
+                        if (h->art[i] && *h->art[i])
+                        {
+                            hintArt(h->art[i], artGap);
+                            artGap = 0.0f;
+                        }
+                    gap = kHintGap;
+                }
+            }
+
             void title(uint32_t path)
             {
                 Pcsx2GsScreenItem item = base();
@@ -522,6 +586,7 @@ namespace kamite::options_overlay
             // Narrow: the page replaces the list.
             b.page(*page, view.pageScroll, view.pageCursor, kCursorX, b.space.area - kLabelX);
             b.help(view.pageCursor >= 0 && view.pageCursor < page->rowCount ? page->rows[view.pageCursor].help : "");
+            b.hints(view.confirmHint, view.cancelHint);
             return;
         }
 
@@ -562,6 +627,7 @@ namespace kamite::options_overlay
             b.help(view.pageCursor >= 0 && view.pageCursor < page->rowCount ? page->rows[view.pageCursor].help : "");
         else
             b.help(view.rows[cursor].help);
+        b.hints(view.confirmHint, view.cancelHint);
     }
 #endif
 }

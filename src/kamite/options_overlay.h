@@ -48,6 +48,14 @@ namespace kamite::options_overlay
         int rowCount = 0;
     };
 
+    // A button hint in the strip under the help band ("[A] Confirm"): the button's images (PNG paths: one, or two for
+    // Classic's two confirm buttons; null = none) and the word.
+    struct Hint
+    {
+        const char *art[2] = {nullptr, nullptr};
+        const char *word = "";
+    };
+
     struct View
     {
         float aspect = 16.0f / 9.0f; // the picture's
@@ -65,6 +73,9 @@ namespace kamite::options_overlay
         bool inPage = false; // the cursor is in the page
         int pageCursor = 0;  // its row
         int pageScroll = 0;  // the first row shown
+        // The menu buttons' hints, laid out from the strip's right end: confirm, then cancel (K, Nov 13: as the game's
+        // load menu words them, in the help text's look, on the list, in pages and while asking Yes / No).
+        Hint confirmHint, cancelHint;
     };
 
     // The fonts (resources/fonts) and the titles' folder (resources/options: title_options.png, title_<category>.png),

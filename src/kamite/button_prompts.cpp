@@ -89,6 +89,9 @@ namespace kamite::button_prompts
             uint64_t crateHash = 0u;
         };
         std::mutex g_imagesMutex;
+        // The OPTIONS screen's confirm / cancel hints (menuArt()): the set and the labels of the menu buttons.
+        std::mutex g_menuArtMutex;
+        MenuArt g_menuArt;
         std::shared_ptr<const Images> g_images;
 
         // ---- EE thread only ----
@@ -714,6 +717,10 @@ namespace kamite::button_prompts
                 }
                 const bool playStation = set == prompt_hd::Set::PlayStation;
                 const sheets::PromptLabels labels = labelsFor(bindings::snapshot(), device);
+                {
+                    std::lock_guard<std::mutex> lock(g_menuArtMutex);
+                    g_menuArt = MenuArt{true, set, labels.icon[sheets::Cross], labels.icon[sheets::Circle], labels.icon[sheets::Triangle]};
+                }
                 std::string summary = std::string(prompt_hd::setName(set)) + " prompts";
                 // Every set starts from the disc's art. PlayStation keeps it; the others get full-resolution images
                 // (prompt_hd) of the pack's buttons over it, under the sheets' own texture names. The CLUT's mark makes the
@@ -834,5 +841,11 @@ namespace kamite::button_prompts
     void requestRebuild()
     {
         g_promptsRebuild.store(true, std::memory_order_release);
+    }
+
+    MenuArt menuArt()
+    {
+        std::lock_guard<std::mutex> lock(g_menuArtMutex);
+        return g_menuArt;
     }
 }

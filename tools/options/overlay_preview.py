@@ -2,11 +2,14 @@
 
 python tools/options/overlay_preview.py out.png [--size 1920x1080] [--title] [--cursor N] [--confirm N]
     [--page controls|display|interface|gameplay|sound] [--open] [--row N] [--scroll N] [--set Section.Key=Value ...]
+    [--menu western|japanese|classic] [--prompts xbox|playstation|nintendo|steam|keys]
 
 Builds tools/options/overlay_preview.cpp (g++, the repo's ImGui) with the DLL's own drawing code cut from HostStubs.cpp,
 crops resources/options/wall.jpg to the size's shape and draws options_overlay.cpp's list over it. The pages are the
 game's own (options_pages.cpp from the shared settings list over the repo's GHR.ini; --set changes a value, e.g.
---set Game.ControlStyle=modern). --row is the page row (headers count). Needs Pillow.
+--set Game.ControlStyle=modern). --row is the page row (headers count). --menu / --prompts pick the confirm / cancel
+hints' buttons (the default bindings: cross / circle / triangle on the bottom / right / top buttons, keys K / L / I).
+Needs Pillow.
 """
 import argparse, os, re, struct, subprocess, tempfile
 from PIL import Image
@@ -28,6 +31,26 @@ def build(work):
                           [os.path.join(IMGUI, 'src', f) for f in ('imgui.cpp', 'imgui_draw.cpp', 'imgui_widgets.cpp', 'imgui_tables.cpp')])
     return exe
 
+# The default bindings' cross, circle and triangle in each set (prompt_hd.cpp's tables: Nintendo by place).
+HINT_ART = {'xbox': ('xbox360', '360_A', '360_B', '360_Y'),
+            'playstation': ('ps3', 'PS3_Cross', 'PS3_Circle', 'PS3_Triangle'),
+            'nintendo': ('switch', 'Switch_B', 'Switch_A', 'Switch_X'),
+            'steam': ('steamdeck', 'SteamDeck_A', 'SteamDeck_B', 'SteamDeck_Y'),
+            'keys': ('keyboard', 'K_Key_Light', 'L_Key_Light', 'I_Key_Light')}
+
+def hint_paths(work, menu, prompts):
+    folder, cross, circle, triangle = HINT_ART[prompts]
+    def path(name):
+        out = os.path.join(work, name + '.png')
+        im = Image.open(os.path.join(ROOT, 'resources/prompts/xelu', folder, name + '.png')).convert('RGBA')
+        open(out + '.rgba', 'wb').write(struct.pack('<II', *im.size) + im.tobytes())
+        return out
+    if menu == 'japanese':
+        return [path(circle), '', path(cross)]
+    if menu == 'classic':
+        return [path(cross), path(circle), path(triangle)]
+    return [path(cross), '', path(circle)]
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('out')
@@ -40,6 +63,8 @@ def main():
     ap.add_argument('--row', type=int, default=1, help="the page's cursor row")
     ap.add_argument('--scroll', type=int, default=0)
     ap.add_argument('--set', action='append', default=[], help='Section.Key=Value over the repo\'s GHR.ini')
+    ap.add_argument('--menu', choices=['western', 'japanese', 'classic'], default='western')
+    ap.add_argument('--prompts', choices=sorted(HINT_ART), default='xbox')
     a = ap.parse_args()
     w, h = map(int, a.size.split('x'))
     work = tempfile.mkdtemp()
@@ -62,11 +87,12 @@ def main():
         bars.append(path)
     fonts = os.path.join(ROOT, 'resources/fonts')
     page = {'controls': 0, 'display': 1, 'interface': 2, 'gameplay': 3, 'sound': 4}.get(a.page, -1)
+    env = dict(os.environ, KAMITE_PREVIEW_HINTS='|'.join(hint_paths(work, a.menu, a.prompts)))
     subprocess.check_call([exe, raw_in, str(w), str(h), raw_out, '0' if a.title else '1', str(a.cursor), str(a.confirm),
                            os.path.join(fonts, 'ArchivoNarrow-SemiBold.ttf'),
                            os.path.join(fonts, 'DejaVuSans-Bold.ttf'), title] + bars[:2] +
                           [str(page), '1' if a.open else '0', str(a.row), str(a.scroll), bars[2],
-                           os.path.join(ROOT, 'GHR.ini')] + a.set)
+                           os.path.join(ROOT, 'GHR.ini')] + a.set, env=env)
     Image.frombytes('RGB', (w, h), open(raw_out, 'rb').read()).save(a.out)
 
 if __name__ == '__main__':

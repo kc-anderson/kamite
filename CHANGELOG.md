@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 13, 2026
 
+- Options: Confirm / Cancel button hints at the bottom right, matching Menu Controls and the button prompts (PlayStation pads get Xelu's PS3 buttons here).
 - Options: Renderer leads the Display page; the Camera settings moved to the top of Controls.
 - Aspect ratios within 3% of the screen's own shape use the screen's exact shape (no thin bars on ultrawides).
 - Launcher: long splash lines tilt further instead of running off a 4:3 window; the splash shadow sits closer.
