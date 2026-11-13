@@ -1,15 +1,15 @@
 # The Button Mapping page's xbox pad: written by tools/options/make_pad_art.py (edit the points there).
 image pad_xbox.png 1448 1086
-flames flames_xbox.png 152.0
+flames flames_xbox.png 174.0
 # point <button> <x> <y> <how far short of it the line stops>, in the render's pixels
 point south 1128 535 42
 point east 1238 432 42
 point west 1018 432 42
 point north 1130 330 42
-point l1 300 200 0
-point r1 1150 200 0
-point l2 345 68 0
-point r2 1110 68 0
+point l1 255 205 0
+point r1 1200 205 0
+point l2 300 112 0
+point r2 1165 112 0
 point l3 310 412 18
 point r3 918 637 18
 point start 880 428 26
@@ -17,6 +17,7 @@ point select 565 430 26
 point dpad 500 665 70
 point lstick 310 478 62
 point rstick 918 703 62
+via west 1095 612
 left l2 l1 l3 lstick dpad
 right start r2 r1 north east south west r3 rstick
 # the silhouette's left and right ends per band from the top (fractions of the width; -1: none)

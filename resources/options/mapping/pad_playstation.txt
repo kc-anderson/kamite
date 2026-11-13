@@ -1,6 +1,6 @@
 # The Button Mapping page's playstation pad: written by tools/options/make_pad_art.py (edit the points there).
 image pad_playstation.png 1583 992
-flames flames_playstation.png 138.0
+flames flames_playstation.png 158.0
 # point <button> <x> <y> <how far short of it the line stops>, in the render's pixels
 point south 1265 563 48
 point east 1390 440 48
@@ -17,6 +17,7 @@ point select 648 432 30
 point dpad 322 438 100
 point lstick 552 706 62
 point rstick 1027 706 62
+via west 1212 645
 left l2 l1 dpad l3 lstick
 right start r2 r1 north east south west r3 rstick
 # the silhouette's left and right ends per band from the top (fractions of the width; -1: none)

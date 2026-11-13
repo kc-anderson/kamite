@@ -44,7 +44,8 @@ namespace kamite::mapping_page
         struct Point
         {
             float x = 0.0f, y = 0.0f, reach = 0.0f;
-            bool set = false;
+            float viaX = 0.0f, viaY = 0.0f; // a bend on the line's way (via), when hasVia
+            bool set = false, hasVia = false;
         };
         std::array<Point, PlaceCount> points{};
         std::vector<uint8_t> left, right; // the columns' places, top to bottom

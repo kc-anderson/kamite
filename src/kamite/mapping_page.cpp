@@ -21,19 +21,18 @@ namespace kamite::mapping_page
         struct Words
         {
             const char *line[2];
-            uint8_t align[2];
         };
         constexpr Words kActions[kRemappable] = {
-            {{"ATTACK", "THROW ITEM"}, {0, 0}},   // cross
-            {{"ACTION BUTTON", nullptr}, {0, 0}}, // circle
-            {{"COMBO", nullptr}, {0, 0}},         // square
-            {{"ATTACK", nullptr}, {0, 0}},        // triangle
-            {{"180\xC2\xB0 TURN", nullptr}, {0, 0}},
-            {{"OPEN", "ROULETTE WHEEL"}, {0, 1}},
-            {{"TAUNT", nullptr}, {0, 0}},
-            {{"UNLEASH", "THE GODHAND"}, {0, 1}},
-            {{"DASH", nullptr}, {0, 0}},          // L3: with Click-Stick Dash
-            {{"BRAWL / FREECAM", nullptr}, {0, 0}}, // R3: with Modern
+            {{"ATTACK", "THROW ITEM"}},   // cross
+            {{"ACTION BUTTON", nullptr}}, // circle
+            {{"COMBO", nullptr}},         // square
+            {{"ATTACK", nullptr}},        // triangle
+            {{"180\xC2\xB0 TURN", nullptr}},
+            {{"OPEN", "ROULETTE WHEEL"}},
+            {{"TAUNT", nullptr}},
+            {{"UNLEASH", "THE GODHAND"}},
+            {{"DASH", nullptr}},          // L3: with Click-Stick Dash
+            {{"BRAWL / FREECAM", nullptr}}, // R3: with Modern
         };
         constexpr const char *kEmpty = "\xE2\x80\x94"; // an em dash: nothing on this button
 
@@ -119,6 +118,22 @@ namespace kamite::mapping_page
                 p.set = true;
                 out.points[static_cast<size_t>(place)] = p;
             }
+            else if (word == "via")
+            {
+                std::string name;
+                float x = 0.0f, y = 0.0f;
+                in >> name >> x >> y;
+                const int place = placeOf(name);
+                if (place < 0 || in.fail())
+                {
+                    error = "bad via line: " + line;
+                    return false;
+                }
+                PadArt::Point &p = out.points[static_cast<size_t>(place)];
+                p.viaX = x;
+                p.viaY = y;
+                p.hasVia = true;
+            }
             else if (word == "left" || word == "right")
             {
                 std::vector<uint8_t> &column = word == "left" ? out.left : out.right;
@@ -194,8 +209,10 @@ namespace kamite::mapping_page
         const std::string icons = root + "/resources/prompts/xelu/" + set.folder + "/";
         d.view.pad = d.keep(artDir + "/" + art.image);
         d.view.flames = art.flames.empty() ? "" : d.keep(artDir + "/" + art.flames);
-        d.view.brush = d.keep(artDir + "/brush.png");
-        d.view.brushLit = d.keep(artDir + "/brush_lit.png");
+        d.view.leader = d.keep(artDir + "/leader.png");
+        d.view.leaderLit = d.keep(artDir + "/leader_lit.png");
+        d.view.underscore = d.keep(artDir + "/underscore.png");
+        d.view.underscoreLit = d.keep(artDir + "/underscore_lit.png");
         d.view.panel = d.keep(artDir + "/panel.png");
         d.view.padAspect = art.width / art.height;
         d.view.flamesMargin = art.flamesMargin / art.height;
@@ -224,14 +241,16 @@ namespace kamite::mapping_page
                 line.px = p.x / art.width;
                 line.py = p.y / art.height;
                 line.reach = p.reach / art.height;
+                if (p.hasVia)
+                {
+                    line.via = true;
+                    line.vx = p.viaX / art.width;
+                    line.vy = p.viaY / art.height;
+                }
                 line.right = side == 1;
-                const auto add = [&](const char *text, uint8_t align) {
+                const auto add = [&](const char *text) {
                     if (text && line.count < 3)
-                    {
-                        line.text[line.count] = text;
-                        line.align[line.count] = align;
-                        ++line.count;
-                    }
+                        line.text[line.count++] = text;
                 };
                 if (place < kRemappable)
                 {
@@ -239,32 +258,33 @@ namespace kamite::mapping_page
                     const bool shown = input < kRemappable && !(input == L3 && !options.clickStickDash) && !(input == R3 && !options.modern);
                     if (shown)
                     {
-                        add(kActions[input].line[0], kActions[input].align[0]);
-                        add(kActions[input].line[1], kActions[input].align[1]);
+                        add(kActions[input].line[0]);
+                        add(kActions[input].line[1]);
                     }
                     else
-                        add(kEmpty, 0);
+                        add(kEmpty);
                     if (const char *word = menuWord(place))
-                        add(word, line.count == 1 ? 2 : 0); // the original's ATTACK / CANCEL: a second line to the end
+                        add(word);
                     if (!state.hot[place].empty())
                         line.hot = d.keep("HOT: " + state.hot[place]);
                 }
                 else if (place == Start)
-                    add("MENU", 0);
+                    add("MENU");
                 else if (place == LStick)
-                    add("MOVE", 0);
+                    add("MOVE");
                 else if (place == RStick)
                 {
                     if (options.modern)
                     {
-                        add("EVADE (BRAWLING)", 0);
-                        add("CAMERA (FREECAM)", 0);
+                        add("EVADE (BRAWLING)");
+                        add("CAMERA (FREECAM)");
                     }
                     else
-                        add("EVADE", 0);
+                        add("EVADE");
                 }
                 else if (place == DPad && options.presets)
-                    add("STYLE SWITCH", 0);
+                    add("STYLE SWITCH");
+                line.fixed = place >= kRemappable;
                 if (line.count == 0)
                     continue; // nothing in play (Select; the d-pad without Moveset Presets): no line, as the original
                 if (place == LStick || place == RStick)
@@ -274,6 +294,18 @@ namespace kamite::mapping_page
                 d.lines.push_back(line);
                 d.places.push_back(place);
             }
+        // The left column lines up with the right where the pad is symmetric (the original's L2 / R2, L1 / R1 and
+        // left / right stick rows share their heights).
+        for (size_t i = 0; i < d.lines.size(); ++i)
+        {
+            if (d.lines[i].right)
+                continue;
+            const uint8_t p = d.places[i];
+            const uint8_t want = p == L2 ? uint8_t{R2} : p == L1 ? uint8_t{R1} : p == L3 ? uint8_t{R3} : p == LStick ? uint8_t{RStick} : kNone;
+            for (size_t j = 0; j < d.lines.size(); ++j)
+                if (d.lines[j].right && d.places[j] == want)
+                    d.lines[i].mirror = static_cast<int>(j);
+        }
         d.view.lines = d.lines.data();
         d.view.lineCount = static_cast<int>(d.lines.size());
         d.view.cursor = -1;

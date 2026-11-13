@@ -1002,9 +1002,9 @@ namespace
         list->_FringeScale = fringe;
     }
 
-    // An image file, loaded on first use and shrunk by a whole factor (a box filter, alpha-weighted) to about the size
-    // it is first drawn at, so the picture's linear filter never minifies it much. A later, larger window draws it
-    // scaled up.
+    // An image file, loaded on first use and shrunk (an area average, alpha-weighted) to the size it is first drawn at
+    // when that is more than a little smaller, so the picture's linear filter never minifies it (minified, a detailed
+    // image reads crunchy: K, the BUTTON MAPPING pad). A later, larger window draws it scaled up.
     ImTextureData *ScreenImageFor(const char *path, float drawnHeight, float drawnWidth = 0.0f)
     {
         if (!path || !*path)
@@ -1021,30 +1021,56 @@ namespace
             return nullptr;
         }
         // A bar with fixed ends (drawnWidth set) is shrunk to its width; anything else to its height.
-        const int f = std::clamp(static_cast<int>(drawnWidth > 0.0f ? static_cast<float>(w) / drawnWidth
-                                                                     : static_cast<float>(h) / std::max(drawnHeight, 1.0f)),
-                                 1, 64);
-        const int ow = std::max(1, w / f), oh = std::max(1, h / f);
+        const float ratio = std::clamp(drawnWidth > 0.0f ? static_cast<float>(w) / drawnWidth
+                                                         : static_cast<float>(h) / std::max(drawnHeight, 1.0f),
+                                       1.0f, 64.0f);
+        const bool shrink = ratio > 1.15f;
+        const int ow = shrink ? std::max(1, static_cast<int>(static_cast<float>(w) / ratio + 0.5f)) : w;
+        const int oh = shrink ? std::max(1, static_cast<int>(static_cast<float>(h) / ratio + 0.5f)) : h;
+        // Premultiplied, then each output texel the average of the input area it covers (rows, then columns).
+        std::vector<float> pm(static_cast<size_t>(w) * h * 4u), rows(static_cast<size_t>(ow) * h * 4u), out(static_cast<size_t>(ow) * oh * 4u);
+        for (size_t i = 0; i < static_cast<size_t>(w) * h; ++i)
+        {
+            const float a = rgba[i * 4u + 3u] / 255.0f;
+            for (int c = 0; c < 3; ++c)
+                pm[i * 4u + c] = rgba[i * 4u + c] * a;
+            pm[i * 4u + 3u] = a;
+        }
+        const auto area = [](const float *in, int n, size_t inStride, float *dst, int m, size_t outStride)
+        {
+            const float scale = static_cast<float>(n) / static_cast<float>(m);
+            for (int i = 0; i < m; ++i)
+            {
+                const float a = static_cast<float>(i) * scale, b = static_cast<float>(i + 1) * scale;
+                float sum[4] = {}, weight = 0.0f;
+                for (int k = static_cast<int>(a); k < n && static_cast<float>(k) < b; ++k)
+                {
+                    const float part = std::min(b, static_cast<float>(k) + 1.0f) - std::max(a, static_cast<float>(k));
+                    if (part <= 0.0f)
+                        continue;
+                    for (int c = 0; c < 4; ++c)
+                        sum[c] += in[static_cast<size_t>(k) * inStride + c] * part;
+                    weight += part;
+                }
+                for (int c = 0; c < 4; ++c)
+                    dst[static_cast<size_t>(i) * outStride + c] = weight > 0.0f ? sum[c] / weight : 0.0f;
+            }
+        };
+        for (int y = 0; y < h; ++y)
+            area(&pm[static_cast<size_t>(y) * w * 4u], w, 4u, &rows[static_cast<size_t>(y) * ow * 4u], ow, 4u);
+        for (int x = 0; x < ow; ++x)
+            area(&rows[static_cast<size_t>(x) * 4u], h, static_cast<size_t>(ow) * 4u, &out[static_cast<size_t>(x) * 4u], oh,
+                 static_cast<size_t>(ow) * 4u);
         ImTextureData *tex = IM_NEW(ImTextureData)();
         tex->Create(ImTextureFormat_RGBA32, ow, oh);
         for (int y = 0; y < oh; ++y)
             for (int x = 0; x < ow; ++x)
             {
-                float sum[4] = {};
-                for (int yy = y * f; yy < y * f + f; ++yy)
-                    for (int xx = x * f; xx < x * f + f; ++xx)
-                    {
-                        const uint8_t *p = &rgba[(static_cast<size_t>(yy) * w + xx) * 4u];
-                        const float a = p[3];
-                        sum[0] += p[0] * a;
-                        sum[1] += p[1] * a;
-                        sum[2] += p[2] * a;
-                        sum[3] += a;
-                    }
-                unsigned char *out = static_cast<unsigned char *>(tex->GetPixelsAt(x, y));
+                const float *p = &out[(static_cast<size_t>(y) * ow + x) * 4u];
+                unsigned char *o = static_cast<unsigned char *>(tex->GetPixelsAt(x, y));
                 for (int c = 0; c < 3; ++c)
-                    out[c] = static_cast<unsigned char>(sum[3] > 0.0f ? std::min(255.0f, sum[c] / sum[3] + 0.5f) : 0.0f);
-                out[3] = static_cast<unsigned char>(sum[3] / static_cast<float>(f * f) + 0.5f);
+                    o[c] = static_cast<unsigned char>(p[3] > 0.0f ? std::min(255.0f, p[c] / p[3] + 0.5f) : 0.0f);
+                o[3] = static_cast<unsigned char>(std::min(255.0f, p[3] * 255.0f + 0.5f));
             }
         ImGui::RegisterUserTexture(tex);
         g_screenImages.back().second = tex;

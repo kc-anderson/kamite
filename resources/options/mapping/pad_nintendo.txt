@@ -1,15 +1,15 @@
 # The Button Mapping page's nintendo pad: written by tools/options/make_pad_art.py (edit the points there).
 image pad_nintendo.png 1536 1024
-flames flames_nintendo.png 144.0
+flames flames_nintendo.png 164.0
 # point <button> <x> <y> <how far short of it the line stops>, in the render's pixels
 point south 1193 515 42
 point east 1313 422 42
 point west 1067 422 42
 point north 1190 328 42
-point l1 310 110 0
-point r1 1215 110 0
-point l2 340 38 0
-point r2 1190 38 0
+point l1 300 110 0
+point r1 1240 112 0
+point l2 318 52 0
+point r2 1222 52 0
 point l3 530 615 16
 point r3 995 615 16
 point start 865 415 25
@@ -17,6 +17,7 @@ point select 670 415 25
 point dpad 338 418 85
 point lstick 530 672 55
 point rstick 995 672 55
+via west 1150 592
 left l2 l1 dpad l3 lstick
 right start r2 r1 north east south west r3 rstick
 # the silhouette's left and right ends per band from the top (fractions of the width; -1: none)

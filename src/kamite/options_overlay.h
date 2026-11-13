@@ -55,17 +55,22 @@ namespace kamite::options_overlay
     {
         float px = 0.0f, py = 0.0f; // the button on the pad's picture (fractions of its width and height)
         float reach = 0.0f;         // the line stops this far short of it (a fraction of the picture's height)
+        bool via = false;           // the line bends at (vx, vy) on its way (fractions of the picture)
+        float vx = 0.0f, vy = 0.0f;
         bool right = false;         // the right-hand column (lines are listed left column first, each top to bottom)
+        bool fixed = false;         // not remappable (Start, the sticks, the d-pad): drawn muted
+        int mirror = -1;            // left column: the right-hand line it lines up with (L2 with R2 ...), -1 none
         const char *icon = "";      // the button's prompt image
         const char *text[3] = {"", "", ""}; // the label's lines: the action's, then the menu's word
-        uint8_t align[3] = {};      // per line: 0 from the start, 1 pushed in (THE GODHAND), 2 to the end (CANCEL)
         int count = 0;
         const char *hot = "";       // "HOT: Save state": a hotkey on this button (locked)
     };
     struct MappingView
     {
         const char *pad = "", *flames = ""; // the pad's picture and its flame outline (round it, flamesMargin out)
-        const char *brush = "", *brushLit = "", *panel = ""; // the lines' stroke (normal, selected), the panels' wash
+        const char *leader = "", *leaderLit = "";         // the lines from the buttons (tapering to the button)...
+        const char *underscore = "", *underscoreLit = ""; // ...and along the panels' bottoms (normal, selected)
+        const char *panel = "";             // the panels' wash (opaque at the outer end)
         float padAspect = 4.0f / 3.0f;      // the picture's width / height
         float flamesMargin = 0.0f;          // a fraction of the picture's height
         const float *silhouette = nullptr;  // the pad's left and right ends per band from the top (fractions of the
@@ -75,7 +80,6 @@ namespace kamite::options_overlay
         int cursor = -1;         // the selected line (-1: none, the read-only layout)
         const char *notice = ""; // the help band's text
     };
-
     // A button hint in the strip under the help band ("[A] Confirm"): the button's images (PNG paths: one, or two for
     // Classic's two confirm buttons; null = none) and the word.
     struct Hint

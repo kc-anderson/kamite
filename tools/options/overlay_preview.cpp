@@ -224,6 +224,47 @@ int main(int argc, char **argv)
     std::vector<Pcsx2GsScreenItem> items;
     std::string strings;
     build(v, items, strings);
+    // BUTTON MAPPING checks (stderr): leaders that cross, and leaders passing over another line's button.
+    if (v.mapping)
+    {
+        const Pcsx2GsScreenItem *pad = nullptr;
+        std::vector<const Pcsx2GsScreenItem *> leaders;
+        for (const Pcsx2GsScreenItem &it : items)
+        {
+            const char *path = strings.c_str() + it.text;
+            if (it.kind == PCSX2GS_SCREEN_IMAGE && strstr(path, "/pad_"))
+                pad = &it;
+            if (it.kind == PCSX2GS_SCREEN_LINE && strstr(path, "/leader"))
+                leaders.push_back(&it);
+        }
+        const auto P = [&](float x, float y) { return std::pair<float, float>(x * W, y * H); };
+        const auto cross = [](std::pair<float, float> a, std::pair<float, float> b, std::pair<float, float> c) {
+            return (b.first - a.first) * (c.second - a.second) - (b.second - a.second) * (c.first - a.first);
+        };
+        for (size_t i = 0; i < leaders.size(); ++i)
+            for (size_t j = i + 1; j < leaders.size(); ++j)
+            {
+                const auto a = P(leaders[i]->x, leaders[i]->y), b = P(leaders[i]->x1, leaders[i]->y1);
+                const auto c = P(leaders[j]->x, leaders[j]->y), d = P(leaders[j]->x1, leaders[j]->y1);
+                if (cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0)
+                    fprintf(stderr, "CROSS: leader %zu (from %.0f,%.0f) x leader %zu (from %.0f,%.0f)\n", i, a.first, a.second, j, c.first, c.second);
+            }
+        if (pad)
+            for (size_t i = 0; i < leaders.size(); ++i)
+                for (int k = 0; k < mapping.view.lineCount; ++k)
+                {
+                    const auto &l = mapping.view.lines[k];
+                    const float bx = (pad->x + l.px * (pad->x1 - pad->x)) * W, by = (pad->y + l.py * (pad->y1 - pad->y)) * H;
+                    const auto a = P(leaders[i]->x, leaders[i]->y), b = P(leaders[i]->x1, leaders[i]->y1);
+                    const float dx = b.first - a.first, dy = b.second - a.second, len2 = dx * dx + dy * dy;
+                    const float t = std::clamp(((bx - a.first) * dx + (by - a.second) * dy) / std::max(len2, 1.0f), 0.0f, 1.0f);
+                    const float ex = a.first + t * dx - bx, ey = a.second + t * dy - by, dist = std::sqrt(ex * ex + ey * ey);
+                    const float r = l.reach * (pad->y1 - pad->y) * H;
+                    if (t > 0.02f && dist < std::max(r, 0.012f * H) && std::hypot(a.first - bx, a.second - by) > r + 2.0f)
+                        fprintf(stderr, "OVER: leader %zu (from %.0f,%.0f) passes %.0f px from line %d's button (%s)\n", i, a.first,
+                                a.second, dist, k, l.text[0]);
+                }
+    }
     g_screenItems = items;
     g_screenStrings = strings;
     g_screenStrings.push_back('\0');
