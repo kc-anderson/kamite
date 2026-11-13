@@ -79,8 +79,9 @@ namespace kamite::options_overlay
         // Our labels' and values' softening (so they sit with the game's upscaled 2D) and drop shadow, in lines (K's
         // values from F2, Nov 13).
         constexpr float kBlur = 0.69f, kShadowAlpha = 1.0f, kShadowOffset = 0.88f;
-        // A slider: the enemy health bar's fill (6 lines of 8 there) over its translucent black background (PS2 alpha
-        // 0x2C), the number in kSliderNumber units at the right.
+        // A slider: the enemy health bar's fill over the dark band of the same gauge texture (K's pick, Nov 13: the
+        // bar's own translucent black vanishes on the wall), with the text's drop shadow; the number in kSliderNumber
+        // units at the right.
         constexpr float kSliderHalf = 3.5f, kSliderBorder = 1.0f, kSliderNumber = 40.0f;
         constexpr uint32_t kSliderBack = rgba(0x3B, 0x23, 0x1F);
 
@@ -286,6 +287,9 @@ namespace kamite::options_overlay
                 const float f = span > 0.0f ? std::clamp((static_cast<float>(row.values[c]) - first) / span, 0.0f, 1.0f) : 0.0f;
                 const float border = kSliderBorder * kLinesToUnits;
                 rect(x - border, centre - kSliderHalf - kSliderBorder, x1 + border, centre + kSliderHalf + kSliderBorder, kSliderBack);
+                Pcsx2GsScreenItem &back = items.back(); // the text's drop shadow, setting the bar off from the wall (K)
+                back.shadow = faded(rgba(0, 0, 0), kShadowAlpha);
+                back.shadow_x = back.shadow_y = Space::y(kShadowOffset);
                 if (f > 0.0f && !g_sliderFill.empty())
                 {
                     Pcsx2GsScreenItem item{};
