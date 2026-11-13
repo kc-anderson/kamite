@@ -4,6 +4,7 @@ Newest first, one line per change; the code comments say how.
 
 ## November 13, 2026
 
+- 60 FPS: the fighting ring's menu arrows, round start and end banners, prize tally and enemy wave timers run at their original speed; so do the casino games' UI animations.
 - Options: LB / RB hints beside an open category's title, with the neighbouring categories' names; the Confirm / Cancel hints sit a little higher.
 - Options: new help texts for the categories, Graphics API, Internal Resolution and Aspect Ratio; Graphics API shows DX11; Vibration sits above Menu Controls.
 - Options: Graphics API can be changed in game (behind the fade); if the new one fails to start, the old one stays and a notice says so.

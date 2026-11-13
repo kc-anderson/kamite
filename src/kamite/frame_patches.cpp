@@ -1413,6 +1413,51 @@ namespace kamite
             }
         }
 
+        // CustomIDWork_Main (0x2D5DE0): the per-frame animator of the "custom ID" UI pieces (slides, pulses, sine
+        // bobs, colour pulses, timed shows) used by the fighting ring's menus and banners, the casino games (blackjack,
+        // slots, the Chihuahua race) and a few HUD bars. Each call steps every animation by one frame, so at 60 they
+        // all ran double (T1, Nov 13: the ring list's scroll arrows). Run on the 30 FPS frames only; the results stay
+        // in the pieces, so they are drawn as they are on the frames between.
+        GuestFunction g_origCustomIdMain = nullptr;
+        void customIdMain(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (g_fps60 && ctx->pc == 0x2D5DE0u && thinkSkipped(rdram))
+            {
+                ctx->pc = GPR_U32(ctx, 31);
+                return;
+            }
+            g_origCustomIdMain(rdram, ctx, runtime);
+        }
+
+        // ColiseumBattle_StepResult (0x1EF180, a0 = the ring's battle object, +0x8 its sub-step): the round's end (the
+        // CLEAR banner's holds, the prize tally of 1000 gold a frame with a tick sound, the waits before the fade). Its
+        // sub-steps 0..9 are frame-counted, so on the frames between the 30 FPS ones only the common tail runs
+        // (NoOp_1F0490, the UI's move 0x1F28F0 and trans 0x1F2990 on +0x60): the UI is still drawn every frame. The
+        // tally (5) still runs at once when its skip buttons (GameWork +0x1A0 trg, the mask at 0x1EF494) are pressed,
+        // so no press is lost; 10 waits for a press, so it runs every frame.
+        GuestFunction g_origRingResult = nullptr;
+        void ringResult(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const uint32_t self = GPR_U32(ctx, 4);
+            if (g_fps60 && ctx->pc == 0x1EF180u && self >= 0x100000u && self < 0x2000000u - 0x100u && thinkSkipped(rdram))
+            {
+                uint32_t step = 0;
+                std::memcpy(&step, &ram8(rdram, self + 0x8u), sizeof(step));
+                uint64_t trg = 0;
+                std::memcpy(&trg, &ram8(rdram, 0x747640u), sizeof(trg));
+                const bool skipPressed = step == 5u && (trg & (0xF000ull << 20)) != 0u;
+                if (step < 10u && !skipPressed)
+                {
+                    callGuest(rdram, ctx, runtime, 0x1F0490u, self, 0.0f);
+                    callGuest(rdram, ctx, runtime, 0x1F28F0u, self + 0x60u, 0.0f);
+                    callGuest(rdram, ctx, runtime, 0x1F2990u, self + 0x60u, 0.0f);
+                    ctx->pc = GPR_U32(ctx, 31);
+                    return;
+                }
+            }
+            g_origRingResult(rdram, ctx, runtime);
+        }
+
         // 60 FPS half-frame poses (Nov 8; Buck Breaker's checks: Gene's elbow in the Stinger's slam, em00 motion 815
         // bone 14 at frame 54.5, 31.6 deg off its path). The motions key each bone as three Euler angles (R = Rz Ry
         // Rx) with Hermite curves fitted only at whole frames: near y = +-90 deg x and z swing by tens of degrees
@@ -2746,6 +2791,21 @@ namespace kamite
         {
             g_origChkHit = nullptr;
             KM_WARN(Game, "fps60: cCollisionSolidManage_ChkHit is not hookable");
+        }
+        // The custom ID UI animator and the ring's round end on the 30 FPS grid (customIdMain, ringResult).
+        if (!runtime.hasFunction(0x2D5DE0u) || !(g_origCustomIdMain = runtime.lookupFunction(0x2D5DE0u)) ||
+            !FunctionHooks::instance().replace(0x2D5DE0u, "CustomIDWork_Main (60 FPS UI animations)", &customIdMain,
+                                               ReplacementStatus::Native, "60 FPS: one animation step per 30 FPS frame"))
+        {
+            g_origCustomIdMain = nullptr;
+            KM_WARN(Game, "fps60: CustomIDWork_Main is not hookable");
+        }
+        if (!runtime.hasFunction(0x1EF180u) || !(g_origRingResult = runtime.lookupFunction(0x1EF180u)) ||
+            !FunctionHooks::instance().replace(0x1EF180u, "ColiseumBattle_StepResult (60 FPS round end)", &ringResult,
+                                               ReplacementStatus::Native, "60 FPS: the round end's steps per 30 FPS frame"))
+        {
+            g_origRingResult = nullptr;
+            KM_WARN(Game, "fps60: ColiseumBattle_StepResult is not hookable");
         }
         // Half-frame poses on the arc between whole frames (motionPoseSmooth). Chains with game_options' wrapper of the
         // same function (the roulette's replayed opening), whichever installs first.

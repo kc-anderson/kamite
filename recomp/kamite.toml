@@ -4815,3 +4815,133 @@ address = "0x001C0B08"
 hook = "km_fps60_item_drop_pull"
 flag = "fps60"
 replace = true
+
+# 60 FPS: the fighting ring (ColiseumBattle, T1 Nov 13: the round's start and end ran fast). Every frame counter of
+# the battle object (+0x10 waits, the directors' +0xBA0 wave waits) and of its banner UI (+0x91C / +0x924 / +0x92C)
+# counts every other frame. The decrements sit in the bnez / beqz delay slots (v0). The round end's sub-steps and
+# the UI animator CustomIDWork_Main are replacements (frame_patches.cpp ringResult / customIdMain).
+[[patches.hooks]] # ColiseumBattle_Update +0x10: the wait after the opening fade (30)
+address = "0x001EEEFC"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ColiseumBattle_Update +0x10: the wait before the fight starts (60)
+address = "0x001EEF3C"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ColiseumBattle_Update +0x10: the wait after the last enemy falls (60)
+address = "0x001EF0E8"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ColiseumBattle_StepUiIntro +0x10: the round's opening banner (60)
+address = "0x001EF7A8"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring director +0xBA0: the next wave's wait (300 = 10 s)
+address = "0x001F059C"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring director +0xBA0: wave wait
+address = "0x001F0820"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring director +0xBA0: wave wait
+address = "0x001F0A88"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring director +0xBA0: wave wait
+address = "0x001F0AB4"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring director +0xBA0: wave wait
+address = "0x001F0AE0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring director +0xBA0: wave wait
+address = "0x001F0B0C"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring director +0xBA0: wave wait
+address = "0x001F0B38"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring director +0xBA0: wave wait
+address = "0x001F0B64"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring director +0xBA0: wave wait
+address = "0x001F0B90"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring director +0xBA0: wave wait
+address = "0x001F1CB0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring director +0xBA0: wave wait (360; a branch target, not a delay slot)
+address = "0x001F20D4"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring director +0xBA0: wave wait
+address = "0x001F2180"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring director +0xBA0: the boss intro's hold (191)
+address = "0x001F2610"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring UI (0x1F2D60, from the UI move 0x1F28F0) +0x91C: banner step timer
+address = "0x001F2EE0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring UI (0x1F2D60) +0x91C: banner step timer
+address = "0x001F2F78"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring UI (0x1F2D60) +0x91C: banner step timer
+address = "0x001F3034"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring UI (0x1F3118) +0x924: banner step timer
+address = "0x001F31C0"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring UI (0x1F32A0) +0x92C: banner step timer
+address = "0x001F335C"
+hook = "km_fps60_countdown_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring director +0xBA0 count-up against 600 (20 s)
+address = "0x001F1020"
+hook = "km_fps60_countup_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring director +0xBA0 count-up
+address = "0x001F16B8"
+hook = "km_fps60_countup_self"
+flag = "fps60"
+replace = true
+[[patches.hooks]] # ring director +0xBA0 count-up
+address = "0x001F1C2C"
+hook = "km_fps60_countup_self"
+flag = "fps60"
+replace = true
