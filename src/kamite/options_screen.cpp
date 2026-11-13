@@ -709,22 +709,6 @@ namespace kamite::options_screen
             ctx->pc = ra;
         }
 
-#if defined(KAMITE_HAS_SCREEN_OVERLAY)
-        // F2 Display, "Options text": the overlay's softening and shadow while K judges them in game (temporary).
-        void drawTuningPanel(const Pcsx2GsUi *ui)
-        {
-            ui->separator_text("Options text (temporary)");
-            options_overlay::Look &look = options_overlay::look();
-            ui->set_next_width(340.0f);
-            ui->slider_float("Softening##optblur", &look.blur, 0.0f, 2.0f, "%.2f PS2 px");
-            ui->set_next_width(340.0f);
-            ui->slider_float("Shadow##optshadow", &look.shadowAlpha, 0.0f, 1.0f, "%.2f");
-            ui->set_next_width(340.0f);
-            ui->slider_float("Shadow offset##optshadowxy", &look.shadowOffset, 0.0f, 4.0f, "%.2f PS2 px");
-            ui->text_disabled("Pause > Options shows the result live. Tell Claude the values you like.");
-        }
-#endif
-
         bool hook(PS2Runtime &runtime, uint32_t address, const char *name, GuestFunction implementation, GuestFunction &original)
         {
             if (!runtime.hasFunction(address) || !(original = runtime.lookupFunction(address)))
@@ -771,9 +755,9 @@ namespace kamite::options_screen
         options_overlay::setAssets(utf8(exeDir / "resources" / "fonts" / "ArchivoNarrow-SemiBold.ttf"),
                                    utf8(exeDir / "resources" / "fonts" / "DejaVuSans-Bold.ttf"),
                                    utf8(exeDir / "resources" / "options"));
-#if defined(KAMITE_HAS_SCREEN_OVERLAY)
-        ps2x::menu::addPanel("Display", &drawTuningPanel);
-#endif
+        options_overlay::setScrollBar(utf8(exeDir / "resources" / "options" / "scroll_track.png"),
+                                      utf8(exeDir / "resources" / "options" / "scroll_thumb.png"));
+        options_overlay::setSliderFill(utf8(exeDir / "resources" / "options" / "slider_fill.png"));
         std::thread(prepare, exeDir, g_aspect).detach();
         KM_INFO(Game, "options screen: the title and pause Options open the God Hand: Rearmed screen (aspect " << g_aspect << ")");
     }

@@ -2,6 +2,10 @@
 
 Newest first, one line per change; the code comments say how.
 
+## November 13, 2026
+
+- Options: the text's softening and drop shadow are final (F2's temporary sliders removed).
+
 ## November 12, 2026
 
 - Options: left / right pick YES / NO the right way round (the left stick too).

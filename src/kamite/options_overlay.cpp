@@ -2,6 +2,7 @@
 #include "kamite/options_overlay.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <iterator>
 #include <utility>
@@ -10,8 +11,7 @@ namespace kamite::options_overlay
 {
     namespace
     {
-        Look g_look;
-        std::string g_labelFont, g_helpFont, g_titleDir, g_scrollTrack, g_scrollThumb;
+        std::string g_labelFont, g_helpFont, g_titleDir, g_scrollTrack, g_scrollThumb, g_sliderFill;
 
         // A page's rows (y in lines): centres from the list's first row, the span the pause's list fills.
         constexpr float kPageTop = 110.0f - 0.5f * 29.625f, kPageBottom = 347.0f + 0.5f * 29.625f;
@@ -53,7 +53,7 @@ namespace kamite::options_overlay
         g_scrollThumb = thumb;
     }
 
-    Look &look() { return g_look; }
+    void setSliderFill(const std::string &fill) { g_sliderFill = fill; }
 
     void setAssets(const std::string &labelFont, const std::string &helpFont, const std::string &titleDir)
     {
@@ -76,6 +76,13 @@ namespace kamite::options_overlay
         constexpr uint32_t kValueOnStroke = rgba(0x26, 0x32, 0x4A); // ...with a navy stroke
         constexpr uint32_t kHelp = rgba(0xDA, 0xD1, 0xB2);          // the help text: cream (the game's hint text)...
         constexpr uint32_t kHelpShadow = rgba(0, 0, 0, 190);       // ...with a hard dark drop shadow, no outline
+        // Our labels' and values' softening (so they sit with the game's upscaled 2D) and drop shadow, in lines (K's
+        // values from F2, Nov 13).
+        constexpr float kBlur = 0.69f, kShadowAlpha = 1.0f, kShadowOffset = 0.88f;
+        // A slider: the enemy health bar's fill (6 lines of 8 there) over its translucent black background (PS2 alpha
+        // 0x2C), the number in kSliderNumber units at the right.
+        constexpr float kSliderHalf = 3.5f, kSliderBorder = 1.0f, kSliderNumber = 40.0f;
+        constexpr uint32_t kSliderBack = rgba(0x3B, 0x23, 0x1F);
 
         // Placement: x in layout units, y and sizes in lines.
         constexpr float kLabelX = 37.0f, kLabelCap = 21.5f, kStroke = 1.0f;
@@ -161,7 +168,7 @@ namespace kamite::options_overlay
             const Space space;
             float fade;
             uint32_t labelFont = 0, helpFont = 0;
-            float dim = 1.0f; // a page shown before it is opened (Look::preview 2)
+            float dim = 1.0f; // a page shown before it is opened: half strength
 
             uint32_t add(const char *text, size_t length)
             {
@@ -178,9 +185,9 @@ namespace kamite::options_overlay
             Pcsx2GsScreenItem base() const
             {
                 Pcsx2GsScreenItem item{};
-                item.blur = Space::y(g_look.blur);
-                item.shadow = faded(rgba(0, 0, 0), g_look.shadowAlpha);
-                item.shadow_x = item.shadow_y = Space::y(g_look.shadowOffset);
+                item.blur = Space::y(kBlur);
+                item.shadow = faded(rgba(0, 0, 0), kShadowAlpha);
+                item.shadow_x = item.shadow_y = Space::y(kShadowOffset);
                 return item;
             }
 
@@ -263,6 +270,34 @@ namespace kamite::options_overlay
                 item.y = Space::y(y0);
                 item.y1 = Space::y(y1);
                 items.push_back(item);
+            }
+
+            // A number's slider in the values block: a bar in the look of the enemies' health bar (K, Nov 13: its fill
+            // and dark background, no lag colour), the number at the right, white on every row as the game's chosen
+            // values are.
+            void slider(const PageRow &row, float x, float centre)
+            {
+                const int c = std::clamp(row.choice, 0, row.valueCount - 1);
+                char number[24];
+                std::snprintf(number, sizeof(number), "%d%s", row.values[c], row.unit ? row.unit : "");
+                value(number, x + kValueBlock, centre, true, kSliderNumber - 4.0f, PCSX2GS_ALIGN_RIGHT);
+                const float x1 = x + kValueBlock - kSliderNumber, first = static_cast<float>(row.values[0]);
+                const float span = static_cast<float>(row.values[row.valueCount - 1]) - first;
+                const float f = span > 0.0f ? std::clamp((static_cast<float>(row.values[c]) - first) / span, 0.0f, 1.0f) : 0.0f;
+                const float border = kSliderBorder * kLinesToUnits;
+                rect(x - border, centre - kSliderHalf - kSliderBorder, x1 + border, centre + kSliderHalf + kSliderBorder, kSliderBack);
+                if (f > 0.0f && !g_sliderFill.empty())
+                {
+                    Pcsx2GsScreenItem item{};
+                    item.kind = PCSX2GS_SCREEN_IMAGE;
+                    item.text = add(g_sliderFill.data(), g_sliderFill.size());
+                    item.fill = faded(rgba(255, 255, 255));
+                    item.x = space.x(x);
+                    item.x1 = space.x(x + (x1 - x) * f);
+                    item.y = Space::y(centre - kSliderHalf);
+                    item.y1 = Space::y(centre + kSliderHalf);
+                    items.push_back(item);
+                }
             }
 
             // "-[": from the end of the last label drawn (the open category's) to an upright at x spanning top..bottom,
@@ -361,7 +396,14 @@ namespace kamite::options_overlay
                     label(row.name, centre, on, x, values - 10.0f - x, row.sub ? kSubCap : kLabelCap);
                     if (on)
                         cursor(centre, left); // the cursor keeps its column, clear of a sub-option's mark
-                    if (row.choiceCount <= 0 || namesOnly)
+                    if (namesOnly)
+                        continue;
+                    if (row.valueCount > 0 && row.values)
+                    {
+                        slider(row, values, centre);
+                        continue;
+                    }
+                    if (row.choiceCount <= 0)
                         continue;
                     if (row.choiceCount <= 3)
                     {

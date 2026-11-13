@@ -53,7 +53,7 @@ static float edge(float ax, float ay, float bx, float by, float px, float py) { 
 
 int main(int argc, char **argv)
 {
-    // args: wall.rgb W H out.rgb pause(1/0) cursor confirmRow blur shadowAlpha
+    // args: wall.rgb W H out.rgb pause(1/0) cursor confirmRow
     const char *wallPath = argv[1];
     const int W = atoi(argv[2]), H = atoi(argv[3]);
     const char *outPath = argv[4];
@@ -76,13 +76,11 @@ int main(int argc, char **argv)
     g_presentRect[0] = 0; g_presentRect[1] = 0; g_presentRect[2] = float(W); g_presentRect[3] = float(H);
 
     using namespace kamite::options_overlay;
-    // args 5..: pause cursor confirmRow blur shadowAlpha labelFont helpFont title [scrollTrack scrollThumb page open
-    // pageCursor pageScroll bracket preview]
-    setAssets(argv[10], argv[11], argc > 12 ? argv[12] : "");
-    if (argc > 14)
-        setScrollBar(argv[13], argv[14]);
-    look().blur = atof(argv[8]);
-    look().shadowAlpha = atof(argv[9]);
+    // args 5..: pause cursor confirmRow labelFont helpFont title [scrollTrack scrollThumb page open
+    // pageCursor pageScroll sliderFill]
+    setAssets(argv[8], argv[9], argc > 10 ? argv[10] : "");
+    if (argc > 12)
+        setScrollBar(argv[11], argv[12]);
     static const Row pauseRows[] = {{"CONTROLS", "Display controls"}, {"DISPLAY", "Picture and camera."},
         {"INTERFACE", "The HUD, button prompts and gauges."}, {"GAMEPLAY", "Techniques, enemies and new\nways to play."},
         {"SOUND", "Sound mode and volume levels."}, {"LOAD GAME", "Select a save file and\nrestart the game."},
@@ -128,7 +126,19 @@ int main(int argc, char **argv)
         opt("HUD LAYOUT", "Where the HUD goes on a wide screen.", 0, false, huds, 4),
         opt("BUTTON PROMPTS", "The buttons shown in the game's prompts.", 0, false, prompts, 6),
         opt("SWAY BAR", "A stun gauge under each enemy's health bar.")};
-    static const Page pages[] = {{"GAMEPLAY", gameplay, int(std::size(gameplay))}, {"INTERFACE", iface, int(std::size(iface))}};
+    static const char *const modes[] = {"MONO", "STEREO", "PRO LOGIC II"};
+    static const int volumes[] = {0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 69, 70, 75, 80, 85, 90, 95, 100};
+    auto vol = [](const char *name, const char *help, int choice) {
+        PageRow r;
+        r.name = name, r.help = help, r.values = volumes, r.valueCount = int(std::size(volumes)), r.choice = choice;
+        return r;
+    };
+    static const PageRow sound[] = {opt("MODE", "Mono, stereo or Dolby Pro Logic II.", 1, false, modes, 3),
+        vol("MUSIC", "The music's volume. Cutscenes follow Voices.", 15),
+        vol("SOUND EFFECTS", "The volume of hits, steps and the menus.", 21),
+        vol("VOICES", "Gene, the enemies and the cutscenes.", 14)};
+    static const Page pages[] = {{"GAMEPLAY", gameplay, int(std::size(gameplay))}, {"INTERFACE", iface, int(std::size(iface))},
+                                 {"SOUND", sound, int(std::size(sound))}};
     View v;
     v.aspect = float(W) / float(H);
     v.pause = atoi(argv[5]) != 0;
@@ -138,11 +148,13 @@ int main(int argc, char **argv)
     v.confirmRow = atoi(argv[7]);
     v.confirmYes = false;
     v.question = "Would you really like to reset?";
-    const int page = argc > 15 ? atoi(argv[15]) : -1;
+    const int page = argc > 13 ? atoi(argv[13]) : -1;
     v.page = page >= 0 && page < int(std::size(pages)) ? &pages[page] : nullptr;
-    v.inPage = argc > 16 && atoi(argv[16]) != 0;
-    v.pageCursor = argc > 17 ? atoi(argv[17]) : 0;
-    v.pageScroll = argc > 18 ? atoi(argv[18]) : 0;
+    v.inPage = argc > 14 && atoi(argv[14]) != 0;
+    v.pageCursor = argc > 15 ? atoi(argv[15]) : 0;
+    v.pageScroll = argc > 16 ? atoi(argv[16]) : 0;
+    if (argc > 17)
+        setSliderFill(argv[17]);
     std::vector<Pcsx2GsScreenItem> items;
     std::string strings;
     build(v, items, strings);

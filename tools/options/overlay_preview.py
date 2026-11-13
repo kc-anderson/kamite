@@ -1,7 +1,7 @@
 """Preview of the OPTIONS screen's overlay (text, cursor, Yes / No) over the wall, without a Windows build.
 
 python tools/options/overlay_preview.py out.png [--size 1920x1080] [--title] [--cursor N] [--confirm N]
-    [--blur 0.5] [--shadow 0.18] [--page gameplay|interface] [--open] [--row N] [--scroll N]
+    [--page gameplay|interface|sound] [--open] [--row N] [--scroll N]
 
 Builds tools/options/overlay_preview.cpp (g++, the repo's ImGui) with the DLL's own drawing code cut from HostStubs.cpp,
 crops resources/options/wall.jpg to the size's shape and draws options_overlay.cpp's list over it. Needs Pillow.
@@ -32,9 +32,7 @@ def main():
     ap.add_argument('--title', action='store_true', help='the title screen\'s list (else the pause\'s)')
     ap.add_argument('--cursor', type=int, default=0)
     ap.add_argument('--confirm', type=int, default=-1, help='row asking Yes / No')
-    ap.add_argument('--blur', type=float, default=0.5)
-    ap.add_argument('--shadow', type=float, default=0.18)
-    ap.add_argument('--page', choices=['gameplay', 'interface'], help='the mockup page beside the list (or open)')
+    ap.add_argument('--page', choices=['gameplay', 'interface', 'sound'], help='the mockup page beside the list (or open)')
     ap.add_argument('--open', action='store_true', help='the cursor in the page')
     ap.add_argument('--row', type=int, default=1, help="the page's cursor row")
     ap.add_argument('--scroll', type=int, default=0)
@@ -53,17 +51,17 @@ def main():
             im = Image.open(os.path.join(ROOT, 'resources/options', name)).convert('RGBA')
             open(os.path.join(work, name) + '.rgba', 'wb').write(struct.pack('<II', *im.size) + im.tobytes())
     bars = []
-    for name in ('scroll_track', 'scroll_thumb'):
+    for name in ('scroll_track', 'scroll_thumb', 'slider_fill'):
         path = os.path.join(work, name + '.png')
         im = Image.open(os.path.join(ROOT, 'resources/options', name + '.png')).convert('RGBA')
         open(path + '.rgba', 'wb').write(struct.pack('<II', *im.size) + im.tobytes())
         bars.append(path)
     fonts = os.path.join(ROOT, 'resources/fonts')
-    page = {'gameplay': 0, 'interface': 1}.get(a.page, -1)
+    page = {'gameplay': 0, 'interface': 1, 'sound': 2}.get(a.page, -1)
     subprocess.check_call([exe, raw_in, str(w), str(h), raw_out, '0' if a.title else '1', str(a.cursor), str(a.confirm),
-                           str(a.blur), str(a.shadow), os.path.join(fonts, 'ArchivoNarrow-SemiBold.ttf'),
-                           os.path.join(fonts, 'DejaVuSans-Bold.ttf'), title] + bars +
-                          [str(page), '1' if a.open else '0', str(a.row), str(a.scroll)])
+                           os.path.join(fonts, 'ArchivoNarrow-SemiBold.ttf'),
+                           os.path.join(fonts, 'DejaVuSans-Bold.ttf'), title] + bars[:2] +
+                          [str(page), '1' if a.open else '0', str(a.row), str(a.scroll), bars[2]])
     Image.frombytes('RGB', (w, h), open(raw_out, 'rb').read()).save(a.out)
 
 if __name__ == '__main__':

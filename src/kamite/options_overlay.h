@@ -33,6 +33,11 @@ namespace kamite::options_overlay
         const char *const *choices = nullptr; // up to 3 are shown in a row; more as < value >
         int choiceCount = 0;
         int choice = 0;
+        // A slider instead (valueCount > 0): choice indexes these numbers, shown with the unit beside a bar drawn like
+        // the enemies' health bar, full at the last.
+        const int *values = nullptr;
+        int valueCount = 0;
+        const char *unit = "%";
     };
 
     struct Page
@@ -61,20 +66,13 @@ namespace kamite::options_overlay
         int pageScroll = 0;  // the first row shown
     };
 
-    // Tunable in F2 (Display, "Options text") while K judges them in game.
-    struct Look
-    {
-        float blur = 0.5f;         // softening, in lines (PS2 pixels)
-        float shadowAlpha = 0.18f; // a barely visible drop shadow (the original has none)
-        float shadowOffset = 1.0f; // lines
-    };
-    Look &look();
-
     // The fonts (resources/fonts) and the titles' folder (resources/options: title_options.png, title_<category>.png),
     // set once at start.
     void setAssets(const std::string &labelFont, const std::string &helpFont, const std::string &titleDir);
     // The scroll bar's pieces (resources/options/scroll_track.png, scroll_thumb.png: tools/options/make_scrollbar.py).
     void setScrollBar(const std::string &track, const std::string &thumb);
+    // The sliders' fill (resources/options/slider_fill.png: tools/options/make_slider.py).
+    void setSliderFill(const std::string &fill);
     // The rows a page shows at once (scrolling keeps the cursor among them).
     int pageRowsShown(const Page &page, int scroll);
 
