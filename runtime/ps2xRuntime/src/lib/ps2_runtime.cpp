@@ -3486,7 +3486,13 @@ void PS2Runtime::run()
         if (!shortcutsOff && ps2x::hotkeys::pressed(Action::LoadState))
             ps2x::savestate::requestQuickLoad();
         if (!shortcutsOff && ps2x::hotkeys::pressed(Action::FpsOverlay))
+        {
             fpsOverlay.visible = !fpsOverlay.visible;
+            std::fprintf(stderr, "[F3] FPS overlay %s\n", fpsOverlay.visible ? "on" : "off"); // temporary (K, Nov 13: F3 seemed dead)
+        }
+        else if (const int fpsKey = ps2x::hotkeys::binding(Action::FpsOverlay).key; fpsKey != 0 && IsKeyPressed(fpsKey))
+            std::fprintf(stderr, "[F3] the FPS overlay key was pressed but not taken (%s)\n", // temporary, as above
+                         shortcutsOff ? "shortcuts off: a key capture or the Controls screen" : "Shift / Ctrl held");
         // Slow motion, pause, frame step (ps2_time_control.h; the F2 menu's Debug tab has the same).
         if (!shortcutsOff && ps2x::hotkeys::pressed(Action::SlowMotion))
         {

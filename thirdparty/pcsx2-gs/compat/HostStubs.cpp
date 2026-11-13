@@ -388,7 +388,10 @@ void pcsx2gs::SetOsd(const char *top, uint32_t topRgba, float topAlpha, const ch
 {
     std::lock_guard<std::mutex> lock(g_osdMutex);
     g_osdTop = top ? top : "";
+    const bool had = !g_osdBottom.empty();
     g_osdBottom = bottom ? bottom : "";
+    if (had != !g_osdBottom.empty()) // temporary (K, Nov 13: F3 seemed dead): the FPS line reaching the GS
+        std::fprintf(stderr, "[pcsx2-gs] OSD bottom line %s\n", had ? "off" : "on");
     g_osdTopRgba = topRgba;
     g_osdTopAlpha = std::clamp(topAlpha, 0.0f, 1.0f);
 }
