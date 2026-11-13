@@ -11,7 +11,7 @@ namespace kamite::options_overlay
     namespace
     {
         Look g_look;
-        std::string g_labelFont, g_helpFont, g_titleImage, g_scrollTrack, g_scrollThumb;
+        std::string g_labelFont, g_helpFont, g_titleDir, g_scrollTrack, g_scrollThumb;
 
         // A page's rows (y in lines): centres from the list's first row, the span the pause's list fills.
         constexpr float kPageTop = 110.0f - 0.5f * 29.625f, kPageBottom = 347.0f + 0.5f * 29.625f;
@@ -55,11 +55,11 @@ namespace kamite::options_overlay
 
     Look &look() { return g_look; }
 
-    void setAssets(const std::string &labelFont, const std::string &helpFont, const std::string &titleImage)
+    void setAssets(const std::string &labelFont, const std::string &helpFont, const std::string &titleDir)
     {
         g_labelFont = labelFont;
         g_helpFont = helpFont;
-        g_titleImage = titleImage;
+        g_titleDir = titleDir;
     }
 
 #if defined(KAMITE_HAS_SCREEN_OVERLAY)
@@ -87,9 +87,11 @@ namespace kamite::options_overlay
         constexpr float kHelpX = 29.0f, kHelpBandTop = 363.5f, kHelpBandBottom = 417.0f;
         constexpr float kHelpCap = 14.0f, kHelpLine = 22.0f, kHelpScaleX = 0.73f;
         constexpr float kHelpShadowX = 0.12f * kHelpCap, kHelpShadowY = 0.11f * kHelpCap; // the hints' shadow, to scale
-        // K's painted title, placed as the original's painted one (its letters x 146..363, y 20..66 of the 512 x 448
-        // screen; K's image is drawn in the same texel shape: 17.44 of its pixels per unit and per line), centred.
-        constexpr float kTitlePixelsPerUnit = 17.44f, kTitleTop = 13.7f, kTitleWidth = 3947.0f, kTitleHeight = 1064.0f;
+        // The titles (title_<name>.png: K's painted OPTIONS and the categories made to match by
+        // tools/options/make_splash.py), placed as the original's painted one (its letters x 146..363, y 20..66 of the
+        // 512 x 448 screen): one canvas for all, the letters centred across it at one height, 8.72 of its pixels per
+        // unit and per line (K's lettering at half size), so a page's title swaps in exactly where OPTIONS was.
+        constexpr float kTitlePixelsPerUnit = 8.72f, kTitleTop = 12.32f, kTitleWidth = 2467.0f, kTitleHeight = 535.0f;
         constexpr float kTitleY = 70.0f, kTitleCap = 30.0f; // the text stand-in when the image is missing
         constexpr float kMaxLabel = 190.0f;                  // the longest original (RESTORE DEFAULTS)
 
@@ -114,9 +116,8 @@ namespace kamite::options_overlay
                                                    {rgba(0xB8, 0x4F, 0x25), 4.0f, 0.0f},      // rust edges,
                                                    {rgba(0xFF, 0xFE, 0x11), 2.0f, 0.0f},      // a yellow core
                                                    {rgba(0xFF, 0xFE, 0xC4), 1.0f, 0.5f}};     // lit cream on top
-        // A sub-option's elbow from its parent (Look::sub 1): the unselected names' tan.
+        // A sub-option's elbow from its parent (K's pick, Nov 13): the unselected names' tan.
         constexpr float kElbowThickness = 1.4f;
-        constexpr float kSubBulletHalf = 3.5f;
 
         // Archivo Narrow fitted to the original's painted row names: horizontal scale, extra tracking (layout units).
         struct Fit
@@ -348,28 +349,14 @@ namespace kamite::options_overlay
                         continue;
                     }
                     const bool on = i == selected;
-                    const float indent = row.sub ? (g_look.sub == 0 ? kSubIndent : 2.0f * kSubIndent) : 0.0f;
+                    const float indent = row.sub ? 2.0f * kSubIndent : 0.0f;
                     const float x = names + indent;
-                    if (row.sub && g_look.sub == 1)
+                    if (row.sub)
                     {
                         // An elbow from under the parent's first letter to just before the sub-option's name.
                         const float t = 0.5f * kElbowThickness, tu = t * kLinesToUnits, ex = names + 5.0f;
                         rect(ex - tu, parent + 0.5f * kLabelCap + 3.0f, ex + tu, centre + t, kLabel);
                         rect(ex - tu, centre - t, x - 5.0f, centre + t, kLabel);
-                    }
-                    else if (row.sub && g_look.sub == 2)
-                    {
-                        Pcsx2GsScreenItem item = base();
-                        item.kind = PCSX2GS_SCREEN_TRIANGLE;
-                        item.fill = faded(kLabel);
-                        const float bx = names + kSubIndent - 2.0f;
-                        item.x = space.x(bx - kSubBulletHalf);
-                        item.y = Space::y(centre - kSubBulletHalf * 1.3f);
-                        item.x1 = space.x(bx + kSubBulletHalf);
-                        item.y1 = Space::y(centre);
-                        item.x2 = space.x(bx - kSubBulletHalf);
-                        item.y2 = Space::y(centre + kSubBulletHalf * 1.3f);
-                        items.push_back(item);
                     }
                     label(row.name, centre, on, x, values - 10.0f - x, row.sub ? kSubCap : kLabelCap);
                     if (on)
@@ -437,14 +424,19 @@ namespace kamite::options_overlay
         const Page *page = view.page && view.page->rowCount > 0 ? view.page : nullptr;
         const bool open = page && view.inPage;
 
-        // The title: OPTIONS, or the open category's name (its painted splash comes later: a stand-in for now).
-        if (open)
-            b.text(page->name, std::strlen(page->name), b.labelFont, 0.5f * b.space.area, kTitleY, kTitleCap, kNewLabel.scaleX,
-                   kNewLabel.tracking, kLabelOn, kLabelOnStroke, 0.0f, PCSX2GS_ALIGN_CENTRE);
-        else if (!g_titleImage.empty())
-            b.title(b.add(g_titleImage.data(), g_titleImage.size()));
+        // The title: OPTIONS, or the open category's (K, Nov 13: it replaces OPTIONS until the page is left).
+        const char *title = open ? page->name : "OPTIONS";
+        if (!g_titleDir.empty())
+        {
+            std::string path = g_titleDir + "/title_";
+            for (const char *c = title; *c; ++c)
+                path.push_back(static_cast<char>(*c >= 'A' && *c <= 'Z' ? *c - 'A' + 'a' : *c));
+            path += ".png";
+            b.title(b.add(path.data(), path.size()));
+        }
         else
-            b.text("OPTIONS", 7u, b.labelFont, kLabelX, kTitleY, kTitleCap, kNewLabel.scaleX, kNewLabel.tracking, kLabelOn, kLabelOnStroke);
+            b.text(title, std::strlen(title), b.labelFont, 0.5f * b.space.area, kTitleY, kTitleCap, kNewLabel.scaleX,
+                   kNewLabel.tracking, kLabelOn, kLabelOnStroke, 0.0f, PCSX2GS_ALIGN_CENTRE);
 
         const float pageRight = std::min(b.space.area - kLabelX, kBracketX + kPageWidth);
         if (open && !split)

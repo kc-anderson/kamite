@@ -770,7 +770,7 @@ namespace kamite::options_screen
         };
         options_overlay::setAssets(utf8(exeDir / "resources" / "fonts" / "ArchivoNarrow-SemiBold.ttf"),
                                    utf8(exeDir / "resources" / "fonts" / "DejaVuSans-Bold.ttf"),
-                                   utf8(exeDir / "resources" / "options" / "options_title.png"));
+                                   utf8(exeDir / "resources" / "options"));
 #if defined(KAMITE_HAS_SCREEN_OVERLAY)
         ps2x::menu::addPanel("Display", &drawTuningPanel);
 #endif

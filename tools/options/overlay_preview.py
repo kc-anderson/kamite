@@ -1,7 +1,7 @@
 """Preview of the OPTIONS screen's overlay (text, cursor, Yes / No) over the wall, without a Windows build.
 
 python tools/options/overlay_preview.py out.png [--size 1920x1080] [--title] [--cursor N] [--confirm N]
-    [--blur 0.5] [--shadow 0.18] [--page gameplay|interface] [--open] [--row N] [--scroll N] [--sub 0-2]
+    [--blur 0.5] [--shadow 0.18] [--page gameplay|interface] [--open] [--row N] [--scroll N]
 
 Builds tools/options/overlay_preview.cpp (g++, the repo's ImGui) with the DLL's own drawing code cut from HostStubs.cpp,
 crops resources/options/wall.jpg to the size's shape and draws options_overlay.cpp's list over it. Needs Pillow.
@@ -38,7 +38,6 @@ def main():
     ap.add_argument('--open', action='store_true', help='the cursor in the page')
     ap.add_argument('--row', type=int, default=1, help="the page's cursor row")
     ap.add_argument('--scroll', type=int, default=0)
-    ap.add_argument('--sub', type=int, default=1, help='sub-options: 0 indent only, 1 elbow, 2 small arrow')
     a = ap.parse_args()
     w, h = map(int, a.size.split('x'))
     work = tempfile.mkdtemp()
@@ -48,9 +47,11 @@ def main():
     x = (wall.width - cw) // 2
     raw_in, raw_out = os.path.join(work, 'wall.rgb'), os.path.join(work, 'out.rgb')
     open(raw_in, 'wb').write(wall.crop((x, 0, x + cw, wall.height)).resize((w, h), Image.LANCZOS).tobytes())
-    title = os.path.join(work, 'options_title.png')
-    im = Image.open(os.path.join(ROOT, 'resources/options/options_title.png')).convert('RGBA')
-    open(title + '.rgba', 'wb').write(struct.pack('<II', *im.size) + im.tobytes())
+    title = work  # the titles' folder: each title_<name>.png handed over as raw RGBA
+    for name in os.listdir(os.path.join(ROOT, 'resources/options')):
+        if name.startswith('title_') and name.endswith('.png'):
+            im = Image.open(os.path.join(ROOT, 'resources/options', name)).convert('RGBA')
+            open(os.path.join(work, name) + '.rgba', 'wb').write(struct.pack('<II', *im.size) + im.tobytes())
     bars = []
     for name in ('scroll_track', 'scroll_thumb'):
         path = os.path.join(work, name + '.png')
@@ -62,7 +63,7 @@ def main():
     subprocess.check_call([exe, raw_in, str(w), str(h), raw_out, '0' if a.title else '1', str(a.cursor), str(a.confirm),
                            str(a.blur), str(a.shadow), os.path.join(fonts, 'ArchivoNarrow-SemiBold.ttf'),
                            os.path.join(fonts, 'DejaVuSans-Bold.ttf'), title] + bars +
-                          [str(page), '1' if a.open else '0', str(a.row), str(a.scroll), str(a.sub)])
+                          [str(page), '1' if a.open else '0', str(a.row), str(a.scroll)])
     Image.frombytes('RGB', (w, h), open(raw_out, 'rb').read()).save(a.out)
 
 if __name__ == '__main__':

@@ -28,7 +28,8 @@ namespace kamite::options_overlay
         const char *name = "";
         const char *help = "";                // two lines at most
         bool header = false;
-        bool sub = false;                     // a sub-option (shown only while its parent is on): indented
+        bool sub = false;                     // a sub-option, joined to the option above by an elbow. The caller
+                                              // lists a sub-option only while its parent is on (K)
         const char *const *choices = nullptr; // up to 3 are shown in a row; more as < value >
         int choiceCount = 0;
         int choice = 0;
@@ -66,14 +67,12 @@ namespace kamite::options_overlay
         float blur = 0.5f;         // softening, in lines (PS2 pixels)
         float shadowAlpha = 0.18f; // a barely visible drop shadow (the original has none)
         float shadowOffset = 1.0f; // lines
-        // Mockup switch while K picks (temporary): how a sub-option shows it belongs to the option above (0 indent
-        // only, 1 a tan elbow from its parent, 2 a small arrow).
-        int sub = 1;
     };
     Look &look();
 
-    // The fonts (resources/fonts) and the OPTIONS title (resources/options), set once at start.
-    void setAssets(const std::string &labelFont, const std::string &helpFont, const std::string &titleImage);
+    // The fonts (resources/fonts) and the titles' folder (resources/options: title_options.png, title_<category>.png),
+    // set once at start.
+    void setAssets(const std::string &labelFont, const std::string &helpFont, const std::string &titleDir);
     // The scroll bar's pieces (resources/options/scroll_track.png, scroll_thumb.png: tools/options/make_scrollbar.py).
     void setScrollBar(const std::string &track, const std::string &thumb);
     // The rows a page shows at once (scrolling keeps the cursor among them).
