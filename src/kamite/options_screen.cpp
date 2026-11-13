@@ -50,6 +50,7 @@
 #include "kamite/settings_table.h"
 #include "kamite/sprint_traversal.h"
 #include "kamite/style_presets.h"
+#include "runtime/ps2_display_options.h"
 #include "kamite/widescreen.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/ee_scheduler.h"
@@ -240,11 +241,16 @@ namespace kamite::options_screen
         struct Wall
         {
             std::atomic<bool> ready{false};
+            std::mutex lock;            // prepare (a thread) against patchWall (the game thread)
             uint32_t payloadOffset = 0; // in the file
             std::vector<uint8_t> original, ours; // the payload (CT32 words)
+            std::vector<uint8_t> previous;       // the last shape's (the aspect ratio changed while playing)
             bool warned = false;
         };
         Wall g_wall[2];
+        std::atomic<uint32_t> g_wallGeneration{0u}; // a newer prepare (the aspect ratio changed again) wins
+        std::mutex g_prepareMutex;                  // one prepare at a time
+        fs::path g_exeDir;
 
         bool sampleMatches(const uint8_t *ram, const std::vector<uint8_t> &payload)
         {
@@ -260,6 +266,7 @@ namespace kamite::options_screen
             Wall &w = g_wall[kind];
             if (!w.ready.load(std::memory_order_acquire))
                 return;
+            std::lock_guard<std::mutex> lock(w.lock);
             const uint32_t file = rd32(self + kFile);
             const uint32_t payload = file + w.payloadOffset;
             if (!valid(file) || !valid(payload, static_cast<uint32_t>(kPayloadBytes)))
@@ -267,7 +274,7 @@ namespace kamite::options_screen
             uint8_t *ram = at(payload);
             if (sampleMatches(ram, w.ours))
                 return;
-            if (!sampleMatches(ram, w.original))
+            if (!sampleMatches(ram, w.original) && (w.previous.empty() || !sampleMatches(ram, w.previous)))
             {
                 if (!w.warned)
                     KM_WARN(Game, "options screen: the " << kKinds[kind].name << " backdrop is not where expected in RAM; the game's art stays");
@@ -340,7 +347,8 @@ namespace kamite::options_screen
             return image;
         }
 
-        void prepareKind(int kind, const ::Image &standIn, const ::Image &full, const fs::path &cacheDir, std::vector<std::string> &keep)
+        void prepareKind(int kind, const ::Image &standIn, const ::Image &full, const fs::path &cacheDir, std::vector<std::string> &keep,
+                         uint32_t generation)
         {
             const Kind &k = kKinds[kind];
             const auto found = disc_files::find(k.file);
@@ -393,12 +401,20 @@ namespace kamite::options_screen
                 ours[static_cast<size_t>(i)] = nearest[static_cast<size_t>(((p[0] >> 3) << 10) | ((p[1] >> 3) << 5) | (p[2] >> 3))];
             }
             Wall &w = g_wall[kind];
-            w.original.assign(payload, payload + kPayloadBytes);
-            w.ours.assign(kPayloadBytes, 0u);
-            hd_textures::pack8(ours.data(), kTexW, kTexH, kCtW, kCtH, w.ours.data());
-            w.payloadOffset = header + 0xE0u;
+            std::vector<uint8_t> packed(kPayloadBytes, 0u);
+            hd_textures::pack8(ours.data(), kTexW, kTexH, kCtW, kCtH, packed.data());
             const std::string originalName = hd_textures::name8(payload, kCtW, kCtH, clut, kTexW, kTexH);
-            const std::string name = hd_textures::name8(w.ours.data(), kCtW, kCtH, clut, kTexW, kTexH);
+            const std::string name = hd_textures::name8(packed.data(), kCtW, kCtH, clut, kTexW, kTexH);
+            if (generation != g_wallGeneration.load(std::memory_order_relaxed))
+                return; // the aspect ratio changed again meanwhile
+            {
+                std::lock_guard<std::mutex> lock(w.lock);
+                if (w.ready.load(std::memory_order_relaxed))
+                    w.previous = std::move(w.ours);
+                w.original.assign(payload, payload + kPayloadBytes);
+                w.ours = std::move(packed);
+                w.payloadOffset = header + 0xE0u;
+            }
             w.ready.store(true, std::memory_order_release);
 
             // The full image (kept between runs: its name follows the wall, the aspect ratio and the disc).
@@ -440,8 +456,11 @@ namespace kamite::options_screen
             }
         }
 
-        void prepare(fs::path exeDir, float aspect)
+        void prepare(fs::path exeDir, float aspect, uint32_t generation)
         {
+            std::lock_guard<std::mutex> one(g_prepareMutex);
+            if (generation != g_wallGeneration.load(std::memory_order_relaxed))
+                return; // a newer shape is waiting
             const fs::path source = exeDir / "resources" / "options" / "wall.jpg";
             std::ifstream in(source, std::ios::binary);
             std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
@@ -473,7 +492,7 @@ namespace kamite::options_screen
             fs::create_directories(cacheDir, ec);
             std::vector<std::string> keep;
             for (int kind = 0; kind < 2; ++kind)
-                prepareKind(kind, standIn, wall, cacheDir, keep);
+                prepareKind(kind, standIn, wall, cacheDir, keep, generation);
             UnloadImage(standIn);
             UnloadImage(wall);
             // Images of other aspect ratios or walls go.
@@ -484,6 +503,7 @@ namespace kamite::options_screen
 
         // ---- layout --------------------------------------------------------------------------------------------
         float g_aspect = 4.0f / 3.0f;
+        const settings::Setting *g_pendingApply = nullptr; // saved, applied when the cursor leaves its row
 
         // ---- the screen ----------------------------------------------------------------------------------------
         struct Screen
@@ -605,6 +625,25 @@ namespace kamite::options_screen
             applyVolumes();
         }
 
+        // Aspect Ratio while playing: the widescreen hooks, camera, HUD and display (widescreen.cpp), this screen's own
+        // layout, a plain window's shape, and the wall made again in the new shape (a thread; the old one stays up
+        // until it is ready).
+        void setAspectLive(const std::string &value)
+        {
+            setWidescreenAspect(value.c_str());
+            g_aspect = std::clamp(aspectRatio(), 1.0f, 4.0f);
+            ps2_host_display::requestWindowShape();
+            if (!g_exeDir.empty())
+                std::thread(prepare, g_exeDir, g_aspect, g_wallGeneration.fetch_add(1u) + 1u).detach();
+        }
+
+        // F11 (main thread) switched the window: saved as the Display Mode at the next game frame (onFrame).
+        std::atomic<int> g_windowMode{-1};
+        void onWindowMode(int mode)
+        {
+            g_windowMode.store(mode, std::memory_order_relaxed);
+        }
+
         // The setting's environment variable follows the change (main.cpp read GHR.ini into them at start): a test case
         // records the settings from there, and a change made here before recording was lost (Nov 13).
         void syncEnv(const settings::Setting &s)
@@ -616,6 +655,9 @@ namespace kamite::options_screen
             if (std::strcmp(s.key, "CameraPreset") == 0)
                 for (const char *key : {"FieldOfView", "FightFieldOfView", "CameraZoomOut", "CameraTilt"})
                     one("Video", key);
+            else if (std::strcmp(s.id, "DisplayMode") == 0)
+                for (const char *key : {"StartFullscreen", "StartMaximized"})
+                    one("Video", key);
             else if (*s.key)
                 one(s.section, s.key);
         }
@@ -625,7 +667,15 @@ namespace kamite::options_screen
             syncEnv(s);
             const std::string id = s.id, value = settings::value(g_ini, s);
             const bool on = s.kind == settings::Kind::Toggle && settings::on(g_ini, s);
-            if (id == "MenuButtons")
+            if (id == "DisplayMode")
+                ps2_host_display::requestMode(value == "fullscreen" ? 2 : value == "maximized" ? 1 : 0);
+            else if (id == "AspectRatio")
+                setAspectLive(value);
+            else if (id == "InternalResolution")
+                GSPcsx2Backend::SetScale(std::clamp(static_cast<float>(std::atof(value.c_str())), 1.0f, 8.0f));
+            else if (id == "PostEffects")
+                GSPcsx2Backend::SetOption("native_scaling", value.c_str());
+            else if (id == "MenuButtons")
                 menu_buttons::setStyle(value == "japanese" ? menu_buttons::Style::Japanese
                                        : value == "classic" ? menu_buttons::Style::Classic
                                                             : menu_buttons::Style::Western);
@@ -738,27 +788,54 @@ namespace kamite::options_screen
                 value = s.choices[next].value;
                 break;
             }
-            case settings::Kind::Custom: // the launcher's own (never on this screen)
-                return false;
+            case settings::Kind::Custom: // Display Mode: its choices in a row (two keys)
+            {
+                const int n = s.choiceCount, now = settings::choiceIndex(s, settings::value(g_ini, s));
+                if (n <= 0)
+                    return false;
+                const int next = ((now < 0 ? 0 : now + (ok ? 1 : dir)) % n + n) % n; // a < value > list: goes round
+                if (next == now)
+                    return false;
+                value = s.choices[next].value;
+                break;
+            }
             }
             if (std::strcmp(s.key, "CameraPreset") == 0)
                 settings::writeCameraPreset(g_ini, value); // its four values (Custom: from Action's)
+            else if (std::strcmp(s.id, "DisplayMode") == 0)
+                settings::writeDisplayMode(g_ini, value);
             else
                 g_ini.set(s.section, s.key, value);
             if (!g_ini.save())
                 KM_WARN(Game, "options screen: could not write GHR.ini");
-            apply(s);
+            if (s.applyOnLeave)
+                g_pendingApply = &s; // a renderer rebuild: once, when the cursor leaves the row (K, Nov 13)
+            else
+                apply(s);
             return true;
+        }
+
+        // The row's change waiting for the cursor to leave it (Internal Resolution, Post Effects).
+        void flushPending()
+        {
+            if (const settings::Setting *s = g_pendingApply)
+            {
+                g_pendingApply = nullptr;
+                apply(*s);
+            }
         }
 
         // RESTORE DEFAULTS: every setting the screen shows back to its shipped default.
         void restoreDefaults()
         {
+            g_pendingApply = nullptr; // everything is applied below
             for (size_t i = 0; i < settings::kSettingCount; ++i)
             {
                 const settings::Setting &s = settings::kSettings[i];
                 if (s.live && *s.key)
                     g_ini.set(s.section, s.key, s.fallback);
+                else if (s.live && std::strcmp(s.id, "DisplayMode") == 0)
+                    settings::writeDisplayMode(g_ini, s.fallback);
             }
             g_ini.save();
             for (size_t i = 0; i < settings::kSettingCount; ++i)
@@ -854,7 +931,7 @@ namespace kamite::options_screen
 
         // The pad inside a page: up / down between options, left / right change the value (saved and applied at
         // once), A steps it on, L1 / R1 the neighbouring category, B back to the list.
-        void pageInput(int kind, Screen &s, uint64_t pressed, uint64_t repeat, uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        void pageInputMoves(int kind, Screen &s, uint64_t pressed, uint64_t repeat, uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const Kind &k = kKinds[kind];
             buildPage(g_page, tabOf(k.actions[s.row]));
@@ -911,6 +988,15 @@ namespace kamite::options_screen
             if (s.pageCursor >= static_cast<int>(g_page.rows.size()))
                 s.pageCursor = std::max(firstOption(g_page), 0);
             scrollToCursor(s, g_page);
+        }
+
+        // A change waiting for the cursor to leave its row is applied once it has (another row, category or the list).
+        void pageInput(int kind, Screen &s, uint64_t pressed, uint64_t repeat, uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const int row = s.row, cursor = s.pageCursor;
+            pageInputMoves(kind, s, pressed, repeat, rdram, ctx, runtime);
+            if (!s.inPage || s.row != row || s.pageCursor != cursor)
+                flushPending();
         }
 
         // OK on a row.
@@ -985,6 +1071,7 @@ namespace kamite::options_screen
         template <int N>
         void closeHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
+            flushPending(); // the screen closed on a row with a change waiting
             clearOverlay();
             g_screen[N] = Screen{};
             g_original[N][1](rdram, ctx, runtime);
@@ -1129,7 +1216,9 @@ namespace kamite::options_screen
         options_overlay::setScrollBar(utf8(exeDir / "resources" / "options" / "scroll_track.png"),
                                       utf8(exeDir / "resources" / "options" / "scroll_thumb.png"));
         options_overlay::setSliderFill(utf8(exeDir / "resources" / "options" / "slider_fill.png"));
-        std::thread(prepare, exeDir, g_aspect).detach();
+        g_exeDir = exeDir;
+        ps2_host_display::setModeListener(&onWindowMode);
+        std::thread(prepare, exeDir, g_aspect, g_wallGeneration.load()).detach();
         KM_INFO(Game, "options screen: the title and pause Options open the God Hand: Rearmed screen (aspect " << g_aspect << ")");
     }
 
@@ -1137,6 +1226,17 @@ namespace kamite::options_screen
     {
         if (!g_ram)
             return;
+        if (const int mode = g_windowMode.exchange(-1, std::memory_order_relaxed); mode >= 0)
+        {
+            // F11: kept as the Display Mode (K, Nov 13), as if the row had changed.
+            if (!g_iniPath.empty())
+                g_ini.load(g_iniPath);
+            settings::writeDisplayMode(g_ini, mode == 2 ? "fullscreen" : mode == 1 ? "maximized" : "window");
+            if (!g_ini.save())
+                KM_WARN(Game, "options screen: could not write GHR.ini");
+            if (const settings::Setting *s = settings::find("DisplayMode"))
+                syncEnv(*s);
+        }
         const uint32_t save = rd32(kCoreSavePtr);
         if (save == 0u || !valid(save, kSaveStateBits + 2u))
             return; // not set up yet (the sound mode's setter needs the game's sound running)

@@ -21,6 +21,9 @@ namespace kamite::settings
                                              {"playstation", "PlayStation (the game's own)", "PLAYSTATION"},
                                              {"nintendo", "Nintendo Switch", "NINTENDO"},
                                              {"steam", "Steam Deck / Steam Controller", "STEAM DECK"}};
+        constexpr Choice kDisplayModes[] = {{"fullscreen", "Fullscreen (Borderless)", "FULLSCREEN"},
+                                            {"maximized", "Maximized Window", "MAXIMIZED"},
+                                            {"window", "Window", "WINDOW"}};
         constexpr Choice kWindowSizes[] = {{"auto", "Automatic (follows internal resolution)", "AUTOMATIC"},
                                            {"native", "PS2 size", "PS2 SIZE"}};
         constexpr Choice kAspects[] = {{"4:3", "4:3 (the PS2's)", "4:3"},    {"16:9", "16:9", "16:9"},
@@ -98,6 +101,11 @@ namespace kamite::settings
             return s.parent = parent, s.parentValue = value, s;
         }
         constexpr Setting greyed(Setting s) { return s.greyed = true, s; }
+        constexpr Setting onLeave(Setting s) { return s.applyOnLeave = true, s; }
+        constexpr Setting withChoices(Setting s, const Choice *choices, int count, const char *fallback)
+        {
+            return s.choices = choices, s.choiceCount = count, s.fallback = fallback, s;
+        }
         constexpr Setting wideOnly(Setting s) { return s.wideOnly = true, s; }
         constexpr Setting slider(Setting s, const char *unit) { return s.gameSlider = true, s.unit = unit, s; }
 
@@ -115,16 +123,18 @@ namespace kamite::settings
                     "Vibration", true)),
 
         // ---- Display --------------------------------------------------------------------------------------------
-        note(custom("DisplayMode", Tab::Display, "Game Window", "Display Mode", "How the game opens."),
-             "F11 switches between window and fullscreen while playing."),
+        live(withChoices(custom("DisplayMode", Tab::Display, "Game Window", "Display Mode",
+                                "Window, maximized window or borderless fullscreen. F11 switches between window and "
+                                "fullscreen too."),
+                         kDisplayModes, static_cast<int>(std::size(kDisplayModes)), "fullscreen")),
         greyed(sub(choice(Tab::Display, "Game Window", "Window Size",
                           "The window's size when it opens (not maximized or fullscreen).", "Video", "WindowSize", "auto",
                           kWindowSizes),
                    "DisplayMode", "window")),
-        choice(Tab::Display, "Game Window", "Aspect Ratio",
-               "The picture's shape. Wider than 4:3 shows more of the scene to the sides; menus keep the PS2's "
-               "proportions.",
-               "Video", "AspectRatio", "16:9", kAspects),
+        live(choice(Tab::Display, "Game Window", "Aspect Ratio",
+                    "The picture's shape. Wider than 4:3 shows more of the scene to the sides; menus keep the PS2's "
+                    "proportions.",
+                    "Video", "AspectRatio", "16:9", kAspects)),
         live(note(choice(Tab::Display, "Camera", "Camera & FOV",
                          "How much the gameplay camera shows and how it frames Gene (widescreen already widens it "
                          "sideways). Cutscenes keep their framing. Custom starts from Action's values.",
@@ -166,13 +176,17 @@ namespace kamite::settings
         choice(Tab::Display, "Renderer", "Graphics API",
                "Vulkan is the default. If Vulkan fails to start, the game uses Direct3D 11 instead.", "Video",
                "GraphicsAPI", "vulkan", kGraphicsApis),
-        choice(Tab::Display, "Renderer", "Internal Resolution",
-               "How sharp the 3D is drawn. 3x suits a 1440p screen, 4x and up a 4K one; higher costs more GPU time.",
-               "Video", "InternalResolution", "3", kResolutions),
-        choice(Tab::Display, "Effects", "Post Effects",
-               "The blur effects (depth of field, heat haze) are drawn from small copies of the frame. PS2 resolution "
-               "keeps them aligned but grainy at high internal resolutions; Upscaled draws them sharp.",
-               "Video", "PostEffects", "ps2", kPostEffects),
+        live(onLeave(gameNote(choice(Tab::Display, "Renderer", "Internal Resolution",
+                                     "How sharp the 3D is drawn. 3x suits a 1440p screen, 4x and up a 4K one; higher "
+                                     "costs more GPU time.",
+                                     "Video", "InternalResolution", "3", kResolutions),
+                              "Applies when you leave this line."))),
+        live(onLeave(gameNote(choice(Tab::Display, "Effects", "Post Effects",
+                                     "The blur effects (depth of field, heat haze) are drawn from small copies of the "
+                                     "frame. PS2 resolution keeps them aligned but grainy at high internal resolutions; "
+                                     "Upscaled draws them sharp.",
+                                     "Video", "PostEffects", "ps2", kPostEffects),
+                              "Applies when you leave this line."))),
         live(note(toggle(Tab::Display, "Effects", "Depth of Field",
                          "The game's blur of the distance. At high internal resolutions its edges can show dark, "
                          "shimmering fringes.",
@@ -337,6 +351,10 @@ namespace kamite::settings
 
     std::string value(const IniFile &ini, const Setting &setting)
     {
+        if (std::strcmp(setting.id, "DisplayMode") == 0) // two keys
+            return ini.getBool("Video", "StartFullscreen", true)    ? "fullscreen"
+                   : ini.getBool("Video", "StartMaximized", false) ? "maximized"
+                                                                   : "window";
         if (!*setting.key)
             return {};
         std::string text = ini.get(setting.section, setting.key, "");
@@ -397,6 +415,12 @@ namespace kamite::settings
                 return kCameraPresetChoices[i].value;
         }
         return "custom";
+    }
+
+    void writeDisplayMode(IniFile &ini, const std::string &mode)
+    {
+        ini.setBool("Video", "StartFullscreen", mode == "fullscreen");
+        ini.setBool("Video", "StartMaximized", mode == "maximized");
     }
 
     void writeCameraPreset(IniFile &ini, const std::string &id)

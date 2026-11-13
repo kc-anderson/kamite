@@ -11,6 +11,14 @@ namespace ps2_host_display
     void setStartMaximized(bool enabled);
     // Borderless fullscreen at start (like F11).
     void setStartFullscreen(bool enabled);
+    // While running (the port's OPTIONS screen; any thread, applied by the main thread at its next iteration): the
+    // window as a window (0), maximized (1) or borderless fullscreen (2).
+    void requestMode(int mode);
+    // A plain window (not maximized or fullscreen) takes the display aspect: its height kept (at most 9/10 of the
+    // monitor's width), centred on its monitor. Any thread.
+    void requestWindowShape();
+    // Main thread, after F11 (or the F2 menu's button) switched the window: the mode it is now in (as requestMode).
+    void setModeListener(void (*listener)(int mode));
     // Makes the game window (raylib) if it does not exist yet, sized by PS2X_WINDOW_SIZE, the aspect and the start
     // flags above; called again (by PS2Runtime::initialize after a launcher made the window), it keeps the window and
     // applies what changed. Main thread.

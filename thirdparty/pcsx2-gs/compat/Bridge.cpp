@@ -89,6 +89,75 @@ namespace
     float g_customAspect = 0.0f; // options "aspect=<width/height>": the image shown in that shape (0 = the open's choice)
     GSRendererType g_graphicsApi = GSRendererType::VK; // options "api=vulkan|dx11" ([Video] GraphicsAPI; Vulkan by default)
 
+    // "native_scaling": the word (or PCSX2's number) as GSNativeScaling.
+    GSNativeScaling ParseNativeScaling(const std::string &text)
+    {
+        const std::string word = lower(text);
+        if (word == "off")
+            return GSNativeScaling::Off;
+        if (word == "ps2" || word == "native")
+            return GSNativeScaling::Aggressive;
+        if (word == "upscaled")
+            return GSNativeScaling::AggressiveUpscaled;
+        if (word == "normal")
+            return GSNativeScaling::Normal;
+        if (word == "normal_upscaled")
+            return GSNativeScaling::NormalUpscaled;
+        return static_cast<GSNativeScaling>(std::clamp(std::atoi(text.c_str()), 0, 4));
+    }
+
+    // Changed while running (pcsx2gs_set_option "native_scaling" / "aspect" from any thread; the OPTIONS screen's Post
+    // Effects and Aspect Ratio): applied on the GS thread at the next Vsync.
+    std::mutex g_liveMutex;
+    std::string g_liveNativeScaling; // empty: none waiting
+    float g_liveAspect = -1.0f;      // < 0: none waiting; 0 = the PS2's 4:3
+    uint32_t g_aspectMode = 0u;      // the last pcsx2gs_set_aspect mode (0 = the game's 4:3, shown in the custom shape)
+    bool g_stretch = false;          // the open's stretch (Pcsx2GsOpenParams)
+
+    // pcsx2gs_set_aspect's mode into the presentation's aspect.
+    void ApplyAspectMode(uint32_t mode)
+    {
+        g_aspectMode = mode;
+        // 3 = 4:3 even with a custom (widescreen) aspect: the port pillarboxes menus drawn for 4:3.
+        EmuConfig.CurrentAspectRatio = mode == 2u ? AspectRatioType::Stretch : mode == 1u ? AspectRatioType::R16_9 : AspectRatioType::R4_3;
+        if (mode == 0u && g_customAspect > 0.0f)
+            EmuConfig.CurrentAspectRatio = AspectRatioType::RAuto4_3_3_2; // the widescreen shape stays
+    }
+
+    void ApplyLiveOptions()
+    {
+        std::string scaling;
+        float aspect = -1.0f;
+        {
+            std::lock_guard<std::mutex> lock(g_liveMutex);
+            scaling.swap(g_liveNativeScaling);
+            aspect = g_liveAspect;
+            g_liveAspect = -1.0f;
+        }
+        if (!scaling.empty())
+        {
+            Pcsx2Config::GSOptions options = GSConfig;
+            options.UserHacks_NativeScaling = ParseNativeScaling(scaling);
+            if (options.UserHacks_NativeScaling != GSConfig.UserHacks_NativeScaling)
+            {
+                EmuConfig.GS = options;
+                GSUpdateConfig(options);
+                // The copies drawn the old way go (as GSUpdateConfig does for the texture cache options).
+                if (g_gs_renderer)
+                    g_gs_renderer->PurgeTextureCache(true, true, true);
+                std::fprintf(stderr, "[pcsx2-gs] post effects: %s\n", scaling.c_str());
+            }
+        }
+        if (aspect >= 0.0f && !g_stretch)
+        {
+            g_customAspect = aspect > 0.5f && aspect < 5.0f ? aspect : 0.0f;
+            EmuConfig.CurrentCustomAspectRatio = g_customAspect;
+            EmuConfig.GS.AspectRatio = g_customAspect > 0.0f ? AspectRatioType::RAuto4_3_3_2 : AspectRatioType::R4_3;
+            ApplyAspectMode(g_aspectMode);
+            std::fprintf(stderr, "[pcsx2-gs] aspect: %.4f\n", g_customAspect);
+        }
+    }
+
     void ApplyOptions(Pcsx2Config::GSOptions &options, const char *text)
     {
         if (!text)
@@ -186,19 +255,7 @@ namespace
                 // keeps them aligned but leaves the blur grainy at high internal resolutions; "upscaled"
                 // (AggressiveUpscaled) keeps the copies at the internal resolution where the draw is a plain blend;
                 // "off" leaves everything upscaled (the effects may misalign). Numbers are PCSX2's own enum.
-                const std::string word = lower(text);
-                if (word == "off")
-                    options.UserHacks_NativeScaling = GSNativeScaling::Off;
-                else if (word == "ps2" || word == "native")
-                    options.UserHacks_NativeScaling = GSNativeScaling::Aggressive;
-                else if (word == "upscaled")
-                    options.UserHacks_NativeScaling = GSNativeScaling::AggressiveUpscaled;
-                else if (word == "normal")
-                    options.UserHacks_NativeScaling = GSNativeScaling::Normal;
-                else if (word == "normal_upscaled")
-                    options.UserHacks_NativeScaling = GSNativeScaling::NormalUpscaled;
-                else
-                    options.UserHacks_NativeScaling = static_cast<GSNativeScaling>(std::clamp(value, 0, 4));
+                options.UserHacks_NativeScaling = ParseNativeScaling(text);
             }
             else if (key == "gpu_palette")
                 options.GPUPaletteConversion = value != 0;
@@ -229,6 +286,7 @@ namespace
         options.AspectRatio = params->stretch ? AspectRatioType::Stretch : AspectRatioType::R4_3;
         ApplyGameFixes(options);
         g_customAspect = 0.0f;
+        g_stretch = params->stretch != 0;
         g_graphicsApi = GSRendererType::VK;
         ApplyOptions(options, params->options);
         options.Renderer = g_graphicsApi;
@@ -355,6 +413,7 @@ namespace
             for (const std::string &path : adds)
                 GSTextureReplacements::AddReplacementFile(path);
         }
+        ApplyLiveOptions();
         GSvsync((regs->csr & 0x2000u) ? 0u : 1u, true);
         WritePresentStats();
     }
@@ -586,6 +645,18 @@ extern "C" __declspec(dllexport) void pcsx2gs_set_option(const char *key, const 
         pcsx2gs::g_textureAdds.emplace_back(value);
         return;
     }
+    if (std::strcmp(key, "native_scaling") == 0)
+    {
+        std::lock_guard<std::mutex> lock(g_liveMutex);
+        g_liveNativeScaling = value;
+        return;
+    }
+    if (std::strcmp(key, "aspect") == 0)
+    {
+        std::lock_guard<std::mutex> lock(g_liveMutex);
+        g_liveAspect = std::max(0.0f, static_cast<float>(std::atof(value)));
+        return;
+    }
     if (std::strcmp(key, "dof") == 0)
         pcsx2gs::g_drawDof.store(*value != '0', std::memory_order_relaxed);
     else if (std::strcmp(key, "precise_depth") == 0)
@@ -623,10 +694,7 @@ extern "C" __declspec(dllexport) void pcsx2gs_set_screen(const Pcsx2GsScreenItem
 extern "C" __declspec(dllexport) void pcsx2gs_set_aspect(uint32_t mode)
 {
     const HostFpuMode fpu;
-    // 3 = 4:3 even with a custom (widescreen) aspect: the port pillarboxes menus drawn for 4:3.
-    EmuConfig.CurrentAspectRatio = mode == 2u ? AspectRatioType::Stretch : mode == 1u ? AspectRatioType::R16_9 : AspectRatioType::R4_3;
-    if (mode == 0u && g_customAspect > 0.0f)
-        EmuConfig.CurrentAspectRatio = AspectRatioType::RAuto4_3_3_2; // the widescreen shape stays
+    ApplyAspectMode(mode);
 }
 
 // Process exit without a Close: the GS objects are left to the OS instead of being destroyed by the DLL's static

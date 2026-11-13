@@ -1354,6 +1354,11 @@ namespace kamite
             KM_WARN(Game, "camera: cCamera_update 0x138740 is not hookable; the camera shakes with Gene's idle");
     }
 
+    void setCameraAspect(float aspect)
+    {
+        g_aspect = aspect;
+    }
+
     void installCamera(float aspect)
     {
         g_aspect = aspect;

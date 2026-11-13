@@ -428,7 +428,7 @@ namespace kamite::options_overlay
                     }
                     if (row.choiceCount <= 0)
                         continue;
-                    if (row.choiceCount <= 3)
+                    if (row.choiceCount <= 3 && !row.list)
                     {
                         const float slot = kValueBlock / static_cast<float>(row.choiceCount);
                         for (int c = 0; c < row.choiceCount; ++c)

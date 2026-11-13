@@ -138,7 +138,11 @@ namespace kamite::options_pages
                 row.unit = s.unit;
                 break;
             }
-            case settings::Kind::Custom: // the launcher's own (never live)
+            case settings::Kind::Custom: // the launcher draws its own; live ones carry choices (Display Mode)
+                for (int c = 0; c < s.choiceCount; ++c)
+                    choices.push_back(s.choices[c].game);
+                row.choice = std::max(settings::choiceIndex(s, value), 0);
+                row.list = true; // its words are too long for a row of three
                 break;
             }
             if (!choices.empty())

@@ -33,6 +33,7 @@ namespace kamite::options_overlay
         const char *const *choices = nullptr; // up to 3 are shown in a row; more as < value >
         int choiceCount = 0;
         int choice = 0;
+        bool list = false;                    // < value > even with 3 or fewer (long words: Display Mode)
         // A slider instead (valueCount > 0): choice indexes these numbers, shown with the unit beside a bar drawn like
         // the enemies' health bar: the number's share of the last (the largest).
         const int *values = nullptr;

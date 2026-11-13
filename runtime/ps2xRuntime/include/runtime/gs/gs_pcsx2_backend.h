@@ -32,6 +32,8 @@ public:
     // Any thread: an option the DLL changes while running (pcsx2gs_set_option, e.g. "dof" "0"); false = this DLL
     // does not have it.
     static bool SetOption(const char *key, const char *value);
+    // Any thread: a new internal resolution multiplier, handed to the DLL on the GS thread at its next present.
+    static void SetScale(float scale);
     // Any thread: lines drawn over the image at each present (pcsx2gs_set_overlay: x0 y0 x1 y1 per line in GS pixel
     // coordinates, a colour per line with R in the low byte; count 0 clears). False = this DLL does not have it.
     static bool SetOverlay(const float *lines, const uint32_t *colors, uint32_t count);

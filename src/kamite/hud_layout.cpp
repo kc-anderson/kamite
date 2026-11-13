@@ -1004,6 +1004,16 @@ namespace kamite::hud
             KM_INFO(Game, "HUD layout: " << layoutName(g_layout) << " (the HUD layout hotkey switches 16:9 / 4:3; the 2D dump hotkey writes one frame's 2D to the log)");
     }
 
+    void setAspect(bool wide, float k)
+    {
+        if (!wide)
+            setMenuAspect(false); // the picture's 4:3 again, not a menu's forced one
+        g_wide = wide;
+        g_k = k;
+        const float aspect = (4.0f / 3.0f) / k;
+        g_edgeShare = aspect >= 16.0f / 9.0f - 0.01f ? std::min(1.0f, (16.0f / 9.0f) / aspect) : 0.0f;
+    }
+
     int layoutIndex()
     {
         return g_layoutShown.load(std::memory_order_relaxed);

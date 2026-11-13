@@ -25,6 +25,7 @@
 #include "kamite/log.h"
 #include "ps2_runtime_macros.h" // SET_GPR_U32, GPR_U32
 #include "runtime/ps2_display_options.h"
+#include "runtime/gs/gs_pcsx2_backend.h"
 
 #include <cmath>
 #include <cstdio>
@@ -97,6 +98,34 @@ namespace kamite
 
         void fontWidth(uint8_t *, R5900Context *ctx, PS2Runtime *) { setAt(ctx, hud::narrowFont() ? g_font : kFontWidth); }
         void gaugeWidth(uint8_t *, R5900Context *ctx, PS2Runtime *) { setAt(ctx, hud::narrowGauge() ? g_gauge : 0x3F800000u); }
+
+        // The aspect's values for the hooks; true when it is wider than 4:3.
+        bool setValues(float aspect)
+        {
+            g_aspect = aspect;
+            const float wider = aspect / kNative;
+            g_camera = asBits(asFloat(kCameraWidth) * wider);
+            g_font = asBits(asFloat(kFontWidth) / wider);
+            g_gauge = asBits(1.0f / wider);
+            return std::fabs(aspect - kNative) > 0.001f;
+        }
+
+        // PCSX2's custom aspect: ours unless the environment set it (then it is left alone; decided at the first call).
+        bool ownPcsx2Aspect()
+        {
+            static const bool own = std::getenv("PS2X_PCSX2_ASPECT") == nullptr;
+            return own;
+        }
+
+        void setPcsx2AspectVariable(bool wide, float aspect, char (&text)[32])
+        {
+            std::snprintf(text, sizeof(text), "%.6f", wide ? aspect : 0.0f);
+#if defined(_WIN32)
+            _putenv_s("PS2X_PCSX2_ASPECT", wide ? text : "");
+#else
+            setenv("PS2X_PCSX2_ASPECT", wide ? text : "", 1);
+#endif
+        }
     }
 
     float aspectRatio() { return g_aspect; }
@@ -105,12 +134,8 @@ namespace kamite
     {
         float aspect = parseAspect(std::getenv("KAMITE_ASPECT"));
         aspect = std::fmin(std::fmax(aspect, 1.0f), 4.0f);
-        g_aspect = aspect;
-        const bool wide = std::fabs(aspect - kNative) > 0.001f;
+        const bool wide = setValues(aspect);
         const float wider = aspect / kNative;
-        g_camera = asBits(asFloat(kCameraWidth) * wider);
-        g_font = asBits(asFloat(kFontWidth) / wider);
-        g_gauge = asBits(1.0f / wider);
         ps2xRegisterHostHook("km_ws_camera_width", &cameraWidth);
         installCamera(aspect); // the field of view and framing (camera.cpp): the enemies' cones use the aspect
         ps2xRegisterHostHook("km_ws_font_width", &fontWidth);
@@ -120,17 +145,28 @@ namespace kamite
         ps2_host_display::setAspect(aspect);
         // PCSX2's custom aspect: ours unless the environment set it (then it is left alone). Called again after the
         // launcher, the value is replaced (4:3 included, so a launcher change back to 4:3 takes effect).
-        static bool s_ownAspect = std::getenv("PS2X_PCSX2_ASPECT") == nullptr;
-        if (s_ownAspect)
+        if (ownPcsx2Aspect())
         {
             char text[32];
-            std::snprintf(text, sizeof(text), "%.6f", wide ? aspect : 0.0f);
-#if defined(_WIN32)
-            _putenv_s("PS2X_PCSX2_ASPECT", wide ? text : "");
-#else
-            setenv("PS2X_PCSX2_ASPECT", wide ? text : "", 1);
-#endif
+            setPcsx2AspectVariable(wide, aspect, text);
         }
         KM_INFO(Game, "aspect ratio " << aspect << (wide ? " (widescreen: camera, font and gauge widths adjusted)" : " (the PS2's 4:3)"));
+    }
+
+    void setWidescreenAspect(const char *value)
+    {
+        const float aspect = std::fmin(std::fmax(parseAspect(value), 1.0f), 4.0f);
+        const bool wide = setValues(aspect);
+        ps2xSetPatchFlag("widescreen", wide);
+        setCameraAspect(aspect);
+        hud::setAspect(wide, kNative / aspect);
+        ps2_host_display::setAspect(aspect);
+        if (ownPcsx2Aspect())
+        {
+            char text[32];
+            setPcsx2AspectVariable(wide, aspect, text);
+            GSPcsx2Backend::SetOption("aspect", wide ? text : "0"); // the DLL applies it at its next present
+        }
+        KM_INFO(Game, "aspect ratio " << aspect << " while playing" << (wide ? " (widescreen)" : " (the PS2's 4:3)"));
     }
 }

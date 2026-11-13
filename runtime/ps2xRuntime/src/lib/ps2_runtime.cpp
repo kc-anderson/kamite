@@ -96,6 +96,25 @@ namespace ps2_host_display
         startFullscreen = enabled;
     }
 
+    std::atomic<int> requestedMode{-1};
+    std::atomic<bool> shapeRequested{false};
+    std::atomic<void (*)(int)> modeListener{nullptr};
+
+    void requestMode(int mode)
+    {
+        requestedMode.store(mode, std::memory_order_relaxed);
+    }
+
+    void requestWindowShape()
+    {
+        shapeRequested.store(true, std::memory_order_relaxed);
+    }
+
+    void setModeListener(void (*listener)(int mode))
+    {
+        modeListener.store(listener, std::memory_order_relaxed);
+    }
+
     bool vsyncEnabled()
     {
         static const bool enabled = [] { const char *v = std::getenv("PS2X_VSYNC"); return !v || *v != '0'; }();
@@ -1091,6 +1110,29 @@ static void keepBorderlessBehind()
 {
     if (IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE) && IsWindowState(FLAG_WINDOW_TOPMOST))
         ClearWindowState(FLAG_WINDOW_TOPMOST);
+}
+
+// requestWindowShape: a plain window takes the display's aspect (the aspect ratio changed while playing).
+static void shapeWindowToAspect()
+{
+    if (IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE) || IsWindowMaximized())
+        return;
+    const int monitor = GetCurrentMonitor();
+    const int monitorWidth = GetMonitorWidth(monitor), monitorHeight = GetMonitorHeight(monitor);
+    const float aspect = std::max(0.5f, ps2_host_display::displayAspect.load(std::memory_order_relaxed));
+    int height = GetScreenHeight();
+    int width = static_cast<int>(static_cast<float>(height) * aspect + 0.5f);
+    if (monitorWidth > 0 && width > monitorWidth * 9 / 10)
+    {
+        width = monitorWidth * 9 / 10;
+        height = static_cast<int>(static_cast<float>(width) / aspect + 0.5f);
+    }
+    if (width < 320 || height < 240 || monitorWidth <= 0 || monitorHeight <= 0)
+        return;
+    const Vector2 origin = GetMonitorPosition(monitor);
+    SetWindowSize(width, height);
+    SetWindowPosition(static_cast<int>(origin.x) + std::max(0, (monitorWidth - width) / 2),
+                      static_cast<int>(origin.y) + std::max(0, (monitorHeight - height) / 2));
 }
 #endif
 
@@ -3398,7 +3440,39 @@ void PS2Runtime::run()
             keepBorderlessBehind();
             if (leavingFullscreen && restoreMaximized)
                 MaximizeWindow();
+            // The port keeps it as its Display Mode (saved like the OPTIONS screen's row).
+            if (auto *listener = ps2_host_display::modeListener.load(std::memory_order_relaxed))
+                listener(!leavingFullscreen ? 2 : restoreMaximized ? 1 : 0);
         }
+        // The OPTIONS screen's Display Mode.
+        if (const int mode = ps2_host_display::requestedMode.exchange(-1, std::memory_order_relaxed); mode >= 0)
+        {
+            ps2_host_input::releaseMouse();
+            const bool full = IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE);
+            if (mode == 2)
+            {
+                if (!full)
+                {
+                    restoreMaximized = IsWindowMaximized();
+                    ToggleBorderlessWindowed();
+                    keepBorderlessBehind();
+                }
+            }
+            else
+            {
+                if (full)
+                    ToggleBorderlessWindowed();
+                if (mode == 1 && !IsWindowMaximized())
+                    MaximizeWindow();
+                else if (mode == 0 && IsWindowMaximized())
+                    RestoreWindow();
+                restoreMaximized = mode == 1;
+            }
+            ps2_host_display::startFullscreen = mode == 2;
+            ps2_host_display::startMaximized = mode == 1;
+        }
+        if (ps2_host_display::shapeRequested.exchange(false, std::memory_order_relaxed))
+            shapeWindowToAspect();
 #endif
         ps2_host_input::sample();
         // The port's shortcuts (ps2_hotkeys.h: F keys by default, rebindable from the F2 menu and the launcher).

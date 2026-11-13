@@ -20,6 +20,8 @@ namespace kamite::hud
 {
     // Before the guest starts; wide = the aspect ratio is not 4:3 (then the hooks run), k = (4/3) / aspect.
     void install(bool wide, float k);
+    // The aspect ratio changed while playing (EE thread): the same two values.
+    void setAspect(bool wide, float k);
 
     // Top of every game frame.
     void onFrame(uint8_t *rdram);

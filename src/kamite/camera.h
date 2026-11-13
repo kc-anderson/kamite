@@ -11,6 +11,8 @@ namespace kamite
     // install; the F2 menu's Camera tab changes them while playing and can save them back to GHR.ini.
     // aspect = the picture's width / height (widescreen.cpp).
     void installCamera(float aspect);
+    // The aspect ratio changed while playing (EE thread): the enemies' cones follow the picture's new width.
+    void setCameraAspect(float aspect);
     // [Video] SteadyIdleCamera (0/1, default 0): the player camera neither rocks nor shakes with Gene's idle; F2 >
     // Camera changes it. After the function hooks are attached (main.cpp).
     void installSteadyIdleCamera(PS2Runtime &runtime);

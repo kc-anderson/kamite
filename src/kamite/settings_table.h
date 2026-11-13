@@ -67,6 +67,7 @@ namespace kamite::settings
         bool greyed = false;     // the launcher shows it greyed (not hidden) while its parent is off
         bool wideOnly = false;   // greyed in the launcher / left out in game at 4:3
         bool gameSlider = false; // a Choice of numbers: a slider in game (its choices' values are the stops)
+        bool applyOnLeave = false; // in game: saved at once, applied when the cursor leaves the row (a renderer rebuild)
     };
 
     extern const Setting kSettings[];
@@ -83,4 +84,6 @@ namespace kamite::settings
     // (a preset's four values; Custom starts from Action's).
     const char *cameraPresetId(float fov, float fight, float zoomOut, float tilt);
     void writeCameraPreset(IniFile &ini, const std::string &id);
+    // Display Mode ([Video] StartFullscreen / StartMaximized): "fullscreen", "maximized" or "window", and a pick written.
+    void writeDisplayMode(IniFile &ini, const std::string &mode);
 }

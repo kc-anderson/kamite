@@ -41,6 +41,7 @@ namespace
     HWND g_child = nullptr;
     std::atomic<uint64_t> g_presents{0u};
     std::atomic<uint32_t> g_clientWidth{0u};
+    std::atomic<float> g_pendingScale{0.0f}; // SetScale: > 0 until the GS thread hands it over
     std::atomic<uint32_t> g_clientHeight{0u};
 
     std::filesystem::path exeDirectory()
@@ -302,6 +303,12 @@ bool GSPcsx2Backend::SetOption(const char *key, const char *value)
         return false;
     g_setOption(key, value);
     return true;
+}
+
+void GSPcsx2Backend::SetScale(float scale)
+{
+    if (scale >= 1.0f)
+        g_pendingScale.store(scale, std::memory_order_relaxed);
 }
 
 bool GSPcsx2Backend::SetOverlay(const float *lines, const uint32_t *colors, uint32_t count)
@@ -603,6 +610,9 @@ void GSPcsx2Backend::VSync(const GSVSyncRegs &regs)
         m_height = height;
         g_api->resize(width, height);
     }
+    // The OPTIONS screen's Internal Resolution (the DLL's GSUpdateConfig runs here, on the GS thread).
+    if (const float scale = g_pendingScale.exchange(0.0f, std::memory_order_relaxed); scale >= 1.0f)
+        g_api->set_scale(scale);
     const auto presentStart = std::chrono::steady_clock::now();
     g_api->vsync(reinterpret_cast<const Pcsx2GsPrivRegs *>(&regs));
     WriteFrameTime(presentStart);
@@ -660,6 +670,7 @@ bool GSPcsx2Backend::Active() { return false; }
 void GSPcsx2Backend::SetOsd(const char *, uint32_t, float, const char *) {}
 void GSPcsx2Backend::SetMenu(void *, void *) {}
 bool GSPcsx2Backend::SetOption(const char *, const char *) { return false; }
+void GSPcsx2Backend::SetScale(float) {}
 bool GSPcsx2Backend::SetOverlay(const float *, const uint32_t *, uint32_t) { return false; }
 bool GSPcsx2Backend::SetOverlayText(const float *, const uint32_t *, const char *, uint32_t) { return false; }
 bool GSPcsx2Backend::SetScreen(const void *, uint32_t, const char *, uint32_t) { return false; }

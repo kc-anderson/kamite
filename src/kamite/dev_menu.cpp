@@ -9,9 +9,9 @@
 //                                  switched between two game frames
 //   L3 dash, roulette timer        frame_patches: atomics read by the frame hook
 //   mute music                     game_options: the patch flag, at the music's next volume call
-// What cannot (shown with "set in the launcher"): the aspect ratio (the window's shape and the widescreen hooks),
-// the internal resolution and post effects (the renderer opens with them), the texture pack (loaded at start), the
-// character (a disc overlay). The Gameplay enhancements are all live (Nov 13; Wild Curry Funk from the next room).
+// What cannot (shown with "set in the launcher"): the renderer and graphics API, the texture pack (loaded at start),
+// the character (a disc overlay). The aspect ratio, display mode, internal resolution and post effects change in the
+// OPTIONS screen (Nov 13). The Gameplay enhancements are all live (Nov 13; Wild Curry Funk from the next room).
 #include "kamite/dev_menu.h"
 #include "kamite/buck_breaker.h"
 #include "kamite/frame_patches.h"
@@ -78,6 +78,13 @@ namespace kamite::dev_menu
             ui->text_disabled(line.c_str());
         }
 
+        // Live in the OPTIONS screen (Nov 13): shown here, changed there.
+        void inOptions(const Pcsx2GsUi *ui, const char *label, const std::string &value)
+        {
+            const std::string line = std::string(label) + ": " + value + "  (OPTIONS > Display changes it while playing)";
+            ui->text_disabled(line.c_str());
+        }
+
         void status(const Pcsx2GsUi *ui, const std::string &text)
         {
             if (!text.empty())
@@ -109,10 +116,10 @@ namespace kamite::dev_menu
             ui->same_line();
             const std::string key = ps2x::hotkeys::text(ps2x::hotkeys::binding(ps2x::hotkeys::Action::Fullscreen));
             ui->text_disabled(key.empty() ? "(no key bound)" : ("(" + key + ")").c_str());
-            launcherOnly(ui, "Aspect ratio", env("KAMITE_ASPECT", "16:9"));
-            launcherOnly(ui, "Window at start", envOn("KAMITE_START_FULLSCREEN", false) ? "full screen"
-                                                : envOn("KAMITE_START_MAXIMIZED", false) ? "maximized"
-                                                                                           : "window, " + env("PS2X_WINDOW_SIZE", "auto"));
+            inOptions(ui, "Aspect ratio", env("KAMITE_ASPECT", "16:9"));
+            inOptions(ui, "Display mode", envOn("KAMITE_START_FULLSCREEN", false) ? "full screen"
+                                          : envOn("KAMITE_START_MAXIMIZED", false) ? "maximized"
+                                                                                     : "window, " + env("PS2X_WINDOW_SIZE", "auto"));
 
             ui->separator_text("GHR.ini");
             if (ui->button("Save##display"))
@@ -134,8 +141,8 @@ namespace kamite::dev_menu
             ui->separator_text("At start");
             launcherOnly(ui, "Renderer", env("PS2X_GS_RENDERER", "pcsx2"));
             launcherOnly(ui, "Graphics API", env("PS2X_PCSX2_API", "vulkan") != "dx11" ? "Vulkan" : "Direct3D 11");
-            launcherOnly(ui, "Internal resolution", env("PS2X_GS_SCALE", "3") + "x");
-            launcherOnly(ui, "Post effects", env("PS2X_PCSX2_NATIVE_SCALING", "ps2"));
+            inOptions(ui, "Internal resolution", env("PS2X_GS_SCALE", "3") + "x");
+            inOptions(ui, "Post effects", env("PS2X_PCSX2_NATIVE_SCALING", "ps2"));
             launcherOnly(ui, "HD textures", envOn("PS2X_PCSX2_TEXTURES", true) ? "on, " + env("PS2X_PCSX2_TEXTURE_DIR", "textures/SLUS-21503") : "off");
             launcherOnly(ui, "Character", env("KAMITE_CHARACTER", "gene"));
         }
