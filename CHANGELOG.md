@@ -4,6 +4,9 @@ Newest first, one line per change; the code comments say how.
 
 ## November 13, 2026
 
+- Aspect ratios within 3% of the screen's own shape use the screen's exact shape (no thin bars on ultrawides).
+- Launcher: long splash lines tilt further instead of running off a 4:3 window; the splash shadow sits closer.
+- Options: help text fixes.
 - Options: the fade behind a change now covers the whole screen; the menu stays as it is until black and the new wall is made during the fade.
 - Options: Post Effects defaults to Upscaled and is set in the launcher only.
 - Options: new help texts; Steady Idle Camera is now Steady Idle Cam; Control Style sits above Click-Stick Dash.

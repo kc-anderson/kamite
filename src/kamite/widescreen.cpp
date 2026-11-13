@@ -68,6 +68,17 @@ namespace kamite
         }
 
         // "16:9", "21:9", "1.7778", "auto" (the primary monitor's shape), "4:3" / empty = the PS2's.
+        // The primary monitor's shape (0 when unknown).
+        float screenAspect()
+        {
+#if defined(_WIN32)
+            const int width = GetSystemMetrics(SM_CXSCREEN), height = GetSystemMetrics(SM_CYSCREEN);
+            if (width > 0 && height > 0)
+                return static_cast<float>(width) / static_cast<float>(height);
+#endif
+            return 0.0f;
+        }
+
         float parseAspect(const char *text)
         {
             if (!text || !*text)
@@ -75,16 +86,19 @@ namespace kamite
             const std::string value(text);
             if (value == "auto")
             {
-#if defined(_WIN32)
-                const int width = GetSystemMetrics(SM_CXSCREEN), height = GetSystemMetrics(SM_CYSCREEN);
-                if (width > 0 && height > 0)
-                    return static_cast<float>(width) / static_cast<float>(height);
-#endif
-                return kNative;
+                const float screen = screenAspect();
+                return screen > 0.0f ? screen : kNative;
             }
             float w = 0.0f, h = 0.0f;
             if (std::sscanf(value.c_str(), "%f:%f", &w, &h) == 2 && w > 0.0f && h > 0.0f)
-                return w / h;
+            {
+                // A listed ratio within 3% of the screen's own shape takes the screen's (K, Nov 13: "21:9" screens are
+                // 2.37 or 2.39, not 2.33, and the difference showed as bars); 4:3 stays the PS2's own.
+                const float ratio = w / h, screen = screenAspect();
+                if (screen > 0.0f && std::fabs(ratio - kNative) > 0.001f && std::fabs(screen / ratio - 1.0f) <= 0.03f)
+                    return screen;
+                return ratio;
+            }
             const float ratio = static_cast<float>(std::atof(value.c_str()));
             return ratio > 0.0f ? ratio : kNative;
         }

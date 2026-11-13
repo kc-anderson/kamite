@@ -116,21 +116,21 @@ namespace kamite::settings
     const Setting kSettings[] = {
         // ---- Controls -------------------------------------------------------------------------------------------
         live(choice(Tab::Controls, "Controller", "Menu Controls",
-                    "Western: bottom button confirms; right cancels\nJapanese: right button confirms; bottom cancels",
+                    "Western: bottom button confirms; right cancels.\nJapanese: right button confirms; bottom cancels.",
                     "Game", "MenuButtons", "western", kMenuButtons)),
         live(toggle(Tab::Controls, "Controller", "Vibration", "Controller rumble. Girls know what it's for.", "Game",
                     "Vibration", true)),
 
         // ---- Display --------------------------------------------------------------------------------------------
         live(withChoices(custom("DisplayMode", Tab::Display, "Game Window", "Display Mode",
-                                "Window, max window or borderless fullscreen.\nYou can also use F11, if you're into that."),
+                                "Window, max window, or borderless fullscreen.\nYou can also use F11, if you're into that."),
                          kDisplayModes, static_cast<int>(std::size(kDisplayModes)), "fullscreen")),
         greyed(sub(choice(Tab::Display, "Game Window", "Window Size",
                           "The window's size when it opens (not maximized or fullscreen).", "Video", "WindowSize", "auto",
                           kWindowSizes),
                    "DisplayMode", "window")),
         live(onLeave(choice(Tab::Display, "Game Window", "Aspect Ratio",
-                            "Select screen width.\nGoes from 4:3 to wider than yo momma.", "Video", "AspectRatio",
+                            "Select screen width.\nGoes from 4:3 to wider than yo momma!", "Video", "AspectRatio",
                             "16:9", kAspects))),
         live(note(choice(Tab::Display, "Camera", "Camera & FOV",
                          "How far you see to the side.\nWorks with Aspect Ratio; enemies adapt.",
@@ -186,7 +186,7 @@ namespace kamite::settings
         live(toggle(Tab::Interface, "HUD", "Enemy Life Gauge", "Select whether to display\nan enemy's life gauge.", "Game",
                     "EnemyLifeGauge", true)), // the game's own help
         live(wideOnly(note(choice(Tab::Interface, "HUD", "HUD Layout",
-                                  "Where the health bar, radar and the rest of the in-game HUD go on a wide screen. Wider "
+                                  "Where the health bar, radar, and the rest of the in-game HUD go on a wide screen. Wider "
                                   "than 16:9 keeps them at the edges of a 16:9 area.",
                                   "Video", "HudLayout", "16:9", kHudLayouts),
                            "F7 switches it while playing."))),
@@ -225,7 +225,7 @@ namespace kamite::settings
                          "Game", "SprintTraversal", false),
                   "F2 > Debug > Stage collision marks them.")),
         live(toggle(Tab::Gameplay, "Style Shuffle", "Moveset Presets",
-                    "Configure up to 4 styles; switch with the d-pad.\nLetters around the radar show sweet sexy styles.",
+                    "Configure up to 4 styles; switch with the d-pad.\nLetters around the radar show your sweet sexy styles.",
                     "Game", "StyleSwitching", false)),
         live(sub(toggle(Tab::Gameplay, "Style Shuffle", "Signal Style Switch",
                         "Gene calls out each style as you switch to it, and his God Hand flashes.", "Game", "StyleSignal",
@@ -235,7 +235,7 @@ namespace kamite::settings
                     "Pick how to punish stunned enemies.\nWorks with Moveset Presets. Some restrictions apply.",
                     "Game", "BuckBreaker", false)),
         live(toggle(Tab::Gameplay, "Fightin' Excitement", "Cunt Punter",
-                    "Ball Buster works on women. Name change on target.\nThis also works IRL, though your mileage may vary.", "Game", "BallBusterWomen", false)),
+                    "Ball Buster works on women. Name changes on target.\nThis also works IRL, though your mileage may vary.", "Game", "BallBusterWomen", false)),
         live(toggle(Tab::Gameplay, "Fightin' Excitement", "Tension is Placable",
                     "After unleashing the God Hand, pull the trigger again\nto leash it early and keep your remaining Tension.",
                     "Game", "TensionPlacable", false)),
@@ -254,7 +254,7 @@ namespace kamite::settings
                     "Switch Roulette targets with the right stick and the d-pad.\nHINT: You can also use the d-pad to cycle Roulette moves.",
                     "Game", "RouletteTargetCycle", false)),
         live(toggle(Tab::Gameplay, "Roulette Wheel & Reel", "Dry Spinning",
-                    "You can open the Roulette even when you don't have balls.\nHINT: You can use the Roulette camera as a quick-turn.",
+                    "You can open the Roulette even when you don't have balls.\nHINT: You can use the Roulette camera for targeting.",
                     "Game", "RouletteNoOrbs", false)),
         toggle(Tab::Gameplay, "Skip Poker", "Intro Skipper",
                "Start at the main menu: no Capcom and Clover logos and no \"Press Start\" screen.", "Game", "SkipIntro",

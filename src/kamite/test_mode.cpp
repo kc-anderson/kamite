@@ -22,6 +22,7 @@
 // played at 30 merges each pair of samples (a button pressed in either counts, the sticks take the later), so no tap
 // is lost.
 #include "kamite/test_mode.h"
+#include "kamite/widescreen.h"
 #include "kamite/frame_patches.h"
 #include "kamite/debug_tools.h"
 #include "kamite/npc_tools.h"
@@ -1436,6 +1437,15 @@ namespace kamite::test_mode
                 const char *value = std::getenv(name);
                 if (!value)
                     value = caseDefault(name); // unset = the game's default: written out, so the case says what ran
+                // The aspect as the number in force: "21:9" or "auto" follow the screen, and the replaying one differs.
+                std::string resolved;
+                if (std::strcmp(name, "KAMITE_ASPECT") == 0)
+                {
+                    char number[32];
+                    std::snprintf(number, sizeof(number), "%.6f", aspectRatio());
+                    resolved = number;
+                    value = resolved.c_str();
+                }
                 if (value)
                     rec.settings += std::string("env.") + name + "=" + value + "\n";
             }

@@ -824,15 +824,30 @@ void main()
             const Vector2 measured = MeasureTextEx(state.splashFont, text, size, 0.0f);
             if (measured.x > logoWidth * 0.40f)
                 size *= logoWidth * 0.40f / measured.x;
+            const Vector2 at{state.logoMin.x + logoWidth * 0.90f, state.logoMin.y + logoHeight * 0.68f}; // on the D's lower right
+            // A line too long for the room to the window's right edge (a 4:3 window) tilts steeper, up to 40 degrees,
+            // then shrinks (K, Nov 13); judged at the pulse's largest so it holds still.
+            float tilt = 18.0f;
+            {
+                const Vector2 peak = MeasureTextEx(state.splashFont, text, size * 1.05f, 0.0f);
+                const float room = static_cast<float>(GetScreenWidth()) - at.x - logoWidth * 0.02f;
+                const auto reach = [&](float degrees) {
+                    const float r = degrees * 3.14159265f / 180.0f;
+                    return 0.5f * peak.x * std::cos(r) + 0.5f * peak.y * std::sin(r);
+                };
+                while (tilt < 40.0f && reach(tilt) > room)
+                    tilt += 1.0f;
+                if (room > 1.0f && reach(tilt) > room)
+                    size *= room / reach(tilt);
+            }
             size *= 1.0f + 0.05f * std::fabs(std::sin(state.time * 3.14159265f)); // the pulse, once a second
             const Vector2 box = MeasureTextEx(state.splashFont, text, size, 0.0f);
-            const Vector2 at{state.logoMin.x + logoWidth * 0.90f, state.logoMin.y + logoHeight * 0.68f}; // on the D's lower right
             const Vector2 origin{box.x * 0.5f, box.y * 0.5f};
-            const float shadow = size * 0.085f;
+            const float shadow = size * 0.05f; // closer to the letters (K, Nov 13; was 0.085)
             const unsigned char alpha = static_cast<unsigned char>(255.0f * std::clamp(state.burstShown, 0.0f, 1.0f));
-            DrawTextPro(state.splashFont, text, Vector2{at.x + shadow, at.y + shadow}, origin, -18.0f, size, 0.0f,
+            DrawTextPro(state.splashFont, text, Vector2{at.x + shadow, at.y + shadow}, origin, -tilt, size, 0.0f,
                         Color{62, 52, 0, alpha});
-            DrawTextPro(state.splashFont, text, at, origin, -18.0f, size, 0.0f, Color{255, 236, 64, alpha});
+            DrawTextPro(state.splashFont, text, at, origin, -tilt, size, 0.0f, Color{255, 236, 64, alpha});
         }
 
         // Text straight on the background, centred, with a soft dark shadow so it reads over the bright desert.
