@@ -1,0 +1,368 @@
+#include "kamite/settings_table.h"
+
+#include "kamite/ini_file.h"
+
+#include <cctype>
+#include <cstring>
+#include <iterator>
+
+namespace kamite::settings
+{
+    namespace
+    {
+        // ---- choices --------------------------------------------------------------------------------------------
+        constexpr Choice kMenuButtons[] = {{"western", "Western", "WESTERN"}, {"japanese", "Japanese", "JAPANESE"},
+                                           {"classic", "Classic", "CLASSIC"}};
+        constexpr Choice kButtonPrompts[] = {{"auto", "Automatic (follows your controller)", "AUTOMATIC"},
+                                             {"xbox", "Xbox", "XBOX"},
+                                             {"playstation", "PlayStation (the game's own)", "PLAYSTATION"},
+                                             {"nintendo", "Nintendo Switch", "NINTENDO"},
+                                             {"steam", "Steam Deck / Steam Controller", "STEAM DECK"}};
+        constexpr Choice kWindowSizes[] = {{"auto", "Automatic (follows internal resolution)", "AUTOMATIC"},
+                                           {"native", "PS2 size", "PS2 SIZE"}};
+        constexpr Choice kAspects[] = {{"4:3", "4:3 (the PS2's)", "4:3"},    {"16:9", "16:9", "16:9"},
+                                       {"16:10", "16:10", "16:10"},         {"21:9", "21:9", "21:9"},
+                                       {"32:9", "32:9", "32:9"},            {"auto", "Match the screen", "MATCH SCREEN"}};
+        constexpr Choice kFovs[] = {{"100", "100%: as on the PS2", "100"}, {"110", "110%", "110"}, {"120", "120%", "120"},
+                                    {"130", "130%", "130"},                {"140", "140%", "140"}, {"150", "150%", "150"}};
+        constexpr Choice kCameraDistances[] = {{"0", "0%: Gene keeps his size", "0"},
+                                               {"50", "50%: halfway out", "50"},
+                                               {"100", "100%: wider view looks zoomed out", "100"}};
+        constexpr Choice kCameraTilts[] = {{"0", "None", "0"}, {"5", "5 degrees", "5"}, {"10", "10 degrees", "10"},
+                                           {"15", "15 degrees", "15"}};
+        constexpr Choice kHudLayouts[] = {{"16:9", "16:9: HUD at the screen edges", "16:9"},
+                                          {"4:3", "4:3: HUD where the PS2 had it", "4:3"}};
+        constexpr Choice kMenuLayouts[] = {{"4:3", "4:3: as on the PS2, with side bars", "4:3"},
+                                           {"stretch", "Stretched to the screen", "STRETCHED"}};
+        constexpr Choice kGraphicsApis[] = {{"vulkan", "Vulkan", "VULKAN"}, {"dx11", "Direct3D 11", "DIRECT3D 11"}};
+        constexpr Choice kResolutions[] = {{"1", "1x  native (512x448)", "1X"}, {"2", "2x  1024x896", "2X"},
+                                           {"3", "3x  1536x1344", "3X"},        {"4", "4x  2048x1792", "4X"},
+                                           {"5", "5x  2560x2240", "5X"},        {"6", "6x  3072x2688", "6X"},
+                                           {"8", "8x  4096x3584", "8X"}};
+        constexpr Choice kPostEffects[] = {{"ps2", "PS2 resolution (PCSX2's fix)", "PS2 RESOLUTION"},
+                                           {"upscaled", "Upscaled", "UPSCALED"},
+                                           {"off", "No fix", "NO FIX"}};
+        constexpr Choice kControlStyles[] = {{"classic", "Classic", "CLASSIC"}, {"modern", "Modern", "MODERN"}};
+        constexpr Choice kRouletteTimers[] = {{"normal", "Normal", "NORMAL"}, {"double", "Double time", "DOUBLE"}};
+        constexpr Choice kSoundModes[] = {{"mono", "Mono", "MONO"}, {"stereo", "Stereo", "STEREO"},
+                                          {"prologic2", "Dolby Pro Logic II", "PRO LOGIC II"}};
+        // The volumes: 5 % steps, except 65 -> 69 -> 70 (K).
+        constexpr int kVolumes[] = {0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 69, 70, 75, 80, 85, 90, 95, 100};
+
+        // ---- builders -------------------------------------------------------------------------------------------
+        constexpr Setting base(const char *id, Tab tab, const char *category, const char *name, const char *description,
+                               const char *section, const char *key, const char *fallback, Kind kind)
+        {
+            Setting s;
+            s.id = id, s.tab = tab, s.category = category, s.name = name, s.description = description;
+            s.section = section, s.key = key, s.fallback = fallback, s.kind = kind;
+            return s;
+        }
+        constexpr Setting toggle(Tab tab, const char *category, const char *name, const char *description,
+                                 const char *section, const char *key, bool on)
+        {
+            return base(key, tab, category, name, description, section, key, on ? "1" : "0", Kind::Toggle);
+        }
+        template <size_t N>
+        constexpr Setting choice(Tab tab, const char *category, const char *name, const char *description,
+                                 const char *section, const char *key, const char *fallback, const Choice (&choices)[N])
+        {
+            Setting s = base(key, tab, category, name, description, section, key, fallback, Kind::Choice);
+            s.choices = choices, s.choiceCount = static_cast<int>(N);
+            return s;
+        }
+        constexpr Setting volume(const char *name, const char *description, const char *key)
+        {
+            Setting s = base(key, Tab::Sound, "Volume", name, description, "Sound", key, "100", Kind::Slider);
+            s.values = kVolumes, s.valueCount = static_cast<int>(std::size(kVolumes)), s.unit = "%";
+            return s;
+        }
+        constexpr Setting custom(const char *id, Tab tab, const char *category, const char *name, const char *description)
+        {
+            return base(id, tab, category, name, description, "", "", "", Kind::Custom);
+        }
+        // Modifiers.
+        constexpr Setting live(Setting s) { return s.live = true, s; }
+        constexpr Setting note(Setting s, const char *text) { return s.note = text, s; }
+        constexpr Setting sub(Setting s, const char *parent, const char *value = nullptr)
+        {
+            return s.parent = parent, s.parentValue = value, s;
+        }
+        constexpr Setting advanced(Setting s) { return s.advanced = true, s; }
+        constexpr Setting greyed(Setting s) { return s.greyed = true, s; }
+        constexpr Setting wideOnly(Setting s) { return s.wideOnly = true, s; }
+        constexpr Setting slider(Setting s, const char *unit) { return s.gameSlider = true, s.unit = unit, s; }
+
+        constexpr const char *kDegrees = "\xC2\xB0";
+    }
+
+    // The order is the launcher's and the game's.
+    const Setting kSettings[] = {
+        // ---- Controls -------------------------------------------------------------------------------------------
+        live(choice(Tab::Controls, "Controller", "Menu Controls",
+                    "Western: the bottom button confirms and the right one cancels (A / B, or cross / circle). Japanese: "
+                    "the right button confirms and the bottom one cancels (circle / cross). Classic: as on the PS2, circle "
+                    "and cross confirm and triangle cancels. Menus, dialogs and the roulette.",
+                    "Game", "MenuButtons", "western", kMenuButtons)),
+        live(toggle(Tab::Controls, "Controller", "Vibration", "The controller's rumble.", "Game", "Vibration", true)),
+
+        // ---- Display --------------------------------------------------------------------------------------------
+        note(custom("DisplayMode", Tab::Display, "Game Window", "Display Mode", "How the game opens."),
+             "F11 switches between window and fullscreen while playing."),
+        greyed(sub(choice(Tab::Display, "Game Window", "Window Size",
+                          "The window's size when it opens (not maximized or fullscreen).", "Video", "WindowSize", "auto",
+                          kWindowSizes),
+                   "DisplayMode", "window")),
+        choice(Tab::Display, "Game Window", "Aspect Ratio",
+               "The picture's shape. Wider than 4:3 shows more of the scene to the sides; menus keep the PS2's "
+               "proportions.",
+               "Video", "AspectRatio", "16:9", kAspects),
+        live(note(custom("CameraPreset", Tab::Display, "Camera", "Camera & FOV",
+                         "How much the gameplay camera shows and how it frames Gene (widescreen already widens it "
+                         "sideways). Cutscenes keep their framing."),
+                  "F2 while playing tunes it live.")),
+        live(advanced(slider(choice(Tab::Display, "Camera", "Field of View",
+                                    "How much the camera shows, both ways, outside fights.", "Video", "FieldOfView", "100",
+                                    kFovs),
+                             "%"))),
+        live(advanced(slider(choice(Tab::Display, "Camera", "Field of View in Fights",
+                                    "The same while the game's battle camera is on (Gene has an enemy targeted). 100% "
+                                    "frames fights as on the PS2.",
+                                    "Video", "FightFieldOfView", "100", kFovs),
+                             "%"))),
+        live(advanced(slider(choice(Tab::Display, "Camera", "Camera Distance",
+                                    "At a wider field of view, how far back the camera stays. 0% keeps Gene the size he "
+                                    "is at 100%; 100% shows more round him.",
+                                    "Video", "CameraZoomOut", "0", kCameraDistances),
+                             "%"))),
+        live(advanced(slider(choice(Tab::Display, "Camera", "Camera Tilt",
+                                    "At a wider field of view, the camera also rises and looks down at Gene by this much: "
+                                    "more of the floor ahead, less sky.",
+                                    "Video", "CameraTilt", "0", kCameraTilts),
+                             kDegrees))),
+        live(advanced(toggle(Tab::Display, "Camera", "Enemies Follow the View",
+                             "The angles round Gene in which enemies close in and lunge widen with the picture, so the "
+                             "ones you can see at the edges join in as on the PS2. Off: the original angles.",
+                             "Game", "EnemiesFollowView", true))),
+        live(note(toggle(Tab::Display, "Camera", "Steady Idle Camera",
+                         "While Gene stands idle, the camera stops rocking and shaking with his stomps.", "Video",
+                         "SteadyIdleCamera", false),
+                  "F2 > Camera switches it while playing.")),
+        live(note(toggle(Tab::Display, "Camera", "See Through",
+                         "When walls or pillars block the view of Gene or the enemies about him, they dissolve in an oval "
+                         "round him, so the fight stays in view. Walls next to the camera, which the PS2 drops, are drawn "
+                         "too. Known: a banded blur where hazy distance shows through (the depth of field reads the "
+                         "dissolve).",
+                         "Video", "SeeThrough", true),
+                  "F2 > Camera sizes it while playing.")),
+        choice(Tab::Display, "Renderer", "Graphics API",
+               "Vulkan is the default. If Vulkan fails to start, the game uses Direct3D 11 instead.", "Video",
+               "GraphicsAPI", "vulkan", kGraphicsApis),
+        choice(Tab::Display, "Renderer", "Internal Resolution",
+               "How sharp the 3D is drawn. 3x suits a 1440p screen, 4x and up a 4K one; higher costs more GPU time.",
+               "Video", "InternalResolution", "3", kResolutions),
+        choice(Tab::Display, "Effects", "Post Effects",
+               "The blur effects (depth of field, heat haze) are drawn from small copies of the frame. PS2 resolution "
+               "keeps them aligned but grainy at high internal resolutions; Upscaled draws them sharp.",
+               "Video", "PostEffects", "ps2", kPostEffects),
+        live(note(toggle(Tab::Display, "Effects", "Depth of Field",
+                         "The game's blur of the distance. At high internal resolutions its edges can show dark, "
+                         "shimmering fringes.",
+                         "Video", "DepthOfField", true),
+                  "F2 switches it while playing.")),
+
+        // ---- Interface ------------------------------------------------------------------------------------------
+        live(toggle(Tab::Interface, "HUD", "Enemy Life Gauge", "The health bars over the enemies' heads.", "Game",
+                    "EnemyLifeGauge", true)),
+        live(wideOnly(note(choice(Tab::Interface, "HUD", "HUD Layout",
+                                  "Where the health bar, radar and the rest of the in-game HUD go on a wide screen. Wider "
+                                  "than 16:9 keeps them at the edges of a 16:9 area.",
+                                  "Video", "HudLayout", "16:9", kHudLayouts),
+                           "F7 switches it while playing."))),
+        live(toggle(Tab::Interface, "HUD", "Sway Bar",
+                    "A stun gauge under each enemy's health bar: it fills as you hit them and drains while they are "
+                    "stunned.",
+                    "Game", "SwayBar", false)),
+        live(wideOnly(choice(Tab::Interface, "Menus & Prompts", "Menu Width",
+                             "Menus and screens (pause, options, roulette setup) are drawn for 4:3: shown 4:3 with side "
+                             "bars, or stretched to the screen.",
+                             "Video", "MenuLayout", "4:3", kMenuLayouts))),
+        live(choice(Tab::Interface, "Menus & Prompts", "Button Prompts",
+                    "The buttons the game shows for a controller. Automatic picks them from the controller you use; keys "
+                    "and mouse always show keys. Prompt art: Xelu's free prompts (CC0).",
+                    "Game", "ButtonPrompts", "auto", kButtonPrompts)),
+
+        // ---- Gameplay -------------------------------------------------------------------------------------------
+        live(toggle(Tab::Gameplay, "Speed & Feed", "60 FPS",
+                    "Runs the game at 60 frames a second instead of 30, with its timers kept at the PS2's speed.", "Game",
+                    "Fps60", false)),
+        live(toggle(Tab::Gameplay, "Move & Groove", "Click-Stick Dash",
+                    "Clicking the left stick dashes (where the stick points, or straight ahead).", "Game", "L3Dash", false)),
+        live(note(choice(Tab::Gameplay, "Move & Groove", "Control Style",
+                         "Classic: as on the PS2. Modern: the free camera: the right stick turns the camera and Gene moves "
+                         "where you point; pressing the right stick switches to brawl mode (classic controls) and back "
+                         "(the radar glows while the free camera is on).",
+                         "Game", "ControlStyle", "classic", kControlStyles),
+                  "F2 > Controls changes it while playing.")),
+        live(sub(toggle(Tab::Gameplay, "Move & Groove", "Modern: Auto",
+                        "Fighting starts brawl mode automatically; pressing the right stick switches back to the free "
+                        "camera.",
+                        "Game", "ModernAuto", true),
+                 "ControlStyle", "modern")),
+        live(note(sub(toggle(Tab::Gameplay, "Move & Groove", "Modern: Mouse Camera",
+                             "The mouse turns the free camera. Click in the game to capture the mouse, Esc frees it.",
+                             "Game", "MouseCamera", true),
+                      "ControlStyle", "modern"),
+                  "F2 > Controls sets the sensitivity.")),
+        note(toggle(Tab::Gameplay, "Move & Groove", "Busta-Chan Jive",
+                    "Sprint attacks carry Gene over or through the railings marked for them: the diving attack and the "
+                    "flying kick jump over, the slide goes under.",
+                    "Game", "SprintTraversal", false),
+             "F2 > Debug > Stage collision marks them."),
+        toggle(Tab::Gameplay, "Style Shuffle", "Moveset Presets",
+               "Keep up to four sets of techniques as presets (the styles S, E, X and Y) and swap between them in play "
+               "with the d-pad. On the Techniques screen, L2 / R2 cycle them.",
+               "Game", "StyleSwitching", false),
+        sub(toggle(Tab::Gameplay, "Style Shuffle", "Signal Style Switch",
+                   "Gene calls out each style as you switch to it, and his God Hand flashes.", "Game", "StyleSignal", false),
+            "StyleSwitching"),
+        toggle(Tab::Gameplay, "Style Shuffle", "Buck Breaker",
+               "Choose how to punish stunned enemies with a new slot on the Techniques screen. Works with Moveset Presets.",
+               "Game", "BuckBreaker", false),
+        live(toggle(Tab::Gameplay, "Fightin' Excitement", "Cunt Punter",
+                    "Ball Buster works on female enemies too, the same as on men.", "Game", "BallBusterWomen", false)),
+        live(toggle(Tab::Gameplay, "Fightin' Excitement", "Tension is Placable",
+                    "Pressing R2 / RT again while the God Hand is unleashed ends it and keeps the tension left in the "
+                    "meter.",
+                    "Game", "TensionPlacable", false)),
+        live(sub(toggle(Tab::Gameplay, "Fightin' Excitement", "Off the Cuff",
+                        "The God Hand unleashes with any tension in the meter, not only a full one.\nOnly unleashing the "
+                        "God Hand with a full meter makes Gene invulnerable.",
+                        "Game", "OffTheCuff", false),
+                 "TensionPlacable")),
+        toggle(Tab::Gameplay, "Fightin' Excitement", "Wild Curry Funk", "Lets you pick up, carry, and throw chairs.", "Game",
+               "LiftChairs", false),
+        live(choice(Tab::Gameplay, "Roulette Wheel & Reel", "Roulette Timer",
+                    "How long you have to pick a roulette move. Double time gives twice as long (the dial runs half as "
+                    "fast), at 30 and 60 FPS.",
+                    "Game", "RouletteTimer", "normal", kRouletteTimers)),
+        live(toggle(Tab::Gameplay, "Roulette Wheel & Reel", "Target Select",
+                    "While the roulette wheel is up, flick the right stick or press the d-pad left or right to aim it at "
+                    "the next enemy that way.",
+                    "Game", "RouletteTargetCycle", false)),
+        toggle(Tab::Gameplay, "Roulette Wheel & Reel", "Dry Spinning",
+               "R1 opens the roulette even with no orbs left. Nothing can be picked without orbs, but the roulette camera "
+               "still turns Gene (Classic camera).",
+               "Game", "RouletteNoOrbs", false),
+        toggle(Tab::Gameplay, "Skip Poker", "Intro Skipper",
+               "Start at the main menu: no Capcom and Clover logos and no \"Press Start\" screen.", "Game", "SkipIntro",
+               false),
+        toggle(Tab::Gameplay, "Skip Poker", "Hard-On",
+               "Hard can be picked from the start instead of after a clear. Your save is not changed.", "Game",
+               "UnlockHard", false),
+        note(toggle(Tab::Gameplay, "Misc. & Risk", "Better Shop & Casino Poses",
+                    "The shop and casino girls lean on their counters and tables in poses made for each, instead of the "
+                    "game's standing idle.",
+                    "Game", "NpcPoses", false),
+             "F2 > NPCs sets the poses."),
+
+        // ---- Sound ----------------------------------------------------------------------------------------------
+        live(choice(Tab::Sound, "Sound", "Mode", "Mono, stereo or Dolby Pro Logic II surround.", "Sound", "Mode", "stereo",
+                    kSoundModes)),
+        live(volume("Music", "The stage, boss, menu and minigame music. 0% mutes it.", "MusicVolume")),
+        live(volume("Sound Effects", "Hits, steps, the menus and the rest of the game's sounds.", "EffectsVolume")),
+        live(volume("Voices",
+                    "Gene, the enemies and the cutscenes (a cutscene's voices and music are one track, so it follows "
+                    "this).",
+                    "VoicesVolume")),
+
+        // ---- Mods (the launcher only) ---------------------------------------------------------------------------
+        custom("Character", Tab::Mods, "Character", "Character",
+               "Who you play as. Currently, other characters use Gene's moves and his God Hand."),
+        custom("Textures", Tab::Mods, "Texture Packs", "Replacement Textures", "HD texture packs in PCSX2's format."),
+    };
+    const size_t kSettingCount = std::size(kSettings);
+
+    const char *tabName(Tab tab)
+    {
+        switch (tab)
+        {
+        case Tab::Controls:
+            return "Controls";
+        case Tab::Display:
+            return "Display";
+        case Tab::Interface:
+            return "Interface";
+        case Tab::Gameplay:
+            return "Gameplay";
+        case Tab::Sound:
+            return "Sound";
+        case Tab::Mods:
+            return "Mods";
+        }
+        return "";
+    }
+
+    const Setting *find(const char *id)
+    {
+        for (const Setting &s : kSettings)
+            if (std::strcmp(s.id, id) == 0)
+                return &s;
+        return nullptr;
+    }
+
+    namespace
+    {
+        bool same(const std::string &a, const char *b)
+        {
+            if (a.size() != std::strlen(b))
+                return false;
+            for (size_t i = 0; i < a.size(); ++i)
+                if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i])))
+                    return false;
+            return true;
+        }
+    }
+
+    std::string value(const IniFile &ini, const Setting &setting)
+    {
+        if (!*setting.key)
+            return {};
+        std::string text = ini.get(setting.section, setting.key, "");
+        if (std::strcmp(setting.key, "MenuButtons") == 0 && same(text, "modern"))
+            return "western"; // the name before Oct 31
+        if (!text.empty())
+            return text;
+        if (std::strcmp(setting.key, "MusicVolume") == 0 && ini.getBool("Sound", "MuteMusic", false))
+            return "0"; // Music 0 replaces Mute Music (K, Nov 12)
+        return setting.fallback;
+    }
+
+    bool on(const IniFile &ini, const Setting &setting)
+    {
+        const std::string text = value(ini, setting);
+        return !text.empty() && text != "0";
+    }
+
+    int choiceIndex(const Setting &setting, const std::string &text)
+    {
+        for (int i = 0; i < setting.choiceCount; ++i)
+            if (same(text, setting.choices[i].value))
+                return i;
+        return -1;
+    }
+
+    bool parentAllows(const IniFile &ini, const Setting &setting)
+    {
+        if (!setting.parent)
+            return true;
+        if (std::strcmp(setting.parent, "DisplayMode") == 0) // two keys in GHR.ini (StartFullscreen, StartMaximized)
+            return !ini.getBool("Video", "StartFullscreen", true) && !ini.getBool("Video", "StartMaximized", false);
+        const Setting *parent = find(setting.parent);
+        if (!parent)
+            return true;
+        if (setting.parentValue)
+            return same(value(ini, *parent), setting.parentValue);
+        return on(ini, *parent);
+    }
+}

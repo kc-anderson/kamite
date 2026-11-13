@@ -5,9 +5,22 @@
 #include <cstdlib>
 #include <cstdio>
 
+#include "ps2x/iop/iop_host.h"
+
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <numbers>
+
+namespace ps2x::iop
+{
+    namespace
+    {
+        std::atomic<float> g_voiceGain{1.0f};
+    }
+
+    void setVoiceGain(float gain) { g_voiceGain.store(std::clamp(gain, 0.0f, 1.0f), std::memory_order_relaxed); }
+}
 
 namespace ps2x::iop::detail
 {
@@ -680,6 +693,13 @@ namespace ps2x::iop::detail
             if (rightWetMask & (1u << index))
                 voiceWet[1] += right;
         }
+        // The player's sound effects volume (the port's in-game OPTIONS, [Sound] EffectsVolume).
+        if (const float gain = g_voiceGain.load(std::memory_order_relaxed); gain < 1.0f)
+            for (uint32_t channel = 0u; channel < 2u; ++channel)
+            {
+                output[channel] = static_cast<int32_t>(static_cast<float>(output[channel]) * gain);
+                voiceWet[channel] = static_cast<int32_t>(static_cast<float>(voiceWet[channel]) * gain);
+            }
         const uint16_t mixer = reg(base + 0x198u);
         const uint32_t shared = kSharedBase + core * 0x28u;
         // MMIX (PCSX2 REG_S_MMIX, psx-spx): 0x800/0x400 voice dry L/R, 0x200/0x100 voice wet, 0x80/0x40 sound data

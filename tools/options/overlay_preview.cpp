@@ -4,7 +4,9 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "pcsx2gs_api.h"
+#include "kamite/ini_file.h"
 #include "kamite/options_overlay.h"
+#include "kamite/options_pages.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -87,58 +89,16 @@ int main(int argc, char **argv)
         {"RESET GAME", "Return to title screen"}, {"RESTORE DEFAULTS", "Set every option back to\nits default."}, {"EXIT", ""}};
     static const Row titleRows[] = {pauseRows[0], pauseRows[1], pauseRows[2], pauseRows[3], pauseRows[4], pauseRows[7], pauseRows[8]};
 
-    // Mockup pages (the launcher's options; the real ones come from the settings table).
-    static const char *const onOff[] = {"ON", "OFF"};
-    static const char *const styles[] = {"CLASSIC", "MODERN"};
-    static const char *const timers[] = {"NORMAL", "DOUBLE"};
-    static const char *const huds[] = {"16:9", "21:9", "32:9", "FULL WIDTH"};
-    static const char *const prompts[] = {"AUTOMATIC", "PLAYSTATION", "XBOX", "NINTENDO", "STEAM DECK", "KEYBOARD"};
-    auto opt = [](const char *name, const char *help, int choice = 1, bool sub = false, const char *const *choices = nullptr, int count = 2) {
-        PageRow r;
-        r.name = name, r.help = help, r.sub = sub, r.choices = choices ? choices : onOff, r.choiceCount = count, r.choice = choice;
-        return r;
-    };
-    auto head = [](const char *name) {
-        PageRow r;
-        r.name = name, r.header = true;
-        return r;
-    };
-    static const PageRow gameplay[] = {
-        head("SPEED & FEED"), opt("60 FPS", "Runs the game at 60 frames a second, its\ntimers kept at the PS2's speed.", 0),
-        head("MOVE & GROOVE"), opt("CLICK-STICK DASH", "Clicking the left stick dashes.", 0),
-        opt("CONTROL STYLE", "Classic: as on the PS2. Modern: the free\ncamera, the right stick turns it.", 1, false, styles, 2),
-        opt("MODERN: AUTO", "Fighting starts brawl mode automatically.", 0, true),
-        opt("MOUSE CAMERA", "The mouse turns the free camera.", 0, true),
-        opt("BUSTA-CHAN JIVE", "Sprint attacks carry Gene over or through\nthe railings marked for them."),
-        head("STYLE SHUFFLE"), opt("MOVESET PRESETS", "Keep up to four sets of techniques and\nswap between them with the d-pad.", 0),
-        opt("SIGNAL STYLE SWITCH", "Gene calls out each style as you switch\nto it, and his God Hand flashes.", 0, true),
-        opt("BUCK BREAKER", "Choose how to punish stunned enemies\non the Techniques screen."),
-        head("FIGHTIN' EXCITEMENT"), opt("CUNT PUNTER", "Ball Buster works on female enemies too."),
-        opt("TENSION IS PLACABLE", "R2 again ends the God Hand early and\nkeeps the tension left.", 0),
-        opt("OFF THE CUFF", "Unleash the God Hand with any tension.", 1, true),
-        opt("WILD CURRY FUNK", "Lets you pick up, carry, and throw chairs."),
-        head("ROULETTE WHEEL & REEL"), opt("ROULETTE TIMER", "How long you have to pick a roulette move.", 0, false, timers, 2),
-        opt("TARGET SELECT", "Flick the right stick to aim the roulette\nat the next enemy that way."),
-        opt("DRY SPINNING", "R1 opens the roulette with no orbs left."),
-        head("SKIP POKER"), opt("HARD-ON", "Hard can be picked from the start."),
-        head("MISC. & RISK"), opt("BETTER SHOP & CASINO POSES", "The shop and casino girls lean on their\ncounters in poses made for each.")};
-    static const PageRow iface[] = {opt("ENEMY LIFE GAUGE", "Show the enemies' health.", 0),
-        opt("HUD LAYOUT", "Where the HUD goes on a wide screen.", 0, false, huds, 4),
-        opt("BUTTON PROMPTS", "The buttons shown in the game's prompts.", 0, false, prompts, 6),
-        opt("SWAY BAR", "A stun gauge under each enemy's health bar.")};
-    static const char *const modes[] = {"MONO", "STEREO", "PRO LOGIC II"};
-    static const int volumes[] = {0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 69, 70, 75, 80, 85, 90, 95, 100};
-    auto vol = [](const char *name, const char *help, int choice) {
-        PageRow r;
-        r.name = name, r.help = help, r.values = volumes, r.valueCount = int(std::size(volumes)), r.choice = choice;
-        return r;
-    };
-    static const PageRow sound[] = {opt("MODE", "Mono, stereo or Dolby Pro Logic II.", 1, false, modes, 3),
-        vol("MUSIC", "The music's volume. Cutscenes follow Voices.", 15),
-        vol("SOUND EFFECTS", "The volume of hits, steps and the menus.", 21),
-        vol("VOICES", "Gene, the enemies and the cutscenes.", 14)};
-    static const Page pages[] = {{"GAMEPLAY", gameplay, int(std::size(gameplay))}, {"INTERFACE", iface, int(std::size(iface))},
-                                 {"SOUND", sound, int(std::size(sound))}};
+    // The real pages: the shared settings list over the repo's GHR.ini (with --set overrides), as the game builds them.
+    static kamite::IniFile ini;
+    ini.load(argc > 18 ? argv[18] : "GHR.ini");
+    for (int i = 19; i < argc; ++i) // Section.Key=Value
+    {
+        const std::string arg = argv[i];
+        const size_t dot = arg.find('.'), eq = arg.find('=');
+        if (dot != std::string::npos && eq != std::string::npos && dot < eq)
+            ini.set(arg.substr(0, dot), arg.substr(dot + 1, eq - dot - 1), arg.substr(eq + 1));
+    }
     View v;
     v.aspect = float(W) / float(H);
     v.pause = atoi(argv[5]) != 0;
@@ -148,8 +108,14 @@ int main(int argc, char **argv)
     v.confirmRow = atoi(argv[7]);
     v.confirmYes = false;
     v.question = "Would you really like to reset?";
-    const int page = argc > 13 ? atoi(argv[13]) : -1;
-    v.page = page >= 0 && page < int(std::size(pages)) ? &pages[page] : nullptr;
+    static kamite::options_pages::PageData data;
+    const int page = argc > 13 ? atoi(argv[13]) : -1; // a tab: 0 controls .. 4 sound
+    if (page >= 0 && page < 5)
+    {
+        kamite::options_pages::buildPage(data, kamite::settings::kTabs[page], ini, v.aspect);
+        v.page = &data.page;
+        v.cursor = page; // the list's cursor on that category
+    }
     v.inPage = argc > 14 && atoi(argv[14]) != 0;
     v.pageCursor = argc > 15 ? atoi(argv[15]) : 0;
     v.pageScroll = argc > 16 ? atoi(argv[16]) : 0;

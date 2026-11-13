@@ -282,9 +282,11 @@ namespace kamite::options_overlay
                 char number[24];
                 std::snprintf(number, sizeof(number), "%d%s", row.values[c], row.unit ? row.unit : "");
                 value(number, x + kValueBlock, centre, true, kSliderNumber - 4.0f, PCSX2GS_ALIGN_RIGHT);
-                const float x1 = x + kValueBlock - kSliderNumber, first = static_cast<float>(row.values[0]);
-                const float span = static_cast<float>(row.values[row.valueCount - 1]) - first;
-                const float f = span > 0.0f ? std::clamp((static_cast<float>(row.values[c]) - first) / span, 0.0f, 1.0f) : 0.0f;
+                // The bar's length is the number's share of the largest (from 0, not from the smallest stop: a field
+                // of view of 100 % of 150 shows two thirds, not an empty bar).
+                const float x1 = x + kValueBlock - kSliderNumber;
+                const float top = static_cast<float>(std::max(row.values[row.valueCount - 1], 1));
+                const float f = std::clamp(static_cast<float>(row.values[c]) / top, 0.0f, 1.0f);
                 const float border = kSliderBorder * kLinesToUnits;
                 rect(x - border, centre - kSliderHalf - kSliderBorder, x1 + border, centre + kSliderHalf + kSliderBorder, kSliderBack);
                 Pcsx2GsScreenItem &back = items.back(); // the text's drop shadow, setting the bar off from the wall (K)

@@ -15,6 +15,10 @@ namespace kamite
     // Camera changes it. After the function hooks are attached (main.cpp).
     void installSteadyIdleCamera(PS2Runtime &runtime);
 
+    // The in-game OPTIONS (any thread): the camera, See Through and depth of field values back from GHR.ini (F2's
+    // Revert, after the screen wrote a change there).
+    void reloadCameraSettings();
+
     // GHR.ini, for the F2 menu's Save / Revert (main.cpp, before installWidescreen).
     void setCameraIniPath(const std::filesystem::path &path);
     [[nodiscard]] const std::filesystem::path &cameraIniPath();

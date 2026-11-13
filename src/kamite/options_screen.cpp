@@ -29,13 +29,24 @@
 // there is one, else the disc's scaled up) into cache/hd-options (kept between runs) and hands it to the GS.
 #include "kamite/options_screen.h"
 
+#include "kamite/button_prompts.h"
+#include "kamite/camera.h"
+#include "kamite/camera_presets.h"
 #include "kamite/disc_files.h"
+#include "kamite/frame_patches.h"
 #include "kamite/function_hooks.h"
 #include "kamite/game_layout.h"
 #include "kamite/hd_textures.h"
+#include "kamite/game_options.h"
 #include "kamite/hud_layout.h"
+#include "kamite/ini_file.h"
 #include "kamite/log.h"
+#include "kamite/menu_buttons.h"
+#include "kamite/modern_controls.h"
 #include "kamite/options_overlay.h"
+#include "kamite/options_pages.h"
+#include "kamite/prompt_hd.h"
+#include "kamite/settings_table.h"
 #include "kamite/widescreen.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/ee_scheduler.h"
@@ -50,7 +61,9 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <deque>
 #include <fstream>
 #include <iterator>
 #include <mutex>
@@ -477,6 +490,9 @@ namespace kamite::options_screen
             uint32_t backdrop = 0; // its backdrop entry (left stretched over the picture)
             int confirmRow = -1;   // asking Yes / No for this row (-1 = not asking)
             bool confirmYes = false;
+            bool inPage = false;   // the cursor is in the category's page (Right / A in, B out)
+            int pageCursor = 0;    // its row (headers skipped)
+            int pageScroll = 0;    // the first row shown
         };
         Screen g_screen[2];
         GuestFunction g_original[2][5] = {}; // open, close, update, move, draw
@@ -507,6 +523,245 @@ namespace kamite::options_screen
             return 0u;
         }
 
+        // ---- the settings (settings_table.cpp: the launcher draws the same list) --------------------------------
+        fs::path g_iniPath;
+        IniFile g_ini; // GHR.ini: read as the screen opens, every change saved at once
+
+        // The game's own options, GHR.ini their one store (K): written into the game every frame they differ
+        // (onFrame), so a loaded save's own values never stick.
+        constexpr uint32_t kCoreSavePtr = 0x569B70u;   // cCoreSave *
+        constexpr uint32_t kSaveStateBits = 0xBBAu;    // u16; bit 0 = the enemy life gauge hidden (cCoreSave_*StateBit0)
+        constexpr uint32_t kSaveSoundMode = 0x170u;    // the saved sound mode (func_001F9E68 applies it after a load)
+        constexpr uint32_t kSoundMode = 0x76A7A4u;     // the sound mode now (func_003756F0 reads it)
+        constexpr uint32_t kSetSoundMode = 0x375700u;  // func_00375700(mode): 0 mono, 1 stereo, 2 Dolby Pro Logic II
+        constexpr uint32_t kVibration = 0x5E85F8u;     // u8, 1 = on (the game's Restore Defaults, func_001672F0)
+        std::atomic<bool> g_lifeGauge{true}, g_vibration{true};
+        std::atomic<int> g_soundModeWanted{1};
+        std::atomic<bool> g_reapplyVolumes{false};
+
+        // The pad's raw button word (GameWork +0x08, pressed this frame; libpad's bytes 2..3 inverted): L1 / R1.
+        constexpr uint32_t kPadPressed = game::GameWork::address(game::GameWork::kPadBtn);
+        constexpr uint32_t kPadL1 = 0x0004u, kPadR1 = 0x0008u;
+
+        settings::Tab tabOf(Action action)
+        {
+            switch (action)
+            {
+            case Action::Controls:
+                return settings::Tab::Controls;
+            case Action::Display:
+                return settings::Tab::Display;
+            case Action::Interface:
+                return settings::Tab::Interface;
+            case Action::Gameplay:
+                return settings::Tab::Gameplay;
+            default:
+                return settings::Tab::Sound;
+            }
+        }
+        bool isCategory(Action action)
+        {
+            return action == Action::Controls || action == Action::Display || action == Action::Interface ||
+                   action == Action::Gameplay || action == Action::Sound;
+        }
+
+        // The pages (options_pages.cpp), from the GHR.ini read as the screen opened.
+        using options_pages::firstOption;
+        using options_pages::nextOption;
+        using options_pages::numberText;
+        using options_pages::PageData;
+        PageData g_page;
+        void buildPage(PageData &d, settings::Tab tab) { options_pages::buildPage(d, tab, g_ini, g_aspect); }
+        int cameraPreset() { return options_pages::cameraPreset(g_ini); }
+
+        // A changed setting takes effect at once (the game thread; the modules' own setters, as F2 uses them).
+        void applyVolumes()
+        {
+            const auto percent = [](const char *key) {
+                const settings::Setting *s = settings::find(key);
+                return s ? std::atoi(settings::value(g_ini, *s).c_str()) : 100;
+            };
+            setVolumes(percent("MusicVolume"), percent("EffectsVolume"), percent("VoicesVolume"));
+        }
+
+        int soundModeIndex(const std::string &value)
+        {
+            const settings::Setting *s = settings::find("Mode");
+            const int i = s ? settings::choiceIndex(*s, value) : -1;
+            return i < 0 ? 1 : i; // mono 0, stereo 1, Pro Logic II 2: the game's own numbers
+        }
+
+        void readGameOptions()
+        {
+            const auto onOf = [](const char *key) {
+                const settings::Setting *s = settings::find(key);
+                return s ? settings::on(g_ini, *s) : true;
+            };
+            g_lifeGauge = onOf("EnemyLifeGauge");
+            g_vibration = onOf("Vibration");
+            const settings::Setting *mode = settings::find("Mode");
+            g_soundModeWanted = soundModeIndex(mode ? settings::value(g_ini, *mode) : "stereo");
+            applyVolumes();
+        }
+
+        void apply(const settings::Setting &s)
+        {
+            const std::string id = s.id, value = settings::value(g_ini, s);
+            const bool on = s.kind == settings::Kind::Toggle && settings::on(g_ini, s);
+            if (id == "MenuButtons")
+                menu_buttons::setStyle(value == "japanese" ? menu_buttons::Style::Japanese
+                                       : value == "classic" ? menu_buttons::Style::Classic
+                                                            : menu_buttons::Style::Western);
+            else if (id == "CameraPreset" || id == "FieldOfView" || id == "FightFieldOfView" || id == "CameraZoomOut" ||
+                     id == "CameraTilt" || id == "EnemiesFollowView" || id == "SteadyIdleCamera" || id == "SeeThrough" ||
+                     id == "DepthOfField")
+                reloadCameraSettings();
+            else if (id == "HudLayout")
+                hud::requestLayout(value == "4:3" ? 1 : 0);
+            else if (id == "MenuLayout")
+                hud::requestMenuMode(value == "stretch" ? 1 : 0);
+            else if (id == "SwayBar")
+                setSwayBar(on);
+            else if (id == "ButtonPrompts")
+            {
+                prompt_hd::setChoice(static_cast<prompt_hd::Choice>(std::max(settings::choiceIndex(s, value), 0)));
+                button_prompts::requestRebuild();
+            }
+            else if (id == "Fps60")
+                requestFps60(on);
+            else if (id == "L3Dash")
+                setL3Dash(on);
+            else if (id == "ControlStyle")
+                modern::setModern(value == "modern");
+            else if (id == "ModernAuto")
+                modern::setAuto(on);
+            else if (id == "MouseCamera")
+                modern::setMouseCamera(on);
+            else if (id == "BallBusterWomen")
+                setBallBusterWomen(on);
+            else if (id == "TensionPlacable")
+                setTensionPlacable(on);
+            else if (id == "OffTheCuff")
+                setOffTheCuff(on);
+            else if (id == "RouletteTimer")
+                setRouletteTimerDouble(value == "double");
+            else if (id == "RouletteTargetCycle")
+                setRouletteTargetCycle(on);
+            else if (id == "EnemyLifeGauge" || id == "Vibration" || id == "Mode")
+                readGameOptions(); // onFrame writes them into the game
+            else if (id == "MusicVolume" || id == "EffectsVolume" || id == "VoicesVolume")
+            {
+                applyVolumes();
+                g_reapplyVolumes = true; // the playing streams ask again (onFrame, with the game's registers)
+            }
+        }
+
+        // Left / right (dir -1 / +1) on a page's row; ok: A on it (toggles flip, choices go round, sliders stay).
+        // Returns true when the value changed (saved and applied).
+        bool change(const PageData &d, int row, int dir, bool ok)
+        {
+            if (row < 0 || row >= static_cast<int>(d.rows.size()) || !d.setting[static_cast<size_t>(row)])
+                return false;
+            const settings::Setting &s = *d.setting[static_cast<size_t>(row)];
+            const options_overlay::PageRow &r = d.rows[static_cast<size_t>(row)];
+            std::string value;
+            switch (s.kind)
+            {
+            case settings::Kind::Toggle:
+            {
+                const bool now = settings::on(g_ini, s);
+                const bool next = ok ? !now : dir < 0; // ON is on the left
+                if (next == now)
+                    return false;
+                value = next ? "1" : "0";
+                break;
+            }
+            case settings::Kind::Slider:
+            {
+                if (ok)
+                    return false;
+                const int next = std::clamp(r.choice + dir, 0, s.valueCount - 1);
+                if (next == r.choice)
+                    return false;
+                value = std::to_string(s.values[next]);
+                break;
+            }
+            case settings::Kind::Choice:
+            {
+                if (s.gameSlider)
+                {
+                    if (ok)
+                        return false;
+                    const int next = r.choice + dir;
+                    if (next < 0 || next >= r.valueCount)
+                        return false;
+                    value = std::to_string(r.values[next]);
+                    break;
+                }
+                const int n = s.choiceCount, now = settings::choiceIndex(s, settings::value(g_ini, s));
+                const bool wrap = ok || n > 3; // < value > lists go round; ones shown in a row stop at their ends
+                int next = now < 0 ? (dir < 0 ? n - 1 : 0) : now + (ok ? 1 : dir);
+                next = wrap ? (next % n + n) % n : std::clamp(next, 0, n - 1);
+                if (next == now)
+                    return false;
+                value = s.choices[next].value;
+                break;
+            }
+            case settings::Kind::Custom: // Camera & FOV: the four values of the next / previous preset
+            {
+                const int n = static_cast<int>(std::size(kCameraPresets)), now = cameraPreset();
+                int next = now < 0 ? (dir < 0 ? n - 1 : 0) : now + (ok ? 1 : dir);
+                next = (next % n + n) % n;
+                if (next == now)
+                    return false;
+                const CameraPreset &p = kCameraPresets[next];
+                g_ini.set("Video", "FieldOfView", numberText(p.fieldOfView));
+                g_ini.set("Video", "FightFieldOfView", numberText(p.fightFieldOfView));
+                g_ini.set("Video", "CameraZoomOut", numberText(p.cameraZoomOut));
+                g_ini.set("Video", "CameraTilt", numberText(p.cameraTilt));
+                g_ini.save();
+                apply(s);
+                return true;
+            }
+            }
+            g_ini.set(s.section, s.key, value);
+            if (!g_ini.save())
+                KM_WARN(Game, "options screen: could not write GHR.ini");
+            apply(s);
+            return true;
+        }
+
+        // RESTORE DEFAULTS: every setting the screen shows back to its shipped default.
+        void restoreDefaults()
+        {
+            for (size_t i = 0; i < settings::kSettingCount; ++i)
+            {
+                const settings::Setting &s = settings::kSettings[i];
+                if (s.live && *s.key)
+                    g_ini.set(s.section, s.key, s.fallback);
+            }
+            g_ini.save();
+            for (size_t i = 0; i < settings::kSettingCount; ++i)
+                if (settings::kSettings[i].live)
+                    apply(settings::kSettings[i]);
+            KM_INFO(Game, "options screen: every setting back to its default");
+        }
+
+        // Keeps the page's cursor among the rows shown.
+        void scrollToCursor(Screen &s, const PageData &d)
+        {
+            s.pageScroll = std::clamp(s.pageScroll, 0, std::max(static_cast<int>(d.rows.size()) - 1, 0));
+            if (s.pageCursor < s.pageScroll)
+            {
+                s.pageScroll = s.pageCursor;
+                // a header right above the first option stays in view with it
+                if (s.pageScroll > 0 && d.rows[static_cast<size_t>(s.pageScroll - 1)].header)
+                    --s.pageScroll;
+            }
+            while (s.pageScroll < s.pageCursor && s.pageCursor >= s.pageScroll + options_overlay::pageRowsShown(d.page, s.pageScroll))
+                ++s.pageScroll;
+        }
+
         // ---- the overlay (options_overlay.cpp) ----------------------------------------------------------------
 #if defined(KAMITE_HAS_SCREEN_OVERLAY)
         std::vector<Pcsx2GsScreenItem> g_items;
@@ -528,6 +783,16 @@ namespace kamite::options_screen
             view.confirmYes = s.confirmYes;
             if (s.confirmRow >= 0)
                 view.question = k.actions[s.confirmRow] == Action::ResetGame ? kResetQuestion : kRestoreQuestion;
+            // The category under the cursor: beside the list on 16:10 and wider (names only until it is opened), in its
+            // place when open on a narrower screen.
+            if (isCategory(k.actions[s.row]))
+            {
+                buildPage(g_page, tabOf(k.actions[s.row]));
+                view.page = &g_page.page;
+                view.inPage = s.inPage;
+                view.pageCursor = s.inPage ? s.pageCursor : -1;
+                view.pageScroll = s.inPage ? s.pageScroll : 0;
+            }
             options_overlay::build(view, g_items, g_strings);
             GSPcsx2Backend::SetScreen(g_items.data(), static_cast<uint32_t>(g_items.size()), g_strings.data(),
                                       static_cast<uint32_t>(g_strings.size()));
@@ -551,6 +816,83 @@ namespace kamite::options_screen
             return 1.0f - std::clamp((from + (to - from) * t) / 128.0f, 0.0f, 1.0f);
         }
 
+        // Into the page of the category under the cursor (OK or Right), its first option selected.
+        void enterPage(int kind, Screen &s, uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const Kind &k = kKinds[kind];
+            if (!isCategory(k.actions[s.row]))
+                return;
+            buildPage(g_page, tabOf(k.actions[s.row]));
+            const int first = firstOption(g_page);
+            if (first < 0)
+                return;
+            s.inPage = true;
+            s.pageCursor = first;
+            s.pageScroll = 0;
+            sound(rdram, ctx, runtime, kSeOk);
+        }
+
+        // The pad inside a page: up / down between options, left / right change the value (saved and applied at
+        // once), A steps it on, L1 / R1 the neighbouring category, B back to the list.
+        void pageInput(int kind, Screen &s, uint64_t pressed, uint64_t repeat, uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const Kind &k = kKinds[kind];
+            buildPage(g_page, tabOf(k.actions[s.row]));
+            if (g_page.rows.empty() || firstOption(g_page) < 0)
+            {
+                s.inPage = false;
+                return;
+            }
+            if (s.pageCursor >= static_cast<int>(g_page.rows.size()) || g_page.rows[static_cast<size_t>(s.pageCursor)].header)
+                s.pageCursor = firstOption(g_page); // a sub-option above went away
+            uint16_t pad = 0;
+            std::memcpy(&pad, at(kPadPressed), sizeof(pad));
+            if ((pressed & kCancel) != 0u && (pressed & kOk) == 0u)
+            {
+                s.inPage = false;
+                sound(rdram, ctx, runtime, kSeBack);
+                return;
+            }
+            if (pad & (kPadL1 | kPadR1))
+            {
+                const int step = (pad & kPadR1) ? 1 : -1;
+                const int next = s.row + step;
+                if (next >= 0 && next < k.rowCount && isCategory(k.actions[next]))
+                {
+                    s.row = next;
+                    buildPage(g_page, tabOf(k.actions[s.row]));
+                    s.pageCursor = std::max(firstOption(g_page), 0);
+                    s.pageScroll = 0;
+                    sound(rdram, ctx, runtime, kSeMove);
+                }
+                return;
+            }
+            int move = 0;
+            if (repeat & kUp)
+                move = -1;
+            else if (repeat & kDown)
+                move = 1;
+            if (move != 0)
+            {
+                const int next = nextOption(g_page, s.pageCursor, move);
+                if (next >= 0)
+                {
+                    s.pageCursor = next;
+                    sound(rdram, ctx, runtime, kSeMove);
+                }
+            }
+            else if ((pressed & kOk) && change(g_page, s.pageCursor, 1, true))
+                sound(rdram, ctx, runtime, kSeMove);
+            else if ((repeat & kLeft) && change(g_page, s.pageCursor, -1, false))
+                sound(rdram, ctx, runtime, kSeMove);
+            else if ((repeat & kRight) && change(g_page, s.pageCursor, 1, false))
+                sound(rdram, ctx, runtime, kSeMove);
+            buildPage(g_page, tabOf(k.actions[s.row])); // the change may add or drop sub-options
+            if (s.pageCursor >= static_cast<int>(g_page.rows.size()))
+                s.pageCursor = std::max(firstOption(g_page), 0);
+            scrollToCursor(s, g_page);
+        }
+
         // OK on a row.
         void act(int kind, Screen &s, uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
@@ -572,7 +914,8 @@ namespace kamite::options_screen
                 sound(rdram, ctx, runtime, kSeOk);
                 wr32(self + kResult, static_cast<uint32_t>(kResultBack));
                 break;
-            default: // CONTROLS (our Controls screen) and the pages: the next builds
+            default: // a category: its page (Right does the same)
+                enterPage(kind, s, rdram, ctx, runtime);
                 break;
             }
         }
@@ -591,7 +934,8 @@ namespace kamite::options_screen
                 sound(rdram, ctx, runtime, kSeOk);
                 if (k.actions[s.confirmRow] == Action::ResetGame)
                     wr32(s.self + kResult, static_cast<uint32_t>(kResultReset));
-                // RESTORE DEFAULTS: restores the options once the pages exist (the next build)
+                else
+                    restoreDefaults();
                 s.confirmRow = -1;
             }
             else if ((repeat & kLeft) && !s.confirmYes)
@@ -613,6 +957,8 @@ namespace kamite::options_screen
             const uint32_t self = GPR_U32(ctx, 4);
             g_original[N][0](rdram, ctx, runtime);
             g_screen[N] = Screen{self};
+            if (!g_iniPath.empty() && !g_ini.load(g_iniPath))
+                KM_WARN(Game, "options screen: could not read GHR.ini");
         }
 
         // Entry 3 (close: releases the layout), wrapped: our text goes with it.
@@ -642,8 +988,12 @@ namespace kamite::options_screen
             }
             else if (s.confirmRow >= 0)
                 confirm(N, s, pressed, repeat, rdram, ctx, runtime);
+            else if (s.inPage)
+                pageInput(N, s, pressed, repeat, rdram, ctx, runtime);
             else if (pressed & kOk)
                 act(N, s, rdram, ctx, runtime);
+            else if ((repeat & kRight) && isCategory(k.actions[s.row]))
+                enterPage(N, s, rdram, ctx, runtime);
             else if ((pressed & kCancel) != 0u)
             {
                 sound(rdram, ctx, runtime, kSeBack);
@@ -734,6 +1084,9 @@ namespace kamite::options_screen
     {
         g_ram = runtime.memory().getRDRAM();
         g_aspect = std::clamp(aspectRatio(), 1.0f, 4.0f);
+        g_iniPath = exeDir / "GHR.ini";
+        if (g_ini.load(g_iniPath))
+            readGameOptions(); // the game's own options and the volumes, from the start
         // The functions are hooked first: a half-hooked screen would mix the game's and ours.
         for (int kind = 0; kind < 2; ++kind)
             for (const uint32_t address : {kKinds[kind].open, kKinds[kind].close, kKinds[kind].update, kKinds[kind].move, kKinds[kind].draw})
@@ -760,5 +1113,29 @@ namespace kamite::options_screen
         options_overlay::setSliderFill(utf8(exeDir / "resources" / "options" / "slider_fill.png"));
         std::thread(prepare, exeDir, g_aspect).detach();
         KM_INFO(Game, "options screen: the title and pause Options open the God Hand: Rearmed screen (aspect " << g_aspect << ")");
+    }
+
+    void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        if (!g_ram)
+            return;
+        const uint32_t save = rd32(kCoreSavePtr);
+        if (save == 0u || !valid(save, kSaveStateBits + 2u))
+            return; // not set up yet (the sound mode's setter needs the game's sound running)
+        uint16_t bits = 0;
+        std::memcpy(&bits, at(save + kSaveStateBits), sizeof(bits));
+        const uint16_t gauge = g_lifeGauge ? static_cast<uint16_t>(bits & ~1u) : static_cast<uint16_t>(bits | 1u);
+        if (gauge != bits)
+            std::memcpy(at(save + kSaveStateBits), &gauge, sizeof(gauge));
+        const uint32_t mode = static_cast<uint32_t>(g_soundModeWanted.load());
+        if (rd32(save + kSaveSoundMode) != mode)
+            wr32(save + kSaveSoundMode, mode);
+        if (rd32(kSoundMode) != mode)
+            callGuest(rdram, ctx, runtime, kSetSoundMode, {mode});
+        const uint8_t vibration = g_vibration ? 1u : 0u;
+        if (*at(kVibration) != vibration)
+            *at(kVibration) = vibration;
+        if (g_reapplyVolumes.exchange(false))
+            reapplyStreamVolumes(rdram, ctx, runtime);
     }
 }

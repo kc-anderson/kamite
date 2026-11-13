@@ -12,6 +12,7 @@
 #define KAMITE_LAUNCHER_STEAM 1
 #endif
 #include "kamite/log.h"
+#include "kamite/settings_table.h"
 #include "ps2_host_gamepads.h"
 #include "ps2_host_input.h"
 #include "runtime/ps2_display_options.h"
@@ -48,8 +49,9 @@ namespace kamite::launcher
         // Items whose activation makes the cursor's tick, not the confirm sound (boxes, dropdowns, radio buttons, folds:
         // K), and the buttons that play their own sound when let go (Back: cancel, Play: Play's; a confirm on the press
         // made both sound). Refilled each frame by the widgets right after they are drawn; read by frameSounds.
-        std::vector<ImGuiID> g_tickItems, g_ownSoundItems;
+        std::vector<ImGuiID> g_tickItems, g_ownSoundItems, g_silentItems;
         void tickItem() { g_tickItems.push_back(ImGui::GetItemID()); }
+        void silentItem() { g_silentItems.push_back(ImGui::GetItemID()); } // sliders make no sound (K)
         void ownSoundItem() { g_ownSoundItems.push_back(ImGui::GetItemID()); }
 
         // ---- choices ------------------------------------------------------------------------------------------------
@@ -59,28 +61,7 @@ namespace kamite::launcher
             const char *value;
         };
 
-        constexpr Choice kAspects[] = {{"4:3 (the PS2's)", "4:3"}, {"16:9", "16:9"},  {"16:10", "16:10"},
-                                       {"21:9", "21:9"},          {"32:9", "32:9"},  {"Match the screen", "auto"}};
-        constexpr Choice kHudLayouts[] = {{"16:9: HUD at the screen edges", "16:9"}, {"4:3: HUD where the PS2 had it", "4:3"}};
-        constexpr Choice kMenuLayouts[] = {{"4:3: as on the PS2, with side bars", "4:3"}, {"Stretched to the screen", "stretch"}};
-        constexpr Choice kRouletteTimers[] = {{"Normal", "normal"}, {"Double time", "double"}};
-        constexpr Choice kGraphicsApis[] = {{"Vulkan", "vulkan"}, {"Direct3D 11", "dx11"}};
-        constexpr Choice kPostEffects[] = {{"PS2 resolution (PCSX2's fix)", "ps2"}, {"Upscaled", "upscaled"}, {"No fix", "off"}};
         constexpr Choice kWindowModes[] = {{"Fullscreen (Borderless)", "fullscreen"}, {"Maximized Window", "maximized"}, {"Window", "window"}};
-        constexpr Choice kFovs[] = {{"100%: as on the PS2", "100"}, {"110%", "110"}, {"120%", "120"}, {"130%", "130"},
-                                    {"140%", "140"}, {"150%", "150"}};
-        constexpr Choice kCameraDistances[] = {{"0%: Gene keeps his size", "0"}, {"50%: halfway out", "50"},
-                                               {"100%: wider view looks zoomed out", "100"}};
-        constexpr Choice kControlStyles[] = {{"Classic", "classic"}, {"Modern", "modern"}};
-        constexpr Choice kMenuButtons[] = {{"Western", "western"}, {"Japanese", "japanese"}, {"Classic", "classic"}};
-        constexpr Choice kButtonPrompts[] = {{"Automatic (follows your controller)", "auto"}, {"Xbox", "xbox"},
-                                             {"PlayStation (the game's own)", "playstation"}, {"Nintendo Switch", "nintendo"},
-                                             {"Steam Deck / Steam Controller", "steam"}};
-        constexpr Choice kCameraTilts[] = {{"None", "0"}, {"5 degrees", "5"}, {"10 degrees", "10"}, {"15 degrees", "15"}};
-        constexpr Choice kWindowSizes[] = {{"Automatic (follows internal resolution)", "auto"}, {"PS2 size", "native"}};
-        constexpr Choice kResolutions[] = {{"1x  native (512x448)", "1"}, {"2x  1024x896", "2"}, {"3x  1536x1344", "3"},
-                                           {"4x  2048x1792", "4"},        {"5x  2560x2240", "5"}, {"6x  3072x2688", "6"},
-                                           {"8x  4096x3584", "8"}};
 
         std::string utf8(const fs::path &path)
         {
@@ -591,7 +572,8 @@ namespace kamite::launcher
             {
                 if (state.popupWasOpen && !popupOpen && backKey)
                     menuSound(state, kCancel);
-                else if (g.ActiveIdIsJustActivated && g.ActiveId != 0 && g.ActiveId != state.volumeSliderId)
+                else if (g.ActiveIdIsJustActivated && g.ActiveId != 0 && g.ActiveId != state.volumeSliderId &&
+                         std::find(g_silentItems.begin(), g_silentItems.end(), g.ActiveId) == g_silentItems.end())
                 {
                     const auto listed = [&](const std::vector<ImGuiID> &items) {
                         return std::find(items.begin(), items.end(), g.ActiveId) != items.end();
@@ -2012,27 +1994,9 @@ void main()
             }
         }
 
+        // The Controls tab after its table settings: the bindings and hotkeys (launcher only).
         void drawControls(State &state)
         {
-            if (beginCategory("Menus & Prompts"))
-            {
-                settingLabel("Menu Controls", "Western: the bottom button confirms and the right one cancels (A / B, or "
-                                              "cross / circle). Japanese: the right button confirms and the bottom one "
-                                              "cancels (circle / cross). Classic: as on the PS2, circle and cross confirm "
-                                              "and triangle cancels. Menus, dialogs and the roulette.",
-                             "F2 > Controls changes it while playing.");
-                iniCombo(state, "##menubuttons", "Game", "MenuButtons", "western", [](const char *id, std::string &value) {
-                    if (value == "modern")
-                        value = "western"; // the name before Oct 31
-                    return choiceCombo(id, kMenuButtons, value);
-                });
-                settingLabel("Button Prompts", "The buttons the game shows for a controller. Automatic picks them from the "
-                                               "controller you use; keys and mouse always show keys. Prompt art: Xelu's "
-                                               "free prompts (CC0).");
-                iniCombo(state, "##buttonprompts", "Game", "ButtonPrompts", "auto",
-                         [](const char *id, std::string &value) { return choiceCombo(id, kButtonPrompts, value); });
-                ImGui::EndTable();
-            }
             categoryHeading("Bindings");
             static int device = 0; // 0 keyboard & mouse, 1 controller
             ImGui::TextUnformatted("Bindings for");
@@ -2148,6 +2112,170 @@ void main()
                 KM_WARN(Boot, "launcher: controls not saved: " << message);
         }
 
+        // ---- the settings tabs (settings_table.cpp: the in-game OPTIONS screen draws the same list) ----------------
+        // A combo over a setting's choices; a value that is none of them (set by hand) shows as one more entry and is
+        // kept unless another is picked. Returns true when changed (value updated).
+        bool tableCombo(const char *id, const settings::Setting &setting, std::string &value)
+        {
+            const int current = settings::choiceIndex(setting, value);
+            std::vector<const char *> labels;
+            for (int i = 0; i < setting.choiceCount; ++i)
+                labels.push_back(setting.choices[i].label);
+            const std::string custom = "Custom: " + value;
+            int shown = current;
+            if (current < 0)
+            {
+                labels.push_back(custom.c_str());
+                shown = setting.choiceCount;
+            }
+            int picked = shown;
+            ImGui::SetNextItemWidth(-1.0f);
+            const bool changed = ImGui::Combo(id, &picked, labels.data(), static_cast<int>(labels.size()));
+            tickItem();
+            if (!changed || picked == shown || picked >= setting.choiceCount)
+                return false;
+            value = setting.choices[picked].value;
+            return true;
+        }
+
+        // The settings drawn by hand: Display Mode (two keys), Camera & FOV (presets), Character, texture packs.
+        void customControl(State &state, const settings::Setting &setting)
+        {
+            const std::string id = setting.id;
+            if (id == "DisplayMode")
+            {
+                std::string mode = state.ini.getBool("Video", "StartFullscreen", true)    ? "fullscreen"
+                                   : state.ini.getBool("Video", "StartMaximized", false) ? "maximized"
+                                                                                         : "window";
+                if (choiceCombo("##window", kWindowModes, mode))
+                {
+                    state.ini.setBool("Video", "StartFullscreen", mode == "fullscreen");
+                    state.ini.setBool("Video", "StartMaximized", mode == "maximized");
+                }
+            }
+            else if (id == "CameraPreset")
+                cameraPresetCombo(state);
+            else if (id == "Character")
+            {
+                static std::vector<characters::Character> list;
+                if (list.empty())
+                    list = characters::list(state.context->exeDir);
+                const std::string current = lower(state.ini.get("Mods", "Character", "gene"));
+                int picked = 0;
+                std::vector<const char *> names;
+                for (size_t i = 0; i < list.size(); ++i)
+                {
+                    names.push_back(list[i].name.c_str());
+                    if (lower(list[i].id) == current)
+                        picked = static_cast<int>(i);
+                }
+                ImGui::SetNextItemWidth(-1.0f);
+                const bool pickedNew = ImGui::Combo("##character", &picked, names.data(), static_cast<int>(names.size()));
+                tickItem();
+                if (pickedNew)
+                    state.ini.set("Mods", "Character", list[static_cast<size_t>(picked)].id);
+                if (!list.empty() && !list[static_cast<size_t>(picked)].credit.empty())
+                    ImGui::TextColored(kTextDim, "%s", list[static_cast<size_t>(picked)].credit.c_str());
+            }
+            else if (id == "Textures")
+            {
+                iniCheckbox(state, "Use replacement textures##tex", "Runtime", "PS2X_PCSX2_TEXTURES", true);
+                subSetting("Texture Pack Folder", "The folder that holds replacements/. Empty: textures/SLUS-21503 next to "
+                                                  "the game.");
+                const std::string folder = state.ini.get("Runtime", "PS2X_PCSX2_TEXTURE_DIR");
+                ImGui::TextWrapped("%s", folder.empty() ? "(next to the game)" : folder.c_str());
+                if (ImGui::Button("Choose folder..."))
+                {
+                    const fs::path picked = platform::pick(GetWindowHandle(), true);
+                    if (!picked.empty())
+                        state.ini.set("Runtime", "PS2X_PCSX2_TEXTURE_DIR", utf8(picked));
+                }
+                if (!folder.empty())
+                {
+                    ImGui::SameLine();
+                    if (ImGui::Button("Use default"))
+                        state.ini.set("Runtime", "PS2X_PCSX2_TEXTURE_DIR", "");
+                }
+            }
+        }
+
+        void settingControl(State &state, const settings::Setting &setting)
+        {
+            const std::string id = std::string("##") + setting.id;
+            switch (setting.kind)
+            {
+            case settings::Kind::Toggle:
+                iniCheckbox(state, ("On" + id).c_str(), setting.section, setting.key, std::strcmp(setting.fallback, "1") == 0);
+                break;
+            case settings::Kind::Choice:
+            {
+                std::string value = settings::value(state.ini, setting);
+                if (tableCombo(id.c_str(), setting, value))
+                    state.ini.set(setting.section, setting.key, value);
+                break;
+            }
+            case settings::Kind::Slider:
+            {
+                const int number = std::atoi(settings::value(state.ini, setting).c_str());
+                int index = 0;
+                for (int i = 1; i < setting.valueCount; ++i)
+                    if (std::abs(setting.values[i] - number) < std::abs(setting.values[index] - number))
+                        index = i;
+                std::string format = std::to_string(setting.values[index]);
+                for (const char *c = setting.unit; *c; ++c)
+                    format += *c == '%' ? std::string("%%") : std::string(1, *c);
+                ImGui::SetNextItemWidth(-1.0f);
+                if (ImGui::SliderInt(id.c_str(), &index, 0, setting.valueCount - 1, format.c_str(), ImGuiSliderFlags_AlwaysClamp))
+                    state.ini.set(setting.section, setting.key, std::to_string(setting.values[index]));
+                silentItem();
+                break;
+            }
+            case settings::Kind::Custom:
+                customControl(state, setting);
+                break;
+            }
+        }
+
+        // One tab: its settings in the table's order, a heading per category. Sub-options show while their parent is
+        // on (Window Size greyed instead), Camera's advanced ones only with "Show advanced settings".
+        void drawTab(State &state, settings::Tab tab)
+        {
+            const bool advanced = state.ini.getBool("Launcher", "ShowAdvanced", false);
+            const bool narrow = lower(state.ini.get("Video", "AspectRatio", "16:9")) == "4:3";
+            const char *category = nullptr;
+            bool table = false;
+            for (size_t i = 0; i < settings::kSettingCount; ++i)
+            {
+                const settings::Setting &s = settings::kSettings[i];
+                if (s.tab != tab || (s.advanced && !advanced))
+                    continue;
+                const bool allowed = settings::parentAllows(state.ini, s);
+                if (!allowed && !s.greyed)
+                    continue;
+                if (!category || std::strcmp(category, s.category) != 0)
+                {
+                    if (table)
+                        ImGui::EndTable();
+                    category = s.category;
+                    table = beginCategory(s.category);
+                }
+                if (!table)
+                    continue;
+                if (s.parent || s.advanced)
+                    subSetting(s.name, s.description, s.note);
+                else if (std::strcmp(s.id, "CameraPreset") == 0)
+                    settingLabel(s.name, s.description, s.note,
+                                 [&] { iniCheckbox(state, "Show advanced settings##advanced", "Launcher", "ShowAdvanced", false); });
+                else
+                    settingLabel(s.name, s.description, s.note);
+                ImGui::BeginDisabled(!allowed || (s.wideOnly && narrow));
+                settingControl(state, s);
+                ImGui::EndDisabled();
+            }
+            if (table)
+                ImGui::EndTable();
+        }
+
         void drawOptions(State &state)
         {
             g_captureFrame = false;
@@ -2161,298 +2289,16 @@ void main()
             const float footer = ImGui::GetFrameHeightWithSpacing() + fontSize(state, 36.0f);
             ImGui::BeginChild("options", ImVec2(width, ImGui::GetContentRegionAvail().y - footer),
                               ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
-            const bool advanced = state.ini.getBool("Launcher", "ShowAdvanced", false);
             g_categories = 0;
             if (ImGui::BeginTabBar("tabs"))
             {
-                const std::string aspect = state.ini.get("Video", "AspectRatio", "16:9");
-                if (ImGui::BeginTabItem("Display"))
+                for (const settings::Tab tab : settings::kTabs)
                 {
-                    if (beginCategory("Game Window"))
-                    {
-                        settingLabel("Display Mode", "How the game opens.", "F11 switches between window and fullscreen "
-                                                                            "while playing.");
-                        std::string mode = state.ini.getBool("Video", "StartFullscreen", true)    ? "fullscreen"
-                                           : state.ini.getBool("Video", "StartMaximized", false) ? "maximized"
-                                                                                                 : "window";
-                        if (choiceCombo("##window", kWindowModes, mode))
-                        {
-                            state.ini.setBool("Video", "StartFullscreen", mode == "fullscreen");
-                            state.ini.setBool("Video", "StartMaximized", mode == "maximized");
-                        }
-                        subSetting("Window Size", "The window's size when it opens (not maximized or fullscreen).");
-                        ImGui::BeginDisabled(mode != "window");
-                        iniCombo(state, "##size", "Video", "WindowSize", "auto",
-                                 [](const char *id, std::string &value) { return choiceCombo(id, kWindowSizes, value); });
-                        ImGui::EndDisabled();
-                        settingLabel("Aspect Ratio", "The picture's shape. Wider than 4:3 shows more of the scene to the "
-                                                     "sides; menus keep the PS2's proportions.");
-                        iniCombo(state, "##aspect", "Video", "AspectRatio", "16:9",
-                                 [](const char *id, std::string &value) { return choiceCombo(id, kAspects, value); });
-                        ImGui::EndTable();
-                    }
-                    if (beginCategory("Camera"))
-                    {
-                        settingLabel("Camera & FOV", "How much the gameplay camera shows and how it frames Gene (widescreen "
-                                                     "already widens it sideways). Cutscenes keep their framing.",
-                                     "F2 while playing tunes it live.",
-                                     [&] { iniCheckbox(state, "Show advanced settings##advanced", "Launcher", "ShowAdvanced", false); });
-                        cameraPresetCombo(state);
-                        if (advanced)
-                        {
-                            subSetting("Field of View", "How much the camera shows, both ways, outside fights.");
-                            iniCombo(state, "##fov", "Video", "FieldOfView", "100",
-                                     [](const char *id, std::string &value) { return choiceCombo(id, kFovs, value); });
-                            subSetting("Field of View in Fights", "The same while the game's battle camera is on (Gene "
-                                                                  "has an enemy targeted). 100% frames fights as on the PS2.");
-                            iniCombo(state, "##fightfov", "Video", "FightFieldOfView", "100",
-                                     [](const char *id, std::string &value) { return choiceCombo(id, kFovs, value); });
-                            subSetting("Camera Distance", "At a wider field of view, how far back the camera stays. "
-                                                          "0% keeps Gene the size he is at 100%; 100% shows more round him.");
-                            iniCombo(state, "##camdist", "Video", "CameraZoomOut", "0",
-                                     [](const char *id, std::string &value) { return choiceCombo(id, kCameraDistances, value); });
-                            subSetting("Camera Tilt", "At a wider field of view, the camera also rises and looks down at "
-                                                      "Gene by this much: more of the floor ahead, less sky.");
-                            iniCombo(state, "##camtilt", "Video", "CameraTilt", "0",
-                                     [](const char *id, std::string &value) { return choiceCombo(id, kCameraTilts, value); });
-                            subSetting("Enemies Follow the View", "The angles round Gene in which enemies close in and "
-                                                                  "lunge widen with the picture, so the ones you can see at "
-                                                                  "the edges join in as on the PS2. Off: the original angles.");
-                            iniCheckbox(state, "On##enemyview", "Game", "EnemiesFollowView", true);
-                        }
-                        settingLabel("Steady Idle Camera", "While Gene stands idle, the camera stops rocking and "
-                                                           "shaking with his stomps.",
-                                     "F2 > Camera switches it while playing.");
-                        iniCheckbox(state, "On##steadyidle", "Video", "SteadyIdleCamera", false);
-                        settingLabel("See Through", "When walls or pillars block the view of Gene or the enemies about "
-                                                    "him, they dissolve in an oval round him, so the fight stays in view. Walls next "
-                                                    "to the camera, which the PS2 drops, are drawn too. Known: a banded "
-                                                    "blur where hazy distance shows through (the depth of field reads "
-                                                    "the dissolve).",
-                                     "F2 > Camera sizes it while playing.");
-                        iniCheckbox(state, "On##seethrough", "Video", "SeeThrough", true);
-                        ImGui::EndTable();
-                    }
-                    if (beginCategory("Interface"))
-                    {
-                        settingLabel("HUD Layout", "Where the health bar, radar and the rest of the in-game HUD go on a "
-                                                   "wide screen. Wider than 16:9 keeps them at the edges of a 16:9 area.",
-                                     "F7 switches it while playing.");
-                        ImGui::BeginDisabled(lower(aspect) == "4:3");
-                        iniCombo(state, "##hud", "Video", "HudLayout", "16:9",
-                                 [](const char *id, std::string &value) { return choiceCombo(id, kHudLayouts, value); });
-                        ImGui::EndDisabled();
-                        settingLabel("Menu Width", "Menus and screens (pause, options, roulette setup) are drawn for 4:3: "
-                                                   "shown 4:3 with side bars, or stretched to the screen.");
-                        ImGui::BeginDisabled(lower(aspect) == "4:3");
-                        iniCombo(state, "##menus", "Video", "MenuLayout", "4:3",
-                                 [](const char *id, std::string &value) { return choiceCombo(id, kMenuLayouts, value); });
-                        ImGui::EndDisabled();
-                        ImGui::EndTable();
-                    }
-                    ImGui::EndTabItem();
-                }
-                if (ImGui::BeginTabItem("Graphics"))
-                {
-                    if (beginCategory("Renderer"))
-                    {
-                        settingLabel("Graphics API", "Vulkan is the default. If Vulkan fails to start, the game uses "
-                                                     "Direct3D 11 instead.");
-                        iniCombo(state, "##graphicsapi", "Video", "GraphicsAPI", "vulkan",
-                                 [](const char *id, std::string &value) { return choiceCombo(id, kGraphicsApis, value); });
-                        settingLabel("Internal Resolution", "How sharp the 3D is drawn. 3x suits a 1440p screen, 4x and "
-                                                            "up a 4K one; higher costs more GPU time.");
-                        iniCombo(state, "##scale", "Video", "InternalResolution", "3",
-                                 [](const char *id, std::string &value) { return choiceCombo(id, kResolutions, value); });
-                        ImGui::EndTable();
-                    }
-                    if (beginCategory("Effects"))
-                    {
-                        settingLabel("Post Effects", "The blur effects (depth of field, heat haze) are drawn from small "
-                                                     "copies of the frame. PS2 resolution keeps them aligned but grainy "
-                                                     "at high internal resolutions; Upscaled draws them sharp.");
-                        iniCombo(state, "##posteffects", "Video", "PostEffects", "ps2",
-                                 [](const char *id, std::string &value) { return choiceCombo(id, kPostEffects, value); });
-                        settingLabel("Depth of Field", "The game's blur of the distance. At high internal resolutions "
-                                                       "its edges can show dark, shimmering fringes.",
-                                     "F2 switches it while playing.");
-                        iniCheckbox(state, "On##dof", "Video", "DepthOfField", true);
-                        ImGui::EndTable();
-                    }
-                    ImGui::EndTabItem();
-                }
-                if (ImGui::BeginTabItem("Gameplay"))
-                {
-                    if (beginCategory("Speed & Feed"))
-                    {
-                        settingLabel("60 FPS", "Runs the game at 60 frames a second instead of 30, with its timers kept "
-                                               "at the PS2's speed.");
-                        iniCheckbox(state, "On##fps60", "Game", "Fps60", false);
-                        ImGui::EndTable();
-                    }
-                    if (beginCategory("Move & Groove"))
-                    {
-                        settingLabel("Click-Stick Dash", "Clicking the left stick dashes (where the stick points, or "
-                                                         "straight ahead).");
-                        iniCheckbox(state, "On##l3", "Game", "L3Dash", false);
-                        settingLabel("Control Style", "Classic: as on the PS2. Modern: the free camera: the right stick "
-                                                      "turns the camera and Gene moves where you point; pressing "
-                                                      "the right stick switches to brawl mode (classic controls) and back (the radar "
-                                                      "glows while the free camera is on).",
-                                     "F2 > Controls changes it while playing.");
-                        iniCombo(state, "##controlstyle", "Game", "ControlStyle", "classic",
-                                 [](const char *id, std::string &value) { return choiceCombo(id, kControlStyles, value); });
-                        if (lower(state.ini.get("Game", "ControlStyle", "classic")) == "modern")
-                        {
-                            subSetting("Modern: Auto", "Fighting starts brawl mode automatically; pressing the right stick switches back "
-                                                       "to the free camera.");
-                            iniCheckbox(state, "On##modernauto", "Game", "ModernAuto", true);
-                            subSetting("Modern: Mouse Camera", "The mouse turns the free camera. Click in the game to "
-                                                               "capture the mouse, Esc frees it.",
-                                       "F2 > Controls sets the sensitivity.");
-                            iniCheckbox(state, "On##mousecamera", "Game", "MouseCamera", true);
-                        }
-                        settingLabel("Busta-Chan Jive", "Sprint attacks carry Gene over or through the railings marked "
-                                                        "for them: the diving attack and the flying kick jump over, the "
-                                                        "slide goes under.",
-                                     "F2 > Debug > Stage collision marks them.");
-                        iniCheckbox(state, "On##sprinttraversal", "Game", "SprintTraversal", false);
-                        ImGui::EndTable();
-                    }
-                    if (beginCategory("Style Shuffle"))
-                    {
-                        settingLabel("Moveset Presets", "Keep up to four sets of techniques as presets (the styles S, E, "
-                                                        "X and Y) and swap between them in play with the d-pad. On the "
-                                                        "Techniques screen, L2 / R2 cycle them.");
-                        iniCheckbox(state, "On##styles", "Game", "StyleSwitching", false);
-                        if (state.ini.getBool("Game", "StyleSwitching", false))
-                        {
-                            subSetting("Signal Style Switch", "Gene calls out each style as you switch to it, and his "
-                                                              "God Hand flashes.");
-                            iniCheckbox(state, "On##stylesignal", "Game", "StyleSignal", false);
-                        }
-                        settingLabel("Buck Breaker", "Choose how to punish stunned enemies with a new slot on the "
-                                                     "Techniques screen. Works with Moveset Presets.");
-                        iniCheckbox(state, "On##buckbreaker", "Game", "BuckBreaker", false);
-                        ImGui::EndTable();
-                    }
-                    if (beginCategory("Fightin' Excitement"))
-                    {
-                        settingLabel("Cunt Punter", "Ball Buster works on female enemies too, the same as on men.");
-                        iniCheckbox(state, "On##ballbusterwomen", "Game", "BallBusterWomen", false);
-                        settingLabel("Sway Bar", "A stun gauge under each enemy's health bar: it fills as you hit them and "
-                                                 "drains while they are stunned.");
-                        iniCheckbox(state, "On##swaybar", "Game", "SwayBar", false);
-                        settingLabel("Tension is Placable", "Pressing R2 / RT again while the God Hand is unleashed ends "
-                                                            "it and keeps the tension left in the meter.");
-                        iniCheckbox(state, "On##tensionplacable", "Game", "TensionPlacable", false);
-                        if (state.ini.getBool("Game", "TensionPlacable", false))
-                        {
-                            subSetting("Off the Cuff", "The God Hand unleashes with any tension in the meter, not "
-                                                       "only a full one.\nOnly unleashing the God Hand with a full meter "
-                                                       "makes Gene invulnerable.");
-                            iniCheckbox(state, "On##offthecuff", "Game", "OffTheCuff", false);
-                        }
-                        settingLabel("Wild Curry Funk", "Lets you pick up, carry, and throw chairs.");
-                        iniCheckbox(state, "On##liftchairs", "Game", "LiftChairs", false);
-                        ImGui::EndTable();
-                    }
-                    if (beginCategory("Roulette Wheel & Reel"))
-                    {
-                        settingLabel("Roulette Timer", "How long you have to pick a roulette move. Double time gives "
-                                                       "twice as long (the dial runs half as fast), at 30 and 60 FPS.");
-                        iniCombo(state, "##roulette", "Game", "RouletteTimer", "normal",
-                                 [](const char *id, std::string &value) { return choiceCombo(id, kRouletteTimers, value); });
-                        settingLabel("Target Select", "While the roulette wheel is up, flick the right stick or "
-                                                      "press the d-pad left or right to aim it at the next enemy "
-                                                      "that way.");
-                        iniCheckbox(state, "On##roulettecycle", "Game", "RouletteTargetCycle", false);
-                        settingLabel("Dry Spinning", "R1 opens the roulette even with no orbs left. Nothing "
-                                                     "can be picked without orbs, but the roulette camera "
-                                                     "still turns Gene (Classic camera).");
-                        iniCheckbox(state, "On##roulettenoorbs", "Game", "RouletteNoOrbs", false);
-                        ImGui::EndTable();
-                    }
-                    if (beginCategory("Skip Poker"))
-                    {
-                        settingLabel("Intro Skipper", "Start at the main menu: no Capcom and Clover logos and no "
-                                                      "\"Press Start\" screen.");
-                        iniCheckbox(state, "On##skipintro", "Game", "SkipIntro", false);
-                        settingLabel("Hard-On", "Hard can be picked from the start instead of after a clear. Your "
-                                                "save is not changed.");
-                        iniCheckbox(state, "On##hard", "Game", "UnlockHard", false);
-                        settingLabel("Mute Music", "Stage, boss, menu and minigame music plays silent. Cutscenes keep "
-                                                   "their sound (their music and voices are one track).");
-                        iniCheckbox(state, "On##music", "Sound", "MuteMusic", false);
-                        ImGui::EndTable();
-                    }
-                    if (beginCategory("Misc. & Risk"))
-                    {
-                        settingLabel("Better Shop & Casino Poses", "The shop and casino girls lean on their counters "
-                                                                   "and tables in poses made for each, instead of the "
-                                                                   "game's standing idle.",
-                                     "F2 > NPCs sets the poses.");
-                        iniCheckbox(state, "On##npcposes", "Game", "NpcPoses", false);
-                        ImGui::EndTable();
-                    }
-                    ImGui::EndTabItem();
-                }
-                if (ImGui::BeginTabItem("Controls"))
-                {
-                    drawControls(state);
-                    ImGui::EndTabItem();
-                }
-                if (ImGui::BeginTabItem("Mods"))
-                {
-                    if (beginCategory("Character"))
-                    {
-                        settingLabel("Character", "Who you play as. Currently, other characters use Gene's moves and his "
-                                                  "God Hand.");
-                        static std::vector<characters::Character> list;
-                        if (list.empty())
-                            list = characters::list(state.context->exeDir);
-                        const std::string current = lower(state.ini.get("Mods", "Character", "gene"));
-                        int picked = 0;
-                        std::vector<const char *> names;
-                        for (size_t i = 0; i < list.size(); ++i)
-                        {
-                            names.push_back(list[i].name.c_str());
-                            if (lower(list[i].id) == current)
-                                picked = static_cast<int>(i);
-                        }
-                        ImGui::SetNextItemWidth(-1.0f);
-                        const bool pickedNew = ImGui::Combo("##character", &picked, names.data(), static_cast<int>(names.size()));
-                        tickItem();
-                        if (pickedNew)
-                            state.ini.set("Mods", "Character", list[static_cast<size_t>(picked)].id);
-                        if (!list[static_cast<size_t>(picked)].credit.empty())
-                            ImGui::TextColored(kTextDim, "%s", list[static_cast<size_t>(picked)].credit.c_str());
-                        ImGui::EndTable();
-                    }
-                    if (beginCategory("Texture Packs"))
-                    {
-                        settingLabel("Replacement Textures", "HD texture packs in PCSX2's format.");
-                        iniCheckbox(state, "Use replacement textures##tex", "Runtime", "PS2X_PCSX2_TEXTURES", true);
-                        subSetting("Texture Pack Folder", "The folder that holds replacements/. Empty: textures/SLUS-21503 "
-                                                          "next to the game.");
-                        {
-                            const std::string folder = state.ini.get("Runtime", "PS2X_PCSX2_TEXTURE_DIR");
-                            ImGui::TextWrapped("%s", folder.empty() ? "(next to the game)" : folder.c_str());
-                            if (ImGui::Button("Choose folder..."))
-                            {
-                                const fs::path picked = platform::pick(GetWindowHandle(), true);
-                                if (!picked.empty())
-                                    state.ini.set("Runtime", "PS2X_PCSX2_TEXTURE_DIR", utf8(picked));
-                            }
-                            if (!folder.empty())
-                            {
-                                ImGui::SameLine();
-                                if (ImGui::Button("Use default"))
-                                    state.ini.set("Runtime", "PS2X_PCSX2_TEXTURE_DIR", "");
-                            }
-                        }
-                        ImGui::EndTable();
-                    }
+                    if (!ImGui::BeginTabItem(settings::tabName(tab)))
+                        continue;
+                    drawTab(state, tab);
+                    if (tab == settings::Tab::Controls)
+                        drawControls(state); // the bindings and hotkeys
                     ImGui::EndTabItem();
                 }
                 ImGui::EndTabBar();
@@ -2622,6 +2468,7 @@ void main()
             state.soundThisFrame = false;
             g_tickItems.clear();
             g_ownSoundItems.clear();
+            g_silentItems.clear();
             if (state.playTime >= 0.0f)
             {
                 if (state.playTime == 0.0f)

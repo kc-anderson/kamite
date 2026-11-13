@@ -34,7 +34,7 @@ namespace kamite::options_overlay
         int choiceCount = 0;
         int choice = 0;
         // A slider instead (valueCount > 0): choice indexes these numbers, shown with the unit beside a bar drawn like
-        // the enemies' health bar, full at the last.
+        // the enemies' health bar: the number's share of the last (the largest).
         const int *values = nullptr;
         int valueCount = 0;
         const char *unit = "%";

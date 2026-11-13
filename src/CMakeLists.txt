@@ -71,6 +71,8 @@ set(KAMITE_HOST_SOURCES
     kamite/tutorial_text.cpp
     kamite/options_overlay.cpp
     kamite/options_screen.cpp
+    kamite/options_pages.cpp
+    kamite/settings_table.cpp
     kamite/ini_file.cpp
     kamite/counter_finder.cpp
     kamite/test_mode.cpp

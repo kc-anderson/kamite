@@ -14,12 +14,15 @@
 // game's own backdrop texture: a PS2-resolution stand-in in the game's memory, swapped by the GS for the full image
 // (cache/hd-options, texture_add) as the button prompts are.
 //
-// Build step 1 (Nov 12): the list of categories (CONTROLS, DISPLAY, INTERFACE, GAMEPLAY, SOUND, pause only LOAD GAME
-// and RESET GAME, RESTORE DEFAULTS, EXIT), the cursor, the help box, the game's menu sounds, the Menu controls
-// styles. CONTROLS opens the game's own controller page for now; RESET GAME uses the game's own Yes / No; the
-// category pages and RESTORE DEFAULTS come next.
+// The list of categories (CONTROLS, DISPLAY, INTERFACE, GAMEPLAY, SOUND, pause only LOAD GAME and RESET GAME, RESTORE
+// DEFAULTS, EXIT); each category opens its page of settings (settings_table.cpp, the launcher's own list): the live
+// ones, changed with left / right, saved to GHR.ini and applied at once. RESET GAME and RESTORE DEFAULTS ask Yes / No.
 namespace kamite::options_screen
 {
     // After the runtime is initialised and hd_textures::install (exeDir: the folder holding GHR.exe).
     void install(PS2Runtime &runtime, const std::filesystem::path &exeDir);
+    // Game thread, once a game frame (frame_patches): the game's own options (Enemy Life Gauge, the sound mode,
+    // vibration) written into the game whenever they differ from GHR.ini's (a loaded save brings its own), and the
+    // playing streams' volumes re-applied after a volume change.
+    void onFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
 }

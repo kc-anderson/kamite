@@ -37,6 +37,7 @@
 #include <cmath>
 #include "kamite/character_mods.h"
 #include "kamite/hud_layout.h"
+#include "kamite/options_screen.h"
 #include "kamite/npc_poses.h"
 #include "kamite/debug_tools.h"
 #include "kamite/npc_tools.h"
@@ -1674,6 +1675,7 @@ namespace kamite
             profileWindow();
             counterfinder::onFrame(rdram);
             hud::onFrame(rdram);
+            options_screen::onFrame(rdram, ctx, runtime); // the game's own options from GHR.ini, the volumes
             characters::onFrame(rdram);
             npc_poses::onFrame(rdram, ctx, runtime);
             debug_tools::onFrame(rdram, ctx, runtime);

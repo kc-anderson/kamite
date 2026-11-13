@@ -417,7 +417,6 @@ namespace
         {"game", "ballbusterwomen", "KAMITE_BALL_BUSTER_WOMEN"},
         {"game", "swaybar", "KAMITE_SWAY_BAR"},
         {"game", "money", "KAMITE_MONEY"},
-        {"sound", "mutemusic", "KAMITE_MUTE_MUSIC"},
         {"mods", "character", "KAMITE_CHARACTER"},
         {"run", "headless", "KAMITE_HEADLESS"},
         {"run", "timelimitseconds", "KAMITE_TIME_LIMIT_SECONDS"},
@@ -1055,7 +1054,7 @@ int main(int argc, char *argv[])
         // 60 FPS mode, L3 dash, and the game-frame count for the F3 overlay (a hook at the top of the main loop).
         kamite::installFramePatches(runtime);
         kamite::test_mode::install(runtime, exeDir); // the case recorder (R3), --replay-case and --test runs (dev-only)
-        kamite::installGameOptions(runtime); // [Game] UnlockHard, SkipIntro, RouletteNoOrbs, [Sound] MuteMusic; Dead Pan
+        kamite::installGameOptions(runtime); // [Game] UnlockHard, SkipIntro, RouletteNoOrbs, the stream volumes; Dead Pan
         kamite::texture_slots::install(); // the per-frame texture slots reserve a texture's real VRAM footprint
         kamite::installSteadyIdleCamera(runtime); // [Video] SteadyIdleCamera
         kamite::jukebox::install(runtime); // the shop's radio: Gene stays in the picture while it plays

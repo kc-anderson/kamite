@@ -4,6 +4,12 @@ Newest first, one line per change; the code comments say how.
 
 ## November 13, 2026
 
+- Options: the categories open their pages: left / right change a setting, saved to GHR.ini and applied at once.
+- Options: L1 / R1 switch category inside a page; B goes back to the list.
+- Options: RESTORE DEFAULTS sets every in-game setting back to its default.
+- Options: SOUND has Music, Sound Effects and Voices volumes (Music 0 replaces Mute Music).
+- Options: Enemy Life Gauge, sound mode and vibration are kept in GHR.ini; a loaded save no longer changes them.
+- Launcher: the Options tabs match the in-game screen (Controls, Display, Interface, Gameplay, Sound, Mods).
 - Options: the text's softening and drop shadow are final (F2's temporary sliders removed).
 
 ## November 12, 2026

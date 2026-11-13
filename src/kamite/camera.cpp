@@ -1134,7 +1134,7 @@ namespace kamite
             setStatus("Saved to GHR.ini.");
         }
 
-        void revertToIni()
+        void revertToIni(bool quiet = false)
         {
             IniFile ini;
             if (g_iniPath.empty() || !ini.load(g_iniPath))
@@ -1157,7 +1157,8 @@ namespace kamite
             GSPcsx2Backend::SetOption("precise_depth", g_preciseDepth.load() ? "1" : "0");
             GSPcsx2Backend::SetOption("perspective_shading", g_perspectiveShading.load() ? "1" : "0");
             GSPcsx2Backend::SetOption("dof", g_depthOfField.load() ? "1" : "0");
-            setStatus("Back to the values in GHR.ini.");
+            if (!quiet)
+                setStatus("Back to the values in GHR.ini.");
         }
 
         // ---- F2 menu: the Camera tab ------------------------------------------------------------------------------
@@ -1326,6 +1327,8 @@ namespace kamite
         }
 #endif
     }
+
+    void reloadCameraSettings() { revertToIni(true); }
 
     void setCameraIniPath(const std::filesystem::path &path)
     {

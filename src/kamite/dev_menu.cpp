@@ -158,13 +158,6 @@ namespace kamite::dev_menu
             if (ui->checkbox("Target Select: the right stick moves the wheel's target##roulettecycle", &cycle))
                 setRouletteTargetCycle(cycle != 0);
 
-            ui->separator_text("Sound");
-            int mute = muteMusic() ? 1 : 0;
-            if (ui->checkbox("Mute Music##mutemusic", &mute))
-                setMuteMusic(mute != 0);
-            ui->text_disabled("Takes effect at the music's next volume change (a room or a track change). Cutscene "
-                              "streams keep playing: their voices are in the same stream.");
-
             ui->separator_text("Fightin' Excitement");
             int placable = tensionPlacable() ? 1 : 0;
             if (ui->checkbox("Tension is Placable: R2 again ends the God Hand, the tension left stays##placable", &placable))
@@ -200,7 +193,6 @@ namespace kamite::dev_menu
                     ini.setBool("Game", "L3Dash", l3Dash());
                     ini.set("Game", "RouletteTimer", rouletteTimerDouble() ? "double" : "normal");
                     ini.setBool("Game", "RouletteTargetCycle", rouletteTargetCycle());
-                    ini.setBool("Sound", "MuteMusic", muteMusic());
                     ini.setBool("Game", "TensionPlacable", tensionPlacable());
                     ini.setBool("Game", "OffTheCuff", offTheCuff());
                     ini.setBool("Game", "BallBusterWomen", ballBusterWomen());

@@ -1,10 +1,12 @@
 """Preview of the OPTIONS screen's overlay (text, cursor, Yes / No) over the wall, without a Windows build.
 
 python tools/options/overlay_preview.py out.png [--size 1920x1080] [--title] [--cursor N] [--confirm N]
-    [--page gameplay|interface|sound] [--open] [--row N] [--scroll N]
+    [--page controls|display|interface|gameplay|sound] [--open] [--row N] [--scroll N] [--set Section.Key=Value ...]
 
 Builds tools/options/overlay_preview.cpp (g++, the repo's ImGui) with the DLL's own drawing code cut from HostStubs.cpp,
-crops resources/options/wall.jpg to the size's shape and draws options_overlay.cpp's list over it. Needs Pillow.
+crops resources/options/wall.jpg to the size's shape and draws options_overlay.cpp's list over it. The pages are the
+game's own (options_pages.cpp from the shared settings list over the repo's GHR.ini; --set changes a value, e.g.
+--set Game.ControlStyle=modern). --row is the page row (headers count). Needs Pillow.
 """
 import argparse, os, re, struct, subprocess, tempfile
 from PIL import Image
@@ -20,8 +22,9 @@ def build(work):
     subprocess.check_call(['g++', '-std=c++20', '-O2', '-DIMGUI_USER_CONFIG="pcsx2gs_imconfig.h"', '-I' + work,
                            '-I' + os.path.join(ROOT, 'thirdparty/pcsx2-gs/compat'), '-I' + os.path.join(IMGUI, 'include'),
                            '-I' + os.path.join(ROOT, 'thirdparty/pcsx2-gs/include'), '-I' + os.path.join(ROOT, 'src'),
-                           '-o', exe, os.path.join(ROOT, 'tools/options/overlay_preview.cpp'),
-                           os.path.join(ROOT, 'src/kamite/options_overlay.cpp')] +
+                           '-o', exe, os.path.join(ROOT, 'tools/options/overlay_preview.cpp')] +
+                          [os.path.join(ROOT, 'src/kamite', f) for f in ('options_overlay.cpp', 'options_pages.cpp',
+                                                                         'settings_table.cpp', 'ini_file.cpp')] +
                           [os.path.join(IMGUI, 'src', f) for f in ('imgui.cpp', 'imgui_draw.cpp', 'imgui_widgets.cpp', 'imgui_tables.cpp')])
     return exe
 
@@ -32,10 +35,11 @@ def main():
     ap.add_argument('--title', action='store_true', help='the title screen\'s list (else the pause\'s)')
     ap.add_argument('--cursor', type=int, default=0)
     ap.add_argument('--confirm', type=int, default=-1, help='row asking Yes / No')
-    ap.add_argument('--page', choices=['gameplay', 'interface', 'sound'], help='the mockup page beside the list (or open)')
+    ap.add_argument('--page', choices=['controls', 'display', 'interface', 'gameplay', 'sound'], help='the mockup page beside the list (or open)')
     ap.add_argument('--open', action='store_true', help='the cursor in the page')
     ap.add_argument('--row', type=int, default=1, help="the page's cursor row")
     ap.add_argument('--scroll', type=int, default=0)
+    ap.add_argument('--set', action='append', default=[], help='Section.Key=Value over the repo\'s GHR.ini')
     a = ap.parse_args()
     w, h = map(int, a.size.split('x'))
     work = tempfile.mkdtemp()
@@ -57,11 +61,12 @@ def main():
         open(path + '.rgba', 'wb').write(struct.pack('<II', *im.size) + im.tobytes())
         bars.append(path)
     fonts = os.path.join(ROOT, 'resources/fonts')
-    page = {'gameplay': 0, 'interface': 1, 'sound': 2}.get(a.page, -1)
+    page = {'controls': 0, 'display': 1, 'interface': 2, 'gameplay': 3, 'sound': 4}.get(a.page, -1)
     subprocess.check_call([exe, raw_in, str(w), str(h), raw_out, '0' if a.title else '1', str(a.cursor), str(a.confirm),
                            os.path.join(fonts, 'ArchivoNarrow-SemiBold.ttf'),
                            os.path.join(fonts, 'DejaVuSans-Bold.ttf'), title] + bars[:2] +
-                          [str(page), '1' if a.open else '0', str(a.row), str(a.scroll), bars[2]])
+                          [str(page), '1' if a.open else '0', str(a.row), str(a.scroll), bars[2],
+                           os.path.join(ROOT, 'GHR.ini')] + a.set)
     Image.frombytes('RGB', (w, h), open(raw_out, 'rb').read()).save(a.out)
 
 if __name__ == '__main__':

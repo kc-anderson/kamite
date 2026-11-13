@@ -1,4 +1,4 @@
-// Optional changes to the game ([Game] UnlockHard / SkipIntro / MuteMusic / RouletteNoOrbs / LiftChairs) and Dead Pan.
+// Optional changes to the game ([Game] UnlockHard / SkipIntro / RouletteNoOrbs / LiftChairs, [Sound] volumes) and Dead Pan.
 // See game_options.h.
 //
 // LiftChairs: stage 1's chairs (om04 and om08, cOmBase, actors 0x304 / 0x308), bar stools (om38) and pub sign (om36, both cOmScrfix) and
@@ -30,14 +30,17 @@
 // (0x747640 & Start/Circle) at 0x79A204: read as pressed, the title goes on to the main menu by itself, with its own
 // sound and animation.
 //
-// MuteMusic: the music is CRI ADX streams driven by the SDE sound library. Every stream volume change goes through
+// Music / Voices volume ([Sound] MusicVolume / VoicesVolume, the in-game OPTIONS' SOUND page; Music 0 replaces the old
+// MuteMusic): the music is CRI ADX streams driven by the SDE sound library. Every stream volume change goes through
 // func_00373FF0(node a0, category a1, volume f12) for a one-channel node, or func_003745C0(node a0, category a1,
 // channel a2, volume f12) for a node with 2+ channels (node+0x58 > 1; the stereo music takes this one, which the
 // first version of this option missed): volume x the cSnd category levels (0x5FEE00) -> the dB table at 0x3F2060 ->
 // ADXT_SetOutVol (0x32A9F0) / func_0032EC78 per channel. Music streams are the cSndBgmNode pool inside cSnd
-// (0x601180, 16 nodes of 0xDC bytes; decomp cSnd.h); for those the volume is made 0 at both functions' entry
-// (table[0] = -96.0 dB, silent), except bank 1, the cutscene streams (their voices are in the same stream).
-// Voices and sound effects are other node types; movies use Sofdec's own ADXT handles.
+// (0x601180, 16 nodes of 0xDC bytes; decomp cSnd.h); at both functions' entry the volume asked for is scaled by Music
+// (0 -> table[0] = -96.0 dB, silent), except bank 1, the cutscene streams (their voices are in the same stream: they
+// follow Voices, K). Every other stream node is a voice line (pl00.afs, the enemies'): Voices. Each node's last asked
+// volume is kept so a volume change re-applies at once (reapplyStreamVolumes). Sound effects are the SPU2's voices, not
+// streams: their volume is the IOP's voice gain (ps2x::iop::setVoiceGain). Movies use Sofdec's own ADXT handles.
 // KAMITE_TRACE=GAME logs the first calls (node, vtable, category, volume) to check the match.
 //
 // RouletteNoOrbs: R1 opens the roulette from Gene's action chooser (func_00123938 0x123B2C: cCoreSave_getGodItem, the
@@ -137,6 +140,7 @@
 #include "kamite/frame_patches.h"
 #include "kamite/function_hooks.h"
 #include "kamite/log.h"
+#include "ps2x/iop/iop_host.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/ps2_game_menu.h"
 #include "runtime/ee_scheduler.h"
@@ -148,6 +152,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <atomic>
+#include <mutex>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -166,6 +171,7 @@ namespace kamite
         // cSnd.h); the volume setters get a pointer to one of them. The first version of this option looked for a
         // vtable at node+0x80, which these nodes do not have (KAMITE_TRACE=GAME showed node 0x601180, vtable 0).
         constexpr uint32_t kBgmPool = 0x5FEE00u + 0x2380u;
+        constexpr uint32_t kStreamVolume1 = 0x373FF0u, kStreamVolumeN = 0x3745C0u; // the stream volume setters
         constexpr uint32_t kBgmNodeSize = 0xDCu;
         constexpr uint32_t kBgmNodeCount = 16u;
 
@@ -227,31 +233,62 @@ namespace kamite
             SET_GPR_U32(ctx, Reg, earned ? 0u : ram32(rdram, kLanguage));
         }
 
-        // Before the first instruction of func_00373FF0 (the stream volume setter).
-        void muteMusicVolume(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        // The volumes as gains: the player's percent squared (an audio taper: 50 % is about -12 dB).
+        std::atomic<float> g_musicGain{1.0f}, g_voicesGain{1.0f};
+        float gainOf(int percent)
         {
-            const uint32_t node = GPR_U32(ctx, 4);
-            bool music = node >= kBgmPool && node < kBgmPool + kBgmNodeSize * kBgmNodeCount &&
-                         (node - kBgmPool) % kBgmNodeSize == 0u;
-            if (music)
+            const float v = static_cast<float>(std::clamp(percent, 0, 100)) / 100.0f;
+            return v * v;
+        }
+
+        // What each stream node (and channel) last asked for, to re-apply when a volume changes.
+        struct StreamCall
+        {
+            uint32_t node, category;
+            int32_t channel; // -1: the one-channel setter
+            float volume;
+        };
+        std::mutex g_streamMutex;
+        std::vector<StreamCall> g_streamCalls;
+
+        bool musicNode(const uint8_t *rdram, uint32_t node)
+        {
+            if (node < kBgmPool || node >= kBgmPool + kBgmNodeSize * kBgmNodeCount || (node - kBgmPool) % kBgmNodeSize != 0u)
+                return false;
+            // Cutscene streams are BGM nodes too: bank 1 (stored biased, 0x81 at +0x8C), started per cut by
+            // cSnd_BgmEvCutSet from the event's bgm data. They carry the cutscene's voices and effects mixed with its
+            // music, so they follow Voices; the stage, boss, menu and minigame music (bank 0) follows Music.
+            int32_t bank = 0;
+            std::memcpy(&bank, rdram + node + 0x8Cu, sizeof(bank));
+            return bank - 0x80 != 1;
+        }
+
+        // Before the first instruction of func_00373FF0 (Channels false: node a0, category a1, volume f12) and of
+        // func_003745C0 (true: node a0, category a1, channel a2, volume f12), the stream volume setters.
+        template <bool Channels>
+        void streamVolume(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t node = GPR_U32(ctx, 4), category = GPR_U32(ctx, 5);
+            const int32_t channel = Channels ? static_cast<int32_t>(GPR_U32(ctx, 6)) : -1;
+            const float asked = ctx->f[12];
             {
-                // Cutscene streams are BGM nodes too: bank 1 (stored biased, 0x81 at +0x8C), started per cut by
-                // cSnd_BgmEvCutSet from the event's bgm data. They carry the cutscene's voices and effects mixed
-                // with its music, so they stay; the stage, boss, menu and minigame music (bank 0) is muted.
-                int32_t bank = 0;
-                std::memcpy(&bank, rdram + node + 0x8Cu, sizeof(bank));
-                if (bank - 0x80 == 1)
-                    music = false;
+                std::lock_guard<std::mutex> lock(g_streamMutex);
+                auto it = std::find_if(g_streamCalls.begin(), g_streamCalls.end(),
+                                       [&](const StreamCall &c) { return c.node == node && c.channel == channel; });
+                if (it == g_streamCalls.end())
+                    g_streamCalls.push_back({node, category, channel, asked});
+                else
+                    *it = {node, category, channel, asked};
             }
+            const bool music = musicNode(rdram, node);
+            ctx->f[12] = asked * (music ? g_musicGain : g_voicesGain).load(std::memory_order_relaxed);
             static int logged = 0;
             if (logged < 40)
             {
                 ++logged;
-                KM_TRACE(Game, "[mute] volume call: node 0x" << std::hex << node << std::dec << " category " << GPR_U32(ctx, 5)
-                                   << " volume " << ctx->f[12] << (music ? " (music: muted)" : ""));
+                KM_TRACE(Game, "[volume] stream call: node 0x" << std::hex << node << std::dec << " category " << category
+                                   << " channel " << channel << " volume " << asked << (music ? " (music)" : " (voices)"));
             }
-            if (music)
-                ctx->f[12] = 0.0f;
         }
     }
 
@@ -1525,7 +1562,6 @@ namespace kamite
         for (int i = 0; i < kPropCount; ++i)
             resetProp(i);
         const bool unlockHard = envOn("KAMITE_UNLOCK_HARD");
-        const bool muteMusic = envOn("KAMITE_MUTE_MUSIC");
         const bool skipIntro = envOn("KAMITE_SKIP_INTRO");
         const bool rouletteAnyOrbs = envOn("KAMITE_ROULETTE_NO_ORBS");
         const bool liftChairs = envOn("KAMITE_LIFT_CHAIRS");
@@ -1544,7 +1580,9 @@ namespace kamite
         ps2xRegisterHostHook("km_dead_pan_v1", &deadPanLanguage<3>);
         ps2xRegisterHostHook("km_dead_pan_a0", &deadPanLanguage<4>);
         ps2xSetPatchFlag("dead_pan", true);
-        ps2xRegisterHostHook("km_mute_music_volume", &muteMusicVolume);
+        ps2xRegisterHostHook("km_stream_volume_1", &streamVolume<false>);
+        ps2xRegisterHostHook("km_stream_volume_n", &streamVolume<true>);
+        ps2xSetPatchFlag("stream_volume", true);
         ps2xRegisterHostHook("km_tension_r2_mode", &tensionR2Mode);
         ps2xRegisterHostHook("km_tension_r2_phase", &tensionR2Phase);
         ps2xRegisterHostHook("km_tension_guard", &tensionGuard);
@@ -1581,9 +1619,8 @@ namespace kamite
         }
         updateTensionFlag();
         ps2xSetPatchFlag("unlock_hard", unlockHard);
-        ps2xSetPatchFlag("mute_music", muteMusic);
-        KM_INFO(Game, "options: Hard " << (unlockHard ? "unlocked from the start" : "as saved") << "; music "
-                                       << (muteMusic ? "muted" : "on") << (skipIntro ? "; boot straight to the main menu" : "")
+        KM_INFO(Game, "options: Hard " << (unlockHard ? "unlocked from the start" : "as saved")
+                                       << (skipIntro ? "; boot straight to the main menu" : "")
                                        << (rouletteAnyOrbs ? "; roulette without orbs" : "")
                                        << (liftChairs ? "; chairs liftable" : "")
                                        << (g_tensionPlacable ? (g_offTheCuff ? "; tension placable, off the cuff" : "; tension placable") : "")
@@ -1591,15 +1628,34 @@ namespace kamite
                                        << (ps2xPatchFlag("sway_bar") ? "; sway bar" : ""));
     }
 
-    bool muteMusic()
+    void setVolumes(int music, int effects, int voices)
     {
-        return ps2xPatchFlag("mute_music");
+        g_musicGain.store(gainOf(music), std::memory_order_relaxed);
+        g_voicesGain.store(gainOf(voices), std::memory_order_relaxed);
+        ps2x::iop::setVoiceGain(gainOf(effects));
     }
 
-    void setMuteMusic(bool on)
+    void reapplyStreamVolumes(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
-        // The flag is read at every stream volume call, so the change lands at the next one (a room or track change).
-        ps2xSetPatchFlag("mute_music", on);
+        std::vector<StreamCall> calls;
+        {
+            std::lock_guard<std::mutex> lock(g_streamMutex);
+            // A node with no ADXT handle (+0) is idle: the setters return at once for it.
+            g_streamCalls.erase(std::remove_if(g_streamCalls.begin(), g_streamCalls.end(),
+                                               [&](const StreamCall &c) { return ram32(rdram, c.node) == 0u; }),
+                                g_streamCalls.end());
+            calls = g_streamCalls;
+        }
+        for (const StreamCall &c : calls)
+        {
+            const float keep = ctx->f[12];
+            ctx->f[12] = c.volume; // the asked volume: the hook scales it again
+            if (c.channel < 0)
+                callGuest(rdram, ctx, runtime, kStreamVolume1, {c.node, c.category});
+            else
+                callGuest(rdram, ctx, runtime, kStreamVolumeN, {c.node, c.category, static_cast<uint32_t>(c.channel)});
+            ctx->f[12] = keep;
+        }
     }
 
     bool tensionPlacable()

@@ -610,6 +610,10 @@ namespace kamite::modern
         return g_modern.load(std::memory_order_relaxed);
     }
 
+    void setModern(bool on) { g_modern = on; }
+    void setAuto(bool on) { g_auto = on; }
+    void setMouseCamera(bool on) { g_mouseCamera = on; }
+
     bool autoEnabled() { return g_auto.load(std::memory_order_relaxed); }
 
     void noteContact()

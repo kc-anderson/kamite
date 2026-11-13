@@ -37,6 +37,10 @@ namespace kamite::modern
     bool enabled();
     // Modern's Auto is on (F2 or [Game] ModernAuto). Any thread.
     bool autoEnabled();
+    // The in-game OPTIONS (any thread): Control Style, Modern: Auto and Modern: Mouse Camera, as F2 > Controls sets them.
+    void setModern(bool on);
+    void setAuto(bool on);
+    void setMouseCamera(bool on);
     // A hit between Gene and an enemy landed (either way; game thread, the damage steps): with Auto, brawl mode.
     void noteContact();
 

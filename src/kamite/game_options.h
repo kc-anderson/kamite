@@ -19,18 +19,19 @@ namespace kamite
     //   OffTheCuff (KAMITE_OFF_THE_CUFF)  with TensionPlacable: R2 unleashes with any tension, not only a full meter.
     //   BallBusterWomen (KAMITE_BALL_BUSTER_WOMEN)  Ball Buster stuns female enemies as it does men (launcher:
     //                                     Gameplay, Cunt Punter).
-    //   SwayBar (KAMITE_SWAY_BAR)        a stun gauge under each enemy's health bar (launcher: Gameplay, Sway Bar).
-    //   MuteMusic  (KAMITE_MUTE_MUSIC)   the game's music streams (cSndBgmNode) play at volume 0; voices, sound
-    //                                     effects and movies are unchanged.
+    //   SwayBar (KAMITE_SWAY_BAR)        a stun gauge under each enemy's health bar (launcher: Interface, Sway Bar).
+    // [Sound] MusicVolume / EffectsVolume / VoicesVolume: setVolumes (the OPTIONS screen sets them at start).
     void installGameOptions(PS2Runtime &runtime);
 
     // Game thread, once a game frame (frame_patches' frame hook): Dead Pan's invincibility look on Gene (steam, red
     // face), from the pan's hit until the invincibility runs out.
     void deadPanFrame(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
 
-    // The F2 menu (any thread): the mute takes effect at the music's next volume change (a room or track change).
-    bool muteMusic();
-    void setMuteMusic(bool on);
+    // [Sound] MusicVolume / EffectsVolume / VoicesVolume in percent (any thread): the streams' gains (taken at their next
+    // volume change: reapplyStreamVolumes makes that now) and the SPU2's voice gain (at once).
+    void setVolumes(int music, int effects, int voices);
+    // Game thread: every playing stream asks for its volume again, so a Music / Voices change is heard at once.
+    void reapplyStreamVolumes(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
     // The F2 menu (any thread): Tension is Placable and Off the Cuff, live (the next R2 press).
     bool tensionPlacable();
     void setTensionPlacable(bool on);

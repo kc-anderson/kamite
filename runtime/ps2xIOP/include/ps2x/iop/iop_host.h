@@ -14,6 +14,10 @@
 
 namespace ps2x::iop
 {
+    // The SPU2's voices (a game's sound effects; streams come in through the ADMA input instead) scaled before the
+    // mix: 1 = as the game set them. Any thread.
+    void setVoiceGain(float gain);
+
     enum class HostPathKind : uint32_t
     {
         ElfDirectory = 0,
