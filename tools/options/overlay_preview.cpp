@@ -143,8 +143,7 @@ int main(int argc, char **argv)
     v.inPage = argc > 16 && atoi(argv[16]) != 0;
     v.pageCursor = argc > 17 ? atoi(argv[17]) : 0;
     v.pageScroll = argc > 18 ? atoi(argv[18]) : 0;
-    look().bracket = argc > 19 ? atoi(argv[19]) : 0;
-    look().preview = argc > 20 ? atoi(argv[20]) : 1;
+    look().sub = argc > 19 ? atoi(argv[19]) : 1;
     std::vector<Pcsx2GsScreenItem> items;
     std::string strings;
     build(v, items, strings);

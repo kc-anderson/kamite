@@ -61,7 +61,9 @@ def thumb():
     # Orange-red rims on the rounded ends only (where the edge curves), fading inward over about a texel.
     end = np.clip((RADIUS - np.minimum(y, H - y)) / RADIUS, 0, 1)
     curve = np.clip((np.abs(x - W / 2) - (W / 2 - RADIUS)) / RADIUS, 0, 1)
-    rim = np.clip(1 + d / 0.9, 0, 1) * np.clip(end * (0.35 + 1.5 * curve), 0, 1) * 0.85
+    # (K, Nov 13: a touch more red than the first try) and a faint one down the long sides.
+    rim = np.clip(1 + d / 1.1, 0, 1) * np.clip(end * (0.5 + 1.5 * curve), 0, 1)
+    rim = np.maximum(rim, np.clip(1 + d / 0.5, 0, 1) * 0.4)
     rgb = rgb * (1 - rim[..., None]) + hexcol('f55a1c') * rim[..., None]
     alpha = np.clip(0.5 - d * S, 0, 1)  # about a pixel of anti-aliasing at the final size
     return downsample(np.dstack([rgb / 255, alpha]))

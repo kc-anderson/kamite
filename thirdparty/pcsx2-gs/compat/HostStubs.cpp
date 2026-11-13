@@ -962,13 +962,19 @@ namespace
         if (b.x <= a.x)
             return;
         const float stroke = (item.stroke >> 24) ? item.stroke_width * h : 0.0f;
+        // Anti-aliased, so a thickness that isn't a whole number of pixels reads the same lying or standing.
+        const auto box = [&](ImVec2 p, ImVec2 q, ImU32 colour)
+        {
+            const ImVec2 corners[4] = {p, ImVec2(q.x, p.y), q, ImVec2(p.x, q.y)};
+            list->AddConvexPolyFilled(corners, 4, colour);
+        };
         if (item.shadow >> 24)
-            list->AddRectFilled(ImVec2(a.x - stroke + item.shadow_x * h, a.y - stroke + item.shadow_y * h),
-                                ImVec2(b.x + stroke + item.shadow_x * h, b.y + stroke + item.shadow_y * h), item.shadow);
+            box(ImVec2(a.x - stroke + item.shadow_x * h, a.y - stroke + item.shadow_y * h),
+                ImVec2(b.x + stroke + item.shadow_x * h, b.y + stroke + item.shadow_y * h), item.shadow);
         if (stroke > 0.0f)
-            list->AddRectFilled(ImVec2(a.x - stroke, a.y - stroke), ImVec2(b.x + stroke, b.y + stroke), item.stroke);
+            box(ImVec2(a.x - stroke, a.y - stroke), ImVec2(b.x + stroke, b.y + stroke), item.stroke);
         if (item.fill >> 24)
-            list->AddRectFilled(a, b, item.fill);
+            box(a, b, item.fill);
     }
 
     // An image file, loaded on first use and shrunk by a whole factor (a box filter, alpha-weighted) to about the size

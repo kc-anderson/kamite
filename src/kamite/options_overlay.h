@@ -66,10 +66,9 @@ namespace kamite::options_overlay
         float blur = 0.5f;         // softening, in lines (PS2 pixels)
         float shadowAlpha = 0.18f; // a barely visible drop shadow (the original has none)
         float shadowOffset = 1.0f; // lines
-        // Mockup switches while K picks (temporary): the bracket's look (0 the Techniques connector, 1 the cursor's
-        // cream and red, 2 flat tan), and the page beside the list before it is opened (0 none, 1 as is, 2 dimmed).
-        int bracket = 0;
-        int preview = 1;
+        // Mockup switch while K picks (temporary): how a sub-option shows it belongs to the option above (0 indent
+        // only, 1 a tan elbow from its parent, 2 a small arrow).
+        int sub = 1;
     };
     Look &look();
 

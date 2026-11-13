@@ -97,25 +97,26 @@ namespace kamite::options_overlay
         // page's cursor and names after it as the list's are after the screen's edge; its right end at the text area's
         // margin, at most kPageWidth on. Values sit in a block at the right, choices centred in equal slots.
         constexpr float kSplitAspect = 1.595f;
-        constexpr float kBracketX = 240.0f, kBracketTick = 9.0f, kBracketGap = 7.0f, kBracketReach = 12.0f;
+        constexpr float kBracketX = 240.0f, kBracketTick = 9.0f, kBracketGap = 7.0f, kBracketReach = 17.0f;
         constexpr float kPageCursorGap = kLabelX - kCursorX, kPageNameGap = kLabelX - kCursorX + kLabelX - kCursorX;
         constexpr float kPageWidth = 470.0f, kValueBlock = 136.0f, kScrollWidth = 8.0f, kScrollGap = 14.0f;
         constexpr float kSubIndent = 12.0f, kSubCap = 18.5f, kHeaderCap = 13.0f, kHeaderTracking = 3.0f;
         constexpr float kLinesToUnits = 6.0f / 7.0f;
 
-        // The bracket's looks (Look::bracket), each a stack of layers drawn widest first: a thickness in lines and an
-        // offset toward the top / left (the lit side).
+        // The bracket, in the look of the Techniques screen's connector line (K's pick, Nov 13): layers drawn widest
+        // first, each a thickness in lines and an offset toward the top / left (the lit side).
         struct BracketLayer
         {
             uint32_t colour;
             float thickness, lift;
         };
-        constexpr BracketLayer kConnector[] = {{rgba(0xB6, 0x1A, 0x00, 110), 6.0f, 0.0f}, // the Techniques connector: a red fringe,
-                                               {rgba(0xB8, 0x4F, 0x25), 4.0f, 0.0f},      // rust edges,
-                                               {rgba(0xFF, 0xFE, 0x11), 2.0f, 0.0f},      // a yellow core
-                                               {rgba(0xFF, 0xFE, 0xC4), 1.0f, 0.5f}};     // lit cream on top
-        constexpr BracketLayer kCursorLook[] = {{rgba(0xA1, 0x2E, 0x02), 3.2f, 0.0f}, {rgba(0xFF, 0xF8, 0xCE), 1.2f, 0.0f}};
-        constexpr BracketLayer kTanLook[] = {{rgba(0xBC, 0x79, 0x48), 1.6f, 0.0f}};
+        constexpr BracketLayer kBracketLayers[] = {{rgba(0xB6, 0x1A, 0x00, 110), 6.0f, 0.0f}, // a faint red fringe,
+                                                   {rgba(0xB8, 0x4F, 0x25), 4.0f, 0.0f},      // rust edges,
+                                                   {rgba(0xFF, 0xFE, 0x11), 2.0f, 0.0f},      // a yellow core
+                                                   {rgba(0xFF, 0xFE, 0xC4), 1.0f, 0.5f}};     // lit cream on top
+        // A sub-option's elbow from its parent (Look::sub 1): the unselected names' tan.
+        constexpr float kElbowThickness = 1.4f;
+        constexpr float kSubBulletHalf = 3.5f;
 
         // Archivo Narrow fitted to the original's painted row names: horizontal scale, extra tracking (layout units).
         struct Fit
@@ -267,12 +268,8 @@ namespace kamite::options_overlay
             // with short ticks into the page at both ends.
             void bracket(float x, float row, float top, float bottom)
             {
-                const BracketLayer *layers = kConnector;
-                size_t count = std::size(kConnector);
-                if (g_look.bracket == 1)
-                    layers = kCursorLook, count = std::size(kCursorLook);
-                else if (g_look.bracket == 2)
-                    layers = kTanLook, count = std::size(kTanLook);
+                const BracketLayer *layers = kBracketLayers;
+                const size_t count = std::size(kBracketLayers);
                 for (size_t i = 0; i < count; ++i)
                 {
                     const float t = 0.5f * layers[i].thickness, lift = layers[i].lift;
@@ -326,17 +323,20 @@ namespace kamite::options_overlay
 
             // A page's rows between left (its cursor's x) and right (the scroll bar's right edge). selected < 0: no row
             // highlighted.
-            void page(const Page &p, int scroll, int selected, float left, float right)
+            void page(const Page &p, int scroll, int selected, float left, float right, bool namesOnly = false)
             {
                 const float names = left + kPageNameGap - kPageCursorGap, values = right - kScrollWidth - kScrollGap - kValueBlock;
                 float y = kPageTop;
                 scroll = std::clamp(scroll, 0, std::max(p.rowCount - 1, 0));
                 const int shown = pageRowsShown(p, scroll);
+                float parent = kPageTop; // the last option's centre (a sub-option's elbow starts under it)
                 for (int i = scroll; i < scroll + shown; ++i)
                 {
                     const PageRow &row = p.rows[i];
                     const float centre = y + 0.5f * rowHeight(row);
                     y += rowHeight(row);
+                    if (!row.header && !row.sub)
+                        parent = centre;
                     if (row.header)
                     {
                         text(row.name, std::strlen(row.name), labelFont, names, centre + 0.5f * kHeaderCap, kHeaderCap, kNewLabel.scaleX,
@@ -348,11 +348,33 @@ namespace kamite::options_overlay
                         continue;
                     }
                     const bool on = i == selected;
-                    const float x = names + (row.sub ? kSubIndent : 0.0f);
+                    const float indent = row.sub ? (g_look.sub == 0 ? kSubIndent : 2.0f * kSubIndent) : 0.0f;
+                    const float x = names + indent;
+                    if (row.sub && g_look.sub == 1)
+                    {
+                        // An elbow from under the parent's first letter to just before the sub-option's name.
+                        const float t = 0.5f * kElbowThickness, tu = t * kLinesToUnits, ex = names + 5.0f;
+                        rect(ex - tu, parent + 0.5f * kLabelCap + 3.0f, ex + tu, centre + t, kLabel);
+                        rect(ex - tu, centre - t, x - 5.0f, centre + t, kLabel);
+                    }
+                    else if (row.sub && g_look.sub == 2)
+                    {
+                        Pcsx2GsScreenItem item = base();
+                        item.kind = PCSX2GS_SCREEN_TRIANGLE;
+                        item.fill = faded(kLabel);
+                        const float bx = names + kSubIndent - 2.0f;
+                        item.x = space.x(bx - kSubBulletHalf);
+                        item.y = Space::y(centre - kSubBulletHalf * 1.3f);
+                        item.x1 = space.x(bx + kSubBulletHalf);
+                        item.y1 = Space::y(centre);
+                        item.x2 = space.x(bx - kSubBulletHalf);
+                        item.y2 = Space::y(centre + kSubBulletHalf * 1.3f);
+                        items.push_back(item);
+                    }
                     label(row.name, centre, on, x, values - 10.0f - x, row.sub ? kSubCap : kLabelCap);
                     if (on)
-                        cursor(centre, left + (row.sub ? kSubIndent : 0.0f));
-                    if (row.choiceCount <= 0)
+                        cursor(centre, left); // the cursor keeps its column, clear of a sub-option's mark
+                    if (row.choiceCount <= 0 || namesOnly)
                         continue;
                     if (row.choiceCount <= 3)
                     {
@@ -376,7 +398,7 @@ namespace kamite::options_overlay
                     total += rowHeight(p.rows[i]);
                     before += i < scroll ? rowHeight(p.rows[i]) : 0.0f;
                 }
-                if (total > kPageBottom - kPageTop + 0.01f && !g_scrollTrack.empty())
+                if (!namesOnly && total > kPageBottom - kPageTop + 0.01f && !g_scrollTrack.empty())
                 {
                     const float x0 = right - kScrollWidth, top = kPageTop + 2.0f, span = kPageBottom - kPageTop - 4.0f;
                     bar(add(g_scrollTrack.data(), g_scrollTrack.size()), x0, top, right, top + span);
@@ -451,10 +473,11 @@ namespace kamite::options_overlay
             b.bracket(kBracketX, centre, std::min(first, centre) - kBracketReach, std::max(last, centre) + kBracketReach);
             b.page(*page, view.pageScroll, view.pageCursor, kBracketX + kPageCursorGap, pageRight);
         }
-        else if (split && page && g_look.preview != 0)
+        else if (split && page)
         {
-            b.dim = g_look.preview == 2 ? 0.5f : 1.0f;
-            b.page(*page, 0, -1, kBracketX + kPageCursorGap, pageRight);
+            // Before it is opened: the page's names only, at half strength (K, Nov 13).
+            b.dim = 0.5f;
+            b.page(*page, 0, -1, kBracketX + kPageCursorGap, pageRight, true);
             b.dim = 1.0f;
         }
 
