@@ -5,10 +5,10 @@
 #include <string_view>
 
 // The port's keyboard shortcuts (the F keys), as a table the game layer and its menus can show and rebind. Each
-// action has one binding: a raylib key with optional Shift / Ctrl, or a PS2 pad button (the button the game would
-// see, e.g. "Right Stick Press"; the game layer watches the pad data for it). The window loop asks pressed() for the
-// actions it handles itself and fire()s the others, which the game thread picks up with take(). F1 (the Controls screen) and
-// Esc are not here: they stay fixed.
+// action has one binding: a raylib key with optional Shift / Ctrl, or a controller button named by its place on the default
+// layout (e.g. "Right Stick Press": that physical button whatever the gameplay mapping; the game layer watches the pad
+// data for the PS2 button it gives, menu_buttons::padBitAtPlace). The window loop asks pressed() for the actions it
+// handles itself and fire()s the others, which the game thread picks up with take(). Esc is not here: it stays fixed.
 //
 // The game layer keeps the bindings (GHR.ini [Hotkeys], one line per action id); this table is the live copy.
 namespace ps2x::hotkeys
@@ -71,7 +71,7 @@ namespace ps2x::hotkeys
     [[nodiscard]] const PadName *padNames(int &count);
     [[nodiscard]] bool parse(std::string_view text, Binding &out);
     [[nodiscard]] const char *keyName(int raylibKey); // "" for a key that cannot be named
-    // The keys a hotkey may use: the F keys, letters, digits, keypad, and the named keys; not Esc or F1.
+    // The keys a hotkey may use: the F keys, letters, digits, keypad, and the named keys; not Esc.
     [[nodiscard]] bool bindable(int raylibKey);
     // The key pressed this frame that bindable() accepts (0 = none); for "press a key" capture. Window thread.
     [[nodiscard]] int capturePressed();

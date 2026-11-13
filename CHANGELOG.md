@@ -4,6 +4,9 @@ Newest first, one line per change; the code comments say how.
 
 ## November 13, 2026
 
+- Controls: menus keep confirm, cancel and the d-pad on the same physical buttons (as Menu Controls sets them) whatever the button mapping; their hints and the roulette follow.
+- Controls: a hotkey on a controller button stays on that physical button whatever the button mapping.
+- Controls: removed the old F1 Controls screen and its Back + Start shortcut; F1 can be bound as a hotkey.
 - 60 FPS: the fighting ring's menu arrows, round start and end banners, prize tally and enemy wave timers run at their original speed; so do the casino games' UI animations.
 - Options: LB / RB hints beside an open category's title, with the neighbouring categories' names; the Confirm / Cancel hints sit a little higher.
 - Options: new help texts for the categories, Graphics API, Internal Resolution and Aspect Ratio; Graphics API shows DX11; Vibration sits above Menu Controls.

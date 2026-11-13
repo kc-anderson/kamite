@@ -772,8 +772,6 @@ int main(int argc, char *argv[])
             iso = arg;
     }
 
-    // The self-test rewrites the controls file several times: only with a file named in the real environment.
-    const bool controlsFileFromEnvironment = std::getenv("KAMITE_CONTROLS_FILE") && *std::getenv("KAMITE_CONTROLS_FILE");
     std::vector<std::pair<std::string, std::string>> padLayout;
     const std::string migrationNote = migrateOldSettings(exeDir);
     std::vector<std::string> settingNotes = loadSettings(exeDir / "GHR.ini", exeDir, padLayout);
@@ -806,20 +804,10 @@ int main(int argc, char *argv[])
     if (!padLayout.empty())
         KM_INFO(Boot, "settings: " << padLayout.size() << " PS2X_PAD<n> line(s) in GHR.ini are not used: the layout lives in the "
                                    "controls file (they only seed it when it is missing)");
-    // KAMITE_CONTROLS_FILE: the bindings file the F1 Controls screen edits (default controls.ini next to the exe).
+    // KAMITE_CONTROLS_FILE: the bindings file (default controls.ini next to the exe; the launcher edits it).
     {
         const char *controls = std::getenv("KAMITE_CONTROLS_FILE");
         const fs::path controlsPath = controls && *controls ? fs::path(controls) : exeDir / "controls.ini";
-        std::error_code sameError;
-        const fs::path playerControls = exeDir / "controls.ini";
-        const bool playerFile = fs::exists(controlsPath, sameError) && fs::exists(playerControls, sameError) &&
-                                fs::equivalent(controlsPath, playerControls, sameError);
-        if (envFlag("KAMITE_CONTROLS_SELFTEST", false) && (!controlsFileFromEnvironment || playerFile))
-        {
-            KM_WARN(Boot, "KAMITE_CONTROLS_SELFTEST ignored: it needs KAMITE_CONTROLS_FILE=<scratch file> in the environment"
-                          " (not the player's controls.ini)");
-            setEnv("KAMITE_CONTROLS_SELFTEST", "0");
-        }
         KM_INFO(Boot, "controls file: " << controlsPath.string());
         ps2_host_input::setControlsFile(controlsPath.string(), padLayout);
     }
@@ -993,7 +981,7 @@ int main(int argc, char *argv[])
         g_crashRuntime.store(&runtime);
 #endif
 #if defined(PS2X_ENABLE_DEBUG_UI)
-        // ImGui runtime debugger from PS2Recomp: F12 toggles it (F1 = Controls screen); KAMITE_DEBUG_UI=1 opens it at start-up.
+        // ImGui runtime debugger from PS2Recomp: F12 toggles it; KAMITE_DEBUG_UI=1 opens it at start-up.
         static PS2DebugPanel debugPanel;
         debugPanel.setVisible(!headless && envFlag("KAMITE_DEBUG_UI", false));
         runtime.setDebugUiCallbacks(

@@ -34,20 +34,11 @@ namespace ps2_host_input
     using PadFilter = void (*)(uint32_t player, ps2x::iop::PadInputState &state);
     void setPadFilter(PadFilter filter);
 
-    // Controls screen (F1, ps2_controls_screen.cpp; window thread). Open: every pad idle but plugged in. Closed again:
-    // each player stays idle until its own buttons and sticks are released (at most 2 s).
-    void setOverlayOpen(bool open);
-    [[nodiscard]] bool overlayOpen();
-    [[nodiscard]] bool inputHeld(uint32_t player);
-    // Sweep CR-5: while on, a controller's Back or Start is held back from the game for a moment (the "Back+Start gate"
-    // in ps2_host_input.cpp), so pressing one of them first does not reach the game before Back+Start opens the screen.
-    // The Controls screen sets it every frame: on while it can be opened (drawable renderer, focused window).
-    void setChordGate(bool enabled);
     // Sweep CR-9: Windows' Sticky/Toggle/Filter Keys hotkeys are off while the game window has the focus (sample()
     // follows the focus). This puts the user's settings back for good: the window closed or the run ended. Any thread.
     void restoreShortcutKeys();
 
-    // The bindings model behind the Controls screen (window thread only). Keys are PCSX2's [PadN] keys ("Cross",
+    // The bindings model (controls.ini; the launcher edits it; window thread only). Keys are PCSX2's [PadN] keys ("Cross",
     // "LUp"), bindings PCSX2 strings ("Keyboard/K", "SDL-0/FaceSouth", "Pointer-0/LeftButton").
     namespace controls
     {
@@ -86,7 +77,7 @@ namespace ps2_host_input
     // Button prompts (any thread). What player 1's bindings show where the game draws a PS2 button: for each input the
     // first keyboard/mouse binding and the first controller binding, i.e. the Controls screen's Key 1 and Controller
     // columns, taken from the live table (so PS2X_PAD1 in the environment counts too). Republished by every bindings
-    // rebuild: the file load, the 1-s file poll, F1 edits and reset. Readers compare generation() with the one they
+    // rebuild: the file load, the 1-s file poll and reset. Readers compare generation() with the one they
     // last saw and take snapshot() only when it moved; nothing here allocates.
     namespace prompts
     {

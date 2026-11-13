@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ps2_host_input.h"
+
 #include <cstdint>
 #include <vector>
 
@@ -40,6 +42,26 @@ namespace kamite::menu_buttons
     void setStyle(Style style);
     // "western" / "japanese" / "classic", as GHR.ini spells them.
     const char *styleName(Style style);
+    // Pinned menus (K, Nov 13: the menus are a layer of their own that only Menu Controls changes; the gameplay mapping
+    // never moves them). The menus' buttons are named by their place on the pad: south, east, north, west and the d-pad
+    // (the places of the PS2 pad's cross, circle, triangle, square and d-pad). A place is the PS2 button player 1's
+    // controller bindings put on that physical button (controls.ini, the launcher's mapping: the input whose first
+    // controller binding is it), so the menus' OK, Cancel and d-pad entries, the roulette's OK and Cancel and the hints
+    // that name them stay on the same physical buttons whatever the gameplay mapping. With the keyboard in use, or no
+    // PS2 button on that physical button, a place is its own PS2 button (as before). Values: ps2_host_input::prompts::Input.
+    struct Places
+    {
+        uint8_t south, east, north, west, up, down, left, right;
+    };
+    Places places(); // now (any thread)
+    Places placesFor(const ps2_host_input::prompts::Snapshot &snapshot, bool controller);
+    // A text icon naming a place (0 circle, 1 triangle, 2 square, 3 cross: east, north, west, south) -> the icon of the
+    // PS2 button there now; any other code as it is.
+    uint16_t placeIcon(uint16_t icon);
+    // A pad hotkey's button (a ps2x::iop::PadButton bit, naming its place on the default layout) -> the PS2 bit the
+    // controller's button at that place gives now: hotkeys stay on their physical button (K, Nov 13).
+    uint16_t padBitAtPlace(uint16_t padBit);
+
     // modern_controls' pad filter (window thread), player 1: the right stick's x (0..255), which turns Gene on the
     // Techniques screen (every menu style; turnTechniquesGene).
     void noteRightStick(uint8_t x);

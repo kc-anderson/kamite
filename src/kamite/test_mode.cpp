@@ -29,6 +29,7 @@
 #include "kamite/game_layout.h"
 #include "kamite/git_commit.h" // KAMITE_GIT_COMMIT (generated at build time)
 #include "kamite/log.h"
+#include "kamite/menu_buttons.h"
 #include "runtime/ps2_game_menu.h"
 #include "runtime/ps2_hotkeys.h"
 #include "runtime/ps2_pad_tap.h"
@@ -1378,7 +1379,8 @@ namespace kamite::test_mode
         {
             Recorder &rec = g_rec;
             const uint16_t pressed = state.buttons; // PadButton bits, as the hotkey binding names them
-            const uint16_t padBit = ps2x::hotkeys::binding(ps2x::hotkeys::Action::RecordCase).pad;
+            // The hotkey's button by its place on the pad (K, Nov 13: hotkeys stay on their physical button).
+            const uint16_t padBit = menu_buttons::padBitAtPlace(ps2x::hotkeys::binding(ps2x::hotkeys::Action::RecordCase).pad);
             if (padBit != 0u && (pressed & padBit) != 0u && (rec.prevPressed & padBit) == 0u)
                 rec.toggle = true;
             rec.prevPressed = pressed;
@@ -1579,7 +1581,7 @@ namespace kamite::test_mode
                 if (toggle || rec.rec.polls() >= kMaxCaseVblanks)
                 {
                     // The stopping press is not part of the case: drop the polls at the end that hold it.
-                    const uint16_t padBit = ps2x::hotkeys::binding(ps2x::hotkeys::Action::RecordCase).pad;
+                    const uint16_t padBit = menu_buttons::padBitAtPlace(ps2x::hotkeys::binding(ps2x::hotkeys::Action::RecordCase).pad);
                     while (toggle && padBit != 0u && rec.rec.polls() > 1u)
                     {
                         const uint8_t *end = rec.rec.samples.data() + rec.rec.samples.size() - kSample;

@@ -273,7 +273,7 @@ namespace ps2x::hotkeys
 
     bool bindable(int key)
     {
-        if (key == 0 || key == KEY_ESCAPE || key == KEY_F1 || modifier(key))
+        if (key == 0 || key == KEY_ESCAPE || modifier(key))
             return false;
         return *keyName(key) != 0;
     }

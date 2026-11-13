@@ -86,7 +86,7 @@ namespace kamite::hotkeys
         if (!ui->collapsing_header("Hotkeys", 0))
             return;
         ui->text_disabled("The port's own keys. Click one, then press the key (with Shift or Ctrl held if you want) or "
-                          "pick a controller button; Esc keeps the old one. F1 (the Controls screen) stays as it is.");
+                          "pick a controller button (it stays on that physical button whatever the mapping); Esc keeps the old one.");
         // A capture that finished: take the key. One the menu dropped (it was closed meanwhile): forget it.
         int key = 0;
         bool shift = false, ctrl = false;

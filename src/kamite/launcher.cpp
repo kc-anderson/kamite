@@ -1557,7 +1557,7 @@ void main()
                 state.ini.setBool(section, key, value);
         }
 
-        // ---- Controls: player 1's bindings (controls.ini through ps2_host_input's model, as the F1 screen) ----------
+        // ---- Controls: player 1's bindings (controls.ini through ps2_host_input's model) ----------
         namespace pc = ps2_host_input::controls;
         namespace gp = ps2_host_gamepads;
 
@@ -1567,7 +1567,7 @@ void main()
             const char *action; // what it does in the game ("" = nothing known)
             const char *button; // the PS2 button
         };
-        // The F1 screen's rows (ps2_controls_screen.cpp kRows).
+        // The rows: the PS2 inputs in controls.ini's order.
         constexpr ControlRow kControlRows[] = {
             {"Cross", "Attack / OK", "Cross"},
             {"Circle", "Action / prompt", "Circle"},
@@ -1595,7 +1595,7 @@ void main()
             {"RRight", "Sidestep right", "Right stick right"},
         };
         constexpr int kControlRowCount = static_cast<int>(std::size(kControlRows));
-        constexpr int kKeyColumns = 2; // Key 1, Key 2 (the F1 screen also has a third; it is kept as it is)
+        constexpr int kKeyColumns = 2; // Key 1, Key 2 (a third binding in the file is kept as it is)
         constexpr uint32_t kPlayer = 0u;
 
         struct Capture
@@ -1647,7 +1647,7 @@ void main()
             return *r.action ? std::string(r.action) + " (" + r.button + ")" : std::string(r.button);
         }
 
-        // As the F1 screen: the binding goes into the cell; within one action it appears once; another action may
+        // The binding goes into the cell; within one action it appears once; another action may
         // share it (the status line says so).
         void bindCell(int row, bool controller, int column, const std::string &binding)
         {
@@ -1836,8 +1836,8 @@ void main()
             {
                 ImGui::PushStyleColor(ImGuiCol_Text, kTextDim);
                 ImGui::TextWrapped("The port's own keys. Click one, then press the key (with Shift or Ctrl held if you want), "
-                                   "or pick a controller button. Right-click clears it. F1 (the Controls screen) stays as it "
-                                   "is. The F2 menu's Controls tab edits the same list.");
+                                   "or pick a controller button (it stays on that physical button whatever the mapping). "
+                                   "Right-click clears it. The F2 menu's Controls tab edits the same list.");
                 ImGui::PopStyleColor();
                 if (ImGui::BeginTable("hotkeys", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX | ImGuiTableFlags_RowBg))
                 {

@@ -7,6 +7,7 @@
 #include "kamite/crate_prompts.h"
 #include "kamite/disc_files.h"
 #include "kamite/log.h"
+#include "kamite/menu_buttons.h"
 #include "kamite/modern_controls.h"
 #include "kamite/prompt_art.h"
 #include "kamite/sha256.h"
@@ -719,8 +720,18 @@ namespace kamite::button_prompts
                 const sheets::PromptLabels labels = labelsFor(bindings::snapshot(), device);
                 {
                     std::lock_guard<std::mutex> lock(g_menuArtMutex);
-                    g_menuArt = MenuArt{true, set, labels.icon[sheets::Cross], labels.icon[sheets::Circle], labels.icon[sheets::Triangle],
-                                        labels.icon[sheets::L1], labels.icon[sheets::R1]};
+                    // The menus' buttons by their place on the pad (menu_buttons.h "Pinned menus"): cross = the south
+                    // button's label, circle the east's, triangle the north's. Sheet icons and text icons share numbers.
+                    const menu_buttons::Places places =
+                        menu_buttons::placesFor(bindings::snapshot(), device == bindings::Device::Controller);
+                    const auto placed = [&](uint8_t input, sheets::Icon fallback) {
+                        static constexpr int kSheetIcon[12] = {sheets::Cross, sheets::Circle, sheets::Square, sheets::Triangle,
+                                                               sheets::L1,    sheets::R1,     sheets::L2,     sheets::R2,
+                                                               sheets::L3,    sheets::R3,     sheets::Start,  sheets::Select};
+                        return labels.icon[input < 12u ? kSheetIcon[input] : fallback];
+                    };
+                    g_menuArt = MenuArt{true, set, placed(places.south, sheets::Cross), placed(places.east, sheets::Circle),
+                                        placed(places.north, sheets::Triangle), labels.icon[sheets::L1], labels.icon[sheets::R1]};
                 }
                 std::string summary = std::string(prompt_hd::setName(set)) + " prompts";
                 // Every set starts from the disc's art. PlayStation keeps it; the others get full-resolution images

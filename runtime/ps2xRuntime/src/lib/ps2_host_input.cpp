@@ -142,13 +142,12 @@ namespace ps2_host_input
                 return KEY_A + (key[0] - 'a');
             if (key.size() == 1u && key[0] >= '0' && key[0] <= '9')
                 return KEY_ZERO + (key[0] - '0');
-            // F2..F12 ("F1x" is not F1: every character after the F must be a digit). F1 is kept for the Controls
-            // screen (ps2_controls_screen.cpp), so a binding to it would be unusable.
+            // F1..F12 ("F1x" is not F1: every character after the F must be a digit).
             if (key.size() >= 2u && key.size() <= 3u && key[0] == 'f' &&
                 std::all_of(key.begin() + 1, key.end(), [](char ch) { return std::isdigit(static_cast<unsigned char>(ch)) != 0; }))
             {
                 const int number = std::atoi(key.c_str() + 1);
-                if (number >= 2 && number <= 12)
+                if (number >= 1 && number <= 12)
                     return KEY_F1 + number - 1;
                 return std::nullopt;
             }
@@ -477,7 +476,6 @@ namespace ps2_host_input
         bool g_haveLoadedStamp = false;
         std::chrono::steady_clock::time_point g_lastFileCheck{};
         std::string g_lastFileError;
-        std::atomic<bool> g_overlayOpen{false};
 
         // ---- button prompts (prompts:: in the header) ------------------------------------------------------------------
         // Player 1's labels for the game's PS2 button art (the text icon sheet, texture 0x18 of core_usa.bin
@@ -783,14 +781,14 @@ namespace ps2_host_input
             if (const std::string_view preamble = trimTrailingBlank(model.preamble); !preamble.empty())
                 out << preamble << '\n'; // the file's own header (and the player's notes in it), as written
             else
-                out << "# God Hand: Rearmed controls (GHR.exe). F1 in the game opens the Controls screen, which edits and saves this file.\n"
+                out << "# God Hand: Rearmed controls (GHR.exe). The launcher's Controls tab edits and saves this file.\n"
                    "# PCSX2 syntax, one binding per line: <Key> = Keyboard/<key> | Pointer-0/LeftButton, RightButton, MiddleButton |\n"
                    "#   SDL-<n>/<button> (controller n: FaceSouth FaceEast FaceWest FaceNorth Back Start LeftStick RightStick\n"
                    "#   LeftShoulder RightShoulder DPadUp DPadDown DPadLeft DPadRight) | SDL-<n>/+<axis> or -<axis> (LeftX LeftY\n"
                    "#   RightX RightY LeftTrigger RightTrigger). Repeat a key for more bindings; \"<Key> =\" = unbound; \"a & b\" = both.\n"
                    "# Keys: Up Right Down Left Triangle Circle Cross Square Select Start L1 L2 R1 R2 L3 R3, LUp LRight LDown LLeft\n"
                    "#   (left stick), RUp RRight RDown RLeft (right stick); settings Type Deadzone AxisScale ButtonDeadzone InvertL InvertR\n"
-                   "#   LargeMotor SmallMotor LargeMotorScale SmallMotorScale. F1 cannot be bound (it opens the Controls screen).\n"
+                   "#   LargeMotor SmallMotor LargeMotorScale SmallMotorScale.\n"
                    "# Changes saved here are picked up while the game runs. Delete this file to get the default layout back.\n";
             for (uint32_t pad = 0; pad < kMaxPlayers; ++pad)
             {
@@ -893,10 +891,10 @@ namespace ps2_host_input
             return true;
         }
 
-        // Checked at most once a second while the Controls screen is closed and nothing is unsaved.
+        // Checked at most once a second while nothing is unsaved.
         void pollControlsFile()
         {
-            if (g_controlsPath.empty() || g_controlsDirty || g_overlayOpen.load(std::memory_order_relaxed))
+            if (g_controlsPath.empty() || g_controlsDirty)
                 return;
             const auto now = std::chrono::steady_clock::now();
             if (now - g_lastFileCheck < std::chrono::seconds(1))
@@ -1287,79 +1285,6 @@ namespace ps2_host_input
             g_mouseCameraInput.y += delta.y;
         }
 
-        // ---- Back+Start gate (window thread) ---------------------------------------------------------------------------
-        // Back+Start opens the Controls screen, so the game must never see that chord. Back or Start pressed alone is held
-        // back for kGateDelay; a second button arriving inside it makes a chord, and both stay hidden until both are
-        // released. A tap shorter than kGateDelay still reaches the game, as a kGatePulse press after its release.
-        // Sweep CR-5: this gate was never switched on (nothing called setChordGate), so Start pressed a moment before
-        // Back paused the game or skipped a cutscene behind the Controls screen. ps2x::controls::hostTick now turns it
-        // on while the screen can open. With one of the two already held, the other is a chord from its first frame
-        // and never reaches the game. Cost: a lone Back or Start reaches the game kGateDelay late (a tap: when it is
-        // released): about 5 fields, on the pause/menu buttons only; keys and every other button are never delayed.
-        constexpr auto kGateDelay = std::chrono::milliseconds(80);
-        constexpr auto kGatePulse = std::chrono::milliseconds(50);
-        struct ChordGate
-        {
-            std::array<bool, 2> down{}; // [Back, Start] as last read
-            std::array<std::chrono::steady_clock::time_point, 2> since{};
-            std::array<std::chrono::steady_clock::time_point, 2> pulseUntil{};
-            bool chord = false; // both were held: hidden until both are released
-        };
-        std::array<ChordGate, ps2_host_gamepads::kMaxDevices> g_chordGates{};
-        std::array<std::array<bool, 2>, ps2_host_gamepads::kMaxDevices> g_gateHide{};
-        std::array<std::array<bool, 2>, ps2_host_gamepads::kMaxDevices> g_gateForce{};
-        std::atomic<bool> g_chordGateEnabled{false}; // only while the Controls screen can open (set by ps2x::controls::hostTick)
-        // Self-test input: player 1's buttons (PS2 bits) and controller 1's Back (bit 0) / Start (bit 1), window thread.
-        std::atomic<uint16_t> g_testButtons{0u};
-        std::atomic<uint8_t> g_testGateButtons{0u};
-
-        bool rawGateButton(int device, int which)
-        {
-            const bool test = device == 0 && (g_testGateButtons.load(std::memory_order_relaxed) & (1u << which)) != 0u;
-            return test || ps2_host_gamepads::button(device, which == 0 ? ps2_host_gamepads::Back : ps2_host_gamepads::Start);
-        }
-
-        void updateChordGate()
-        {
-            const bool enabled = g_chordGateEnabled.load(std::memory_order_relaxed);
-            const auto now = std::chrono::steady_clock::now();
-            for (int device = 0; device < ps2_host_gamepads::kMaxDevices; ++device)
-            {
-                ChordGate &gate = g_chordGates[static_cast<size_t>(device)];
-                const std::array<bool, 2> down{rawGateButton(device, 0), rawGateButton(device, 1)};
-                if (down[0] && down[1])
-                    gate.chord = true;
-                for (int which = 0; which < 2; ++which)
-                {
-                    bool hide = false;
-                    if (gate.chord)
-                    {
-                        hide = true;
-                        gate.pulseUntil[which] = {};
-                    }
-                    else if (down[which])
-                    {
-                        if (!gate.down[which])
-                            gate.since[which] = now;
-                        hide = now - gate.since[which] < kGateDelay;
-                    }
-                    else if (gate.down[which])
-                    {
-                        // Released. A quick tap (shorter than kGateDelay): the game still gets it, as a kGatePulse press.
-                        // Review 2026-10-18: a press released just after kGateDelay was shown for a frame or less, which
-                        // The game's pad read can miss (a lost Start); it now stays shown until it was up for kGatePulse.
-                        gate.pulseUntil[which] = now - gate.since[which] < kGateDelay ? now + kGatePulse
-                                                                                      : gate.since[which] + kGateDelay + kGatePulse;
-                    }
-                    gate.down[which] = down[which];
-                    g_gateHide[static_cast<size_t>(device)][which] = enabled && hide;
-                    g_gateForce[static_cast<size_t>(device)][which] = enabled && !down[which] && now < gate.pulseUntil[which];
-                }
-                if (!down[0] && !down[1])
-                    gate.chord = false;
-            }
-        }
-
         // 0..1: how far the element is pressed (keys and buttons are 0 or 1).
         float elementValue(const Element &element)
         {
@@ -1381,17 +1306,6 @@ namespace ps2_host_input
                     return 0.0f;
                 return IsWindowFocused() && !g_menuMouse.load(std::memory_order_relaxed) && IsMouseButtonDown(element.code) ? 1.0f : 0.0f;
             case Source::PadButton:
-                if ((element.code == ps2_host_gamepads::Back || element.code == ps2_host_gamepads::Start) && element.device >= 0 &&
-                    element.device < ps2_host_gamepads::kMaxDevices)
-                {
-                    const int which = element.code == ps2_host_gamepads::Back ? 0 : 1;
-                    const size_t device = static_cast<size_t>(element.device);
-                    if (g_gateForce[device][which])
-                        return 1.0f;
-                    if (g_gateHide[device][which])
-                        return 0.0f;
-                    return rawGateButton(element.device, which) ? 1.0f : 0.0f;
-                }
                 return ps2_host_gamepads::button(element.device, static_cast<ps2_host_gamepads::Button>(element.code)) ? 1.0f : 0.0f;
             case Source::PadAxis:
                 return std::max(0.0f, element.sign * ps2_host_gamepads::axis(element.device, static_cast<ps2_host_gamepads::Axis>(element.code)));
@@ -1713,17 +1627,6 @@ namespace ps2_host_input
         // LargeMotor/SmallMotor bindings name (window thread). small: on/off, as on the pad; large: 0-255.
         std::array<std::atomic<uint16_t>, kMaxPlayers> g_motors{};
         std::atomic<bool> g_blocked{false}; // the in-game menu has the input
-        // Controls screen hold (window thread): players still idled after it closed, until released or the 2 s cap.
-        uint32_t g_holdMask = 0u;
-        std::chrono::steady_clock::time_point g_holdStart{};
-        std::chrono::steady_clock::time_point g_holdUntil{};
-
-        // Released: no button, and both sticks at rest, measured before the axis scale so stick drift does not count
-        // (at least 25% of the travel, or the pad's own Deadzone when larger).
-        bool inputReleased(const PadInputState &state, float rawStick, const PadConfig &config)
-        {
-            return state.buttons == 0u && rawStick <= std::max(config.deadzone, 0.25f);
-        }
 
         void updateVibration()
         {
@@ -1913,7 +1816,6 @@ namespace ps2_host_input
     void sample()
     {
         ps2_host_gamepads::update();
-        updateChordGate(); // right after the controllers are read: Back/Start never reach the game a frame early
         updateVibration();
         sampleMouse();
         updateAccessKeys(); // sweep CR-9: also runs while minimized (the run loop's minimized branch calls sample())
@@ -1922,46 +1824,10 @@ namespace ps2_host_input
         const uint32_t players = 2u + ((taps & 1u) ? 3u : 0u) + ((taps & 2u) ? 3u : 0u);
         std::array<PadInputState, kMaxPlayers> state{};
         const bool blocked = g_blocked.load(std::memory_order_relaxed);
-        const bool overlay = g_overlayOpen.load(std::memory_order_relaxed);
-        const auto now = std::chrono::steady_clock::now();
-        g_holdMask &= (1u << players) - 1u; // players without a (port, slot) are never read, so never released
-        if (g_holdMask != 0u && now >= g_holdUntil)
-        {
-            std::cerr << "[controls] input hold: 2 s cap reached (mask 0x" << std::hex << g_holdMask << std::dec << ")" << std::endl;
-            g_holdMask = 0u;
-        }
         for (uint32_t player = 0; player < players; ++player)
         {
-            float rawStick = 0.0f;
-            state[player] = readPort(player, &rawStick);
-            if (player == 0u)
-            {
-                // Self-test buttons (KAMITE_CONTROLS_SELFTEST "press:"): through the same idle and hold rules as a key.
-                if (const uint16_t test = g_testButtons.load(std::memory_order_relaxed); test != 0u)
-                {
-                    state[0].connected = true;
-                    state[0].buttons |= test;
-                    for (const auto &[pressure, button] : kPressureButtons)
-                        if ((test & button) != 0u)
-                            state[0].pressure[static_cast<size_t>(pressure)] = 0xFFu;
-                }
-            }
-            bool idleIt = blocked || overlay;
-            // After the Controls screen closes, each player stays idle until its own buttons and sticks are released,
-            // so the key or button that closed it (or one held while it was open) does not reach the game.
-            if (!idleIt && (g_holdMask & (1u << player)) != 0u)
-            {
-                if (inputReleased(state[player], rawStick, padConfigs()[player]))
-                {
-                    g_holdMask &= ~(1u << player);
-                    if (player == 0u)
-                        std::cerr << "[controls] input hold released for player 1 after "
-                                  << std::chrono::duration_cast<std::chrono::milliseconds>(now - g_holdStart).count() << " ms" << std::endl;
-                }
-                else
-                    idleIt = true;
-            }
-            if (idleIt)
+            state[player] = readPort(player);
+            if (blocked)
             {
                 PadInputState idle;
                 idle.connected = state[player].connected;
@@ -2025,58 +1891,11 @@ namespace ps2_host_input
         g_menuMouse.store(menu, std::memory_order_relaxed);
     }
 
-    // ---- Controls screen support (window thread) --------------------------------------------------------------------
-    void setOverlayOpen(bool open)
-    {
-        const bool was = g_overlayOpen.exchange(open, std::memory_order_relaxed);
-        const auto now = std::chrono::steady_clock::now();
-        if (open)
-            g_holdMask = 0u;
-        else if (was)
-        {
-            g_holdMask = (1u << kMaxPlayers) - 1u;
-            g_holdStart = now;
-            g_holdUntil = now + std::chrono::seconds(2);
-        }
-    }
-
-    bool overlayOpen()
-    {
-        return g_overlayOpen.load(std::memory_order_relaxed);
-    }
-
-    bool inputHeld(uint32_t player)
-    {
-        return player < kMaxPlayers && (g_holdMask & (1u << player)) != 0u;
-    }
-
-    void setChordGate(bool enabled)
-    {
-        g_chordGateEnabled.store(enabled, std::memory_order_relaxed);
-    }
-
     void restoreShortcutKeys()
     {
         restoreAccessKeysFinal(); // sample() never clears them again
     }
 
-    void setTestButtons(uint16_t buttons)
-    {
-        g_testButtons.store(buttons, std::memory_order_relaxed);
-    }
-
-    void setTestGateButtons(bool back, bool start)
-    {
-        g_testGateButtons.store(static_cast<uint8_t>((back ? 1u : 0u) | (start ? 2u : 0u)), std::memory_order_relaxed);
-    }
-
-    PadInputState sampledState(uint32_t player)
-    {
-        if (player >= kMaxPlayers)
-            return {};
-        std::lock_guard<std::mutex> lock(g_mutex);
-        return g_state[player];
-    }
 
     void setControlsFile(const std::string &path, const std::vector<std::pair<std::string, std::string>> &legacy)
     {

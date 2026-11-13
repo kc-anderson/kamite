@@ -423,8 +423,7 @@ namespace kamite::modern
             }
             ui->text_disabled("The buttons the game shows for a controller; keys and mouse always show keys. Redrawn at once.");
             ui->separator_text("Bindings");
-            ui->text_disabled("The game's buttons: F1 (or Back + Start on a controller) opens the Controls screen; the "
-                              "launcher's Controls tab edits the same controls.ini.");
+            ui->text_disabled("The game's buttons: the launcher's Controls tab edits controls.ini.");
             ui->spacing();
             hotkeys::drawSection(ui);
         }

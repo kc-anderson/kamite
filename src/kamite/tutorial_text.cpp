@@ -184,14 +184,15 @@ namespace kamite::tutorial_text
             add(out, "/");
             icon(kLeftStick);
             add(out, "/ D-pad to cycle\nPress");
+            // The OK buttons by their place on the pad (menu_buttons.h "Pinned menus").
             if (style == menu_buttons::Style::Classic)
             {
-                out.insert(out.end(), {kScale, kBig, kCross, kCircle, kScale, kNormal});
+                out.insert(out.end(), {kScale, kBig, menu_buttons::placeIcon(kCross), menu_buttons::placeIcon(kCircle), kScale, kNormal});
                 add(out, "to execute technique");
             }
             else
             {
-                icon(style == menu_buttons::Style::Japanese ? kCircle : kCross);
+                icon(menu_buttons::placeIcon(style == menu_buttons::Style::Japanese ? kCircle : kCross));
                 add(out, "to execute technique");
             }
             out.insert(out.end(), {kClose, kEnd});

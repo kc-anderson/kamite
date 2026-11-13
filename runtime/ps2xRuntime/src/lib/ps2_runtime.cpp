@@ -6,7 +6,6 @@
 #include "runtime/ps2_game_menu.h"
 #include "runtime/ps2_hotkeys.h"
 #include "runtime/ps2_time_control.h"
-#include "runtime/ps2_controls_screen.h"
 #include "runtime/ps2_display_options.h"
 #include "ps2_log.h"
 #include "ps2_stubs.h"
@@ -3375,7 +3374,6 @@ void PS2Runtime::run()
                 DrawText(stateText.c_str(), 24, 20, fontSize, Fade(RAYWHITE, stateAlpha));
             }
         }
-        ps2x::controls::draw(); // F1 Controls screen: host back buffer only, never the GS
         if (!screenshotFields.empty() && eeScheduler().currentVSyncTick() >= screenshotFields.back())
         {
             if (const char *directory = std::getenv("PS2X_SCREENSHOT_DIR"))
@@ -3421,12 +3419,8 @@ void PS2Runtime::run()
             lastSource = source;
             lastSwap = now;
         }
-        // F1 / Back+Start: the Controls screen. Before sample() so the press that opens it already gives idle pads;
-        // while it is open the runtime's F-key shortcuts below are off (F5 is its "reset" key, F9 would load a state).
-        ps2x::controls::hostTick(!GSPcsx2Backend::Active());
-        const bool controlsOpen = ps2x::controls::isOpen();
         // The shortcuts are off while the F2 menu waits for a key to bind (the key pressed is the binding, not a command).
-        const bool shortcutsOff = controlsOpen || ps2x::menu::capturing();
+        const bool shortcutsOff = ps2x::menu::capturing();
 #if !defined(PLATFORM_VITA)
         const bool fullscreenKey = !shortcutsOff && ps2x::hotkeys::pressed(ps2x::hotkeys::Action::Fullscreen);
         const bool fullscreenAsked = ps2x::hotkeys::take(ps2x::hotkeys::Action::Fullscreen); // the F2 menu's button
@@ -3479,8 +3473,7 @@ void PS2Runtime::run()
         using ps2x::hotkeys::Action;
         if (!shortcutsOff && ps2x::hotkeys::pressed(Action::ReloadPnach))
             ps2x::pnach::requestReload(); // reload the enabled .pnach files
-        if (!controlsOpen)
-            ps2x::menu::hostTick();       // the in-game menu (F2)
+        ps2x::menu::hostTick(); // the in-game menu (F2)
         if (!shortcutsOff && ps2x::hotkeys::pressed(Action::SaveState))
             ps2x::savestate::requestQuickSave();
         if (!shortcutsOff && ps2x::hotkeys::pressed(Action::LoadState))
@@ -3492,7 +3485,7 @@ void PS2Runtime::run()
         }
         else if (const int fpsKey = ps2x::hotkeys::binding(Action::FpsOverlay).key; fpsKey != 0 && IsKeyPressed(fpsKey))
             std::fprintf(stderr, "[F3] the FPS overlay key was pressed but not taken (%s)\n", // temporary, as above
-                         shortcutsOff ? "shortcuts off: a key capture or the Controls screen" : "Shift / Ctrl held");
+                         shortcutsOff ? "shortcuts off: a key capture" : "Shift / Ctrl held");
         // Slow motion, pause, frame step (ps2_time_control.h; the F2 menu's Debug tab has the same).
         if (!shortcutsOff && ps2x::hotkeys::pressed(Action::SlowMotion))
         {
@@ -3557,7 +3550,6 @@ void PS2Runtime::run()
     }
 
     // Window closed or run stopped: the Controls screen closes and unsaved edits are written (main ends in _Exit).
-    ps2x::controls::shutdown();
     requestStop();
     if (gameThread.joinable())
     {
