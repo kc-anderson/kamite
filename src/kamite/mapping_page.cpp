@@ -21,18 +21,19 @@ namespace kamite::mapping_page
         struct Words
         {
             const char *line[2];
+            bool wrapped; // the second line continues the first (one function, no underline between)
         };
         constexpr Words kActions[kRemappable] = {
-            {{"ATTACK", "THROW ITEM"}},   // cross
-            {{"ACTION BUTTON", nullptr}}, // circle
-            {{"COMBO", nullptr}},         // square
-            {{"ATTACK", nullptr}},        // triangle
-            {{"180\xC2\xB0 TURN", nullptr}},
-            {{"OPEN", "ROULETTE WHEEL"}},
-            {{"TAUNT", nullptr}},
-            {{"UNLEASH", "THE GODHAND"}},
-            {{"DASH", nullptr}},          // L3: with Click-Stick Dash
-            {{"BRAWL / FREECAM", nullptr}}, // R3: with Modern
+            {{"ATTACK", "THROW ITEM"}, false},   // cross: two functions
+            {{"ACTION BUTTON", nullptr}, false}, // circle
+            {{"COMBO", nullptr}, false},         // square
+            {{"ATTACK", nullptr}, false},        // triangle
+            {{"180\xC2\xB0 TURN", nullptr}, false},
+            {{"OPEN", "ROULETTE WHEEL"}, true},
+            {{"TAUNT", nullptr}, false},
+            {{"UNLEASH", "THE GODHAND"}, true},
+            {{"DASH", nullptr}, false},          // L3: with Click-Stick Dash
+            {{"BRAWL / FREECAM", nullptr}, false}, // R3: with Modern
         };
         constexpr const char *kEmpty = "\xE2\x80\x94"; // an em dash: nothing on this button
 
@@ -248,9 +249,13 @@ namespace kamite::mapping_page
                     line.vy = p.viaY / art.height;
                 }
                 line.right = side == 1;
-                const auto add = [&](const char *text) {
-                    if (text && line.count < 3)
-                        line.text[line.count++] = text;
+                // A line; `end`: it ends a function (an underline under it).
+                const auto add = [&](const char *text, bool end) {
+                    if (!text || line.count >= 4)
+                        return;
+                    if (end)
+                        line.ends = static_cast<uint8_t>(line.ends | (1u << line.count));
+                    line.text[line.count++] = text;
                 };
                 if (place < kRemappable)
                 {
@@ -258,32 +263,33 @@ namespace kamite::mapping_page
                     const bool shown = input < kRemappable && !(input == L3 && !options.clickStickDash) && !(input == R3 && !options.modern);
                     if (shown)
                     {
-                        add(kActions[input].line[0]);
-                        add(kActions[input].line[1]);
+                        const Words &w = kActions[input];
+                        add(w.line[0], !w.wrapped || !w.line[1]);
+                        add(w.line[1], true);
                     }
                     else
-                        add(kEmpty);
+                        add(kEmpty, true);
                     if (const char *word = menuWord(place))
-                        add(word);
+                        add(word, true);
                     if (!state.hot[place].empty())
                         line.hot = d.keep("HOT: " + state.hot[place]);
                 }
                 else if (place == Start)
-                    add("MENU");
+                    add("MENU", true);
                 else if (place == LStick)
-                    add("MOVE");
+                    add("MOVE", true);
                 else if (place == RStick)
                 {
                     if (options.modern)
                     {
-                        add("EVADE (BRAWLING)");
-                        add("CAMERA (FREECAM)");
+                        add("EVADE (BRAWLING)", true);
+                        add("CAMERA (FREECAM)", true);
                     }
                     else
-                        add("EVADE");
+                        add("EVADE", true);
                 }
                 else if (place == DPad && options.presets)
-                    add("STYLE SWITCH");
+                    add("STYLE SWITCH", true);
                 line.fixed = place >= kRemappable;
                 if (line.count == 0)
                     continue; // nothing in play (Select; the d-pad without Moveset Presets): no line, as the original
@@ -313,7 +319,9 @@ namespace kamite::mapping_page
             for (size_t i = 0; i < d.places.size(); ++i)
                 if (d.places[i] == cursor)
                     d.view.cursor = static_cast<int>(i);
-        d.view.notice = state.readOnly ? kReadOnlyNotice : "";
+        // The read-only layout's help: the page's own reset key is the left face button (X on Xbox).
+        const char *west = setFolder == "ps3" ? "Square" : setFolder == "switch" ? "Y" : "X";
+        d.view.notice = state.readOnly ? d.keep(std::string(kReadOnlyNotice) + "\nChange it there or press " + west + " to reset.") : "";
     }
 
     uint8_t firstLine(const PageData &d)

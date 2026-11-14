@@ -101,5 +101,8 @@ namespace kamite::mapping_page
     // The first remappable line (top of the left column).
     uint8_t firstLine(const PageData &d);
 
-    constexpr const char *kReadOnlyNotice = "This layout was set in the launcher. Change it there, or press Reset.";
+    // The read-only layout's help (K): "This layout was set in the launcher." / "Change it there or press X to reset."
+    // (X: the left face button's name in the prompt set); after one press (stage 3) the second line reads
+    // "Press X again to confirm and reset."
+    constexpr const char *kReadOnlyNotice = "This layout was set in the launcher.";
 }

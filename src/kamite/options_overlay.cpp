@@ -152,20 +152,23 @@ namespace kamite::options_overlay
         // pad's picture kMapPadHeight lines tall (at most kMapPadShare of the text area wide) centred at kMapPadY, as
         // much of the page as the original's. A column either side: every panel's inner end kMapKnee past the pad's
         // outline (the lines turn there: a straight edge), kMapPanel units wide (kMapEdge in from the text area's
-        // edges at most). The right column's rows stacked evenly over kMapTop..kMapBottom (one or two lines kMapRow,
-        // three kMapRow3, a fourth kMapRowMore more), kMapRowGap..kMapRowGapMax apart; the left column's rows on the
-        // right column's heights (their underscores level), each by its mirror (L2 by R2 ...) or its button, below the
-        // title (kMapTitleClear).
+        // edges at most). The right column's rows stacked evenly over kMapTop..kMapBottom (each as tall as its label
+        // needs, at least kMapRow), kMapRowGap..kMapRowGapMax apart, all squeezed together when they do not fit; the
+        // left column's rows on the right column's heights (their underscores level), each by its mirror (L2 by R2 ...)
+        // or its button, below the title (kMapTitleClear).
         constexpr float kMapTitleX = 20.0f, kMapTitleScale = 0.8f, kMapTitleClear = 62.0f;
         constexpr float kMapPadY = 230.0f, kMapPadHeight = 190.0f, kMapPadShare = 0.46f;
         constexpr float kMapKnee = 4.0f, kMapPanel = 160.0f, kMapEdge = 10.0f;
-        constexpr float kMapTop = 44.0f, kMapBottom = 358.0f, kMapRow = 29.0f, kMapRow3 = 46.0f, kMapRowMore = 14.0f;
-        constexpr float kMapRowGap = 4.0f, kMapRowGapMax = 12.0f;
-        // Text: one line at kMapCap, centred up and down in its row; more at kMapCapN, kMapPitch apart (a HOT line at
+        constexpr float kMapTop = 40.0f, kMapBottom = 362.0f, kMapRow = 29.0f, kMapRowGap = 4.0f, kMapRowGapMax = 12.0f;
+        // Text, measured from the original's cross row (ATTACK / THROW ITEM / CONFIRM): every line's underline touches
+        // its letters' stroke (baseline to the line's centre: kMapAbove for a thin divider, kMapAboveLast for the
+        // thicker underscore, so both look the same), the next function's letters kMapBelow under it (letter tops); a
+        // wrapped line follows kMapWrap below the letters above it; kMapRowTop over the top letters. One line at kMapCap, more at kMapCapN (a HOT line at
         // kMapHotCap). All left-aligned in a column after the button's icon (kMapIcon lines square, at the panel's left;
         // the pack's buttons fill about 84 % of theirs), kMapTextGap after it, kMapTextMargin short of the panel's end.
         // The letters: the list's shape, tracked out kMapTracking of the cap (the original spreads its words).
-        constexpr float kMapCap = 15.5f, kMapCapN = 11.5f, kMapPitch = 13.0f, kMapHotCap = 9.5f;
+        constexpr float kMapCap = 15.5f, kMapCapN = 11.5f, kMapHotCap = 9.5f;
+        constexpr float kMapAbove = 2.2f, kMapAboveLast = 2.7f, kMapBelow = 3.8f, kMapWrap = 3.5f, kMapRowTop = 2.5f;
         constexpr float kMapIcon = 25.0f, kMapTextGap = 4.0f, kMapTextMargin = 6.0f, kMapTracking = 0.13f;
         // The lines: grungy brush strokes laid along them (leader.png tapers to a point at the button; underscore.png
         // runs along the panel's bottom), kMapLine lines thick (the stroke's core about half of it); a label's inner
@@ -710,10 +713,43 @@ namespace kamite::options_overlay
                     int line = -1;
                     float top = 0.0f, bottom = 0.0f;
                 };
-                const auto height = [&](const MappingLine &l) {
-                    const int n = std::max(l.count, 1) + (*l.hot ? 1 : 0);
-                    return n <= 2 ? kMapRow : kMapRow3 + kMapRowMore * static_cast<float>(n - 3);
+                // A label's shape at full size, from the row's bottom (its underscore) up: each line's baseline and cap,
+                // the underline under each line that ends a function (the last one's is the underscore), the height.
+                struct Shape
+                {
+                    int n = 0;
+                    float base[5] = {}, cap[5] = {}, under[5] = {};
+                    bool divider[5] = {};
+                    float height = 0.0f;
                 };
+                const auto shapeOf = [&](const MappingLine &l) {
+                    Shape t;
+                    t.n = std::min(std::max(l.count, 1) + (*l.hot ? 1 : 0), 5);
+                    const bool single = t.n == 1;
+                    float top = 0.0f, base = 0.0f;
+                    for (int i = t.n - 1; i >= 0; --i)
+                    {
+                        const bool hot = *l.hot && i == t.n - 1;
+                        const float cap = hot ? kMapHotCap : single ? kMapCap : kMapCapN;
+                        const bool ends = hot || i == t.n - 1 || ((l.ends >> i) & 1u) != 0u || (*l.hot && i == t.n - 2);
+                        if (i == t.n - 1)
+                            base = -kMapAboveLast;
+                        else if (ends)
+                        {
+                            t.divider[i] = true;
+                            t.under[i] = top - kMapBelow;
+                            base = t.under[i] - kMapAbove;
+                        }
+                        else
+                            base = top - kMapWrap;
+                        t.base[i] = base;
+                        t.cap[i] = cap;
+                        top = base - cap;
+                    }
+                    t.height = std::max(kMapRow, -top + kMapRowTop);
+                    return t;
+                };
+                const auto height = [&](const MappingLine &l) { return shapeOf(l).height; };
                 std::vector<Row> right, left;
                 for (int i = 0; i < m.lineCount; ++i)
                     (m.lines[i].right ? right : left).push_back(Row{i});
@@ -799,34 +835,14 @@ namespace kamite::options_overlay
                 };
                 // The panels: the wash opaque at the outer end, nothing at the pad (mirrored on the right).
                 each([&](const Row &r, bool side) {
-                    const MappingLine &l = m.lines[r.line];
-                    uint32_t tint = r.line == m.cursor ? kMapPanelOn : kMapPanelTint;
-                    if (l.fixed)
-                        tint = (tint & 0x00FFFFFFu) | (static_cast<uint32_t>(static_cast<float>(tint >> 24) * kMapFixedAlpha) << 24);
-                    picture(m.panel, side ? outerR : outerL, r.top, side ? kneeR : kneeL, r.bottom, tint);
+                    if (!m.lines[r.line].fixed) // a fixed line has none (K: it reads as inactive)
+                        picture(m.panel, side ? outerR : outerL, r.top, side ? kneeR : kneeL, r.bottom,
+                                r.line == m.cursor ? kMapPanelOn : kMapPanelTint);
                 });
                 // The pad in its flames.
                 const float margin = m.flamesMargin * padH, marginU = margin * kLinesToUnits;
                 picture(m.flames, padL - marginU, padT - margin, padR + marginU, padT + padH + margin, rgba(255, 255, 255));
                 picture(m.pad, padL, padT, padR, padT + padH, rgba(255, 255, 255));
-                // Text lines' baselines and caps: one line centred up and down; more from the top, kMapPitch apart.
-                struct Lines
-                {
-                    float base[4];
-                    float cap;
-                    int n;
-                };
-                const auto layout = [&](const Row &r, const MappingLine &l) {
-                    Lines t{};
-                    t.n = std::max(l.count, 1) + (*l.hot ? 1 : 0);
-                    const float s = (r.bottom - r.top) / height(l);
-                    t.cap = (t.n == 1 ? kMapCap : kMapCapN) * s;
-                    const float pitch = kMapPitch * s, block = t.cap + pitch * static_cast<float>(t.n - 1);
-                    const float first = 0.5f * (r.top + r.bottom - block) + t.cap - 0.5f * s; // a hair up, off the underscore
-                    for (int i = 0; i < t.n && i < 4; ++i)
-                        t.base[i] = first + pitch * static_cast<float>(i);
-                    return t;
-                };
                 // The lines: from the button (tapering to it) up or down to the panel's corner by the pad, then along the
                 // panel's bottom; each upper text line its own thin, faint underscore.
                 each([&](const Row &r, bool side) {
@@ -849,40 +865,41 @@ namespace kamite::options_overlay
                         stroke(under, knee, r.bottom, tx, ty, kMapLine, tint);
                     const float back = side ? -1.5f : 1.5f; // the underscore starts under the leader's end
                     stroke(under, knee + back, r.bottom, outer, r.bottom, kMapLine, tint);
-                    const Lines t = layout(r, l);
-                    const float textX = side ? knee + 1.0f + kMapIcon * kLinesToUnits + kMapTextGap
-                                             : outer + 1.0f + kMapIcon * kLinesToUnits + kMapTextGap;
+                    const Shape t = shapeOf(l);
+                    const float s = (r.bottom - r.top) / t.height;
+                    const float textX = (side ? knee : outer) + 1.0f + kMapIcon * kLinesToUnits + kMapTextGap;
+                    const uint32_t faint = rgba(255, 255, 255, static_cast<uint32_t>(255.0f * alpha * kMapSubAlpha));
                     for (int i = 0; i + 1 < t.n; ++i)
-                    {
-                        const float uy = t.base[i] + 0.5f * (kMapPitch - t.cap) + 0.5f;
-                        const uint32_t faint = rgba(255, 255, 255, static_cast<uint32_t>(255.0f * alpha * kMapSubAlpha));
-                        if (side)
-                            stroke(under, textX - 2.0f, uy, outer, uy, kMapSubLine, faint);
-                        else
-                            stroke(under, knee, uy, outer, uy, kMapSubLine, faint);
-                    }
+                        if (t.divider[i])
+                        {
+                            const float uy = r.bottom + t.under[i] * s;
+                            if (side)
+                                stroke(under, textX - 2.0f, uy, outer, uy, kMapSubLine, faint);
+                            else
+                                stroke(under, knee, uy, outer, uy, kMapSubLine, faint);
+                        }
                 });
-                // The icons (at each label's left) and the labels, left-aligned in a column.
+                // The icons (at each label's left, centred on its letters) and the labels, left-aligned in a column.
                 each([&](const Row &r, bool side) {
                     const MappingLine &l = m.lines[r.line];
                     const bool on = r.line == m.cursor;
                     const float knee = side ? kneeR : kneeL, outer = side ? outerR : outerL;
                     const float left = side ? knee : outer, right = side ? outer : knee;
-                    const float s = (r.bottom - r.top) / height(l), icon = std::min(kMapIcon * s, r.bottom - r.top - 2.0f);
-                    const float mid = 0.5f * (r.top + r.bottom) - 0.5f * s;
+                    const Shape t = shapeOf(l);
+                    const float s = (r.bottom - r.top) / t.height;
+                    const float lettersTop = r.bottom + (t.base[0] - t.cap[0]) * s, lettersBottom = r.bottom + t.base[t.n - 1] * s;
+                    const float icon = std::min(kMapIcon * s, r.bottom - r.top - 2.0f), mid = 0.5f * (lettersTop + lettersBottom);
                     picture(l.icon, left + 1.0f, mid - 0.5f * icon, left + 1.0f + icon * kLinesToUnits, mid + 0.5f * icon,
                             rgba(255, 255, 255, l.fixed ? static_cast<uint32_t>(255.0f * 0.85f) : 255u));
                     const float x0 = left + 1.0f + kMapIcon * kLinesToUnits + kMapTextGap, room = std::max(right - kMapTextMargin - x0, 8.0f);
-                    const Lines t = layout(r, l);
                     const uint32_t fill = on ? kLabelOn : l.fixed ? kMapFixedText : kMapText, edge = on ? kLabelOnStroke : kMapStroke;
-                    for (int i = 0; i < l.count; ++i)
-                        text(l.text[i], std::strlen(l.text[i]), labelFont, x0, t.base[i], t.cap, kNewLabel.scaleX, kMapTracking * t.cap,
-                             fill, edge, room);
-                    if (*l.hot)
+                    for (int i = 0; i < t.n; ++i)
                     {
-                        const float cap = kMapHotCap * s;
-                        text(l.hot, std::strlen(l.hot), labelFont, x0, t.base[std::min(l.count, 3)], cap, kNewLabel.scaleX,
-                             kMapTracking * cap, kLabel, kMapStroke, room);
+                        const bool hot = *l.hot && i == t.n - 1;
+                        const char *line = hot ? l.hot : l.text[i];
+                        const float cap = t.cap[i] * s;
+                        text(line, std::strlen(line), labelFont, x0, r.bottom + t.base[i] * s, cap, kNewLabel.scaleX, kMapTracking * cap,
+                             hot ? kLabel : fill, hot ? kMapStroke : edge, room);
                     }
                 });
             }

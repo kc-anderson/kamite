@@ -61,9 +61,13 @@ namespace kamite::options_overlay
         bool fixed = false;         // not remappable (Start, the sticks, the d-pad): drawn muted
         int mirror = -1;            // left column: the right-hand line it lines up with (L2 with R2 ...), -1 none
         const char *icon = "";      // the button's prompt image
-        const char *text[3] = {"", "", ""}; // the label's lines: the action's, then the menu's word
+        // The label's lines: the action's, then the menu's word. A line in `ends` (bit i) ends a function, so an
+        // underline runs under it (the original: ATTACK / THROW ITEM / CONFIRM each underlined, UNLEASH / THE GODHAND one
+        // wrapped phrase); the last line's is the panel's underscore.
+        const char *text[4] = {"", "", "", ""};
         int count = 0;
-        const char *hot = "";       // "HOT: Save state": a hotkey on this button (locked)
+        uint8_t ends = 0;
+        const char *hot = "";       // "HOT: Save state": a hotkey on this button (locked), a function of its own
     };
     struct MappingView
     {
