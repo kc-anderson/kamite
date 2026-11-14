@@ -37,6 +37,9 @@ namespace kamite::mapping_page
             {{"BRAWL / FREECAM", nullptr}, false}, // R3: with Modern
         };
         constexpr const char *kEmpty = "\xE2\x80\x94"; // an em dash: nothing on this button
+        // The drum's short names (K, Nov 14: the shortest that is still clear; "THROW ITEM", not "THROW").
+        constexpr const char *kDrumNames[kRemappable] = {"ATTACK / THROW ITEM", "ACTION", "COMBO", "ATTACK", "180\xC2\xB0 TURN",
+                                                         "ROULETTE WHEEL", "TAUNT", "UNLEASH GODHAND", "DASH", "BRAWL / FREECAM"};
 
         // Xelu's pack per set (resources/prompts/xelu/<folder>), by place; the sticks are ours (no click arrow).
         struct SetFiles
@@ -190,11 +193,37 @@ namespace kamite::mapping_page
         return s;
     }
 
+    uint8_t placeOfInput(const State &state, uint8_t input)
+    {
+        for (uint8_t place = 0; place < kRemappable; ++place)
+            if (state.onPlace[place] == input)
+                return place;
+        return kNone;
+    }
+
+    std::vector<uint8_t> drumInputs(const State &state, uint8_t place, int &start)
+    {
+        std::vector<uint8_t> out;
+        start = 0;
+        const uint8_t own = place < kRemappable ? state.onPlace[place] : kNone;
+        for (uint8_t input = 0; input < kRemappable; ++input)
+        {
+            const uint8_t at = placeOfInput(state, input);
+            if (at == kNone || (at != place && !state.hot[at].empty()))
+                continue; // not on a button the page edits, or locked under a hotkey
+            if (input == own)
+                start = static_cast<int>(out.size());
+            out.push_back(input);
+        }
+        return out;
+    }
+
     void build(PageData &d, const PadArt &art, const std::string &artDir, const std::string &root, const std::string &setFolder,
-               const State &state, const Options &options, uint8_t cursor)
+               const State &state, const Options &options, uint8_t cursor, const Edit &edit)
     {
         d.text.clear();
         d.lines.clear();
+        d.drum.clear();
         d.places.clear();
         d.view = options_overlay::MappingView{};
         if (!art.ok)
@@ -314,9 +343,57 @@ namespace kamite::mapping_page
             for (size_t i = 0; i < d.places.size(); ++i)
                 if (d.places[i] == cursor)
                     d.view.cursor = static_cast<int>(i);
-        // The read-only layout's help: the page's own reset key is the left face button (X on Xbox).
+        // The help: the page's own reset key is the left face button (X on Xbox); the menus' confirm button by Menu
+        // Controls (Japanese: the right one; Classic and Western: the bottom one).
         const char *west = setFolder == "ps3" ? "Square" : setFolder == "switch" ? "Y" : "X";
-        d.view.notice = state.readOnly ? d.keep(std::string(kReadOnlyNotice) + "\nChange it there or press " + west + " to reset.") : "";
+        const bool confirmEast = options.menuStyle == 2;
+        const char *confirm = setFolder == "ps3" ? (confirmEast ? "Circle" : "Cross")
+                              : setFolder == "switch" ? (confirmEast ? "A" : "B")
+                                                      : (confirmEast ? "B" : "A");
+        const std::string again = std::string("Press ") + west + " again to confirm and reset.";
+        if (state.readOnly)
+            d.view.notice = d.keep(std::string(kReadOnlyNotice) + "\n" +
+                                   (edit.armed == Armed::Reset ? again : std::string("Change it there or press ") + west + " to reset."));
+        else if (edit.armed == Armed::Reset)
+            d.view.notice = d.keep(again);
+        else if (edit.armed == Armed::Clear)
+            d.view.notice = d.keep(std::string("Press ") + confirm + " again to clear the hotkey.");
+        else
+            d.view.notice = "";
+
+        // The drum over the cursor's line.
+        const bool onHot = cursor < kRemappable && !state.hot[cursor].empty();
+        if (edit.drum && !state.readOnly && d.view.cursor >= 0 && !onHot)
+        {
+            int start = 0;
+            for (const uint8_t input : drumInputs(state, cursor, start))
+            {
+                const uint8_t at = placeOfInput(state, input);
+                const bool shown = !(input == L3 && !options.clickStickDash) && !(input == R3 && !options.modern);
+                options_overlay::MappingDrumItem item;
+                item.icon = d.keep(icons + set.file[at] + ".png");
+                item.text = shown ? kDrumNames[input] : kEmpty;
+                d.drum.push_back(item);
+            }
+            d.view.drum = d.drum.data();
+            d.view.drumCount = static_cast<int>(d.drum.size());
+            d.view.drumPos = edit.pos;
+        }
+
+        // The hints (K, Nov 14): Reset on its own line above (always there, so it never moves), then confirm / cancel.
+        d.view.resetArt = d.keep(icons + set.file[West] + ".png");
+        if (d.view.drum)
+        {
+            d.view.resetWord = "";
+            d.view.confirmWord = kHintSwap;
+            d.view.cancelWord = kHintCancel;
+        }
+        else
+        {
+            d.view.resetWord = kHintReset;
+            d.view.confirmWord = state.readOnly ? "" : onHot ? kHintClear : kHintSelect;
+            d.view.cancelWord = kHintBack;
+        }
     }
 
     uint8_t firstLine(const PageData &d)

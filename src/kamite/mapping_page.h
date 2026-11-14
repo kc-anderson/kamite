@@ -77,6 +77,29 @@ namespace kamite::mapping_page
     };
     State defaultState();
 
+    // Stage 3, editing (K, Nov 14): the drum on A over a line lists the play actions its button can take (every
+    // remappable PS2 button's but those on a HOT button, in prompts::Input order), each with the icon of the button that
+    // has it now; picking one swaps the two buttons' actions. Reset (the left face button) and Clear (A on a HOT line)
+    // take a second press; any other press disarms them.
+    enum class Armed : uint8_t
+    {
+        None,
+        Reset,
+        Clear
+    };
+    struct Edit
+    {
+        bool drum = false;
+        int target = 0;   // the drum's item (any number: taken round the item count)
+        float pos = 0.0f; // where it has turned to (eases toward target)
+        Armed armed = Armed::None;
+    };
+    // The PS2 buttons (prompts::Input) the drum on `place` lists, in order; `start`: the item it opens on (the place's
+    // own action).
+    std::vector<uint8_t> drumInputs(const State &state, uint8_t place, int &start);
+    // The place that has a PS2 button now (kNone: none).
+    uint8_t placeOfInput(const State &state, uint8_t input);
+
     // The page for the overlay; the strings and lines live here.
     struct PageData
     {
@@ -84,6 +107,7 @@ namespace kamite::mapping_page
         std::vector<options_overlay::MappingLine> lines;
         std::vector<uint8_t> places; // each line's place
         std::vector<float> silhouette;
+        std::vector<options_overlay::MappingDrumItem> drum;
         options_overlay::MappingView view;
 
         const char *keep(std::string value)
@@ -95,7 +119,7 @@ namespace kamite::mapping_page
     // root: the folder resources/ is in (the exe's). setFolder: the prompt set's folder (prompt_hd). cursor: a place,
     // kNone for none.
     void build(PageData &d, const PadArt &art, const std::string &artDir, const std::string &root, const std::string &setFolder,
-               const State &state, const Options &options, uint8_t cursor);
+               const State &state, const Options &options, uint8_t cursor, const Edit &edit = {});
     // The cursor's next place among the remappable lines: up / down within its column, left / right across to the line
     // nearest its height. The same place when there is none that way.
     uint8_t move(const PageData &d, uint8_t cursor, int dx, int dy);
@@ -106,4 +130,6 @@ namespace kamite::mapping_page
     // (X: the left face button's name in the prompt set); after one press (stage 3) the second line reads
     // "Press X again to confirm and reset."
     constexpr const char *kReadOnlyNotice = "This layout was set in the launcher.";
+    constexpr const char *kHintReset = "Reset", *kHintSelect = "Select", *kHintClear = "Clear", *kHintBack = "Back",
+                         *kHintSwap = "Swap", *kHintCancel = "Cancel";
 }

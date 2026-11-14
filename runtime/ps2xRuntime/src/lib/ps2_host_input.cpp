@@ -609,7 +609,8 @@ namespace ps2_host_input
                        std::equal(std::begin(x.compact), std::end(x.compact), std::begin(y.compact));
             };
             return std::equal(a.keys.begin(), a.keys.end(), b.keys.begin(), same) &&
-                   std::equal(a.controller.begin(), a.controller.end(), b.controller.begin(), same);
+                   std::equal(a.controller.begin(), a.controller.end(), b.controller.begin(), same) &&
+                   a.controllerCount == b.controllerCount;
         }
 
         // Player 1's labels from the live table (the end of rebuildConfigs); a new generation only when one changed.
@@ -634,6 +635,10 @@ namespace ps2_host_input
                 const Bindings &list = index < kPadButtonKeys.size() ? config.buttons[index] : config.sticks[index - kPadButtonKeys.size()];
                 for (const Chord &chord : list)
                 {
+                    if (std::any_of(chord.begin(), chord.end(), [](const Element &e) {
+                            return e.source != Source::Keyboard && e.source != Source::Pointer; }) &&
+                        next.controllerCount[input] < 0xFFu)
+                        ++next.controllerCount[input];
                     if (chord.size() != 1u)
                         continue; // a chord ("a & b") is no prompt; the Controls screen keeps it apart too
                     const Element &element = chord.front();
@@ -1813,6 +1818,11 @@ namespace ps2_host_input
         g_fieldCounter.store(counter);
     }
 
+    namespace controls
+    {
+        void applyRequests(); // the queued edits (requestControllerSwap / Reset), window thread
+    }
+
     void sample()
     {
         ps2_host_gamepads::update();
@@ -1836,6 +1846,7 @@ namespace ps2_host_input
             else if (const PadFilter filter = g_padFilter.load(std::memory_order_acquire))
                 filter(player, state[player]);
         }
+        controls::applyRequests();
         pollControlsFile();
         std::lock_guard<std::mutex> lock(g_mutex);
         g_state = state;
@@ -2340,6 +2351,117 @@ namespace ps2_host_input
                 for (const std::string &binding : section.bindings[i])
                     text += std::string(bindingKeyName(i)) + "=" + binding + "\n";
             return text;
+        }
+
+        namespace
+        {
+            struct Request
+            {
+                bool reset = false;
+                uint32_t pad = 0;
+                uint8_t a = 0, b = 0;
+            };
+            std::mutex g_requestMutex;
+            std::vector<Request> g_requests;
+            std::atomic<bool> g_requested{false};
+
+            // A prompts::Input's binding key ("Cross" .. "RRight").
+            std::optional<size_t> inputKey(uint8_t input)
+            {
+                constexpr std::array<std::string_view, prompts::InputCount> kNames{
+                    "Cross", "Circle", "Square", "Triangle", "L1", "R1", "L2", "R2", "L3", "R3", "Start", "Select",
+                    "Up", "Down", "Left", "Right", "LUp", "LDown", "LLeft", "LRight", "RUp", "RDown", "RLeft", "RRight"};
+                return input < kNames.size() ? bindingKeyIndex(kNames[input]) : std::nullopt;
+            }
+
+            // A list's controller bindings taken out; returns where the first one was (the end when none).
+            size_t takeController(std::vector<std::string> &list, std::vector<std::string> &taken)
+            {
+                size_t at = std::string::npos;
+                std::vector<std::string> rest;
+                for (std::string &binding : list)
+                {
+                    if (kindOf(binding) == Kind::Controller)
+                    {
+                        if (at == std::string::npos)
+                            at = rest.size();
+                        taken.push_back(std::move(binding));
+                    }
+                    else
+                        rest.push_back(std::move(binding));
+                }
+                list = std::move(rest);
+                return at == std::string::npos ? list.size() : at;
+            }
+        }
+
+        void requestControllerSwap(uint32_t pad, uint8_t inputA, uint8_t inputB)
+        {
+            std::lock_guard<std::mutex> lock(g_requestMutex);
+            g_requests.push_back(Request{false, pad, inputA, inputB});
+            g_requested.store(true, std::memory_order_release);
+        }
+
+        void requestControllerReset(uint32_t pad)
+        {
+            std::lock_guard<std::mutex> lock(g_requestMutex);
+            g_requests.push_back(Request{true, pad});
+            g_requested.store(true, std::memory_order_release);
+        }
+
+        // Window thread (sample()): the queued edits, applied and saved at once.
+        void applyRequests()
+        {
+            if (!g_requested.exchange(false, std::memory_order_acquire))
+                return;
+            std::vector<Request> requests;
+            {
+                std::lock_guard<std::mutex> lock(g_requestMutex);
+                requests.swap(g_requests);
+            }
+            bool changed = false;
+            for (const Request &r : requests)
+            {
+                if (r.pad >= kMaxPlayers)
+                    continue;
+                PadSection &section = g_model.pads[r.pad];
+                if (!section.present)
+                    section = defaultSection(r.pad);
+                if (r.reset)
+                {
+                    const PadSection defaults = defaultSection(r.pad);
+                    for (size_t i = 0; i < kBindingKeyCount; ++i)
+                    {
+                        std::vector<std::string> old, wanted;
+                        const size_t at = takeController(section.bindings[i], old);
+                        std::vector<std::string> fresh = defaults.bindings[i];
+                        takeController(fresh, wanted);
+                        section.bindings[i].insert(section.bindings[i].begin() + static_cast<std::ptrdiff_t>(at), wanted.begin(), wanted.end());
+                    }
+                    std::cerr << "[controls] player " << r.pad + 1u << "'s controller bindings back to the defaults" << std::endl;
+                }
+                else
+                {
+                    const auto ka = inputKey(r.a), kb = inputKey(r.b);
+                    if (!ka || !kb || *ka == *kb)
+                        continue;
+                    std::vector<std::string> fromA, fromB;
+                    const size_t atA = takeController(section.bindings[*ka], fromA);
+                    const size_t atB = takeController(section.bindings[*kb], fromB);
+                    section.bindings[*ka].insert(section.bindings[*ka].begin() + static_cast<std::ptrdiff_t>(atA), fromB.begin(), fromB.end());
+                    section.bindings[*kb].insert(section.bindings[*kb].begin() + static_cast<std::ptrdiff_t>(atB), fromA.begin(), fromA.end());
+                    std::cerr << "[controls] player " << r.pad + 1u << ": " << bindingKeyName(*ka) << " and " << bindingKeyName(*kb)
+                              << " swapped their controller bindings" << std::endl;
+                }
+                changed = true;
+            }
+            if (!changed)
+                return;
+            g_controlsDirty = true;
+            rebuildConfigs();
+            std::string message;
+            if (!save(message))
+                std::cerr << "[controls] " << message << std::endl;
         }
     }
 

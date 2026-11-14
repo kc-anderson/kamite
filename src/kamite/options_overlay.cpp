@@ -177,6 +177,17 @@ namespace kamite::options_overlay
         // runs along the panel's bottom), kMapLine lines thick (the stroke's core about half of it); a label's inner
         // lines kMapSubLine thick at kMapSubAlpha (K: thinner, fainter).
         constexpr float kMapLine = 6.0f, kMapSubLine = 3.6f, kMapSubAlpha = 0.55f;
+        // The drum (BUTTON MAPPING, A on a line): items kMapDrumPitch lines apart at full size, each step out
+        // kMapDrumShrink smaller and kMapDrumFade fainter, curving kMapDrumLean units toward the pad per step squared;
+        // shown to kMapDrumReach steps out. While it is open the other labels are at kMapDrumDim, those under its items
+        // at kMapDrumUnder (K: less noise).
+        constexpr float kMapDrumPitch = 27.0f, kMapDrumShrink = 0.17f, kMapDrumFade = 0.3f, kMapDrumLean = 7.0f;
+        constexpr float kMapDrumReach = 2.6f, kMapDrumDim = 0.5f, kMapDrumUnder = 0.08f;
+        // A soft dark band behind the drum (over the column, kMapDrumShadeSoft lines feathered), kMapDrumShade strong.
+        constexpr float kMapDrumShadeSoft = 7.0f;
+        constexpr uint32_t kMapDrumShade = rgba(0, 0, 0, 120);
+        // The hints' second line (Reset) this far above the first.
+        constexpr float kHintLineStep = 27.0f;
         // The panels' wash (panel.png: opaque at the outer end, nothing at the pad): the original's tan, 0.40 at the
         // outer end; a fixed line's panel, lines and text muted (K: tell the remappable ones apart).
         constexpr uint32_t kMapPanelTint = rgba(147, 115, 88, 102), kMapPanelOn = rgba(160, 125, 92, 150);
@@ -515,7 +526,7 @@ namespace kamite::options_overlay
 
             // One help-look line, from the right: the word ends at right (units) or, with right < 0, gap units before
             // the last text or image drawn.
-            void hintWord(const char *word, float right, float gap)
+            void hintWord(const char *word, float right, float gap, float y = kHintY)
             {
                 const size_t length = std::strlen(word);
                 if (length == 0u)
@@ -528,7 +539,7 @@ namespace kamite::options_overlay
                 item.fill = faded(kHelp);
                 item.stroke = 0u;
                 item.x = right < 0.0f ? Space::h(gap) : space.x(right);
-                item.y = Space::y(kHintY + 0.5f * kHelpCap);
+                item.y = Space::y(y + 0.5f * kHelpCap);
                 item.size = Space::y(kHelpCap);
                 item.scale_x = Space::scale(kHelpScaleX);
                 item.shadow = faded(kHelpShadow);
@@ -538,7 +549,7 @@ namespace kamite::options_overlay
             }
 
             // A button image gap units before the last text or image drawn.
-            void hintArt(const char *path, float gap)
+            void hintArt(const char *path, float gap, float y = kHintY)
             {
                 Pcsx2GsScreenItem item{};
                 item.kind = PCSX2GS_SCREEN_IMAGE;
@@ -547,25 +558,25 @@ namespace kamite::options_overlay
                 item.fill = faded(rgba(255, 255, 255));
                 item.x = Space::h(gap);
                 item.x1 = Space::y(kHintArt);
-                item.y = Space::y(kHintY - 0.5f * kHintArt);
-                item.y1 = Space::y(kHintY + 0.5f * kHintArt);
+                item.y = Space::y(y - 0.5f * kHintArt);
+                item.y1 = Space::y(y + 0.5f * kHintArt);
                 items.push_back(item);
             }
 
             // "[A] Confirm  [B] Cancel", laid out from the right end.
-            void hints(const Hint &confirm, const Hint &cancel)
+            void hints(const Hint &confirm, const Hint &cancel, float y = kHintY)
             {
                 float gap = -1.0f; // the first word: at the edge
                 for (const Hint *h : {&cancel, &confirm})
                 {
-                    if (!*h->word)
+                    if (!h->word || !*h->word)
                         continue;
-                    hintWord(h->word, gap < 0.0f ? space.area - kHintRight : -1.0f, gap);
+                    hintWord(h->word, gap < 0.0f ? space.area - kHintRight : -1.0f, gap, y);
                     float artGap = kHintArtGap;
                     for (int i = 1; i >= 0; --i) // drawn right to left: art[1] beside the word
                         if (h->art[i] && *h->art[i])
                         {
-                            hintArt(h->art[i], artGap);
+                            hintArt(h->art[i], artGap, y);
                             artGap = 0.0f;
                         }
                     gap = kHintGap;
@@ -879,10 +890,25 @@ namespace kamite::options_overlay
                                 stroke(under, knee, uy, outer, uy, kMapSubLine, faint);
                         }
                 });
+                // The drum's span (it covers the cursor's label): rows it passes over are drawn fainter.
+                const bool drum = m.drum && m.drumCount > 0 && m.cursor >= 0;
+                Row drumRow;
+                bool drumSide = false;
+                each([&](const Row &r, bool side) {
+                    if (r.line == m.cursor)
+                        drumRow = r, drumSide = side;
+                });
+                const float drumMid = 0.5f * (drumRow.top + drumRow.bottom);
+                const float drumHalf = kMapDrumPitch * std::min(kMapDrumReach, 0.5f * static_cast<float>(m.drumCount)) + 0.5f * kMapDrumPitch;
                 // The icons (at each label's left, centred on its letters) and the labels, left-aligned in a column.
                 each([&](const Row &r, bool side) {
                     const MappingLine &l = m.lines[r.line];
                     const bool on = r.line == m.cursor;
+                    if (drum && on)
+                        return; // the drum is drawn in its place
+                    const float keep = dim;
+                    if (drum)
+                        dim = keep * (side == drumSide && r.bottom > drumMid - drumHalf && r.top < drumMid + drumHalf ? kMapDrumUnder : kMapDrumDim);
                     const float knee = side ? kneeR : kneeL, outer = side ? outerR : outerL;
                     const float left = side ? knee : outer, right = side ? outer : knee;
                     const Shape t = shapeOf(l);
@@ -901,7 +927,58 @@ namespace kamite::options_overlay
                         text(line, std::strlen(line), labelFont, x0, r.bottom + t.base[i] * s, cap, kNewLabel.scaleX, kMapTracking * cap,
                              hot ? kLabel : fill, hot ? kMapStroke : edge, room);
                     }
+                    dim = keep;
                 });
+                if (!drum)
+                    return;
+                // The drum: each item where the turn puts it, the nearest ones last (on top).
+                const float knee = drumSide ? kneeR : kneeL, outer = drumSide ? outerR : outerL;
+                const float colL = drumSide ? knee : outer, colR = drumSide ? outer : knee;
+                const float inward = drumSide ? -1.0f : 1.0f; // toward the pad
+                const int n = m.drumCount;
+                {
+                    Pcsx2GsScreenItem shade{};
+                    shade.kind = PCSX2GS_SCREEN_RECT;
+                    shade.fill = faded(kMapDrumShade);
+                    shade.blur = Space::y(kMapDrumShadeSoft);
+                    shade.x = space.x(colL - 2.0f);
+                    shade.x1 = space.x(colR + 2.0f);
+                    shade.y = Space::y(drumMid - drumHalf);
+                    shade.y1 = Space::y(drumMid + drumHalf);
+                    items.push_back(shade);
+                }
+                std::vector<std::pair<float, int>> order;
+                for (int k = 0; k < n; ++k)
+                {
+                    float d = std::fmod(static_cast<float>(k) - m.drumPos, static_cast<float>(n));
+                    if (d < -0.5f * static_cast<float>(n))
+                        d += static_cast<float>(n);
+                    else if (d >= 0.5f * static_cast<float>(n))
+                        d -= static_cast<float>(n);
+                    if (std::fabs(d) <= kMapDrumReach)
+                        order.emplace_back(d, k);
+                }
+                std::sort(order.begin(), order.end(), [](const auto &a, const auto &b) { return std::fabs(a.first) > std::fabs(b.first); });
+                for (const auto &[d, k] : order)
+                {
+                    const float a = std::fabs(d);
+                    const float scale = 1.0f - kMapDrumShrink * a;
+                    const float alpha = std::clamp(1.0f - kMapDrumFade * a, 0.0f, 1.0f) * std::clamp((kMapDrumReach - a) / 0.6f, 0.0f, 1.0f);
+                    const float y = drumMid + kMapDrumPitch * d * (1.0f - 0.06f * a);
+                    const float lean = inward * kMapDrumLean * d * d;
+                    const bool hovered = a < 0.5f;
+                    const float cap = kMapCap * scale, icon = kMapIcon * scale;
+                    const float x0 = colL + 1.0f + lean;
+                    const float keep = dim;
+                    dim = keep * alpha;
+                    picture(m.drum[k].icon, x0, y - 0.5f * icon, x0 + icon * kLinesToUnits, y + 0.5f * icon, rgba(255, 255, 255));
+                    const float tx = x0 + icon * kLinesToUnits + kMapTextGap * scale;
+                    const char *line = m.drum[k].text;
+                    text(line, std::strlen(line), labelFont, tx, y + 0.5f * cap, cap, kNewLabel.scaleX, kMapTracking * cap,
+                         hovered ? kLabelOn : kMapText, hovered ? kLabelOnStroke : kMapStroke,
+                         std::max(colR + lean - kMapTextMargin - tx, 8.0f));
+                    dim = keep;
+                }
             }
         };
     }
@@ -938,7 +1015,14 @@ namespace kamite::options_overlay
                 b.titleAt(b.add(path.data(), path.size()), "CONTROLS", kMapTitleX, kMapTitleScale);
             }
             b.help(view.mapping->notice);
-            b.hints(view.confirmHint, view.cancelHint);
+            const MappingView &m = *view.mapping;
+            Hint confirm = view.confirmHint, cancel = view.cancelHint, reset;
+            confirm.word = m.confirmWord;
+            cancel.word = m.cancelWord;
+            reset.art[0] = m.resetArt;
+            reset.word = m.resetWord;
+            b.hints(confirm, cancel);
+            b.hints(reset, Hint{}, kHintY - kHintLineStep); // its own line above, right-aligned (K, Nov 14)
             return;
         }
         const bool split = view.aspect >= kSplitAspect;

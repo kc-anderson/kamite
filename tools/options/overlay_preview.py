@@ -3,7 +3,7 @@
 python tools/options/overlay_preview.py out.png [--size 1920x1080] [--title] [--cursor N] [--confirm N]
     [--page controls|display|interface|gameplay|sound] [--open] [--row N] [--scroll N] [--set Section.Key=Value ...]
     [--menu western|japanese|classic] [--prompts xbox|playstation|nintendo|steam|keys] [--switch FROM:DIR:T]
-    [--page mapping [--line PLACE] [--swap A:B ...] [--hot PLACE=NAME ...] [--readonly]]
+    [--page mapping [--line PLACE] [--swap A:B ...] [--hot PLACE=NAME ...] [--readonly] [--drum TURN] [--armed reset|clear]]
 
 Builds tools/options/overlay_preview.cpp (g++, the repo's ImGui) with the DLL's own drawing code cut from HostStubs.cpp,
 crops resources/options/wall.jpg to the size's shape and draws options_overlay.cpp's list over it. The pages are the
@@ -78,6 +78,8 @@ def main():
     ap.add_argument('--swap', action='append', default=[], help='mapping: A:B exchanges two buttons\' actions')
     ap.add_argument('--hot', action='append', default=[], help='mapping: PLACE=NAME, a hotkey on that button')
     ap.add_argument('--readonly', action='store_true', help='mapping: a layout set in the launcher')
+    ap.add_argument('--drum', default='', help='mapping: the drum open on --line, turned this far (0 = on its own action, 1.5 ...)')
+    ap.add_argument('--armed', choices=['', 'reset', 'clear'], default='', help='mapping: a second press waited for')
     ap.add_argument('--open', action='store_true', help='the cursor in the page')
     ap.add_argument('--row', type=int, default=1, help="the page's cursor row")
     ap.add_argument('--scroll', type=int, default=0)
@@ -129,7 +131,7 @@ def main():
             im = Image.open(os.path.join(ROOT, 'resources/prompts/xelu', folder, name)).convert('RGBA')
             open(os.path.join(icons, name) + '.rgba', 'wb').write(struct.pack('<II', *im.size) + im.tobytes())
         env['KAMITE_PREVIEW_MAPPING'] = '|'.join([work, os.path.join(art_dir, 'pad_%s.txt' % pad), folder, a.line,
-                                                  '1' if a.readonly else '0', ','.join(a.swap), ';'.join(a.hot)])
+                                                  '1' if a.readonly else '0', ','.join(a.swap), ';'.join(a.hot), a.drum, a.armed])
     subprocess.check_call([exe, raw_in, str(w), str(h), raw_out, '0' if a.title else '1', str(a.cursor), str(a.confirm),
                            os.path.join(fonts, 'ArchivoNarrow-SemiBold.ttf'),
                            os.path.join(fonts, 'DejaVuSans-Bold.ttf'), title] + bars[:2] +

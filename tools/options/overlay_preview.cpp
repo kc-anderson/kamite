@@ -178,8 +178,10 @@ int main(int argc, char **argv)
         v.titleDir = atoi(all.substr(a + 1, b - a - 1).c_str());
         v.titleT = static_cast<float>(atof(all.substr(b + 1).c_str()));
     }
-    // BUTTON MAPPING: KAMITE_PREVIEW_MAPPING="root|art|setFolder|cursor|readOnly|swaps|hots" (overlay_preview.py):
-    // swaps "south:west,..." exchange two places' PS2 buttons, hots "r3=Save state;...".
+    // BUTTON MAPPING: KAMITE_PREVIEW_MAPPING="root|art|setFolder|cursor|readOnly|swaps|hots|drum|armed"
+    // (overlay_preview.py): swaps "south:west,..." exchange two places' PS2 buttons, hots "r3=Save state;...", drum the
+    // open drum's turn ("" closed; items from the one it opens on: 1.5 = half-way from the next to the one after),
+    // armed "reset" / "clear".
     static kamite::mapping_page::PageData mapping;
     if (const char *spec = getenv("KAMITE_PREVIEW_MAPPING"))
     {
@@ -193,7 +195,7 @@ int main(int argc, char **argv)
                 break;
             at = bar + 1;
         }
-        f.resize(7);
+        f.resize(9);
         using namespace kamite::mapping_page;
         static PadArt art;
         std::string error;
@@ -228,7 +230,18 @@ int main(int argc, char **argv)
             at = semi == std::string::npos ? f[6].size() : semi + 1;
         }
         const std::string artDir = f[1].substr(0, f[1].find_last_of('/'));
-        build(mapping, art, artDir, f[0], f[2], state, optionsFrom(ini), f[3].empty() ? kNone : place(f[3]));
+        const uint8_t cursor = f[3].empty() ? kNone : place(f[3]);
+        Edit edit;
+        if (!f[7].empty() && cursor != kNone)
+        {
+            int start = 0;
+            drumInputs(state, cursor, start);
+            edit.drum = true;
+            edit.pos = static_cast<float>(start) + static_cast<float>(atof(f[7].c_str()));
+            edit.target = static_cast<int>(std::lround(edit.pos));
+        }
+        edit.armed = f[8] == "reset" ? Armed::Reset : f[8] == "clear" ? Armed::Clear : Armed::None;
+        build(mapping, art, artDir, f[0], f[2], state, optionsFrom(ini), cursor, edit);
         v.mapping = &mapping.view;
         v.prevHint = v.nextHint = Hint{};
     }

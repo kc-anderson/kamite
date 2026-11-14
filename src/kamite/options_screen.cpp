@@ -56,6 +56,7 @@
 #include "runtime/ps2_hotkeys.h"
 #include "kamite/widescreen.h"
 #include "ps2_runtime_macros.h"
+#include "ps2x/iop/iop_pad.h"
 #include "runtime/ee_scheduler.h"
 #include "runtime/gs/gs_pcsx2_backend.h"
 #include "runtime/ps2_game_menu.h"
@@ -95,7 +96,7 @@ namespace kamite::options_screen
         constexpr uint32_t kIdMove = 0x2AAA40u;    // cIDBase_move(layout)
         constexpr uint32_t kSePlay = 0x2CB8A0u;    // (0x5FEE00, 0, id, -1, -1, 0, 0): the menus' sound calls
         constexpr uint32_t kSeManager = 0x5FEE00u;
-        constexpr uint16_t kSeOk = 0x15Eu, kSeMove = 0x15Fu, kSeBack = 0x161u;
+        constexpr uint16_t kSeOk = 0x15Eu, kSeMove = 0x15Fu, kSeBack = 0x161u, kSeTick = 0x164u;
         constexpr uint32_t kCommand = game::GameWork::address(game::GameWork::kTrg);
         constexpr uint32_t kCommandRepeat = game::GameWork::address(game::GameWork::kRep);
         constexpr uint64_t kOk = 1ull << 28, kCancel = 1ull << 29, kStart = 1ull << 21;
@@ -593,6 +594,7 @@ namespace kamite::options_screen
             int pageScroll = 0;    // the first row shown
             bool inMapping = false; // CONTROLS > BUTTON MAPPING is open (B back to its row)
             uint8_t mapCursor = mapping_page::kNone; // its selected button (a place)
+            mapping_page::Edit mapEdit;             // its drum and the armed second presses
         };
         Screen g_screen[2];
         // The last L1 / R1 category switch, for the titles' slide (options_overlay View::titleDir): the row it left.
@@ -1117,6 +1119,7 @@ namespace kamite::options_screen
             for (size_t i = 0; i < settings::kSettingCount; ++i)
                 if (settings::kSettings[i].live)
                     apply(settings::kSettings[i]);
+            ps2_host_input::controls::requestControllerReset(0); // the button mapping too (K, Nov 13); keys stay
             KM_INFO(Game, "options screen: every setting back to its default");
         }
 
@@ -1186,6 +1189,8 @@ namespace kamite::options_screen
 
         // ---- CONTROLS > BUTTON MAPPING (mapping_page.h; claude/button-mapping.md) ----------------------------------
         mapping_page::PageData g_mapping;
+        mapping_page::State g_mappingState; // as buildMapping last read it
+        std::chrono::steady_clock::time_point g_drumClock; // the drum's last turn step (sendOverlay)
         std::map<std::string, mapping_page::PadArt> g_padArt; // by pad name, loaded on first use
 
         // The controller's prompt set (the page is for the controller whatever was pressed last): [Game] ButtonPrompts,
@@ -1212,8 +1217,8 @@ namespace kamite::options_screen
 
         // What is on each button now: player 1's controller bindings as the prompts read them (the first controller
         // binding of each PS2 button). The page edits only clean layouts (each of the ten remappable buttons carrying
-        // exactly one of their ten PS2 buttons and nothing else); anything else was set in the launcher: read-only.
-        // Stage 2 sees first bindings only: a second controller binding of a PS2 button is checked in stage 3.
+        // exactly one of their ten PS2 buttons, each of those with exactly one controller binding); anything else was
+        // set in the launcher: read-only.
         mapping_page::State mappingState()
         {
             namespace bindings = ps2_host_input::prompts;
@@ -1224,8 +1229,8 @@ namespace kamite::options_screen
                 const uint8_t first = menu_buttons::inputOnPlace(snapshot, place);
                 state.onPlace[place] = first < mapping_page::kRemappable ? first : mapping_page::kNone;
                 const uint8_t second = first == 0xFFu ? 0xFFu : menu_buttons::inputOnPlace(snapshot, place, static_cast<uint8_t>(first + 1u));
-                if (first >= mapping_page::kRemappable || second != 0xFFu)
-                    state.readOnly = true;
+                if (first >= mapping_page::kRemappable || second != 0xFFu || snapshot.controllerCount[place] != 1u)
+                    state.readOnly = true; // a button with two PS2 buttons, none, or one with a second controller binding
             }
             for (int a = 0; a < static_cast<int>(ps2x::hotkeys::Action::Count); ++a)
             {
@@ -1253,27 +1258,132 @@ namespace kamite::options_screen
             mapping_page::Options options = mapping_page::optionsFrom(g_ini);
             options.menuStyle = static_cast<int>(menu_buttons::style());
             const std::u8string dir = artDir.u8string(), root = g_exeDir.u8string();
+            g_mappingState = mappingState();
             mapping_page::build(g_mapping, found->second, std::string(dir.begin(), dir.end()), std::string(root.begin(), root.end()),
-                                folder, mappingState(), options, s.mapCursor);
+                                folder, g_mappingState, options, s.mapCursor, s.mapEdit);
         }
 
-        // The pad on the page: d-pad / stick between the ten lines, B back to the BUTTON MAPPING row. (Stage 3: A opens
-        // the drum, Square / X resets, A on a HOT button clears its hotkey.)
+        // A HOT line's Clear (K, Nov 13): the hotkeys on that physical button lose their controller binding (they are left
+        // unbound, as the launcher's "none"), in the live table and in GHR.ini [Hotkeys].
+        void clearHotkeys(uint8_t place)
+        {
+            namespace hk = ps2x::hotkeys;
+            for (int a = 0; a < static_cast<int>(hk::Action::Count); ++a)
+            {
+                const auto action = static_cast<hk::Action>(a);
+                if (menu_buttons::placeOfPadBit(hk::binding(action).pad) != place)
+                    continue;
+                hk::setBinding(action, hk::Binding{});
+                g_ini.set("Hotkeys", hk::info(action).id, "none");
+                KM_INFO(Game, "options screen: hotkey " << hk::info(action).id << " cleared from its controller button");
+            }
+            if (!g_ini.save())
+                KM_WARN(Game, "options screen: could not write GHR.ini");
+        }
+
+        // The pad on the page (K, Nov 13-14): d-pad / stick between the ten lines; A opens the drum (up / down turn it,
+        // A swaps, B closes) or, on a HOT line, Clear (twice); the left face button Reset (twice); B back to the
+        // BUTTON MAPPING row. Any other press disarms a waiting second press.
         void mappingInput(Screen &s, uint64_t pressed, uint64_t repeat, uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
+            mapping_page::Edit &e = s.mapEdit;
+            buildMapping(s);
+            const mapping_page::State &state = g_mappingState;
+            if (e.drum)
+            {
+                int start = 0;
+                const std::vector<uint8_t> inputs = mapping_page::drumInputs(state, s.mapCursor, start);
+                const int n = static_cast<int>(inputs.size());
+                if (n == 0 || state.readOnly)
+                    e.drum = false;
+                else if ((pressed & kCancel) != 0u && (pressed & kOk) == 0u)
+                {
+                    e.drum = false;
+                    sound(rdram, ctx, runtime, kSeBack);
+                }
+                else if (pressed & kOk)
+                {
+                    const uint8_t picked = inputs[static_cast<size_t>(((e.target % n) + n) % n)];
+                    const uint8_t own = s.mapCursor < mapping_page::kRemappable ? state.onPlace[s.mapCursor] : mapping_page::kNone;
+                    if (own < mapping_page::kRemappable && picked != own)
+                        ps2_host_input::controls::requestControllerSwap(0, own, picked);
+                    e.drum = false;
+                    sound(rdram, ctx, runtime, kSeOk);
+                }
+                else if (repeat & (kUp | kDown))
+                {
+                    e.target += (repeat & kUp) ? -1 : 1;
+                    sound(rdram, ctx, runtime, kSeTick);
+                }
+                return;
+            }
+            uint16_t pad = 0;
+            std::memcpy(&pad, at(kPadPressed), sizeof(pad));
+            const uint16_t resetBit = menu_buttons::padBitAtPlace(ps2x::iop::PadButton::Square); // the left face button
+            const mapping_page::Armed armed = e.armed;
+            e.armed = mapping_page::Armed::None; // any press but the second one disarms
             if ((pressed & kCancel) != 0u && (pressed & kOk) == 0u)
             {
                 s.inMapping = false;
                 sound(rdram, ctx, runtime, kSeBack);
                 return;
             }
-            buildMapping(s);
+            if (resetBit != 0u && (pad & resetBit) != 0u && (pressed & (kOk | kCancel)) == 0u)
+            {
+                if (armed == mapping_page::Armed::Reset)
+                {
+                    ps2_host_input::controls::requestControllerReset(0);
+                    sound(rdram, ctx, runtime, kSeOk);
+                }
+                else
+                {
+                    e.armed = mapping_page::Armed::Reset;
+                    sound(rdram, ctx, runtime, kSeMove);
+                }
+                return;
+            }
+            if (state.readOnly)
+            {
+                if (pressed == 0u && pad == 0u)
+                    e.armed = armed; // nothing pressed: still waiting
+                return;
+            }
             if (s.mapCursor == mapping_page::kNone)
                 s.mapCursor = mapping_page::firstLine(g_mapping);
+            if (pressed & kOk)
+            {
+                if (s.mapCursor < mapping_page::kRemappable && !state.hot[s.mapCursor].empty())
+                {
+                    if (armed == mapping_page::Armed::Clear)
+                    {
+                        clearHotkeys(s.mapCursor);
+                        sound(rdram, ctx, runtime, kSeOk);
+                    }
+                    else
+                    {
+                        e.armed = mapping_page::Armed::Clear;
+                        sound(rdram, ctx, runtime, kSeMove);
+                    }
+                    return;
+                }
+                int start = 0;
+                if (mapping_page::drumInputs(state, s.mapCursor, start).empty())
+                    return;
+                e.drum = true;
+                e.target = start;
+                e.pos = static_cast<float>(start);
+                g_drumClock = std::chrono::steady_clock::now();
+                sound(rdram, ctx, runtime, kSeOk);
+                return;
+            }
             const int dy = (repeat & kUp) ? -1 : (repeat & kDown) ? 1 : 0;
             const int dx = dy != 0 ? 0 : (repeat & kLeft) ? -1 : (repeat & kRight) ? 1 : 0;
             if (dx == 0 && dy == 0)
+            {
+                if (pressed == 0u && pad == 0u)
+                    e.armed = armed; // nothing pressed: still waiting
                 return;
+            }
             const uint8_t next = mapping_page::move(g_mapping, s.mapCursor, dx, dy);
             if (next != s.mapCursor)
             {
@@ -1282,7 +1392,7 @@ namespace kamite::options_screen
             }
         }
 
-        void sendOverlay(int kind, const Screen &s, float fade)
+        void sendOverlay(int kind, Screen &s, float fade)
         {
 #if defined(KAMITE_HAS_SCREEN_OVERLAY)
             const Kind &k = kKinds[kind];
@@ -1342,6 +1452,13 @@ namespace kamite::options_screen
             }
             if (s.inMapping)
             {
+                // The drum turns toward its item (eased, frame-rate free); the page is drawn from where it has got to.
+                mapping_page::Edit &e = s.mapEdit;
+                const auto now = std::chrono::steady_clock::now();
+                const float dt = std::min(std::chrono::duration<float>(now - g_drumClock).count(), 0.1f);
+                g_drumClock = now;
+                const float gap = static_cast<float>(e.target) - e.pos;
+                e.pos = std::fabs(gap) < 0.002f ? static_cast<float>(e.target) : e.pos + gap * (1.0f - std::exp(-18.0f * dt));
                 buildMapping(s);
                 view.mapping = &g_mapping.view;
             }
@@ -1473,6 +1590,7 @@ namespace kamite::options_screen
             else if ((pressed & kOk) && s.pageCursor == g_page.mappingRow && g_page.mappingRow >= 0)
             {
                 s.inMapping = true; // BUTTON MAPPING: its own page, the cursor on its first line (top left)
+                s.mapEdit = mapping_page::Edit{};
                 buildMapping(s);
                 s.mapCursor = mapping_page::firstLine(g_mapping);
                 sound(rdram, ctx, runtime, kSeOk);

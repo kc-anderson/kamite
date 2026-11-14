@@ -72,6 +72,12 @@ namespace ps2_host_input
         [[nodiscard]] bool liveBinding(uint32_t pad, std::string_view key, std::string_view binding);
         bool fileBindings(const std::string &file, uint32_t pad, std::string_view key, std::vector<std::string> &out, std::string &error);
         [[nodiscard]] std::string defaultsDump(uint32_t pad);
+        // Any thread (the in-game BUTTON MAPPING page runs on the game thread): queued for the window thread's next
+        // sample(), which applies it to the live table and saves the file at once. Inputs are prompts::Input values.
+        // Swap: the two PS2 buttons trade their controller bindings (each keeps its keyboard ones, in place). Reset:
+        // every controller binding back to the default layout's; keyboard and mouse bindings and chords stay.
+        void requestControllerSwap(uint32_t pad, uint8_t inputA, uint8_t inputB);
+        void requestControllerReset(uint32_t pad);
     }
 
     // Button prompts (any thread). What player 1's bindings show where the game draws a PS2 button: for each input the
@@ -159,6 +165,9 @@ namespace ps2_host_input
             uint32_t generation = 0u; // 0: not published yet
             std::array<Binding, InputCount> keys{};
             std::array<Binding, InputCount> controller{}; // Xbox-style names whatever the pad (see padStyle())
+            // How many controller bindings (a controller button or axis on its own, or a chord with one) each input has:
+            // the BUTTON MAPPING page edits only a layout where each of its buttons has exactly one.
+            std::array<uint8_t, InputCount> controllerCount{};
         };
 
         [[nodiscard]] uint32_t generation(); // bumped when a rebuild changed any label (never 0 once published)

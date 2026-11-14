@@ -69,6 +69,12 @@ namespace kamite::options_overlay
         uint8_t ends = 0;
         const char *hot = "";       // "HOT: Save state": a hotkey on this button (locked), a function of its own
     };
+    // An item of the BUTTON MAPPING page's drum: the icon of the button that has the action now, the action's short name.
+    struct MappingDrumItem
+    {
+        const char *icon = "";
+        const char *text = "";
+    };
     struct MappingView
     {
         const char *pad = "", *flames = ""; // the pad's picture and its flame outline (round it, flamesMargin out)
@@ -83,6 +89,16 @@ namespace kamite::options_overlay
         int lineCount = 0;
         int cursor = -1;         // the selected line (-1: none, the read-only layout)
         const char *notice = ""; // the help band's text
+        // The drum, open over the cursor's line (roulette style: the hovered item full size, two each way smaller and
+        // fading, curving toward the pad): its items and where it has turned to (an item index; between two while it
+        // turns; any number, taken round the item count).
+        const MappingDrumItem *drum = nullptr;
+        int drumCount = 0;
+        float drumPos = 0.0f;
+        // The hints (K, Nov 14): Reset on a line of its own above the others (so it never moves), then confirm / cancel
+        // with these words over View::confirmHint / cancelHint's art ("" = that hint left out).
+        const char *resetArt = "", *resetWord = "";
+        const char *confirmWord = "", *cancelWord = "";
     };
     // A button hint in the strip under the help band ("[A] Confirm"): the button's images (PNG paths: one, or two for
     // Classic's two confirm buttons; null = none) and the word.

@@ -11,6 +11,8 @@ Newest first, one line per change; the code comments say how.
 - Options: Money (the F2 slider) in Gameplay; Roulette Wheel & Reel is now Roulette Charrette, Misc. & Risk is now Misqué & Risqué.
 - Options: Button Mapping and Vibration help texts.
 - Controls: new PlayStation pad picture on the Button Mapping page.
+- Controls: Button Mapping edits the controller: A opens a drum of actions to swap onto the button, the left face button (twice) resets the controller layout, A (twice) on a HOT button clears its hotkey.
+- Options: RESTORE DEFAULTS also resets the controller's button mapping (keyboard bindings stay).
 
 ## November 13, 2026
 
