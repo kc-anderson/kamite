@@ -104,6 +104,8 @@ namespace kamite::options_overlay
         constexpr float kHelpX = 29.0f, kHelpBandTop = 363.5f, kHelpBandBottom = 417.0f;
         constexpr float kHelpCap = 14.0f, kHelpLine = 22.0f, kHelpScaleX = 0.73f;
         constexpr float kHelpShadowX = 0.12f * kHelpCap, kHelpShadowY = 0.11f * kHelpCap; // the hints' shadow, to scale
+        // A button in the help's text: kHelpIcon lines square, centred on the letters, kHelpIconGap lines from them.
+        constexpr float kHelpIcon = 21.0f, kHelpIconGap = 1.0f;
         // The confirm / cancel hints: the help's text in the darker strip under its band (K, Nov 13: half-way up from
         // the strip's centre toward the help's last line), right-aligned kHintRight units in from the text area's edge; each button image kHintArt lines square (the
         // pack's 100 x 100 buttons fill about 84 % of theirs), kHintArtGap units before its word, the two hints
@@ -161,6 +163,9 @@ namespace kamite::options_overlay
         constexpr float kMapTitleX = 20.0f, kMapTitleScale = 0.8f, kMapTitleClear = 62.0f;
         constexpr float kMapPadY = 230.0f, kMapPadHeight = 190.0f, kMapPadShare = 0.46f;
         constexpr float kMapKnee = 4.0f, kMapPanel = 160.0f, kMapEdge = 10.0f;
+        // The left column is narrower (K, Nov 14: its labels start at its outer end, so a wide one leaves them far from
+        // the pad on a wide screen): just room for its labels and the drum's.
+        constexpr float kMapPanelLeft = 100.0f;
         constexpr float kMapPadWidest = 262.0f; // the widest pad's picture at kMapPadHeight (the PlayStation one), units
         constexpr float kMapTop = 40.0f, kMapBottom = 362.0f, kMapRow = 29.0f, kMapRowGap = 4.0f, kMapRowGapMax = 12.0f;
         // Text, measured from the original's cross row (ATTACK / THROW ITEM / CONFIRM): every line's underline touches
@@ -420,7 +425,7 @@ namespace kamite::options_overlay
             }
 
             // Two lines at most.
-            void help(const char *body)
+            void help(const char *body, const char *const *icons = nullptr)
             {
                 int lines = body && *body ? 1 : 0;
                 for (const char *c = body; c && *c; ++c)
@@ -431,11 +436,58 @@ namespace kamite::options_overlay
                 {
                     const char *end = std::strchr(line, '\n');
                     const size_t length = end ? static_cast<size_t>(end - line) : std::strlen(line);
-                    text(line, length, helpFont, kHelpX, baseline, kHelpCap, kHelpScaleX, 0.0f, kHelp, 0u, space.area - 2.0f * kHelpX);
-                    Pcsx2GsScreenItem &item = items.back();
-                    item.shadow = faded(kHelpShadow);
-                    item.shadow_x = Space::y(kHelpShadowX);
-                    item.shadow_y = Space::y(kHelpShadowY);
+                    const auto shadowed = [&]() {
+                        Pcsx2GsScreenItem &item = items.back();
+                        item.shadow = faded(kHelpShadow);
+                        item.shadow_x = Space::y(kHelpShadowX);
+                        item.shadow_y = Space::y(kHelpShadowY);
+                    };
+                    if (!icons || std::find_if(line, line + length, [](char c) { return c == '\x01' || c == '\x02'; }) == line + length)
+                    {
+                        text(line, length, helpFont, kHelpX, baseline, kHelpCap, kHelpScaleX, 0.0f, kHelp, 0u, space.area - 2.0f * kHelpX);
+                        shadowed();
+                    }
+                    else
+                    {
+                        // Buttons in the line (\x01 / \x02: icons[0] / [1]), each piece after the one before (K, Nov 14).
+                        // The line is not squeezed; it never starts with a button.
+                        bool first = true;
+                        for (const char *at = line; at < line + length;)
+                        {
+                            if (*at == '\x01' || *at == '\x02')
+                            {
+                                const char *path = icons[*at == '\x01' ? 0 : 1];
+                                if (path && *path)
+                                {
+                                    Pcsx2GsScreenItem item{};
+                                    item.kind = PCSX2GS_SCREEN_IMAGE;
+                                    item.align = PCSX2GS_ALIGN_AFTER_TEXT;
+                                    item.text = add(path, std::strlen(path));
+                                    item.fill = faded(rgba(255, 255, 255));
+                                    item.x = Space::y(kHelpIconGap);
+                                    item.x1 = Space::y(kHelpIcon);
+                                    item.y = Space::y(baseline - 0.5f * kHelpCap - 0.5f * kHelpIcon);
+                                    item.y1 = Space::y(baseline - 0.5f * kHelpCap + 0.5f * kHelpIcon);
+                                    items.push_back(item);
+                                }
+                                ++at;
+                                continue;
+                            }
+                            const char *stop = at;
+                            while (stop < line + length && *stop != '\x01' && *stop != '\x02')
+                                ++stop;
+                            text(at, static_cast<size_t>(stop - at), helpFont, first ? kHelpX : kHelpIconGap, baseline, kHelpCap,
+                                 kHelpScaleX, 0.0f, kHelp, 0u);
+                            if (!first)
+                            {
+                                items.back().align = PCSX2GS_ALIGN_AFTER_TEXT;
+                                items.back().x = Space::y(kHelpIconGap);
+                            }
+                            shadowed();
+                            first = false;
+                            at = stop;
+                        }
+                    }
                     baseline += kHelpLine;
                     line = end ? end + 1 : nullptr;
                 }
@@ -748,7 +800,7 @@ namespace kamite::options_overlay
                 // the widest pad's outline at this size; a narrower pad's lines are a little longer.
                 const float widest = std::min(kMapPadWidest, kMapPadShare * space.area);
                 const float kneeL = cx - 0.5f * widest - kMapKnee, kneeR = cx + 0.5f * widest + kMapKnee;
-                const float outerL = std::max(kMapEdge, kneeL - kMapPanel), outerR = std::min(space.area - kMapEdge, kneeR + kMapPanel);
+                const float outerL = std::max(kMapEdge, kneeL - kMapPanelLeft), outerR = std::min(space.area - kMapEdge, kneeR + kMapPanel);
 
                 struct Row
                 {
@@ -963,8 +1015,11 @@ namespace kamite::options_overlay
                 {
                     const float a = std::fabs(d);
                     const float scale = 1.0f - kMapDrumShrink * a;
-                    const float alpha = std::clamp(1.0f - kMapDrumFade * a, 0.0f, 1.0f) * std::clamp((kMapDrumReach - a) / 0.6f, 0.0f, 1.0f);
                     const float y = drumMid + kMapDrumPitch * d * (1.0f - 0.06f * a);
+                    // Items turning up into the CONTROLS title (the left column's top row) fade under it.
+                    const float underTitle = drumSide ? 1.0f : std::clamp((y - kMapTitleClear + 8.0f) / 18.0f, 0.0f, 1.0f);
+                    const float alpha = std::clamp(1.0f - kMapDrumFade * a, 0.0f, 1.0f) * std::clamp((kMapDrumReach - a) / 0.6f, 0.0f, 1.0f) *
+                                        underTitle;
                     const float lean = inward * kMapDrumLean * d * d;
                     const bool hovered = a < 0.5f;
                     const float cap = kMapCap * scale, icon = kMapIcon * scale;
@@ -1014,7 +1069,7 @@ namespace kamite::options_overlay
                 const std::string path = g_titleDir + "/title_controls.png";
                 b.titleAt(b.add(path.data(), path.size()), "CONTROLS", kMapTitleX, kMapTitleScale);
             }
-            b.help(view.mapping->notice);
+            b.help(view.mapping->notice, view.mapping->noticeIcons);
             const MappingView &m = *view.mapping;
             Hint confirm = view.confirmHint, cancel = view.cancelHint, reset;
             confirm.word = m.confirmWord;

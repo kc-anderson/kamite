@@ -919,8 +919,9 @@ namespace
             width = item.max_width * h;
         }
         const ImFontGlyph *capH = run.baked->FindGlyph(static_cast<ImWchar>('H'));
-        float x = item.align == PCSX2GS_ALIGN_BEFORE_LAST
-                      ? g_lastLeft - item.x * h - width
+        float x = item.align == PCSX2GS_ALIGN_BEFORE_LAST ? g_lastLeft - item.x * h - width
+                  : item.align == PCSX2GS_ALIGN_AFTER_TEXT
+                      ? g_lastTextEnd + item.x * h
                       : x0 + item.x * w - (item.align == PCSX2GS_ALIGN_CENTRE ? 0.5f * width : item.align == PCSX2GS_ALIGN_RIGHT ? width : 0.0f);
         float top = y0 + item.y * h - (capH ? capH->Y1 : run.baked->Ascent) * run.scale;
         if (item.blur <= 0.0f)
@@ -1079,10 +1080,13 @@ namespace
 
     void DrawScreenImage(ImDrawList *list, const Pcsx2GsScreenItem &item, const char *path, float x0, float y0, float w, float h)
     {
-        const bool before = item.align == PCSX2GS_ALIGN_BEFORE_LAST;
-        const float right = before ? g_lastLeft - item.x * h : x0 + item.x1 * w;
-        const ImVec2 a(before ? right - item.x1 * h : x0 + item.x * w, y0 + item.y * h), b(right, y0 + item.y1 * h);
+        const bool before = item.align == PCSX2GS_ALIGN_BEFORE_LAST, after = item.align == PCSX2GS_ALIGN_AFTER_TEXT;
+        const float left = after ? g_lastTextEnd + item.x * h : 0.0f;
+        const float right = before ? g_lastLeft - item.x * h : after ? left + item.x1 * h : x0 + item.x1 * w;
+        const ImVec2 a(before ? right - item.x1 * h : after ? left : x0 + item.x * w, y0 + item.y * h), b(right, y0 + item.y1 * h);
         g_lastLeft = a.x;
+        if (after)
+            g_lastTextEnd = b.x; // the line goes on after it
         if ((item.fill >> 24) == 0u || b.y - a.y < 1.0f)
             return;
         if (item.size <= 0.0f)

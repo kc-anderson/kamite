@@ -88,7 +88,8 @@ namespace kamite::options_overlay
         const MappingLine *lines = nullptr;
         int lineCount = 0;
         int cursor = -1;         // the selected line (-1: none, the read-only layout)
-        const char *notice = ""; // the help band's text
+        const char *notice = ""; // the help band's text; \x01 / \x02 in it are drawn as noticeIcons[0] / [1]
+        const char *noticeIcons[2] = {"", ""};
         // The drum, open over the cursor's line (roulette style: the hovered item full size, two each way smaller and
         // fading, curving toward the pad): its items and where it has turned to (an item index; between two while it
         // turns; any number, taken round the item count).

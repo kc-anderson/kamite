@@ -37,9 +37,10 @@ namespace kamite::mapping_page
             {{"BRAWL / FREECAM", nullptr}, false}, // R3: with Modern
         };
         constexpr const char *kEmpty = "\xE2\x80\x94"; // an em dash: nothing on this button
-        // The drum's short names (K, Nov 14: the shortest that is still clear; "THROW ITEM", not "THROW").
-        constexpr const char *kDrumNames[kRemappable] = {"ATTACK / THROW ITEM", "ACTION", "COMBO", "ATTACK", "180\xC2\xB0 TURN",
-                                                         "ROULETTE WHEEL", "TAUNT", "UNLEASH GODHAND", "DASH", "BRAWL / FREECAM"};
+        // The drum's short names (K, Nov 14, second pass: short enough to turn round the pad on the left too; the arrows
+        // tell the two ATTACKs apart by their button's place).
+        constexpr const char *kDrumNames[kRemappable] = {"ATTACK \xE2\x86\x93", "ACTION", "COMBO", "ATTACK \xE2\x86\x91",
+                                                         "180\xC2\xB0 TURN", "ROULETTE", "TAUNT", "UNLEASH", "DASH", "FREECAM"};
 
         // Xelu's pack per set (resources/prompts/xelu/<folder>), by place; the sticks are ours (no click arrow).
         struct SetFiles
@@ -312,7 +313,10 @@ namespace kamite::mapping_page
                         add("EVADE", true);
                 }
                 else if (place == DPad && options.presets)
-                    add("STYLE SWITCH", true);
+                {
+                    add("STYLE", false); // one phrase on two lines: the left column is narrow (K, Nov 14)
+                    add("SWITCH", true);
+                }
                 line.fixed = place >= kRemappable;
                 if (line.count == 0)
                     continue; // nothing in play (Select; the d-pad without Moveset Presets): no line, as the original
@@ -343,21 +347,19 @@ namespace kamite::mapping_page
             for (size_t i = 0; i < d.places.size(); ++i)
                 if (d.places[i] == cursor)
                     d.view.cursor = static_cast<int>(i);
-        // The help: the page's own reset key is the left face button (X on Xbox); the menus' confirm button by Menu
-        // Controls (Japanese: the right one; Classic and Western: the bottom one).
-        const char *west = setFolder == "ps3" ? "Square" : setFolder == "switch" ? "Y" : "X";
-        const bool confirmEast = options.menuStyle == 2;
-        const char *confirm = setFolder == "ps3" ? (confirmEast ? "Circle" : "Cross")
-                              : setFolder == "switch" ? (confirmEast ? "A" : "B")
-                                                      : (confirmEast ? "B" : "A");
-        const std::string again = std::string("Press ") + west + " again to confirm and reset.";
+        // The help: the buttons it names drawn as their icons (K, Nov 14): \x01 the page's own reset key (the left face
+        // button), \x02 the menus' confirm button by Menu Controls (Japanese: the right one; Classic and Western: the
+        // bottom one).
+        d.view.noticeIcons[0] = d.keep(icons + set.file[West] + ".png");
+        d.view.noticeIcons[1] = d.keep(icons + set.file[options.menuStyle == 2 ? East : South] + ".png");
+        const std::string again = "Press \x01 again to confirm and reset.";
         if (state.readOnly)
             d.view.notice = d.keep(std::string(kReadOnlyNotice) + "\n" +
-                                   (edit.armed == Armed::Reset ? again : std::string("Change it there or press ") + west + " to reset."));
+                                   (edit.armed == Armed::Reset ? again : std::string("Change it there or press \x01 to reset.")));
         else if (edit.armed == Armed::Reset)
             d.view.notice = d.keep(again);
         else if (edit.armed == Armed::Clear)
-            d.view.notice = d.keep(std::string("Press ") + confirm + " again to clear the hotkey.");
+            d.view.notice = "Press \x02 again to clear the hotkey.";
         else
             d.view.notice = "";
 
