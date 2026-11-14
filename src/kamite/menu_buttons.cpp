@@ -10,6 +10,7 @@
 #include "ps2_host_gamepads.h"
 #include "ps2_runtime.h" // ps2xSetPatchFlag
 #include "ps2_runtime_macros.h" // GPR_U32
+#include "runtime/ee_scheduler.h"
 #include "runtime/ps2_cd_image.h"
 #include "runtime/ps2_pnach.h"
 
@@ -93,6 +94,8 @@ namespace kamite::menu_buttons
             }
             return of;
         }
+
+        constexpr uint32_t kSePlay = 0x2CB8A0u, kSeManager = 0x5FEE00u, kSeBack = 0x161u; // the menus' sound call (0x161 back)
 
         bool isFace(uint16_t icon) { return icon <= 3u; }
         bool isIcon(uint16_t code) { return code <= 13u; } // the button icons (10 / 11, the sticks, stay as they are)
@@ -607,6 +610,27 @@ namespace kamite::menu_buttons
         }
         // Its cancel: Gene's +0x626 window, filled from the pressed word (andi v0,v0,0x10 at 0x108FA0: the triangle).
         // The style's cancel (Western the circle, Japanese the cross, Classic the triangle).
+        // The map (cSubScrMap, vtable 0x41F5E0) backs out to the pause menu without the back sound the other sub
+        // screens play (its move, func_001641B8: BACK sets +0x60 = 0xA, while Start plays 0x161 and closes): the hook
+        // replaces that `addiu v0,zero,0xA` at 0x1641E0 with the sound, then the same.
+        void mapBackSound(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (runtime && runtime->hasFunction(kSePlay))
+                if (PS2Runtime::RecompiledFunction fn = runtime->lookupFunction(kSePlay))
+                {
+                    const R5900Context saved = *ctx;
+                    const uint32_t args[] = {kSeManager, 0u, kSeBack, 0xFFFFFFFFu, 0xFFFFFFFFu, 0u, 0u};
+                    for (int i = 0; i < 7; ++i)
+                        SET_GPR_U32(ctx, 4 + i, args[i]);
+                    ctx->pc = kSePlay;
+                    runtime->eeScheduler().beginHostCall();
+                    fn(rdram, ctx, runtime);
+                    runtime->eeScheduler().endHostCall();
+                    *ctx = saved;
+                }
+            SET_GPR_U32(ctx, 2, 0xAu);
+        }
+
         void rouletteCancelSource(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
             SET_GPR_U32(ctx, 2, GPR_U32(ctx, 2) & rouletteCancelBit());
@@ -742,7 +766,9 @@ namespace kamite::menu_buttons
         ps2xRegisterHostHook("km_roulette_ok", &rouletteOk);
         ps2xRegisterHostHook("km_roulette_cancel_source", &rouletteCancelSource);
         ps2xRegisterHostHook("km_roulette_cancel_window", &rouletteCancelWindow);
-        ps2xSetPatchFlag("menu_roulette", true); // kamite.toml: the roulette's own buttons (on their places in every style)
+        ps2xSetPatchFlag("menu_roulette", true); // kamite.toml: the roulette's own buttons (the style's in every style)
+        ps2xRegisterHostHook("km_map_back_sound", &mapBackSound);
+        ps2xSetPatchFlag("map_back_sound", true);
         g_ram = rdram;
         KM_INFO(Game, "menu buttons: " << styleName(style)
                                        << (style == Style::Western    ? " (the south button confirms and the east one cancels; play unchanged)"

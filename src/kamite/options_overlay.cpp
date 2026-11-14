@@ -188,9 +188,17 @@ namespace kamite::options_overlay
         // at kMapDrumUnder (K: less noise).
         constexpr float kMapDrumPitch = 27.0f, kMapDrumShrink = 0.17f, kMapDrumFade = 0.3f, kMapDrumLean = 7.0f;
         constexpr float kMapDrumReach = 2.6f, kMapDrumDim = 0.5f, kMapDrumUnder = 0.08f;
-        // A soft dark band behind the drum (over the column, kMapDrumShadeSoft lines feathered), kMapDrumShade strong.
+        // A soft dark band behind the drum (over the column, kMapDrumShadeSoft lines feathered), kMapDrumShade strong; not
+        // over the selected line's lit panel (K, Nov 14: the highlight shows through, the band above and below it).
         constexpr float kMapDrumShadeSoft = 7.0f;
         constexpr uint32_t kMapDrumShade = rgba(0, 0, 0, 120);
+        // The ATTACKs' arrows (tools/options/make_drum_arrows.py): the core kMapCap tall at full size with kMapArrowMargin
+        // lines round it in the picture, kMapArrowGap x the cap after the text.
+        constexpr float kMapArrowMargin = 2.0f, kMapArrowGap = 0.3f;
+        constexpr float kMapArrowAspect = (14.0f / 19.0f * kMapCap + 2.0f * kMapArrowMargin) / (kMapCap + 2.0f * kMapArrowMargin);
+        // Reset over Back (K, Nov 14: their buttons in one column): "Reset" squeezed to "Back"'s width, the two words'
+        // advances in the help font (DejaVu Sans Bold: 5519 / 6553 font units).
+        constexpr float kResetSqueeze = 5519.0f / 6553.0f;
         // The hints' second line (Reset) this far above the first.
         constexpr float kHintLineStep = 27.0f;
         // The panels' wash (panel.png: opaque at the outer end, nothing at the pad): the original's tan, 0.40 at the
@@ -578,7 +586,7 @@ namespace kamite::options_overlay
 
             // One help-look line, from the right: the word ends at right (units) or, with right < 0, gap units before
             // the last text or image drawn.
-            void hintWord(const char *word, float right, float gap, float y = kHintY)
+            void hintWord(const char *word, float right, float gap, float y = kHintY, float squeeze = 1.0f)
             {
                 const size_t length = std::strlen(word);
                 if (length == 0u)
@@ -593,7 +601,7 @@ namespace kamite::options_overlay
                 item.x = right < 0.0f ? Space::h(gap) : space.x(right);
                 item.y = Space::y(y + 0.5f * kHelpCap);
                 item.size = Space::y(kHelpCap);
-                item.scale_x = Space::scale(kHelpScaleX);
+                item.scale_x = Space::scale(kHelpScaleX * squeeze);
                 item.shadow = faded(kHelpShadow);
                 item.shadow_x = Space::y(kHelpShadowX);
                 item.shadow_y = Space::y(kHelpShadowY);
@@ -623,7 +631,7 @@ namespace kamite::options_overlay
                 {
                     if (!h->word || !*h->word)
                         continue;
-                    hintWord(h->word, gap < 0.0f ? space.area - kHintRight : -1.0f, gap, y);
+                    hintWord(h->word, gap < 0.0f ? space.area - kHintRight : -1.0f, gap, y, h->squeeze);
                     float artGap = kHintArtGap;
                     for (int i = 1; i >= 0; --i) // drawn right to left: art[1] beside the word
                         if (h->art[i] && *h->art[i])
@@ -862,11 +870,12 @@ namespace kamite::options_overlay
                 float total = 0.0f;
                 for (const Row &r : right)
                     total += height(m.lines[r.line]);
-                const float span = kMapBottom - kMapTop;
+                // Below the title (K, Nov 14: MENU moved to the bottom, so the top row, R2, has a mirror on the left).
+                const float top = std::max(kMapTop, kMapTitleClear), span = kMapBottom - top;
                 const float gap = right.size() > 1 ? std::clamp((span - total) / static_cast<float>(right.size() - 1), kMapRowGap, kMapRowGapMax) : 0.0f;
                 const float used = total + gap * static_cast<float>(right.empty() ? 0 : right.size() - 1);
                 const float squeeze = used > span ? span / used : 1.0f;
-                float y = kMapTop + (used < span ? 0.5f * (span - used) : 0.0f);
+                float y = top + (used < span ? 0.5f * (span - used) : 0.0f);
                 for (Row &r : right)
                 {
                     r.top = y;
@@ -988,15 +997,20 @@ namespace kamite::options_overlay
                 const float colL = drumSide ? knee : outer, colR = drumSide ? outer : knee;
                 const float inward = drumSide ? -1.0f : 1.0f; // toward the pad
                 const int n = m.drumCount;
+                // Above and below the selected line: each edge's feather (centred on it) ends at the line's panel.
+                for (const auto &[y0, y1] : {std::pair{drumMid - drumHalf, drumRow.top - 0.5f * kMapDrumShadeSoft},
+                                             std::pair{drumRow.bottom + 0.5f * kMapDrumShadeSoft, drumMid + drumHalf}})
                 {
+                    if (y1 - y0 < 1.0f)
+                        continue;
                     Pcsx2GsScreenItem shade{};
                     shade.kind = PCSX2GS_SCREEN_RECT;
                     shade.fill = faded(kMapDrumShade);
                     shade.blur = Space::y(kMapDrumShadeSoft);
                     shade.x = space.x(colL - 2.0f);
                     shade.x1 = space.x(colR + 2.0f);
-                    shade.y = Space::y(drumMid - drumHalf);
-                    shade.y1 = Space::y(drumMid + drumHalf);
+                    shade.y = Space::y(y0);
+                    shade.y1 = Space::y(y1);
                     items.push_back(shade);
                 }
                 std::vector<std::pair<float, int>> order;
@@ -1029,9 +1043,27 @@ namespace kamite::options_overlay
                     picture(m.drum[k].icon, x0, y - 0.5f * icon, x0 + icon * kLinesToUnits, y + 0.5f * icon, rgba(255, 255, 255));
                     const float tx = x0 + icon * kLinesToUnits + kMapTextGap * scale;
                     const char *line = m.drum[k].text;
+                    const char *arrowPath = hovered ? m.drum[k].arrowLit : m.drum[k].arrow;
+                    const bool arrow = arrowPath && *arrowPath;
+                    const float margin = kMapArrowMargin * scale, arrowH = cap + 2.0f * margin, arrowW = arrowH * kMapArrowAspect;
+                    const float arrowGap = kMapArrowGap * cap - margin; // lines, from the text's end to the picture
+                    const float arrowRoom = arrow ? (arrowGap + arrowW) * kLinesToUnits : 0.0f;
                     text(line, std::strlen(line), labelFont, tx, y + 0.5f * cap, cap, kNewLabel.scaleX, kMapTracking * cap,
                          hovered ? kLabelOn : kMapText, hovered ? kLabelOnStroke : kMapStroke,
-                         std::max(colR + lean - kMapTextMargin - tx, 8.0f));
+                         std::max(colR + lean - kMapTextMargin - tx - arrowRoom, 8.0f));
+                    if (arrow)
+                    {
+                        Pcsx2GsScreenItem item{};
+                        item.kind = PCSX2GS_SCREEN_IMAGE;
+                        item.align = PCSX2GS_ALIGN_AFTER_TEXT;
+                        item.text = add(arrowPath, std::strlen(arrowPath));
+                        item.fill = faded(rgba(255, 255, 255));
+                        item.x = Space::y(arrowGap);
+                        item.x1 = Space::y(arrowW);
+                        item.y = Space::y(y - 0.5f * cap - margin);
+                        item.y1 = Space::y(y + 0.5f * cap + margin);
+                        items.push_back(item);
+                    }
                     dim = keep;
                 }
             }
@@ -1076,6 +1108,7 @@ namespace kamite::options_overlay
             cancel.word = m.cancelWord;
             reset.art[0] = m.resetArt;
             reset.word = m.resetWord;
+            reset.squeeze = kResetSqueeze;
             b.hints(confirm, cancel);
             b.hints(reset, Hint{}, kHintY - kHintLineStep); // its own line above, right-aligned (K, Nov 14)
             return;

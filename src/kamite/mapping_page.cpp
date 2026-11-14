@@ -37,10 +37,12 @@ namespace kamite::mapping_page
             {{"BRAWL / FREECAM", nullptr}, false}, // R3: with Modern
         };
         constexpr const char *kEmpty = "\xE2\x80\x94"; // an em dash: nothing on this button
-        // The drum's short names (K, Nov 14, second pass: short enough to turn round the pad on the left too; the arrows
-        // tell the two ATTACKs apart by their button's place).
-        constexpr const char *kDrumNames[kRemappable] = {"ATTACK \xE2\x86\x93", "ACTION", "COMBO", "ATTACK \xE2\x86\x91",
-                                                         "180\xC2\xB0 TURN", "ROULETTE", "TAUNT", "UNLEASH", "DASH", "FREECAM"};
+        // The drum's short names (K, Nov 14, second pass: short enough to turn round the pad on the left too); an arrow
+        // after the two ATTACKs tells them apart by their button's place (K: the game's own arrow shape,
+        // tools/options/make_drum_arrows.py, not the font's thin one).
+        constexpr const char *kDrumNames[kRemappable] = {"ATTACK", "ACTION", "COMBO", "ATTACK", "180\xC2\xB0 TURN",
+                                                         "ROULETTE", "TAUNT", "UNLEASH", "DASH", "FREECAM"};
+        constexpr const char *kDrumArrows[kRemappable] = {"arrow_down", nullptr, nullptr, "arrow_up"};
 
         // Xelu's pack per set (resources/prompts/xelu/<folder>), by place; the sticks are ours (no click arrow).
         struct SetFiles
@@ -69,9 +71,10 @@ namespace kamite::mapping_page
         }
 
         // The columns, top to bottom, the same for every pad (K, Nov 14: the labels stay put, the lines reach the
-        // buttons): the right as the original's page, the left with the sticks at the bottom like the right's.
-        constexpr uint8_t kLeft[] = {L2, L1, DPad, L3, LStick};
-        constexpr uint8_t kRight[] = {Start, R2, R1, North, East, South, West, R3, RStick};
+        // buttons): the right as the original's page but Start at the bottom, the left with the sticks over Select at
+        // the bottom like the right's (K, Nov 14).
+        constexpr uint8_t kLeft[] = {L2, L1, DPad, L3, LStick, Select};
+        constexpr uint8_t kRight[] = {R2, R1, North, East, South, West, R3, RStick, Start};
 
         int placeOf(const std::string &name)
         {
@@ -295,11 +298,11 @@ namespace kamite::mapping_page
                         add(kEmpty, true);
                     if (const char *word = menuWord(place))
                         add(word, true);
-                    if (!state.hot[place].empty())
-                        line.hot = d.keep("HOT: " + state.hot[place]);
                 }
                 else if (place == Start)
                     add("MENU", true);
+                else if (place == Select)
+                    add(kEmpty, true); // nothing in play (K, Nov 14: shown all the same, the pad's last button)
                 else if (place == LStick)
                     add("MOVE", true);
                 else if (place == RStick)
@@ -317,9 +320,11 @@ namespace kamite::mapping_page
                     add("STYLE", false); // one phrase on two lines: the left column is narrow (K, Nov 14)
                     add("SWITCH", true);
                 }
+                if (place <= Select && !state.hot[place].empty())
+                    line.hot = d.keep("HOT: " + state.hot[place]);
                 line.fixed = place >= kRemappable;
                 if (line.count == 0)
-                    continue; // nothing in play (Select; the d-pad without Moveset Presets): no line, as the original
+                    continue; // nothing in play (the d-pad without Moveset Presets): no line, as the original
                 if (place == LStick || place == RStick)
                     line.icon = d.keep(artDir + "/stick_" + set.folder + (place == LStick ? "_left.png" : "_right.png"));
                 else
@@ -335,7 +340,7 @@ namespace kamite::mapping_page
                 continue;
             const uint8_t p = d.places[i];
             const uint8_t want = p == L2 ? uint8_t{R2} : p == L1 ? uint8_t{R1} : p == L3 ? uint8_t{R3} : p == LStick ? uint8_t{RStick}
-                                 : p == DPad ? uint8_t{East} : kNone;
+                                 : p == DPad ? uint8_t{East} : p == Select ? uint8_t{Start} : kNone;
             for (size_t j = 0; j < d.lines.size(); ++j)
                 if (d.lines[j].right && d.places[j] == want)
                     d.lines[i].mirror = static_cast<int>(j);
@@ -375,6 +380,11 @@ namespace kamite::mapping_page
                 options_overlay::MappingDrumItem item;
                 item.icon = d.keep(icons + set.file[at] + ".png");
                 item.text = shown ? kDrumNames[input] : kEmpty;
+                if (shown && kDrumArrows[input])
+                {
+                    item.arrow = d.keep(artDir + "/" + kDrumArrows[input] + ".png");
+                    item.arrowLit = d.keep(artDir + "/" + kDrumArrows[input] + "_lit.png");
+                }
                 d.drum.push_back(item);
             }
             d.view.drum = d.drum.data();

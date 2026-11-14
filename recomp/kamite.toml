@@ -870,6 +870,13 @@ flag = "menu_roulette"
 address = "0x00114904"
 hook = "km_roulette_cancel_window"
 flag = "menu_roulette"
+# The map backs out to the pause menu without the back sound (func_001641B8 sets +0x60 = 0xA silently; Start plays
+# 0x161): menu_buttons.cpp plays it there.
+[[patches.hooks]] # addiu v0,zero,0xA
+address = "0x001641E0"
+hook = "km_map_back_sound"
+replace = true
+flag = "map_back_sound"
 # Gene's coat wind in the roulette (the coat's step func_00100CE0, while the player's +0x3AC bit 0x800 is set): the
 # push on the coat is (sin(phase) + 1) / 2 x 0.1 with the phase 0x3BC740 += 0.8 a frame, so at 60 the coat flapped
 # twice as fast. At 60 the step is 0.4 (the add.s at 0x100E50).

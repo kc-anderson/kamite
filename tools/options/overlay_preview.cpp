@@ -225,7 +225,7 @@ int main(int argc, char **argv)
             const std::string one = f[6].substr(at, semi == std::string::npos ? std::string::npos : semi - at);
             const size_t eq = one.find('=');
             const uint8_t a = place(one.substr(0, eq));
-            if (a < kRemappable && eq != std::string::npos)
+            if (a <= Select && eq != std::string::npos)
                 state.hot[a] = one.substr(eq + 1);
             at = semi == std::string::npos ? f[6].size() : semi + 1;
         }

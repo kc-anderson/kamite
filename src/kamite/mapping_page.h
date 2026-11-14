@@ -72,7 +72,7 @@ namespace kamite::mapping_page
     {
         // The PS2 button (prompts::Input 0..9) whose first controller binding is each remappable place; kNone: none.
         std::array<uint8_t, kRemappable> onPlace{};
-        std::array<std::string, kRemappable> hot{}; // a hotkey's name on that button ("" none)
+        std::array<std::string, PlaceCount> hot{}; // a hotkey's name on that button ("" none; Start / Select too)
         bool readOnly = false; // a layout the page cannot edit (set in the launcher)
     };
     State defaultState();

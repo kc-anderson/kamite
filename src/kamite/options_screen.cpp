@@ -1237,8 +1237,13 @@ namespace kamite::options_screen
             {
                 const auto action = static_cast<ps2x::hotkeys::Action>(a);
                 const uint8_t place = menu_buttons::placeOfPadBit(ps2x::hotkeys::binding(action).pad);
-                if (place < mapping_page::kRemappable)
-                    state.hot[place] = ps2x::hotkeys::info(action).label;
+                if (place <= mapping_page::Select) // the remappable buttons, Start and Select
+                {
+                    std::string name = ps2x::hotkeys::info(action).label;
+                    if (const size_t paren = name.find(" ("); paren != std::string::npos)
+                        name.resize(paren); // "Record a test case (again: stop)": the page has no room for the how
+                    state.hot[place] = name;
+                }
             }
             return state;
         }

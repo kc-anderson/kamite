@@ -17,6 +17,12 @@ Newest first, one line per change; the code comments say how.
 - Controls: a button held when play hands over to a menu (or back) waits for its release, so it doesn't press twice.
 - Controls: the cannon game's crates show the default buttons.
 - Menus: the roulette's Cycle hint and the Techniques screen's Release, Back, Default and Cycle Style hints show the buttons that work them.
+- Button Mapping: the selected button's highlight stays lit while the action drum is open.
+- Button Mapping: Reset is narrower so its button lines up with Back's.
+- Button Mapping: MENU (Start) moved to the bottom of the right side; Select added at the bottom of the left side.
+- Button Mapping: the two ATTACKs in the drum get the game's own arrows.
+- Prompts: new Nintendo L / R shoulder buttons.
+- Menus: backing out of the map to the pause menu plays the back sound.
 
 ## November 13, 2026
 

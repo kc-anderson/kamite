@@ -67,7 +67,7 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed and when.
 - [akitotheanimator/God-Hand-Tools](https://github.com/akitotheanimator/God-Hand-Tools) (with CarLoiD, Kerilk and Roni
   Evil): model, motion and motion-event format knowledge.
 - Nicolae "Xelu" Berbece (Those Awesome Guys): [Xelu's free controller and keyboard prompts](https://opengameart.org/content/free-keyboard-and-controllers-prompts-pack)
-  (CC0), the button prompt art in `resources/prompts/xelu`.
+  (CC0), the button prompt art in `resources/prompts/xelu` (but the Nintendo L / R shoulders, the port's own).
 - [Quaternius](https://quaternius.com): the Universal Animation Library 1 and 2 (CC0), the NPC poses' rail lean, dance and
   folded-arms idle.
 - [Denys Almaral](https://denysalmaral.com): the Free Animation Pack for City People, two of the NPC poses' idles.

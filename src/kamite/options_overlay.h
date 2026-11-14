@@ -74,6 +74,7 @@ namespace kamite::options_overlay
     {
         const char *icon = "";
         const char *text = "";
+        const char *arrow = "", *arrowLit = ""; // a picture after the text (the ATTACKs' arrows), the hovered item's look
     };
     struct MappingView
     {
@@ -107,6 +108,7 @@ namespace kamite::options_overlay
     {
         const char *art[2] = {nullptr, nullptr};
         const char *word = "";
+        float squeeze = 1.0f; // the word narrower than the help's (Button Mapping's Reset over Back)
     };
 
     struct View
