@@ -22,7 +22,7 @@ from PIL import Image
 from scipy import ndimage as nd
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-MARGIN = 0.16   # the flames' room round the render (of its height)
+MARGIN = 0.20   # the flames' room round the render (of its height)
 BANDS = 64      # silhouette bands
 
 # Each pad: its buttons (render pixels: x, y, how far short of the point its line stops) and the columns' rows. A row
@@ -56,12 +56,13 @@ PADS = {
         right=['start', 'r2', 'r1', 'north', 'east', 'south', 'west', 'r3', 'rstick']),
 }
 
-# The flames (K, Nov 14, after the original): a pale yellow rim (yellow, not white) on a hot orange band, flame butts
-# clumped round the bottom and lower sides, ragged feathered tongues spread evenly round the outline (every SPACING
-# lines), rising and curling up, longest where the outline faces up, tapering off a short way out; a broad orange glow.
-FIRE = dict(spacing=6.5, L0=8.0, Lup=20.0, Lside=7.0, W=4.4, out=1.2, bend=0.3, fade=0.45, butt=5.0, ragged=1.0,
-            band=1.6, band_heat=0.75, rim=1.6, rim_a=0.9, rim_rgb=(255, 214, 85), glow=12.0, glow_a=0.55, soft=0.35,
-            alpha=0.88, warp=3.5)
+# The flames (K, Nov 14, from his upscale of the original): a fire behind the pad, seen past its outline: a thin band
+# at the bottom growing into big flames over the top (reach Rbot..Rtop lines by the outline's height, Rup more where it
+# faces up); flame texture from swirled, ridged noise stretched up and down (wispy, see-through, yellow cores, red
+# edges); the wall scorched dark round it (char); a few sparks; a thin pale-yellow rim with a narrow orange glow.
+FIRE = dict(Rbot=3.0, Rtop=19.0, Rup=7.0, rise=1.0, warp=6.0, sy=13.0, sx=4.5, fallpow=1.3, gain=1.3, cut=0.7,
+            alpha_gain=1.3, ridge=0.6, char=0.45, char_reach=1.3, sparks=14, rim=1.3, rim_a=0.95,
+            rim_rgb=(255, 222, 120), glow=1.8, glow_a=0.6)
 PAD_LINES = 190.0     # the pad's height on the page (options_overlay.cpp kMapPadHeight)
 XBOX_BLUR = 1.1       # K: the Xbox render reads over-sharpened next to the softened text (render pixels)
 
@@ -90,15 +91,28 @@ def ramp(t, stops):
     return out
 
 
-def fbm_n(shape, rng, scales, weights, stretch=(1.0, 1.0)):
-    """fbm normalised to mean 0.5, about a sixth spread."""
-    z = fbm(shape, rng, scales, weights, stretch)
-    return (z - z.mean()) / (z.std() * 3.0) + 0.5
+def noise2(shape, rng, scale_y, scale_x):
+    """Smooth value noise, one octave, its cells scale_y x scale_x pixels."""
+    h, w = shape
+    gh, gw = max(2, int(h / scale_y) + 3), max(2, int(w / scale_x) + 3)
+    z = nd.zoom(rng.random((gh, gw)).astype(np.float32), ((h + 2 * scale_y) / gh, (w + 2 * scale_x) / gw), order=3)
+    return z[:h, :w]
+
+
+def fbm2(shape, rng, sy, sx, octaves=4, gain=0.55):
+    """Octaves of noise2 halving in size, normalised to mean 0.5, about a sixth spread."""
+    out, amp, total = np.zeros(shape, np.float32), 1.0, 0.0
+    for o in range(octaves):
+        out += amp * noise2(shape, rng, max(sy / 2 ** o, 1.5), max(sx / 2 ** o, 1.5))
+        total += amp
+        amp *= gain
+    out /= total
+    return (out - out.mean()) / (out.std() * 3.0) + 0.5
 
 
 def flames(render, seed):
-    """The flame outline (RGBA, half the render's resolution, MARGIN of its height round it): tongues and butts placed
-    along the outline (FIRE), pushed about by noise and eaten at the tips, over a hot band, a rim and a glow."""
+    """The flame outline (RGBA, half the render's resolution, MARGIN of its height round it): scorch, glow, fire,
+    sparks and rim, composited (FIRE)."""
     p = FIRE
     W, H = render.size
     scale = 0.5
@@ -109,89 +123,49 @@ def flames(render, seed):
     mask = a > 0.5
     hh, ww = a.shape
     u = h / PAD_LINES  # pixels a line
-    dist = nd.distance_transform_edt(~mask).astype(np.float32) / u
-    inside = nd.distance_transform_edt(mask).astype(np.float32) / u
-    gy, gx = np.gradient(nd.gaussian_filter(dist - inside, 3 * u))
-    nrm = np.hypot(gx, gy) + 1e-6
-    nx, ny = gx / nrm, gy / nrm  # the outward normal
     rng = np.random.default_rng(seed)
+    dist, idx = nd.distance_transform_edt(~mask, return_indices=True)
+    dist = dist.astype(np.float32) / u
+    inside = nd.distance_transform_edt(mask).astype(np.float32) / u
     rows = np.where(mask.any(axis=1))[0]
     top, bot = rows[0], rows[-1]
-    # Outline points, evenly spread: in random order, each kept only clear of the kept ones by SPACING.
-    pts = np.argwhere(mask & ~nd.binary_erosion(mask))
-    rng.shuffle(pts)
-    sp = p['spacing'] * u
-    grid, keep = {}, []
-    for y, x in pts:
-        cy, cx = int(y // sp), int(x // sp)
-        if all((yy - y) ** 2 + (xx - x) ** 2 >= sp * sp
-               for dy in (-1, 0, 1) for dx in (-1, 0, 1) for (yy, xx) in grid.get((cy + dy, cx + dx), ())):
-            grid.setdefault((cy, cx), []).append((y, x))
-            keep.append((y, x))
-    heat = np.zeros((hh, ww), np.float32)
-
-    def stamp(y_lo, y_hi, x_lo, x_hi, fn):
-        y_lo, y_hi, x_lo, x_hi = max(0, int(y_lo)), min(hh, int(y_hi)), max(0, int(x_lo)), min(ww, int(x_hi))
-        if y_hi <= y_lo or x_hi <= x_lo:
-            return
-        Y, X = np.mgrid[y_lo:y_hi, x_lo:x_hi].astype(np.float32)
-        region = heat[y_lo:y_hi, x_lo:x_hi]
-        np.maximum(region, fn(Y, X), out=region)
-
-    def tongue(y0, x0, dx, dy, L, Wd, bend):
-        ts = np.linspace(0, 1, 14, dtype=np.float32)
-        sx, sy = x0 + dx * L * ts, y0 + dy * L * ts - bend * L * ts ** 2
-        r = Wd * (1 - ts) ** 0.75 + 0.35 * u
-        def fn(Y, X):
-            best = np.zeros(Y.shape, np.float32)
-            for i in range(len(ts)):
-                v = np.clip((r[i] - np.hypot(X - sx[i], Y - sy[i])) / (0.7 * u), 0, 1) * (1 - ts[i]) ** p['fade']
-                np.maximum(best, v, out=best)
-            return best
-        stamp(sy.min() - Wd - 3, sy.max() + Wd + 3, sx.min() - Wd - 3, sx.max() + Wd + 3, fn)
-
-    def blob(y0, x0, R, strength):
-        stamp(y0 - R - 3, y0 + R + 3, x0 - R - 3, x0 + R + 3,
-              lambda Y, X: np.clip((R - np.hypot(X - x0, Y - y0)) / (0.8 * u), 0, 1) * strength)
-
-    for y, x in keep:
-        ex, ey = nx[y, x], ny[y, x]
-        rel = (y - top) / max(bot - top, 1)
-        facing_up, facing_down, side = max(0.0, -ey), max(0.0, ey), abs(ex)
-        low = float(np.clip((rel - 0.35) / 0.5, 0, 1))
-        # Flame butts: clumps hugging the bottom and the lower sides.
-        if low > 0 or facing_down > 0.4:
-            k = max(low, facing_down)
-            for _ in range(2):
-                R = p['butt'] * u * (0.5 + 0.7 * rng.random()) * (0.5 + 0.6 * k)
-                off = R * (0.2 + 0.4 * rng.random())
-                blob(y + ey * off + (rng.random() - 0.5) * R, x + ex * off + (rng.random() - 0.5) * R, R, 0.75 + 0.25 * rng.random())
-        # Tongues from every point that does not face down, out and up, curling upward.
-        if facing_down < 0.55:
-            d = np.array([ex * p['out'], ey * p['out'] - 1.0])
-            d /= np.linalg.norm(d)
-            L = (p['L0'] + p['Lup'] * facing_up ** 1.5 + p['Lside'] * side * low) * u * (0.7 + 0.6 * rng.random())
-            Wd = p['W'] * u * (0.8 + 0.4 * rng.random()) * (1 + 0.5 * low)
-            tongue(y - ey * 0.5 * u, x - ex * 0.5 * u, d[0], d[1], L, Wd, p['bend'] * side)
-    # Turbulence: pushed about by noise (wispy edges), eaten by streaky noise toward the tips.
-    wx = (fbm_n((hh, ww), rng, [4 * u, 2 * u], [1, 0.5], stretch=(2.0, 1)) - 0.5) * p['warp'] * u
-    wy = (fbm_n((hh, ww), rng, [4 * u, 2 * u], [1, 0.5], stretch=(2.0, 1)) - 0.5) * p['warp'] * u * 1.6
+    rel = np.clip((idx[0].astype(np.float32) - top) / max(bot - top, 1), 0, 1)  # the nearest outline point's height
+    gy, gx = np.gradient(nd.gaussian_filter(dist - inside, 3 * u))
+    up = np.clip(-gy / (np.hypot(gx, gy) + 1e-6), 0, 1)
+    reach = (p['Rbot'] + (p['Rtop'] - p['Rbot']) * (1 - rel) ** p['rise'] + p['Rup'] * up) * u
     Y, X = np.mgrid[0:hh, 0:ww].astype(np.float32)
-    heat = nd.map_coordinates(heat, [Y + wy, X + wx], order=1, mode='constant')
-    feather = fbm_n((hh, ww), rng, [2.5 * u, 1.2 * u, 0.6 * u], [1, 0.7, 0.5], stretch=(2.6, 1))
-    heat = heat * np.clip((feather - (1 - heat) * p['ragged'] + 0.2) / 0.3, 0, 1)
-    heat = nd.gaussian_filter(heat, p['soft'] * u)
-    heat = np.maximum(heat, np.exp(-dist / p['band']) * (~mask) * p['band_heat'])  # the hot band on the outline
-    fire_rgb = ramp(heat, [(0.0, (45, 5, 0)), (0.3, (125, 20, 0)), (0.55, (200, 55, 5)), (0.8, (238, 112, 18)),
-                           (1.0, (252, 165, 45))])
-    fire_a = np.clip((heat - 0.04) / 0.55, 0, 1) ** 1.2 * p['alpha']
-    rim = np.exp(-(np.maximum(dist - 0.3 * p['rim'], 0) / (0.6 * p['rim'])) ** 2)
+    wx = (fbm2((hh, ww), rng, 14 * u, 10 * u) - 0.5) * p['warp'] * u
+    wy = (fbm2((hh, ww), rng, 14 * u, 10 * u) - 0.5) * p['warp'] * u
+    base = nd.map_coordinates(fbm2((hh, ww), rng, p['sy'] * u, p['sx'] * u, octaves=5), [Y + wy, X + wx], order=1, mode='reflect')
+    flame = (1 - p['ridge']) * base + p['ridge'] * (1.0 - np.abs(2.0 * base - 1.0)) ** 2
+    fall = np.clip(1.0 - dist / np.maximum(reach, 1e-3), 0, 1)
+    heat = np.clip(flame * fall ** p['fallpow'] * p['gain'] - (1 - fall) * p['cut'], 0, 1)
+    heat[mask] = 0
+    heat = nd.gaussian_filter(heat, 0.4 * u)
+    fire_rgb = ramp(heat, [(0.0, (70, 8, 0)), (0.25, (170, 35, 0)), (0.5, (235, 95, 10)), (0.75, (250, 160, 35)),
+                           (1.0, (255, 225, 120))])
+    fire_a = np.clip(heat * p['alpha_gain'], 0, 1) ** 0.9
+    char = np.clip(1 - dist / (reach * p['char_reach'] + 6 * u), 0, 1) ** 0.8 * \
+        (0.55 + 0.6 * (fbm2((hh, ww), rng, 8 * u, 8 * u) - 0.5)) * p['char']
+    char[mask] = 0
+    sparks = np.zeros((hh, ww), np.float32)
+    cand = np.argwhere((fall > 0.05) & (fall < 0.6) & (~mask))
+    for k in rng.choice(len(cand), size=min(int(p['sparks']), len(cand)), replace=False):
+        y, x = cand[k]
+        r = (0.35 + 0.5 * rng.random()) * u
+        y0, y1 = int(max(0, y - 3 * r - 2)), int(min(hh, y + 3 * r + 2))
+        x0, x1 = int(max(0, x - 3 * r - 2)), int(min(ww, x + 3 * r + 2))
+        yy, xx = np.mgrid[y0:y1, x0:x1].astype(np.float32)
+        v = np.exp(-((yy - y) ** 2 + (xx - x) ** 2) / (2 * r * r)) * (0.6 + 0.4 * rng.random())
+        np.maximum(sparks[y0:y1, x0:x1], v, out=sparks[y0:y1, x0:x1])
+    rim = np.exp(-(np.maximum(dist - 0.2 * p['rim'], 0) / (0.55 * p['rim'])) ** 2)
     rim = np.where(mask, np.clip(1 - inside / (0.5 * p['rim']), 0, 1), rim)
-    glow = (0.5 * np.exp(-dist / 2.5) + 0.5 * np.exp(-dist / p['glow'])) * p['glow_a']
+    glow = np.exp(-dist / p['glow']) * p['glow_a']
     glow[mask] = 0
-    rgb = np.array((255, 140, 40), np.float32)[None, None] * glow[..., None]
-    al = glow.copy()
-    for c, ca in ((fire_rgb, fire_a), (np.broadcast_to(np.array(p['rim_rgb'], np.float32), fire_rgb.shape), rim * p['rim_a'])):
+    rgb, al = np.zeros((hh, ww, 3), np.float32), np.zeros((hh, ww), np.float32)
+    for c, ca in ((np.array((22, 10, 4), np.float32), char), (np.array((255, 130, 30), np.float32), glow), (fire_rgb, fire_a),
+                  (np.array((255, 190, 70), np.float32), sparks), (np.array(p['rim_rgb'], np.float32), rim * p['rim_a'])):
+        c = np.broadcast_to(c, rgb.shape)
         rgb = c * ca[..., None] + rgb * (1 - ca[..., None])
         al = ca + al * (1 - ca)
     col = np.where(al[..., None] > 1e-4, rgb / np.maximum(al[..., None], 1e-4), 0)
