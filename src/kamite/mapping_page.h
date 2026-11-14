@@ -37,6 +37,8 @@ namespace kamite::mapping_page
     const char *placeName(Place place); // "south", "l1"... (the data files' names)
 
     // A pad's picture and where its buttons are (resources/options/mapping/pad_<name>.txt, tools/options/make_pad_art.py).
+    // The labels never move with the pad (K, Nov 14): the columns' rows are the same for every pad (kLeft / kRight in
+    // mapping_page.cpp) and only the lines change to reach its buttons.
     struct PadArt
     {
         std::string image, flames; // file names beside the data file
@@ -48,7 +50,6 @@ namespace kamite::mapping_page
             bool set = false, hasVia = false;
         };
         std::array<Point, PlaceCount> points{};
-        std::vector<uint8_t> left, right; // the columns' places, top to bottom
         std::vector<float> silhouette;    // left, right per band
         bool ok = false;
     };

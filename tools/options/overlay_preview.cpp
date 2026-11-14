@@ -234,7 +234,8 @@ int main(int argc, char **argv)
             const char *path = strings.c_str() + it.text;
             if (it.kind == PCSX2GS_SCREEN_IMAGE && strstr(path, "/pad_"))
                 pad = &it;
-            if (it.kind == PCSX2GS_SCREEN_LINE && strstr(path, "/leader"))
+            // Leaders, and the second leg of a bent one (an underscore image that is not level).
+            if (it.kind == PCSX2GS_SCREEN_LINE && (strstr(path, "/leader") || (strstr(path, "/underscore") && std::fabs(it.y1 - it.y) > 1e-4f)))
                 leaders.push_back(&it);
         }
         const auto P = [&](float x, float y) { return std::pair<float, float>(x * W, y * H); };

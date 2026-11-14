@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 
 namespace kamite::mapping_page
@@ -62,6 +63,11 @@ namespace kamite::mapping_page
                     return s;
             return kSets[0];
         }
+
+        // The columns, top to bottom, the same for every pad (K, Nov 14: the labels stay put, the lines reach the
+        // buttons): the right as the original's page, the left with the sticks at the bottom like the right's.
+        constexpr uint8_t kLeft[] = {L2, L1, DPad, L3, LStick};
+        constexpr uint8_t kRight[] = {Start, R2, R1, North, East, South, West, R3, RStick};
 
         int placeOf(const std::string &name)
         {
@@ -136,20 +142,7 @@ namespace kamite::mapping_page
                 p.hasVia = true;
             }
             else if (word == "left" || word == "right")
-            {
-                std::vector<uint8_t> &column = word == "left" ? out.left : out.right;
-                std::string name;
-                while (in >> name)
-                {
-                    const int place = placeOf(name);
-                    if (place < 0)
-                    {
-                        error = "unknown button " + name;
-                        return false;
-                    }
-                    column.push_back(static_cast<uint8_t>(place));
-                }
-            }
+                continue; // older data files listed the columns: the columns are fixed now (kLeft / kRight)
             else if (word == "silhouette")
             {
                 int bands = 0;
@@ -233,7 +226,8 @@ namespace kamite::mapping_page
         };
 
         for (int side = 0; side < 2; ++side)
-            for (const uint8_t place : side == 0 ? art.left : art.right)
+            for (const uint8_t place : side == 0 ? std::vector<uint8_t>(std::begin(kLeft), std::end(kLeft))
+                                                 : std::vector<uint8_t>(std::begin(kRight), std::end(kRight)))
             {
                 const PadArt::Point &p = art.points[place];
                 if (!p.set)
@@ -300,14 +294,15 @@ namespace kamite::mapping_page
                 d.lines.push_back(line);
                 d.places.push_back(place);
             }
-        // The left column lines up with the right where the pad is symmetric (the original's L2 / R2, L1 / R1 and
-        // left / right stick rows share their heights).
+        // The left column's rows sit level with the right's (the original's L2 / R2, L1 / R1 and stick rows share
+        // their heights; the d-pad sits by the middle face row).
         for (size_t i = 0; i < d.lines.size(); ++i)
         {
             if (d.lines[i].right)
                 continue;
             const uint8_t p = d.places[i];
-            const uint8_t want = p == L2 ? uint8_t{R2} : p == L1 ? uint8_t{R1} : p == L3 ? uint8_t{R3} : p == LStick ? uint8_t{RStick} : kNone;
+            const uint8_t want = p == L2 ? uint8_t{R2} : p == L1 ? uint8_t{R1} : p == L3 ? uint8_t{R3} : p == LStick ? uint8_t{RStick}
+                                 : p == DPad ? uint8_t{East} : kNone;
             for (size_t j = 0; j < d.lines.size(); ++j)
                 if (d.lines[j].right && d.places[j] == want)
                     d.lines[i].mirror = static_cast<int>(j);

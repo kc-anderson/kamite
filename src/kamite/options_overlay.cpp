@@ -150,15 +150,16 @@ namespace kamite::options_overlay
         // BUTTON MAPPING (claude/button-mapping.md, the original controller page measured from the disc). The title at
         // the top left as the original's (its letters from kMapTitleX, kMapTitleScale of the other pages' size). The
         // pad's picture kMapPadHeight lines tall (at most kMapPadShare of the text area wide) centred at kMapPadY, as
-        // much of the page as the original's. A column either side: every panel's inner end kMapKnee past the pad's
-        // outline (the lines turn there: a straight edge), kMapPanel units wide (kMapEdge in from the text area's
+        // much of the page as the original's. A column either side: every panel's inner end kMapKnee past the widest
+        // pad's outline (the lines turn there: a straight edge, the same for every pad), kMapPanel units wide (kMapEdge in from the text area's
         // edges at most). The right column's rows stacked evenly over kMapTop..kMapBottom (each as tall as its label
         // needs, at least kMapRow), kMapRowGap..kMapRowGapMax apart, all squeezed together when they do not fit; the
-        // left column's rows on the right column's heights (their underscores level), each by its mirror (L2 by R2 ...)
-        // or its button, below the title (kMapTitleClear).
+        // left column's rows level with their mirrors in the right column (L2 by R2, L1 by R1, the d-pad by the middle
+        // face row, L3 by R3, the left stick by the right), below the title (kMapTitleClear).
         constexpr float kMapTitleX = 20.0f, kMapTitleScale = 0.8f, kMapTitleClear = 62.0f;
         constexpr float kMapPadY = 230.0f, kMapPadHeight = 190.0f, kMapPadShare = 0.46f;
         constexpr float kMapKnee = 4.0f, kMapPanel = 160.0f, kMapEdge = 10.0f;
+        constexpr float kMapPadWidest = 262.0f; // the widest pad's picture at kMapPadHeight (the PlayStation one), units
         constexpr float kMapTop = 40.0f, kMapBottom = 362.0f, kMapRow = 29.0f, kMapRowGap = 4.0f, kMapRowGapMax = 12.0f;
         // Text, measured from the original's cross row (ATTACK / THROW ITEM / CONFIRM): every line's underline touches
         // its letters' stroke (baseline to the line's centre: kMapAbove for a thin divider, kMapAboveLast for the
@@ -693,19 +694,10 @@ namespace kamite::options_overlay
                 const float padW = padH * aspect * kLinesToUnits; // units
                 const float cx = 0.5f * space.area, padL = cx - 0.5f * padW, padR = cx + 0.5f * padW;
                 const float padT = kMapPadY - 0.5f * padH;
-                // The outline's extremes: the panels turn just past them.
-                float outlineL = 0.0f, outlineR = 1.0f;
-                if (m.silhouette && m.bands > 0)
-                {
-                    outlineL = 1.0f, outlineR = 0.0f;
-                    for (int band = 0; band < m.bands; ++band)
-                        if (m.silhouette[2 * band] >= 0.0f)
-                        {
-                            outlineL = std::min(outlineL, m.silhouette[2 * band]);
-                            outlineR = std::max(outlineR, m.silhouette[2 * band + 1]);
-                        }
-                }
-                const float kneeL = padL + outlineL * padW - kMapKnee, kneeR = padL + outlineR * padW + kMapKnee;
+                // The columns turn at the same place for every pad (K: the labels never move with the pad), just past
+                // the widest pad's outline at this size; a narrower pad's lines are a little longer.
+                const float widest = std::min(kMapPadWidest, kMapPadShare * space.area);
+                const float kneeL = cx - 0.5f * widest - kMapKnee, kneeR = cx + 0.5f * widest + kMapKnee;
                 const float outerL = std::max(kMapEdge, kneeL - kMapPanel), outerR = std::min(space.area - kMapEdge, kneeR + kMapPanel);
 
                 struct Row
@@ -747,6 +739,17 @@ namespace kamite::options_overlay
                         top = base - cap;
                     }
                     t.height = std::max(kMapRow, -top + kMapRowTop);
+                    // One function (no divider, no HOT: COMBO, UNLEASH / THE GODHAND): centred in its row instead (K);
+                    // only labels with several functions sit on their lines from the bottom.
+                    bool several = *l.hot;
+                    for (int i = 0; i + 1 < t.n; ++i)
+                        several = several || t.divider[i];
+                    if (!several)
+                    {
+                        const float shift = 0.5f * (-t.height - (t.base[0] - t.cap[0])) - 0.5f * t.base[t.n - 1];
+                        for (int i = 0; i < t.n; ++i)
+                            t.base[i] += shift;
+                    }
                     return t;
                 };
                 const auto height = [&](const MappingLine &l) { return shapeOf(l).height; };
@@ -768,62 +771,20 @@ namespace kamite::options_overlay
                     r.bottom = y + height(m.lines[r.line]) * squeeze;
                     y = r.bottom + gap * squeeze;
                 }
-                // The left column: each row's underscore level with one of the right column's (in order, none
-                // overlapping, clear of the title), as near its mirror's or its button's height as can be.
-                if (!left.empty())
+                // The left column: each row level with its mirror (the same rows for every pad); one without a mirror
+                // (never with the shipped layout) stacked under the one above it.
                 {
-                    const size_t n = left.size(), slots = right.size();
-                    const float inf = 1e9f;
-                    std::vector<std::vector<float>> cost(n, std::vector<float>(slots, inf));
-                    std::vector<std::vector<int>> from(n, std::vector<int>(slots, -1));
-                    const auto want = [&](size_t i, size_t j) {
-                        const MappingLine &l = m.lines[left[i].line];
-                        const Row &slot = right[j];
-                        if (l.mirror >= 0)
-                            for (const Row &r : right)
-                                if (r.line == l.mirror)
-                                    return std::fabs(slot.bottom - r.bottom);
-                        const float h = height(l) * squeeze;
-                        return std::fabs(slot.bottom - 0.5f * h - (padT + l.py * padH));
-                    };
-                    for (size_t i = 0; i < n; ++i)
-                        for (size_t j = 0; j < slots; ++j)
-                        {
-                            const float top = right[j].bottom - height(m.lines[left[i].line]) * squeeze;
-                            if (top < kMapTitleClear)
-                                continue;
-                            if (i == 0)
-                            {
-                                cost[i][j] = want(i, j);
-                                continue;
-                            }
-                            for (size_t k = 0; k < j; ++k)
-                                if (cost[i - 1][k] < inf && right[k].bottom + kMapRowGap * squeeze <= top && cost[i - 1][k] + want(i, j) < cost[i][j])
-                                {
-                                    cost[i][j] = cost[i - 1][k] + want(i, j);
-                                    from[i][j] = static_cast<int>(k);
-                                }
-                        }
-                    int best = -1;
-                    for (size_t j = 0; j < slots; ++j)
-                        if (cost[n - 1][j] < inf && (best < 0 || cost[n - 1][j] < cost[n - 1][static_cast<size_t>(best)]))
-                            best = static_cast<int>(j);
-                    if (best >= 0)
-                        for (size_t i = n; i-- > 0;)
-                        {
-                            left[i].bottom = right[static_cast<size_t>(best)].bottom;
-                            left[i].top = left[i].bottom - height(m.lines[left[i].line]) * squeeze;
-                            best = from[i][static_cast<size_t>(best)];
-                        }
-                    else // no fit (never with the shipped pads): stacked down from under the title
+                    float below = kMapTitleClear;
+                    for (Row &r : left)
                     {
-                        float yy = kMapTitleClear;
-                        for (Row &r : left)
-                        {
-                            r.top = yy;
-                            r.bottom = yy + height(m.lines[r.line]) * squeeze;
-                            yy = r.bottom + kMapRowGap;
-                        }
+                        const MappingLine &l = m.lines[r.line];
+                        const float h = height(l) * squeeze;
+                        r.bottom = below + h;
+                        for (const Row &o : right)
+                            if (o.line == l.mirror)
+                                r.bottom = o.bottom;
+                        r.top = r.bottom - h;
+                        below = r.bottom + kMapRowGap * squeeze;
                     }
                 }
 

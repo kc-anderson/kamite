@@ -25,35 +25,29 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 MARGIN = 0.20   # the flames' room round the render (of its height)
 BANDS = 64      # silhouette bands
 
-# Each pad: its buttons (render pixels: x, y, how far short of the point its line stops) and the columns' rows. A row
-# shows only when it has something to say (mapping_page.cpp); the order keeps the lines from crossing. A stick's click
+# Each pad: its buttons (render pixels: x, y, how far short of the point its line stops). The columns' rows are the same
+# for every pad (mapping_page.cpp kLeft / kRight): only the lines change, bending (via) where they would cross. A stick's click
 # line ends on its cap, its own line on the ring below, so the two never run together. via: a bend the line takes on its
 # way (the left face button's line passes under the bottom one, as the original's square line does).
 PADS = {
     'xbox': dict(
         points=dict(south=(1128, 535, 42), east=(1238, 432, 42), west=(1018, 432, 42), north=(1130, 330, 42),
-                    l1=(255, 205, 0), r1=(1200, 205, 0), l2=(300, 112, 0), r2=(1165, 112, 0),
+                    l1=(255, 205, 0), r1=(1225, 212, 0), l2=(300, 112, 0), r2=(1182, 140, 0),
                     l3=(310, 412, 18), r3=(918, 637, 18), start=(880, 428, 26), select=(565, 430, 26),
                     dpad=(500, 665, 70), lstick=(310, 478, 62), rstick=(918, 703, 62)),
-        via=dict(west=(1095, 612)),
-        left=['l2', 'l1', 'l3', 'lstick', 'dpad'],
-        right=['start', 'r2', 'r1', 'north', 'east', 'south', 'west', 'r3', 'rstick']),
+        via=dict(west=(1095, 612), dpad=(440, 300))),
     'playstation': dict(
         points=dict(south=(1265, 563, 48), east=(1390, 440, 48), west=(1140, 440, 48), north=(1268, 318, 48),
                     l1=(250, 140, 0), r1=(1335, 140, 0), l2=(255, 45, 0), r2=(1330, 45, 0),
                     l3=(552, 640, 18), r3=(1027, 640, 18), start=(935, 432, 30), select=(648, 432, 30),
                     dpad=(322, 438, 100), lstick=(552, 706, 62), rstick=(1027, 706, 62)),
-        via=dict(west=(1212, 645)),
-        left=['l2', 'l1', 'dpad', 'l3', 'lstick'],
-        right=['start', 'r2', 'r1', 'north', 'east', 'south', 'west', 'r3', 'rstick']),
+        via=dict(west=(1212, 645))),
     'nintendo': dict(
         points=dict(south=(1193, 515, 42), east=(1313, 422, 42), west=(1067, 422, 42), north=(1190, 328, 42),
-                    l1=(300, 110, 0), r1=(1240, 112, 0), l2=(318, 52, 0), r2=(1222, 52, 0),
+                    l1=(300, 110, 0), r1=(1255, 120, 0), l2=(318, 52, 0), r2=(1238, 64, 0),
                     l3=(530, 615, 16), r3=(995, 615, 16), start=(865, 415, 25), select=(670, 415, 25),
                     dpad=(338, 418, 85), lstick=(530, 672, 55), rstick=(995, 672, 55)),
-        via=dict(west=(1150, 592)),
-        left=['l2', 'l1', 'dpad', 'l3', 'lstick'],
-        right=['start', 'r2', 'r1', 'north', 'east', 'south', 'west', 'r3', 'rstick']),
+        via=dict(west=(1150, 592))),
 }
 
 # The flames (K, Nov 14, from his upscale of the original): a fire behind the pad, seen past its outline: a thin band
@@ -291,8 +285,6 @@ def main():
             lines.append('point %s %d %d %d' % (button, x, y, r))
         for button, (x, y) in pad.get('via', {}).items():
             lines.append('via %s %d %d' % (button, x, y))
-        lines.append('left ' + ' '.join(pad['left']))
-        lines.append('right ' + ' '.join(pad['right']))
         lines.append('# the silhouette\'s left and right ends per band from the top (fractions of the width; -1: none)')
         lines.append('silhouette %d %s' % (BANDS, ' '.join('%.4f %.4f' % p for p in silhouette(render))))
         open(os.path.join(a.out, 'pad_%s.txt' % name), 'w', newline='\n').write('\n'.join(lines) + '\n')
