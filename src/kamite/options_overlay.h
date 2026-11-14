@@ -117,7 +117,17 @@ namespace kamite::options_overlay
         Hint prevHint, nextHint;
         // CONTROLS > BUTTON MAPPING open: the whole picture is that page (title CONTROLS, no list, no L1 / R1).
         const MappingView *mapping = nullptr;
+        // L1 / R1 just switched the open category (K, Nov 14: as the title screen's menu words): the old title
+        // (`titleFrom`) streaks off blurred and the new one streaks in from the other side and sharpens; titleDir +1 =
+        // R1 (the next category, coming in from the right), titleT 0..1 through it. titleDir 0 = still.
+        const char *titleFrom = "";
+        int titleDir = 0;
+        float titleT = 0.0f;
     };
+    // The page sits beside the list from this aspect on (16:10 and wider); narrower, an open page replaces the list.
+    inline constexpr float kSplitAspect = 1.595f;
+    // How long a title switch (View::titleDir) takes, in seconds.
+    inline constexpr float kTitleSwitchSeconds = 0.24f;
 
     // The fonts (resources/fonts) and the titles' folder (resources/options: title_options.png, title_<category>.png),
     // set once at start.

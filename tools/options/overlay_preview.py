@@ -2,7 +2,7 @@
 
 python tools/options/overlay_preview.py out.png [--size 1920x1080] [--title] [--cursor N] [--confirm N]
     [--page controls|display|interface|gameplay|sound] [--open] [--row N] [--scroll N] [--set Section.Key=Value ...]
-    [--menu western|japanese|classic] [--prompts xbox|playstation|nintendo|steam|keys]
+    [--menu western|japanese|classic] [--prompts xbox|playstation|nintendo|steam|keys] [--switch FROM:DIR:T]
     [--page mapping [--line PLACE] [--swap A:B ...] [--hot PLACE=NAME ...] [--readonly]]
 
 Builds tools/options/overlay_preview.cpp (g++, the repo's ImGui) with the DLL's own drawing code cut from HostStubs.cpp,
@@ -82,6 +82,7 @@ def main():
     ap.add_argument('--row', type=int, default=1, help="the page's cursor row")
     ap.add_argument('--scroll', type=int, default=0)
     ap.add_argument('--set', action='append', default=[], help='Section.Key=Value over the repo\'s GHR.ini')
+    ap.add_argument('--switch', default='', help='FROM:DIR:T, an L1 / R1 title switch (e.g. DISPLAY:1:0.3)')
     ap.add_argument('--menu', choices=['western', 'japanese', 'classic'], default='western')
     ap.add_argument('--prompts', choices=sorted(HINT_ART), default='xbox')
     a = ap.parse_args()
@@ -107,7 +108,7 @@ def main():
     fonts = os.path.join(ROOT, 'resources/fonts')
     page = {'controls': 0, 'display': 1, 'interface': 2, 'gameplay': 3, 'sound': 4, 'mapping': 0}.get(a.page, -1)
     env = dict(os.environ, KAMITE_PREVIEW_HINTS='|'.join(hint_paths(work, a.menu, a.prompts)),
-               KAMITE_PREVIEW_TITLES=title_letters())
+               KAMITE_PREVIEW_TITLES=title_letters(), KAMITE_PREVIEW_SWITCH=a.switch)
     menu = {'western': 'western', 'japanese': 'japanese', 'classic': 'classic'}[a.menu]
     a.set.insert(0, 'Game.MenuButtons=' + menu)  # the page's menu words follow it (a --set wins)
     if a.page == 'mapping':

@@ -2,6 +2,16 @@
 
 Newest first, one line per change; the code comments say how.
 
+## November 14, 2026
+
+- Options: up / down go round from the last option to the first and back, in the list and in the pages.
+- Options: on 16:10 and wider, Right opens the category beside the list and Left at a row's left end goes back to it.
+- Options: LB / RB play the swoosh and the category titles streak in and out like the title screen's menu.
+- Options: HUD Layout leads the Interface page, Enemy Life Gauge under it.
+- Options: Money (the F2 slider) in Gameplay; Roulette Wheel & Reel is now Roulette Charrette, Misc. & Risk is now Misqué & Risqué.
+- Options: Button Mapping and Vibration help texts.
+- Controls: new PlayStation pad picture on the Button Mapping page.
+
 ## November 13, 2026
 
 - Controls: new BUTTON MAPPING page under Menu Controls, showing what each controller button does on the pad (editing comes next).

@@ -167,6 +167,17 @@ int main(int argc, char **argv)
             }
         }
     }
+    // An L1 / R1 switch under way: KAMITE_PREVIEW_SWITCH="FROM:DIR:T" (the category left, +1 = R1, 0..1 through it).
+    static std::string switchFrom;
+    if (const char *sw = getenv("KAMITE_PREVIEW_SWITCH"); sw && *sw && v.inPage)
+    {
+        const std::string all = sw;
+        const size_t a = all.find(':'), b = all.find(':', a + 1);
+        switchFrom = all.substr(0, a);
+        v.titleFrom = switchFrom.c_str();
+        v.titleDir = atoi(all.substr(a + 1, b - a - 1).c_str());
+        v.titleT = static_cast<float>(atof(all.substr(b + 1).c_str()));
+    }
     // BUTTON MAPPING: KAMITE_PREVIEW_MAPPING="root|art|setFolder|cursor|readOnly|swaps|hots" (overlay_preview.py):
     // swaps "south:west,..." exchange two places' PS2 buttons, hots "r3=Save state;...".
     static kamite::mapping_page::PageData mapping;

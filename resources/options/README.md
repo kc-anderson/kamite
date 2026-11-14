@@ -9,6 +9,8 @@ shape and turns it into the backdrop texture's full-resolution image (`src/kamit
 game's painted title sat (`src/kamite/options_overlay.cpp`). `title_controls.png`, `title_display.png`, `title_interface.png`,
 `title_gameplay.png`, `title_sound.png`: the categories' titles, which replace OPTIONS while their page is open: K's lettering and
 styles, their inner pattern grown from OPTIONS' by `tools/options/make_splash.py`. All on one canvas, at half the PSD's size.
+`title_<category>_blur.png`: their motion-blurred twins, shown while LB / RB slide a title in or out (the title screen's
+menu words do the same), made by `tools/options/make_title_blur.py`.
 
 `scroll_track.png`, `scroll_thumb.png`: the pages' scroll bar (`tools/options/make_scrollbar.py`).
 

@@ -48,7 +48,7 @@ namespace kamite::options_pages
     std::string upper(const char *text);
     // CONTROLS > BUTTON MAPPING: the row's help (in game only: the launcher keeps its own bindings table).
     constexpr const char *kMappingName = "BUTTON MAPPING";
-    constexpr const char *kMappingHelp = "Swap what the buttons do in play.\nMenus keep their buttons (Menu Controls).";
+    constexpr const char *kMappingHelp = "Check or rebind controls (except menu bondage).\nIf you're a keyboard freak, go to the launcher.";
 
     // A description as the help box shows it: two lines at most at the text area's width ("..." past that).
     std::string wrapHelp(const char *text, float aspect);

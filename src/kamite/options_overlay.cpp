@@ -122,11 +122,13 @@ namespace kamite::options_overlay
         constexpr float kTitleY = 70.0f, kTitleCap = 30.0f; // the text stand-in when the image is missing
         constexpr float kLettersLeft = 0.12f, kLettersRight = 0.88f; // of the canvas, for a title never measured
         constexpr float kMaxLabel = 190.0f;                  // the longest original (RESTORE DEFAULTS)
+        // An L1 / R1 switch (titleSwitch): the titles slide kTitleSlide units while streaked; the blurred twins
+        // (title_<name>_blur.png, make_title_blur.py) are kTitleBlurPad of the title's width wider on each side.
+        constexpr float kTitleSlide = 46.0f, kTitleBlurPad = 0.15f;
 
         // The page beside the list (16:10 and wider): the bracket's upright just past the list's longest name, the
         // page's cursor and names after it as the list's are after the screen's edge; its right end at the text area's
         // margin, at most kPageWidth on. Values sit in a block at the right, choices centred in equal slots.
-        constexpr float kSplitAspect = 1.595f;
         constexpr float kBracketX = 240.0f, kBracketTick = 9.0f, kBracketGap = 7.0f, kBracketReach = 17.0f;
         constexpr float kPageCursorGap = kLabelX - kCursorX, kPageNameGap = kLabelX - kCursorX + kLabelX - kCursorX;
         constexpr float kPageWidth = 470.0f, kValueBlock = 136.0f, kScrollWidth = 8.0f, kScrollGap = 14.0f;
@@ -632,6 +634,43 @@ namespace kamite::options_overlay
                 items.push_back(item);
             }
 
+            // A title image (its path without ".png") moved dx units, its blurred twin over it by blur (0..1), at alpha.
+            void titleMoving(const std::string &stem, float dx, float blur, float alpha)
+            {
+                const float width = kTitleWidth / kTitlePixelsPerUnit, centre = 0.5f * space.area + dx;
+                const auto draw = [&](const std::string &path, float pad, float a)
+                {
+                    if (a <= 0.0f)
+                        return;
+                    Pcsx2GsScreenItem item = base();
+                    item.kind = PCSX2GS_SCREEN_IMAGE;
+                    item.text = add(path.data(), path.size());
+                    item.fill = faded(rgba(255, 255, 255), std::min(a, 1.0f));
+                    item.x = space.x(centre - (0.5f + pad) * width);
+                    item.x1 = space.x(centre + (0.5f + pad) * width);
+                    item.y = Space::y(kTitleTop);
+                    item.y1 = Space::y(kTitleTop + kTitleHeight / kTitlePixelsPerUnit);
+                    items.push_back(item);
+                };
+                // Both at full strength through the middle of the change: the streak over the sharp letters.
+                draw(stem + ".png", 0.0f, alpha * std::min(1.0f, 2.0f * (1.0f - blur)));
+                draw(stem + "_blur.png", kTitleBlurPad, alpha * std::min(1.0f, 2.0f * blur));
+            }
+
+            // L1 / R1 switched the category (the title screen's menu words, K, Nov 14): the old title streaks off the
+            // way the list moved and fades, the new one streaks in from the other side, slowing, and sharpens.
+            void titleSwitch(const std::string &from, const std::string &to, int dir, float t)
+            {
+                const float d = dir > 0 ? 1.0f : -1.0f;
+                const float out = std::clamp(t / 0.4f, 0.0f, 1.0f);
+                titleMoving(from, -d * kTitleSlide * out * out, 1.0f, 1.0f - out);
+                const float in = std::clamp((t - 0.15f) / 0.85f, 0.0f, 1.0f);
+                const float ease = 1.0f - (1.0f - in) * (1.0f - in) * (1.0f - in);
+                const float sharp = std::clamp((in - 0.35f) / 0.65f, 0.0f, 1.0f);
+                titleMoving(to, d * kTitleSlide * (1.0f - ease), 1.0f - sharp * sharp * (3.0f - 2.0f * sharp),
+                            std::min(1.0f, 4.0f * in));
+            }
+
             // An image over x0..x1 (units; x1 < x0 mirrors it) and y0..y1 (lines).
             void picture(const char *path, float x0, float y0, float x1, float y1, uint32_t fill)
             {
@@ -908,12 +947,18 @@ namespace kamite::options_overlay
 
         // The title: OPTIONS, or the open category's (K, Nov 13: it replaces OPTIONS until the page is left).
         const char *title = open ? page->name : "OPTIONS";
-        if (!g_titleDir.empty())
+        const auto stem = [](const char *name)
         {
             std::string path = g_titleDir + "/title_";
-            for (const char *c = title; *c; ++c)
+            for (const char *c = name; *c; ++c)
                 path.push_back(static_cast<char>(*c >= 'A' && *c <= 'Z' ? *c - 'A' + 'a' : *c));
-            path += ".png";
+            return path;
+        };
+        if (!g_titleDir.empty() && open && view.titleDir != 0 && view.titleFrom && *view.titleFrom && view.titleT < 1.0f)
+            b.titleSwitch(stem(view.titleFrom), stem(title), view.titleDir, std::max(view.titleT, 0.0f));
+        else if (!g_titleDir.empty())
+        {
+            const std::string path = stem(title) + ".png";
             b.title(b.add(path.data(), path.size()));
         }
         else

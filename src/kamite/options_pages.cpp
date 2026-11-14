@@ -15,8 +15,20 @@ namespace kamite::options_pages
     std::string upper(const char *text)
     {
         std::string out = text ? text : "";
-        for (char &c : out)
-            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        for (size_t i = 0; i < out.size(); ++i)
+        {
+            const unsigned char c = static_cast<unsigned char>(out[i]);
+            if (c == 0xC3u && i + 1 < out.size())
+            {
+                // UTF-8 Latin-1 letters (Misqu\u00e9 & Risqu\u00e9): \u00e0..\u00fe -> \u00c0..\u00de, \u00f7 and \u00ff kept.
+                const unsigned char next = static_cast<unsigned char>(out[i + 1]);
+                if (next >= 0xA0u && next <= 0xBEu && next != 0xB7u)
+                    out[i + 1] = static_cast<char>(next - 0x20u);
+                ++i;
+            }
+            else if (c < 0x80u)
+                out[i] = static_cast<char>(std::toupper(c));
+        }
         return out;
     }
 

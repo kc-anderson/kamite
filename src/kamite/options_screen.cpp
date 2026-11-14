@@ -29,6 +29,7 @@
 // there is one, else the disc's scaled up) into cache/hd-options (kept between runs) and hands it to the GS.
 #include "kamite/options_screen.h"
 
+#include "kamite/bone_tweaks.h"
 #include "kamite/buck_breaker.h"
 #include "kamite/button_prompts.h"
 #include "kamite/camera.h"
@@ -68,6 +69,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <fstream>
@@ -586,13 +588,21 @@ namespace kamite::options_screen
             uint32_t backdrop = 0; // its backdrop entry (left stretched over the picture)
             int confirmRow = -1;   // asking Yes / No for this row (-1 = not asking)
             bool confirmYes = false;
-            bool inPage = false;   // the cursor is in the category's page (Right / A in, B out)
+            bool inPage = false;   // the cursor is in the category's page (A in, B out; beside the list Right / Left too)
             int pageCursor = 0;    // its row (headers skipped)
             int pageScroll = 0;    // the first row shown
             bool inMapping = false; // CONTROLS > BUTTON MAPPING is open (B back to its row)
             uint8_t mapCursor = mapping_page::kNone; // its selected button (a place)
         };
         Screen g_screen[2];
+        // The last L1 / R1 category switch, for the titles' slide (options_overlay View::titleDir): the row it left.
+        struct TitleSwitch
+        {
+            int fromRow = -1;
+            int dir = 0;
+            std::chrono::steady_clock::time_point start;
+        };
+        TitleSwitch g_titleSwitch;
         GuestFunction g_original[2][5] = {}; // open, close, update, move, draw
 
         Screen &screenOf(int kind, uint32_t self)
@@ -823,6 +833,8 @@ namespace kamite::options_screen
                 sprint_traversal::setEnabled(on);
             else if (id == "NpcPoses")
                 npc_poses::setEnabled(on);
+            else if (id == "Money")
+                bone_tweaks::setMoney(static_cast<float>(std::atof(value.c_str())) / 100.0f);
             else if (id == "EnemyLifeGauge" || id == "Vibration" || id == "Mode")
                 readGameOptions(); // onFrame writes them into the game
             else if (id == "MusicVolume" || id == "EffectsVolume" || id == "VoicesVolume")
@@ -1302,6 +1314,19 @@ namespace kamite::options_screen
             view.cancelHint.art[0] = hints.cancel.c_str();
             view.cancelHint.word = "Cancel";
             // An open page: L1 / R1 beside its title with the neighbouring categories (none past the ends: L1 / R1 stop).
+            if (s.inPage && g_titleSwitch.dir != 0 && g_titleSwitch.fromRow >= 0 && g_titleSwitch.fromRow < k.rowCount)
+            {
+                const float t = std::chrono::duration<float>(std::chrono::steady_clock::now() - g_titleSwitch.start).count() /
+                                options_overlay::kTitleSwitchSeconds;
+                if (t < 1.0f)
+                {
+                    view.titleFrom = k.text[g_titleSwitch.fromRow].name;
+                    view.titleDir = g_titleSwitch.dir;
+                    view.titleT = t;
+                }
+                else
+                    g_titleSwitch = TitleSwitch{};
+            }
             if (s.inPage)
             {
                 if (s.row > 0 && isCategory(k.actions[s.row - 1]))
@@ -1345,7 +1370,37 @@ namespace kamite::options_screen
             return 1.0f - std::clamp((from + (to - from) * t) / 128.0f, 0.0f, 1.0f);
         }
 
-        // Into the page of the category under the cursor (OK; K, Nov 13: confirm / cancel only), its first option.
+        // The page beside the list (16:10 and wider): Right opens a category, Left at a row's left end comes back.
+        bool splitView() { return g_aspect >= options_overlay::kSplitAspect; }
+
+        // Whether Left has nowhere further to go on a page's row (K, Nov 14): a row with no value (BUTTON MAPPING), a
+        // toggle on ON, a slider at its lowest, choices shown side by side on the first. Lists that go round (< value >)
+        // never end.
+        bool atLeftEnd(const PageData &d, int row)
+        {
+            if (row < 0 || row >= static_cast<int>(d.rows.size()) || d.rows[static_cast<size_t>(row)].header)
+                return false;
+            const settings::Setting *setting = d.setting[static_cast<size_t>(row)];
+            if (!setting)
+                return true;
+            const options_overlay::PageRow &r = d.rows[static_cast<size_t>(row)];
+            switch (setting->kind)
+            {
+            case settings::Kind::Toggle:
+                return settings::on(g_ini, *setting);
+            case settings::Kind::Slider:
+                return r.choice <= 0;
+            case settings::Kind::Choice:
+                if (setting->gameSlider)
+                    return r.choice <= 0;
+                return setting->choiceCount <= 3 && settings::choiceIndex(*setting, settings::value(g_ini, *setting)) == 0;
+            case settings::Kind::Custom:
+                return false;
+            }
+            return false;
+        }
+
+        // Into the page of the category under the cursor (OK; Right too beside the list, K, Nov 14), its first option.
         void enterPage(int kind, Screen &s, uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const Kind &k = kKinds[kind];
@@ -1361,8 +1416,9 @@ namespace kamite::options_screen
             sound(rdram, ctx, runtime, kSeOk);
         }
 
-        // The pad inside a page: up / down between options, left / right change the value (saved and applied at
-        // once), A steps it on, L1 / R1 the neighbouring category, B back to the list.
+        // The pad inside a page: up / down between options (round the ends), left / right change the value (saved and
+        // applied at once; Left past a row's left end goes back beside the list), A steps it on, L1 / R1 the
+        // neighbouring category, B back to the list.
         void pageInputMoves(int kind, Screen &s, uint64_t pressed, uint64_t repeat, uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const Kind &k = kKinds[kind];
@@ -1388,11 +1444,12 @@ namespace kamite::options_screen
                 const int next = s.row + step;
                 if (next >= 0 && next < k.rowCount && isCategory(k.actions[next]))
                 {
+                    g_titleSwitch = TitleSwitch{s.row, step, std::chrono::steady_clock::now()};
                     s.row = next;
                     buildPage(g_page, tabOf(k.actions[s.row]));
                     s.pageCursor = std::max(firstOption(g_page), 0);
                     s.pageScroll = 0;
-                    sound(rdram, ctx, runtime, kSeMove);
+                    sound(rdram, ctx, runtime, kSeBack); // the swoosh, as left / right on the title screen (K, Nov 14)
                 }
                 return;
             }
@@ -1403,8 +1460,11 @@ namespace kamite::options_screen
                 move = 1;
             if (move != 0)
             {
-                const int next = nextOption(g_page, s.pageCursor, move);
-                if (next >= 0)
+                // Round from the last option to the first and back (K, Nov 14).
+                int next = nextOption(g_page, s.pageCursor, move);
+                if (next < 0)
+                    next = move > 0 ? firstOption(g_page) : nextOption(g_page, static_cast<int>(g_page.rows.size()), -1);
+                if (next >= 0 && next != s.pageCursor)
                 {
                     s.pageCursor = next;
                     sound(rdram, ctx, runtime, kSeMove);
@@ -1420,6 +1480,12 @@ namespace kamite::options_screen
             }
             else if ((pressed & kOk) && change(g_page, s.pageCursor, 1, true))
                 sound(rdram, ctx, runtime, kSeMove);
+            else if ((pressed & kLeft) && splitView() && atLeftEnd(g_page, s.pageCursor))
+            {
+                s.inPage = false; // Left at the row's left end: back to the list (K, Nov 14)
+                sound(rdram, ctx, runtime, kSeBack);
+                return;
+            }
             else if ((repeat & kLeft) && change(g_page, s.pageCursor, -1, false))
                 sound(rdram, ctx, runtime, kSeMove);
             else if ((repeat & kRight) && change(g_page, s.pageCursor, 1, false))
@@ -1511,6 +1577,7 @@ namespace kamite::options_screen
             const uint32_t self = GPR_U32(ctx, 4);
             g_original[N][0](rdram, ctx, runtime);
             g_screen[N] = Screen{self};
+            g_titleSwitch = TitleSwitch{};
             if (!g_iniPath.empty() && !g_ini.load(g_iniPath))
                 KM_WARN(Game, "options screen: could not read GHR.ini");
         }
@@ -1571,14 +1638,12 @@ namespace kamite::options_screen
                 sound(rdram, ctx, runtime, kSeBack);
                 wr32(self + kResult, static_cast<uint32_t>(kResultBack));
             }
-            else if ((repeat & kUp) && s.row > 0)
+            else if ((pressed & kRight) && splitView() && isCategory(k.actions[s.row]))
+                enterPage(N, s, rdram, ctx, runtime); // the page beside the list (K, Nov 14)
+            else if ((repeat & (kUp | kDown)) && k.rowCount > 1)
             {
-                --s.row;
-                sound(rdram, ctx, runtime, kSeMove);
-            }
-            else if ((repeat & kDown) && s.row + 1 < k.rowCount)
-            {
-                ++s.row;
+                // Round from the last row to the first and back (K, Nov 14).
+                s.row = (s.row + ((repeat & kUp) ? k.rowCount - 1 : 1)) % k.rowCount;
                 sound(rdram, ctx, runtime, kSeMove);
             }
             ctx->pc = ra;

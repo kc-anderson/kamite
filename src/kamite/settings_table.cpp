@@ -57,6 +57,8 @@ namespace kamite::settings
         constexpr Choice kRouletteTimers[] = {{"normal", "Normal", "NORMAL"}, {"double", "Double time", "DOUBLE"}};
         constexpr Choice kSoundModes[] = {{"mono", "Mono", "MONO"}, {"stereo", "Stereo", "STEREO"},
                                           {"prologic2", "Dolby Pro Logic II", "PRO LOGIC II"}};
+        // Money: F2's range in 5 % steps.
+        constexpr int kMoneys[] = {85, 90, 95, 100, 105, 110, 115, 120, 125, 130};
         // The volumes: 5 % steps, except 65 -> 69 -> 70 (K).
         constexpr int kVolumes[] = {0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 69, 70, 75, 80, 85, 90, 95, 100};
 
@@ -86,6 +88,13 @@ namespace kamite::settings
         {
             Setting s = base(key, Tab::Sound, "Volume", name, description, "Sound", key, "100", Kind::Slider);
             s.values = kVolumes, s.valueCount = static_cast<int>(std::size(kVolumes)), s.unit = "%";
+            return s;
+        }
+        constexpr const char *kMisque = "Misqu\xC3\xA9 & Risqu\xC3\xA9";
+        constexpr Setting money()
+        {
+            Setting s = base("Money", Tab::Gameplay, kMisque, "Money", "", "Game", "Money", "100", Kind::Slider);
+            s.values = kMoneys, s.valueCount = static_cast<int>(std::size(kMoneys)), s.unit = "%";
             return s;
         }
         constexpr Setting custom(const char *id, Tab tab, const char *category, const char *name, const char *description)
@@ -153,7 +162,7 @@ namespace kamite::settings
                          "Instead of removing walls, the camera sees\nthrough them around Gene and enemies.",
                          "Video", "SeeThrough", true),
                   "F2 > Camera sizes it while playing.")),
-        live(toggle(Tab::Controls, "Controller", "Vibration", "Controller rumble. Girls know what it's for.", "Game",
+        live(toggle(Tab::Controls, "Controller", "Vibration", "Controller rumble.\nGirls know what it's for.", "Game",
                     "Vibration", true)),
         live(choice(Tab::Controls, "Controller", "Menu Controls",
                     "Western: bottom button confirms; right cancels.\nJapanese: right button confirms; bottom cancels.",
@@ -189,13 +198,14 @@ namespace kamite::settings
                   "F2 switches it while playing.")),
 
         // ---- Interface ------------------------------------------------------------------------------------------
-        live(toggle(Tab::Interface, "HUD", "Enemy Life Gauge", "Select whether to display\nan enemy's life gauge.", "Game",
-                    "EnemyLifeGauge", true)), // the game's own help
+        // HUD Layout first, Enemy Life Gauge under it (K, Nov 14).
         live(wideOnly(note(choice(Tab::Interface, "HUD", "HUD Layout",
                                   "Where the health bar, radar, and the rest of the in-game HUD go on a wide screen. Wider "
                                   "than 16:9 keeps them at the edges of a 16:9 area.",
                                   "Video", "HudLayout", "16:9", kHudLayouts),
                            "F7 switches it while playing."))),
+        live(toggle(Tab::Interface, "HUD", "Enemy Life Gauge", "Select whether to display\nan enemy's life gauge.", "Game",
+                    "EnemyLifeGauge", true)), // the game's own help
         live(toggle(Tab::Interface, "HUD", "Sway Bar",
                     "Stun gauge for enemies and bosses.\nFills up till they're stunned, then drains.",
                     "Game", "SwayBar", false)),
@@ -253,13 +263,13 @@ namespace kamite::settings
                     "Carry and throw more types of objects. Mostly chairs.\nIf it's not obvious, this makes the game "
                     "easier.",
                     "Game", "LiftChairs", false)),
-        live(choice(Tab::Gameplay, "Roulette Wheel & Reel", "Roulette Timer",
+        live(choice(Tab::Gameplay, "Roulette Charrette", "Roulette Timer",
                     "Time limit to select a move after opening the Roulette.\nTechniques fire off automatically at the end of the timer.",
                     "Game", "RouletteTimer", "normal", kRouletteTimers)),
-        live(toggle(Tab::Gameplay, "Roulette Wheel & Reel", "Target Select",
+        live(toggle(Tab::Gameplay, "Roulette Charrette", "Target Select",
                     "Switch Roulette targets with the right stick and the d-pad.\nHINT: You can also use the d-pad to cycle Roulette moves.",
                     "Game", "RouletteTargetCycle", false)),
-        live(toggle(Tab::Gameplay, "Roulette Wheel & Reel", "Dry Spinning",
+        live(toggle(Tab::Gameplay, "Roulette Charrette", "Dry Spinning",
                     "You can open the Roulette even when you don't have balls.\nHINT: You can use the Roulette camera for targeting.",
                     "Game", "RouletteNoOrbs", false)),
         toggle(Tab::Gameplay, "Skip Poker", "Intro Skipper",
@@ -268,10 +278,12 @@ namespace kamite::settings
         toggle(Tab::Gameplay, "Skip Poker", "Hard-On",
                "Hard can be picked from the start instead of after a clear. Your save is not changed.", "Game",
                "UnlockHard", false),
-        live(note(toggle(Tab::Gameplay, "Misc. & Risk", "Better Shop & Casino Poses",
+        live(note(toggle(Tab::Gameplay, kMisque, "Better Shop & Casino Poses",
                          "Give the shop and casino people better poses.\nNot sure what else you were expecting...",
                          "Game", "NpcPoses", false),
                   "F2 > NPCs sets the poses.")),
+        // Money (K, Nov 14): out of F2 into Options, no help text; F2 > NPCs keeps its slider (any whole percent).
+        live(money()),
 
         // ---- Sound ----------------------------------------------------------------------------------------------
         live(choice(Tab::Sound, "Sound", "Mode", "Select between monaural,\nstereo, or surround sound.", "Sound", "Mode",
