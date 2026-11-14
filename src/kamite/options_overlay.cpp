@@ -188,8 +188,8 @@ namespace kamite::options_overlay
         // at kMapDrumUnder (K: less noise).
         constexpr float kMapDrumPitch = 27.0f, kMapDrumShrink = 0.17f, kMapDrumFade = 0.3f, kMapDrumLean = 7.0f;
         constexpr float kMapDrumReach = 2.6f, kMapDrumDim = 0.5f, kMapDrumUnder = 0.08f;
-        // A soft dark band behind the drum (over the column, kMapDrumShadeSoft lines feathered), kMapDrumShade strong; not
-        // over the selected line's lit panel (K, Nov 14: the highlight shows through, the band above and below it).
+        // A soft dark band over the drum's whole column (kMapDrumShadeSoft lines feathered), kMapDrumShade strong; not over
+        // the selected line's lit panel (K, Nov 14: the highlight shows through, the column dark above and below it).
         constexpr float kMapDrumShadeSoft = 7.0f;
         constexpr uint32_t kMapDrumShade = rgba(0, 0, 0, 120);
         // The ATTACKs' arrows (tools/options/make_drum_arrows.py): the core kMapCap tall at full size with kMapArrowMargin
@@ -826,13 +826,13 @@ namespace kamite::options_overlay
                 };
                 const auto shapeOf = [&](const MappingLine &l) {
                     Shape t;
-                    t.n = std::min(std::max(l.count, 1) + (*l.hot ? 1 : 0), 5);
+                    t.n = std::min(std::max(l.count + (*l.hot ? 1 : 0), 1), 5); // a hotkey alone: its HOT line only
                     const bool single = t.n == 1;
                     float top = 0.0f, base = 0.0f;
                     for (int i = t.n - 1; i >= 0; --i)
                     {
-                        const bool hot = *l.hot && i == t.n - 1;
-                        const float cap = hot ? kMapHotCap : single ? kMapCap : kMapCapN;
+                        const bool hot = *l.hot && i == t.n - 1 && !single; // a hotkey alone is the line's label
+                        const float cap = hot ? kMapHotCap : single ? (*l.hot ? kMapCapN : kMapCap) : kMapCapN;
                         const bool ends = hot || i == t.n - 1 || ((l.ends >> i) & 1u) != 0u || (*l.hot && i == t.n - 2);
                         if (i == t.n - 1)
                             base = -kMapAboveLast;
@@ -870,8 +870,7 @@ namespace kamite::options_overlay
                 float total = 0.0f;
                 for (const Row &r : right)
                     total += height(m.lines[r.line]);
-                // Below the title (K, Nov 14: MENU moved to the bottom, so the top row, R2, has a mirror on the left).
-                const float top = std::max(kMapTop, kMapTitleClear), span = kMapBottom - top;
+                const float top = kMapTop, span = kMapBottom - top;
                 const float gap = right.size() > 1 ? std::clamp((span - total) / static_cast<float>(right.size() - 1), kMapRowGap, kMapRowGapMax) : 0.0f;
                 const float used = total + gap * static_cast<float>(right.empty() ? 0 : right.size() - 1);
                 const float squeeze = used > span ? span / used : 1.0f;
@@ -982,8 +981,9 @@ namespace kamite::options_overlay
                     const uint32_t fill = on ? kLabelOn : l.fixed ? kMapFixedText : kMapText, edge = on ? kLabelOnStroke : kMapStroke;
                     for (int i = 0; i < t.n; ++i)
                     {
-                        const bool hot = *l.hot && i == t.n - 1;
-                        const char *line = hot ? l.hot : l.text[i];
+                        const bool alone = *l.hot && l.count == 0; // a hotkey alone: its HOT line in the label's look
+                        const bool hot = *l.hot && i == t.n - 1 && !alone;
+                        const char *line = alone ? l.hot : hot ? l.hot : l.text[i];
                         const float cap = t.cap[i] * s;
                         text(line, std::strlen(line), labelFont, x0, r.bottom + t.base[i] * s, cap, kNewLabel.scaleX, kMapTracking * cap,
                              hot ? kLabel : fill, hot ? kMapStroke : edge, room);
@@ -997,9 +997,16 @@ namespace kamite::options_overlay
                 const float colL = drumSide ? knee : outer, colR = drumSide ? outer : knee;
                 const float inward = drumSide ? -1.0f : 1.0f; // toward the pad
                 const int n = m.drumCount;
+                // The column's rows, top to bottom, and the drum's reach past them.
+                float colTop = drumMid - drumHalf, colBottom = drumMid + drumHalf;
+                for (const Row &r : drumSide ? right : left)
+                {
+                    colTop = std::min(colTop, r.top - kMapDrumShadeSoft);
+                    colBottom = std::max(colBottom, r.bottom + kMapDrumShadeSoft);
+                }
                 // Above and below the selected line: each edge's feather (centred on it) ends at the line's panel.
-                for (const auto &[y0, y1] : {std::pair{drumMid - drumHalf, drumRow.top - 0.5f * kMapDrumShadeSoft},
-                                             std::pair{drumRow.bottom + 0.5f * kMapDrumShadeSoft, drumMid + drumHalf}})
+                for (const auto &[y0, y1] : {std::pair{colTop, drumRow.top - 0.5f * kMapDrumShadeSoft},
+                                             std::pair{drumRow.bottom + 0.5f * kMapDrumShadeSoft, colBottom}})
                 {
                     if (y1 - y0 < 1.0f)
                         continue;

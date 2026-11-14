@@ -71,10 +71,10 @@ namespace kamite::mapping_page
         }
 
         // The columns, top to bottom, the same for every pad (K, Nov 14: the labels stay put, the lines reach the
-        // buttons): the right as the original's page but Start at the bottom, the left with the sticks over Select at
-        // the bottom like the right's (K, Nov 14).
-        constexpr uint8_t kLeft[] = {L2, L1, DPad, L3, LStick, Select};
-        constexpr uint8_t kRight[] = {R2, R1, North, East, South, West, R3, RStick, Start};
+        // buttons): the right as the original's page, the left with Select on top (level with R2: the title sits where
+        // Start's row would be mirrored) and the sticks at the bottom like the right's.
+        constexpr uint8_t kLeft[] = {Select, L2, L1, DPad, L3, LStick};
+        constexpr uint8_t kRight[] = {Start, R2, R1, North, East, South, West, R3, RStick};
 
         int placeOf(const std::string &name)
         {
@@ -294,15 +294,15 @@ namespace kamite::mapping_page
                         add(w.line[0], !w.wrapped || !w.line[1]);
                         add(w.line[1], true);
                     }
-                    else
-                        add(kEmpty, true);
+                    else if (state.hot[place].empty())
+                        add(kEmpty, true); // nothing on it (a hotkey alone: just its HOT line, K Nov 14)
                     if (const char *word = menuWord(place))
                         add(word, true);
                 }
                 else if (place == Start)
                     add("MENU", true);
-                else if (place == Select)
-                    add(kEmpty, true); // nothing in play (K, Nov 14: shown all the same, the pad's last button)
+                else if (place == Select && state.hot[place].empty())
+                    add(kEmpty, true); // nothing in play (K, Nov 14: shown all the same); a hotkey alone: its HOT line
                 else if (place == LStick)
                     add("MOVE", true);
                 else if (place == RStick)
@@ -322,8 +322,9 @@ namespace kamite::mapping_page
                 }
                 if (place <= Select && !state.hot[place].empty())
                     line.hot = d.keep("HOT: " + state.hot[place]);
-                line.fixed = place >= kRemappable;
-                if (line.count == 0)
+                // Start / Select are fixed, but one carrying a hotkey can be selected to clear it (K, Nov 14).
+                line.fixed = place >= kRemappable && !*line.hot;
+                if (line.count == 0 && !*line.hot)
                     continue; // nothing in play (the d-pad without Moveset Presets): no line, as the original
                 if (place == LStick || place == RStick)
                     line.icon = d.keep(artDir + "/stick_" + set.folder + (place == LStick ? "_left.png" : "_right.png"));
@@ -339,8 +340,8 @@ namespace kamite::mapping_page
             if (d.lines[i].right)
                 continue;
             const uint8_t p = d.places[i];
-            const uint8_t want = p == L2 ? uint8_t{R2} : p == L1 ? uint8_t{R1} : p == L3 ? uint8_t{R3} : p == LStick ? uint8_t{RStick}
-                                 : p == DPad ? uint8_t{East} : p == Select ? uint8_t{Start} : kNone;
+            const uint8_t want = p == Select ? uint8_t{R2} : p == L2 ? uint8_t{R1} : p == L1 ? uint8_t{North} : p == L3 ? uint8_t{R3}
+                                 : p == LStick ? uint8_t{RStick} : p == DPad ? uint8_t{East} : kNone;
             for (size_t j = 0; j < d.lines.size(); ++j)
                 if (d.lines[j].right && d.places[j] == want)
                     d.lines[i].mirror = static_cast<int>(j);
@@ -369,7 +370,7 @@ namespace kamite::mapping_page
             d.view.notice = "";
 
         // The drum over the cursor's line.
-        const bool onHot = cursor < kRemappable && !state.hot[cursor].empty();
+        const bool onHot = cursor <= Select && !state.hot[cursor].empty();
         if (edit.drum && !state.readOnly && d.view.cursor >= 0 && !onHot)
         {
             int start = 0;
@@ -428,7 +429,7 @@ namespace kamite::mapping_page
         if (dy != 0)
         {
             for (int i = at + dy; i >= 0 && i < static_cast<int>(d.places.size()); i += dy)
-                if (d.lines[static_cast<size_t>(i)].right == from.right && d.places[static_cast<size_t>(i)] < kRemappable)
+                if (d.lines[static_cast<size_t>(i)].right == from.right && !d.lines[static_cast<size_t>(i)].fixed)
                     return d.places[static_cast<size_t>(i)];
             return cursor;
         }
@@ -439,7 +440,7 @@ namespace kamite::mapping_page
             float bestDistance = 0.0f;
             for (size_t i = 0; i < d.places.size(); ++i)
             {
-                if (d.lines[i].right == from.right || d.places[i] >= kRemappable)
+                if (d.lines[i].right == from.right || d.lines[i].fixed)
                     continue;
                 const float distance = std::fabs(d.lines[i].py - from.py);
                 if (best < 0 || distance < bestDistance)

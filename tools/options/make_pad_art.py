@@ -28,28 +28,27 @@ BANDS = 64      # silhouette bands
 # Each pad: its buttons (render pixels: x, y, how far short of the point its line stops). The columns' rows are the same
 # for every pad (mapping_page.cpp kLeft / kRight): only the lines change, bending (via) where they would cross. A stick's click
 # line ends on its cap, its own line on the ring below, so the two never run together. via: a bend the line takes on its
-# way (the left face button's line passes under the bottom one, as the original's square line does; Select and Start go
-# down between the d-pad / left stick and the right stick and out under the pad to the bottom rows, under the sticks'
-# lines).
+# way (the left face button's line passes under the bottom one, as the original's square line does; Select's rises
+# over the left shoulders to its row beside the top right's, as the original's Start line does on the right).
 PADS = {
     'xbox': dict(
         points=dict(south=(1128, 535, 42), east=(1238, 432, 42), west=(1018, 432, 42), north=(1130, 330, 42),
                     l1=(255, 205, 0), r1=(1225, 212, 0), l2=(300, 112, 0), r2=(1182, 140, 0),
                     l3=(310, 412, 18), r3=(918, 637, 18), start=(880, 428, 26), select=(565, 430, 26),
                     dpad=(500, 665, 70), lstick=(310, 478, 62), rstick=(918, 703, 62)),
-        via=dict(west=(1095, 612), dpad=(440, 300), select=(640, 790), start=(770, 800))),
+        via=dict(west=(1095, 612), dpad=(440, 300), select=(400, 40))),
     'playstation': dict(
         points=dict(south=(1265, 563, 48), east=(1390, 440, 48), west=(1140, 440, 48), north=(1268, 318, 48),
                     l1=(250, 140, 0), r1=(1335, 140, 0), l2=(255, 45, 0), r2=(1330, 45, 0),
                     l3=(552, 640, 18), r3=(1027, 640, 18), start=(935, 432, 30), select=(648, 432, 30),
                     dpad=(322, 438, 100), lstick=(552, 706, 62), rstick=(1027, 706, 62)),
-        via=dict(west=(1212, 645), select=(760, 900), start=(830, 900))),
+        via=dict(west=(1212, 645), select=(430, -15))),
     'nintendo': dict(
         points=dict(south=(1193, 515, 42), east=(1313, 422, 42), west=(1067, 422, 42), north=(1190, 328, 42),
                     l1=(300, 110, 0), r1=(1255, 120, 0), l2=(318, 52, 0), r2=(1238, 64, 0),
                     l3=(530, 615, 16), r3=(995, 615, 16), start=(865, 415, 25), select=(670, 415, 25),
                     dpad=(338, 418, 85), lstick=(530, 672, 55), rstick=(995, 672, 55)),
-        via=dict(west=(1150, 592), select=(730, 860), start=(800, 860))),
+        via=dict(west=(1150, 592), select=(430, 0))),
 }
 
 # The flames (K, Nov 14, from his upscale of the original): a fire behind the pad, seen past its outline: a thin band

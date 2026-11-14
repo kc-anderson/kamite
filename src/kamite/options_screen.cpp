@@ -1361,7 +1361,7 @@ namespace kamite::options_screen
                 s.mapCursor = mapping_page::firstLine(g_mapping);
             if (pressed & kOk)
             {
-                if (s.mapCursor < mapping_page::kRemappable && !state.hot[s.mapCursor].empty())
+                if (s.mapCursor <= mapping_page::Select && !state.hot[s.mapCursor].empty())
                 {
                     if (armed == mapping_page::Armed::Clear)
                     {
@@ -1376,8 +1376,8 @@ namespace kamite::options_screen
                     return;
                 }
                 int start = 0;
-                if (mapping_page::drumInputs(state, s.mapCursor, start).empty())
-                    return;
+                if (s.mapCursor >= mapping_page::kRemappable || mapping_page::drumInputs(state, s.mapCursor, start).empty())
+                    return; // Start / Select: only their hotkey to clear
                 e.drum = true;
                 e.target = start;
                 e.pos = static_cast<float>(start);
