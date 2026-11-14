@@ -11,6 +11,7 @@
 #include "kamite/modern_controls.h"
 #include "kamite/prompt_art.h"
 #include "kamite/sha256.h"
+#include "ps2_host_gamepads.h"
 #include "ps2_host_input.h"
 #include "runtime/ps2_pnach.h"
 
@@ -730,7 +731,7 @@ namespace kamite::button_prompts
                                                                sheets::L3,    sheets::R3,     sheets::Start,  sheets::Select};
                         return labels.icon[input < 12u ? kSheetIcon[input] : fallback];
                     };
-                    // LB / RB by their place too (the OPTIONS categories; menu_buttons::menuPadBit).
+                    // LB / RB by their place too (the OPTIONS categories: the physical bumpers, the menu layer).
                     const bool pad = device == bindings::Device::Controller;
                     const auto shoulder = [&](uint8_t place) {
                         const uint8_t input = pad ? menu_buttons::inputOnPlace(bindings::snapshot(), place) : place;
@@ -797,8 +798,16 @@ namespace kamite::button_prompts
                 {
                     if (g_crateCaptured.load(std::memory_order_acquire))
                     {
-                        const std::array<std::string, 4> crateLabels{labels.icon[sheets::Triangle], labels.icon[sheets::Circle],
-                                                                     labels.icon[sheets::Square], labels.icon[sheets::Cross]};
+                        // The cannon game is a minigame: it sees the controller's default layout (the menu layer, K Nov
+                        // 14), so the crates name the default buttons in the set; keys keep their bindings.
+                        const bool padCrates = device == bindings::Device::Controller;
+                        const std::array<std::string, 4> crateLabels =
+                            padCrates ? std::array<std::string, 4>{art::padButtonLabel(ps2_host_gamepads::North).compact,
+                                                                   art::padButtonLabel(ps2_host_gamepads::East).compact,
+                                                                   art::padButtonLabel(ps2_host_gamepads::West).compact,
+                                                                   art::padButtonLabel(ps2_host_gamepads::South).compact}
+                                      : std::array<std::string, 4>{labels.icon[sheets::Triangle], labels.icon[sheets::Circle],
+                                                                   labels.icon[sheets::Square], labels.icon[sheets::Cross]};
                         std::array<uint32_t, 4> crateColours{};
                         for (int c = 0; c < 4; ++c)
                             crateColours[c] = crateColour(set, crateLabels[c]);

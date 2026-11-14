@@ -33,6 +33,13 @@ namespace ps2_host_input
     // state. nullptr = none. The function must be cheap and must not call back into this namespace.
     using PadFilter = void (*)(uint32_t player, ps2x::iop::PadInputState &state);
     void setPadFilter(PadFilter filter);
+    // The menu layer (K, Nov 14: the gameplay mapping changes only Gene in play). While on, player 1's controller
+    // bindings are the default layout's and the keyboard and mouse bindings stay as bound, so every screen but play
+    // (menus, dialogs, the roulette, minigames, the port's own screens) sees the controller as if it were never
+    // remapped. A button held when the layer flips that now gives another PS2 button is dropped until released. The
+    // game layer sets it (any thread); on until then. menuLayer(): the layer the last sample was built with.
+    void setMenuLayer(bool on);
+    [[nodiscard]] bool menuLayer();
 
     // Sweep CR-9: Windows' Sticky/Toggle/Filter Keys hotkeys are off while the game window has the focus (sample()
     // follows the focus). This puts the user's settings back for good: the window closed or the run ended. Any thread.

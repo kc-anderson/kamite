@@ -18,6 +18,7 @@
 // (entries 24-27 are the d-pad, 32-35 the four face buttons one by one). Modern sets OK = cross and Cancel = circle
 // in both tables. Menus that ask for one face button by name (the shop's orb tiers, the casino's bets) keep the game's
 // buttons; the roulette follows the style too (kamite.toml "menu_roulette"). The hint strings that name the menu buttons are reworded to match.
+// Outside play every menu sees the controller's default layout (the menu layer, below), so the tables need no mapping.
 namespace kamite::menu_buttons
 {
     // The menu styles ([Game] MenuButtons; KAMITE_MENU_BUTTONS). Western (also "modern", the default): the south button
@@ -42,29 +43,28 @@ namespace kamite::menu_buttons
     void setStyle(Style style);
     // "western" / "japanese" / "classic", as GHR.ini spells them.
     const char *styleName(Style style);
-    // Pinned menus (K, Nov 13: the menus are a layer of their own that only Menu Controls changes; the gameplay mapping
-    // never moves them). The menus' buttons are named by their place on the pad: south, east, north, west and the d-pad
-    // (the places of the PS2 pad's cross, circle, triangle, square and d-pad). A place is the PS2 button player 1's
-    // controller bindings put on that physical button (controls.ini, the launcher's mapping: the input whose first
-    // controller binding is it), so the menus' OK, Cancel and d-pad entries, the roulette's OK and Cancel and the hints
-    // that name them stay on the same physical buttons whatever the gameplay mapping. With the keyboard in use, or no
-    // PS2 button on that physical button, a place is its own PS2 button (as before). Values: ps2_host_input::prompts::Input.
+    // The menu layer (K, Nov 14: the gameplay mapping changes only Gene in play): outside play the controller is the
+    // default layout (ps2_host_input::setMenuLayer, set from genePlays() here), so the tables and the roulette name
+    // the PS2 buttons themselves. What still goes by place is the hint art: the prompt sheets show the MAPPING (the
+    // move slots and the HUD prompts need it), so a hint naming a menu button by its place (south, east, north, west,
+    // the d-pad: the places of the PS2 pad's cross, circle, triangle, square and d-pad) shows the icon of the PS2
+    // button player 1's controller bindings put on that physical button (the input whose first controller binding is
+    // it). With the keyboard in use, or no PS2 button on that physical button, a place is its own PS2 button.
+    // Values: ps2_host_input::prompts::Input.
     struct Places
     {
         uint8_t south, east, north, west, up, down, left, right;
     };
     Places places(); // now (any thread)
     Places placesFor(const ps2_host_input::prompts::Snapshot &snapshot, bool controller);
-    // A text icon naming a place (0 circle, 1 triangle, 2 square, 3 cross: east, north, west, south) -> the icon of the
-    // PS2 button there now; any other code as it is.
+    // A text icon naming a place (0 circle, 1 triangle, 2 square, 3 cross: east, north, west, south; 4..9 the shoulders,
+    // triggers and stick presses, 12 Start, 13 Select) -> the icon of the PS2 button there now; any other code (the
+    // stick icons 10 / 11 included) as it is.
     uint16_t placeIcon(uint16_t icon);
     // A pad hotkey's button (a ps2x::iop::PadButton bit, naming its place on the default layout) -> the PS2 bit the
-    // controller's button at that place gives now: hotkeys stay on their physical button (K, Nov 13).
+    // controller's button at that place gives now: hotkeys stay on their physical button (K, Nov 13). Outside play the
+    // pad is the default layout (the menu layer): the bit itself.
     uint16_t padBitAtPlace(uint16_t padBit);
-    // Our own menus' shoulder and trigger keys stay physical too (K, Nov 14: LB / RB switch the OPTIONS categories and LT
-    // / RT the Techniques styles wherever the mapping moved the PS2 L1 / R1 / L2 / R2): padBitAtPlace while the
-    // controller is in use, the bit itself while the keyboard is (as the places). Any thread.
-    uint16_t menuPadBit(uint16_t padBit);
     // The Button Mapping page (mapping_page.h): the PS2 input (prompts::Input, searched from `from` on) whose first
     // controller binding is the physical button that PS2 button `place` (0..15) has on the default layout; 0xFF: none.
     uint8_t inputOnPlace(const ps2_host_input::prompts::Snapshot &snapshot, uint8_t place, uint8_t from = 0);
@@ -82,7 +82,8 @@ namespace kamite::menu_buttons
     {
         uint32_t offset;                // from the core block's base (core_usa.bin as the game keeps it in RAM)
         std::vector<uint16_t> original;
-        std::vector<uint16_t> modern; // Western; Japanese is this with cross and circle traded (japaneseOf)
+        std::vector<uint16_t> modern; // Western; Japanese is this with cross and circle traded (japaneseOf); empty: the
+                                      // original in every style, only its icons pinned to their places
     };
     const std::vector<TextPatch> &textPatches();
 

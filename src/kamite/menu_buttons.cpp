@@ -95,6 +95,7 @@ namespace kamite::menu_buttons
         }
 
         bool isFace(uint16_t icon) { return icon <= 3u; }
+        bool isIcon(uint16_t code) { return code <= 13u; } // the button icons (10 / 11, the sticks, stay as they are)
         uint16_t faceColour(uint16_t icon) { return icon == 0u ? 1u : icon == 1u ? 2u : icon == 3u ? 3u : 4u; } // kColourCode's index
 
         // Glyph codes of the game's text (core_usa.bin, 16-bit).
@@ -124,9 +125,10 @@ namespace kamite::menu_buttons
             }
             return out;
         }
+        // A patch without a Western text names buttons by name in every style: only pinned to the places.
         std::vector<uint16_t> styleText(const std::vector<uint16_t> &original, const std::vector<uint16_t> &western, Style style)
         {
-            return style == Style::Classic ? original : style == Style::Japanese ? japaneseOf(western) : western;
+            return style == Style::Classic || western.empty() ? original : style == Style::Japanese ? japaneseOf(western) : western;
         }
         // The dialog choices' patches are the [A804 n] cursor codes' arguments, not icons: never pinned.
         bool cursorArguments(const std::vector<uint16_t> &text)
@@ -134,8 +136,9 @@ namespace kamite::menu_buttons
             return text.size() == 3u && text[1] == 0xFFFFu && text[2] == 0xFFFFu;
         }
         // A style's text names the menus' buttons by their place (cross south, circle east, triangle north, square west:
-        // Western's cross confirms, Japanese's circle, Classic's both); each face icon becomes the icon of the PS2 button
-        // on that place now, with that icon's own colour where the text colours it (a shoulder or stick icon: white).
+        // Western's cross confirms, Japanese's circle, Classic's both; R1 the right bumper ...); each icon becomes the
+        // icon of the PS2 button on that place now, a face icon with that icon's own colour where the text colours it (a
+        // shoulder or stick icon: white).
         std::vector<uint16_t> pinned(std::vector<uint16_t> t)
         {
             if (cursorArguments(t))
@@ -154,7 +157,7 @@ namespace kamite::menu_buttons
                 }
                 else if (t[i] == kColourCode)
                     ++i; // a colour index is not a glyph
-                else if (isFace(t[i]))
+                else if (isIcon(t[i]))
                     t[i] = placeIcon(t[i]);
             }
             return t;
@@ -178,7 +181,7 @@ namespace kamite::menu_buttons
                         return false;
                     ++i; // the colour (or a second white)
                 }
-                else if (isFace(t[i]))
+                else if (isIcon(t[i]))
                 {
                     if (g > 13u)
                         return false;
@@ -224,9 +227,10 @@ namespace kamite::menu_buttons
             std::memcpy(g_ram + (address & 0x1FFFFFFu), &value, sizeof(value));
         }
 
-        // EE thread, every vblank: the OK, Cancel and d-pad entries, on their places (menu_buttons.h "Pinned menus"; with
-        // the default layout the disc's values for Classic). An entry that is empty or holds more than button bits (a
-        // mod's table) is left alone.
+        // EE thread, every vblank: the OK, Cancel and d-pad entries of the style. The menus see the controller's default
+        // layout (the menu layer, ps2_host_input::setMenuLayer), so the entries name the PS2 buttons themselves: Classic
+        // gets the disc's values back. An entry that is empty or holds more than button bits (a mod's table) is left
+        // alone.
         void writeEntry(uint32_t table, uint32_t entry, uint32_t want)
         {
             const uint32_t at = table + entry * 4u, have = rd32(at);
@@ -237,9 +241,8 @@ namespace kamite::menu_buttons
         void applyTables()
         {
             const Style style = current();
-            const Places p = places();
-            const uint32_t south = rawBit(p.south), east = rawBit(p.east), north = rawBit(p.north);
-            const uint32_t dpad[4] = {rawBit(p.up), rawBit(p.down), rawBit(p.right), rawBit(p.left)};
+            const uint32_t south = rawBit(Input::Cross), east = rawBit(Input::Circle), north = rawBit(Input::Triangle);
+            const uint32_t dpad[4] = {rawBit(Input::Up), rawBit(Input::Down), rawBit(Input::Right), rawBit(Input::Left)};
             for (size_t i = 0; i < 2u; ++i)
             {
                 const uint32_t table = kTables[i];
@@ -532,10 +535,50 @@ namespace kamite::menu_buttons
             g_turnWritten = want;
         }
 
+        // The menu layer (ps2_host_input::setMenuLayer; K, Nov 14: the gameplay mapping is for Gene in the world only).
+        // Play: a player (GameWork.playerObj) and a sub-screen block, no sub screen open, no soft event (STA 0x40: the
+        // casino slots, the dog race), the player's Move running (STP_PL / STP_EM clear, func_001F6C40; not suspended),
+        // Gene in mode 0, 1 or 2 (state table 0x3BD0B8: normal, then the two by-phase steppers; 4 is the scenario's,
+        // 5 the sub screen, 6 the cannon), not in the roulette (mode 0 phase 0x2B), no tutorial pop-up. Unlike
+        // style_presets' inPlay, Gene being hit or down is play: a press there is a move.
+        bool genePlays()
+        {
+            const uint32_t subScr = rd32(game::SubScr::kPointer);
+            if (!ramPointer(subScr, 0x1000u) || static_cast<int32_t>(rd32(subScr + game::SubScr::kKind)) >= 0 ||
+                static_cast<int16_t>(rd32(subScr + game::SubScr::kOpen)) != 0)
+                return false;
+            const uint32_t player = rd32(game::GameWork::address(game::GameWork::kPlayerObj));
+            if (!ramPointer(player, 0x700u))
+                return false;
+            if ((rd32(game::GameWork::address(game::GameWork::kFlags5D8)) & game::kFlags5D8PlayerOff) != 0u ||
+                (rd32(game::GameWork::address(game::GameWork::kFlags5E4)) & 0x40u) != 0u)
+                return false;
+            const uint8_t mode = g_ram[player + 0x2F4u];
+            if ((rd32(player + 0x250u) & 0x8000u) != 0u || mode > 2u || (mode == 0u && g_ram[player + 0x2F5u] == 0x2Bu))
+                return false;
+            const uint32_t game = rd32(0x3BD6E8u);
+            return !(ramPointer(game, 0x2000u) && g_ram[game + 0x1AD8u] != 0u); // a tutorial pop-up
+        }
+        // Play comes back at once; the menus take the pad after 4 vblanks of not playing, so a moment's freeze in a fight
+        // never moves the buttons under the player's fingers.
+        void applyLayer()
+        {
+            static uint32_t away = 1000u; // the menus have the pad from the start
+            static bool menu = true;
+            away = genePlays() ? 0u : std::min(away + 1u, 1000u);
+            const bool want = away >= 4u;
+            if (want != menu)
+            {
+                menu = want;
+                ps2_host_input::setMenuLayer(menu);
+            }
+        }
+
         void onVblank()
         {
             static uint32_t vblanks = 0u;
             ++vblanks;
+            applyLayer();
             applyTables();
             turnTechniquesGene();
             if (vblanks % 30u == 0u)
@@ -547,36 +590,23 @@ namespace kamite::menu_buttons
                 applyFoundText();
         }
 
-        // The roulette (part of play, so the command tables do not reach it; flag menu_roulette, on in every style since
-        // the menus are pinned: with the default layout Classic gets the game's own values back).
+        // The roulette (part of play, so the command tables do not reach it; flag menu_roulette, on in every style:
+        // Classic gets the game's own values). Once open it is a menu (the menu layer: the controller's default layout).
         // Its OK (func_00145810: ori v1,zero,0xA000 at 0x145CE8, the command bits 33 | 35 = cross | circle, shifted
-        // by 20 next): the OK place(s) of the style, as command bits 32..43 (the buttons one by one, from the table).
-        // The menus' OK (bit 28) is tested after it and follows the tables.
+        // by 20 next): the style's OK, cross for Western, circle for Japanese, both for Classic. The menus' OK (bit 28)
+        // is tested after it and follows the tables.
         void rouletteOk(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
             const Style style = current();
-            const Places p = places();
-            const uint32_t ok = style == Style::Western ? rawBit(p.south) : style == Style::Japanese ? rawBit(p.east)
-                                                                                                     : rawBit(p.south) | rawBit(p.east);
-            uint32_t bits = 0u;
-            for (uint32_t i = 32u; i < 44u; ++i)
-            {
-                const uint32_t mask = rd32(kTables[1] + i * 4u);
-                if (mask != 0u && (mask & (mask - 1u)) == 0u && (ok & mask) != 0u)
-                    bits |= 1u << (i - 20u);
-            }
-            if (bits == 0u)
-                bits = style == Style::Japanese ? 0x8000u : style == Style::Western ? 0x2000u : 0xA000u;
-            SET_GPR_U32(ctx, 3, bits);
+            SET_GPR_U32(ctx, 3, style == Style::Japanese ? 0x8000u : style == Style::Western ? 0x2000u : 0xA000u);
         }
         uint32_t rouletteCancelBit()
         {
-            const Places p = places();
             const Style style = current();
-            return style == Style::Western ? rawBit(p.east) : style == Style::Japanese ? rawBit(p.south) : rawBit(p.north);
+            return style == Style::Western ? rawBit(Input::Circle) : style == Style::Japanese ? rawBit(Input::Cross) : rawBit(Input::Triangle);
         }
         // Its cancel: Gene's +0x626 window, filled from the pressed word (andi v0,v0,0x10 at 0x108FA0: the triangle).
-        // The cancel place's raw bit (Western the circle's place, Japanese the cross's, Classic the triangle's).
+        // The style's cancel (Western the circle, Japanese the cross, Classic the triangle).
         void rouletteCancelSource(uint8_t *, R5900Context *ctx, PS2Runtime *)
         {
             SET_GPR_U32(ctx, 2, GPR_U32(ctx, 2) & rouletteCancelBit());
@@ -600,6 +630,7 @@ namespace kamite::menu_buttons
         uint32_t g_placesGeneration = ~0u;
         int g_placesDevice = -1;
         Places g_places{Input::Cross, Input::Circle, Input::Triangle, Input::Square, Input::Up, Input::Down, Input::Left, Input::Right};
+        uint8_t g_onPlace[kButtons] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}; // the PS2 button on each place
         bool g_controllerPlaces = false; // installDiscText: the save menu's text is written once, for the controller
     }
 
@@ -627,7 +658,11 @@ namespace kamite::menu_buttons
         if (generation != g_placesGeneration || device != g_placesDevice)
         {
             const Places was = g_places;
-            g_places = placesFor(bindings::snapshot(), device != static_cast<int>(bindings::Device::Keys));
+            const bool controller = device != static_cast<int>(bindings::Device::Keys);
+            const bindings::Snapshot snapshot = bindings::snapshot();
+            g_places = placesFor(snapshot, controller);
+            for (uint8_t i = 0; i < kButtons; ++i)
+                g_onPlace[i] = controller && snapshot.generation != 0u ? placeOf(snapshot, i) : i;
             g_placesGeneration = generation;
             g_placesDevice = device;
             if (std::memcmp(&was, &g_places, sizeof(Places)) != 0)
@@ -640,26 +675,30 @@ namespace kamite::menu_buttons
 
     uint16_t placeIcon(uint16_t icon)
     {
-        if (!isFace(icon))
-            return icon;
-        const Places p = places();
-        const uint8_t input = icon == kCross ? p.south : icon == kCircle ? p.east : icon == kTriangle ? p.north : p.west;
+        uint8_t of = kButtons;
+        for (uint8_t i = 0; i < kButtons; ++i)
+            if (kIcon[i] == icon)
+                of = i;
+        if (of == kButtons)
+            return icon; // the sticks, or not an icon
+        places(); // brings g_onPlace up to date
+        uint8_t input;
+        {
+            std::lock_guard<std::mutex> lock(g_placesMutex);
+            input = g_onPlace[of];
+        }
         const uint16_t out = input < kButtons ? kIcon[input] : 0xFFFFu;
         return out == 0xFFFFu ? icon : out;
     }
 
     uint16_t padBitAtPlace(uint16_t padBit)
     {
+        if (ps2_host_input::menuLayer())
+            return padBit; // the default layout: every button is its own place
         for (uint8_t i = 0; i < kButtons; ++i)
             if (kPadBit[i] == padBit)
                 return kPadBit[placeOf(bindings::snapshot(), i)];
         return padBit;
-    }
-
-    uint16_t menuPadBit(uint16_t padBit)
-    {
-        const bool controller = g_controllerPlaces || bindings::lastDevice() != bindings::Device::Keys;
-        return controller ? padBitAtPlace(padBit) : padBit;
     }
 
     uint8_t inputOnPlace(const bindings::Snapshot &snapshot, uint8_t place, uint8_t from)
@@ -746,8 +785,9 @@ namespace kamite::menu_buttons
             // The roulette's bar ("[R1]Select [cross][circle]OK [triangle]Cancel", 0x591CC): the roulette follows the
             // menus too (kamite.toml "menu_roulette": its OK, func_00145810 0x145CE8, reads the cross only; its cancel,
             // Gene's +0x626 window filled at 0x108FA0, comes from the circle), so the bar reads "[R1]Cycle [cross]OK
-            // [circle]Cancel" (roulette_bar.cpp lays it out at full letter width on a bar cut to fit).
-            {0x591CEu, text({}, "Select"), [] { auto t = text({}, "Cycle"); t.push_back(0xB301u); return t; }()},
+            // [circle]Cancel" (roulette_bar.cpp lays it out at full letter width on a bar cut to fit). The [R1] is in
+            // the patch so it shows the right bumper's button (pinned).
+            {0x591CCu, text({5u}, "Select"), [] { auto t = text({5u}, "Cycle"); t.push_back(0xB301u); return t; }()},
             {0x591DCu, text({kCross, kCircle}, "OK"), text({kCross, 0xB301u}, "OK")},
             {0x591E6u, {kTriangle}, {kCircle}},
             // The Techniques screen's "[triangle] Exit" (0x59224: colour code 0xB602 with its colour, the icon, 0xB301
@@ -758,6 +798,12 @@ namespace kamite::menu_buttons
             // the word follows the cross as closely as "Exit" follows its circle).
             {0x591F8u, text({kCross, kCircle}, "Change"), text({kCross, 0xB301u}, "Change")},
             {0x59238u, text({kCross, kCircle}, "Select"), text({kCross, 0xB301u}, "Select")},
+            // The Techniques screen's by-name hints, "[square] Release" (0x5920C), "[square] Back" (0x5924C) and
+            // "[circle] Default" (0x59260): the same buttons in every style, pinned to their places (the screen is a
+            // menu: the physical buttons, whatever the gameplay mapping put on them).
+            {0x5920Cu, cat({{0xB602u, 4u, 2u, 0xB301u}, text({}, "Release")}), {}},
+            {0x5924Cu, cat({{0xB602u, 4u, 2u, 0xB301u}, text({}, "Back")}), {}},
+            {0x59260u, cat({{0xB602u, 1u, kCircle, 0xB301u}, text({}, "Default")}), {}},
             // The dialog choices "[circle] Of course / Yes" and "[triangle] Leave me alone / No": cross and circle.
             {0x577A8u, {kCircle, 0xFFFFu, 0xFFFFu}, {kCross, 0xFFFFu, 0xFFFFu}},
             {0x577C8u, {kTriangle, 0xFFFFu, 0xFFFFu}, {kCircle, 0xFFFFu, 0xFFFFu}},

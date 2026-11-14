@@ -963,8 +963,9 @@ namespace kamite::style_presets
 
         std::vector<uint16_t> hintText()
         {
-            // "[L2] [R2] Cycle Style" (K, Nov 7): the game's trigger icons, which follow the prompt set.
-            std::vector<uint16_t> out{kL2Icon, kSpace, kR2Icon};
+            // "[L2] [R2] Cycle Style" (K, Nov 7): the game's trigger icons, which follow the prompt set, by their place (the
+            // Techniques screen is a menu: the physical triggers, whatever the gameplay mapping put on them).
+            std::vector<uint16_t> out{menu_buttons::placeIcon(kL2Icon), kSpace, menu_buttons::placeIcon(kR2Icon)};
             append(out, "Cycle Style");
             out.push_back(kEnd);
             return out;
@@ -1469,9 +1470,8 @@ namespace kamite::style_presets
         const uint16_t dpad = static_cast<uint16_t>(state.buttons & kAllDpad);
         const uint16_t pressed = static_cast<uint16_t>(dpad & ~g_dpadWas);
         g_dpadWas = dpad;
-        // LT / RT by their place (K, Nov 14): the PS2 bits on the physical triggers now, so a mapping that moved the PS2
-        // L2 onto A neither cycles styles from A nor hides A's confirm from the menu.
-        const uint16_t lt = menu_buttons::menuPadBit(ps2x::iop::PadButton::L2), rt = menu_buttons::menuPadBit(ps2x::iop::PadButton::R2);
+        // The Techniques screen is a menu: the controller's default layout (the menu layer), so L2 / R2 are the triggers.
+        const uint16_t lt = ps2x::iop::PadButton::L2, rt = ps2x::iop::PadButton::R2;
         const uint16_t triggers = static_cast<uint16_t>(state.buttons & (lt | rt));
         const uint16_t pulled = static_cast<uint16_t>(triggers & ~g_triggersWas);
         g_triggersWas = triggers;

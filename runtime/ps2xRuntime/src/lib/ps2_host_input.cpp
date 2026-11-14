@@ -471,6 +471,13 @@ namespace ps2_host_input
         bool g_controlsDirty = false;             // edited since the last save
         bool g_configsValid = false;
         std::array<PadConfig, kMaxPlayers> g_configs;
+        // The menu layer (setMenuLayer): player 1's config with every controller binding replaced by the default
+        // layout's (on the controller player 1's bindings name first); keyboard and mouse bindings as bound.
+        PadConfig g_menuConfig;
+        std::atomic<bool> g_menuLayerWanted{true}; // the game layer (EE vblank); on until Gene is first in play
+        std::atomic<bool> g_menuLayerUsed{true};   // the layer the last sample of player 1 was built with
+        bool g_latchLayer = true;                  // window thread: readPort(0)'s last layer
+        uint16_t g_latched = 0u;                   // window thread: buttons dropped since the layer flipped, until released
         std::filesystem::file_time_type g_loadedTime{};
         uintmax_t g_loadedSize = 0u;
         bool g_haveLoadedStamp = false;
@@ -659,6 +666,50 @@ namespace ps2_host_input
             g_promptGeneration.store(next.generation, std::memory_order_release);
         }
 
+        bool controllerChord(const Chord &chord)
+        {
+            return std::any_of(chord.begin(), chord.end(), [](const Element &e)
+                               { return e.source == Source::PadButton || e.source == Source::PadAxis; });
+        }
+
+        // g_menuConfig from player 1's config. A config without any controller binding stays as it is (a keyboard-only
+        // layout gets no controller in the menus either).
+        PadConfig menuConfigOf(const PadConfig &config, uint32_t pad)
+        {
+            int device = -1;
+            for (const Bindings &list : config.buttons)
+                for (const Chord &chord : list)
+                    for (const Element &e : chord)
+                        if (device < 0 && (e.source == Source::PadButton || e.source == Source::PadAxis))
+                            device = e.device;
+            if (device < 0)
+                return config;
+            const PadConfig defaults = configFromSection(defaultSection(pad), pad);
+            PadConfig out = config;
+            const auto merge = [&](Bindings &mine, const Bindings &theirs)
+            {
+                Bindings kept;
+                for (const Chord &chord : mine)
+                    if (!controllerChord(chord))
+                        kept.push_back(chord);
+                for (Chord chord : theirs)
+                {
+                    if (!controllerChord(chord))
+                        continue;
+                    for (Element &e : chord)
+                        if (e.source == Source::PadButton || e.source == Source::PadAxis)
+                            e.device = device;
+                    kept.push_back(std::move(chord));
+                }
+                mine = std::move(kept);
+            };
+            for (size_t i = 0; i < out.buttons.size(); ++i)
+                merge(out.buttons[i], defaults.buttons[i]);
+            for (size_t i = 0; i < out.sticks.size(); ++i)
+                merge(out.sticks[i], defaults.sticks[i]);
+            return out;
+        }
+
         // Precedence per pad: PS2X_PAD<n> in the environment, then the file's [PadN], then the defaults.
         void rebuildConfigs()
         {
@@ -671,6 +722,7 @@ namespace ps2_host_input
                 else
                     g_configs[pad] = configFromSection(defaultSection(pad), pad);
             }
+            g_menuConfig = menuConfigOf(g_configs[0], 0u);
             g_configsValid = true;
             publishPrompts(g_configs[0]); // every rebuild: file load, the 1-s file poll, F1 edits, reset
         }
@@ -1561,7 +1613,9 @@ namespace ps2_host_input
             PadInputState state;
             if (rawStick)
                 *rawStick = 0.0f;
-            const PadConfig &config = padConfigs()[player];
+            const bool menuLayer = player == 0u && g_menuLayerWanted.load(std::memory_order_relaxed);
+            const PadConfig &mapped = padConfigs()[player];
+            const PadConfig &config = menuLayer ? g_menuConfig : mapped;
             // PS2X_FAKE_PADS=<n> (tests): players 1..n count as connected, idle, without a controller behind them.
             static const uint32_t fakePads = []
             { const char *v = std::getenv("PS2X_FAKE_PADS"); return v ? static_cast<uint32_t>(std::max(std::atoi(v), 0)) : 0u; }();
@@ -1591,6 +1645,25 @@ namespace ps2_host_input
                 noteFired(i, fired);
                 if (values[i] > std::max(config.buttonDeadzone, 0.2f))
                     state.buttons |= kPadButtonKeys[i].second;
+            }
+            if (player == 0u)
+            {
+                // The layer flipped: a button held now that the other layer did not give (the same physical button meant
+                // another PS2 button there) waits for its release, so opening the roulette with A, or closing a menu
+                // with it, does not also press what A means on the other side.
+                if (menuLayer != g_latchLayer)
+                {
+                    const PadConfig &other = menuLayer ? mapped : g_menuConfig;
+                    uint16_t before = 0u;
+                    for (size_t i = 0; i < kPadButtonKeys.size(); ++i)
+                        if (bindingsValue(other.buttons[i]) > std::max(other.buttonDeadzone, 0.2f))
+                            before |= kPadButtonKeys[i].second;
+                    g_latched = static_cast<uint16_t>(state.buttons & ~before);
+                    g_latchLayer = menuLayer;
+                    g_menuLayerUsed.store(menuLayer, std::memory_order_relaxed);
+                }
+                g_latched = static_cast<uint16_t>(g_latched & state.buttons);
+                state.buttons = static_cast<uint16_t>(state.buttons & ~g_latched);
             }
             for (const auto &[pressure, button] : kPressureButtons)
             {
@@ -1895,6 +1968,16 @@ namespace ps2_host_input
     void setPadFilter(PadFilter filter)
     {
         g_padFilter.store(filter, std::memory_order_release);
+    }
+
+    void setMenuLayer(bool on)
+    {
+        g_menuLayerWanted.store(on, std::memory_order_relaxed);
+    }
+
+    bool menuLayer()
+    {
+        return g_menuLayerUsed.load(std::memory_order_relaxed);
     }
 
     void setMenuHasMouse(bool menu)

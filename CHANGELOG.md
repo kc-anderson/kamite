@@ -13,7 +13,10 @@ Newest first, one line per change; the code comments say how.
 - Controls: new PlayStation pad picture on the Button Mapping page.
 - Controls: Button Mapping edits the controller: A opens a drum of actions to swap onto the button, the left face button (twice) resets the controller layout, A (twice) on a HOT button clears its hotkey.
 - Options: RESTORE DEFAULTS also resets the controller's button mapping (keyboard bindings stay).
-- Menus: LB / RB in Options and LT / RT on the Techniques screen stay on their buttons whatever the button mapping.
+- Controls: the button mapping only changes Gene's controls in play; menus, dialogs, the roulette once open, minigames and Options use the controller's default layout (the keyboard keeps its bindings).
+- Controls: a button held when play hands over to a menu (or back) waits for its release, so it doesn't press twice.
+- Controls: the cannon game's crates show the default buttons.
+- Menus: the roulette's Cycle hint and the Techniques screen's Release, Back, Default and Cycle Style hints show the buttons that work them.
 
 ## November 13, 2026
 

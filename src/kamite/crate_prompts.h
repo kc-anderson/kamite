@@ -2,7 +2,8 @@
 // Pirate ship cannon minigame (stage 3, r301): the four crates on the ship show the PS2 triangle/circle/square/cross.
 // They come from one TIM3 texture in guest RAM, 128x128 PSMT4 that the game uploads every frame as a CT32 64x32 DBW 1
 // image (port_prep/pirate: field 15300 recording, upload of 0x2000 bytes from 0x011CB8A0, CLUT right after it). This
-// rebuilds that payload with each crate's symbol replaced by the bound key, like button_prompt_sheets does for the HUD:
+// rebuilds that payload with each crate's symbol replaced by its button (the default layout's on a controller: the
+// minigame sees the unmapped pad; a key's binding on the keyboard), like button_prompt_sheets does for the HUD:
 // a glowing letter in the art set's colour (K, Nov 2: the original's painted look over the pack's buttons), at the
 // PS2's resolution in the texture and at full resolution as a replacement image (hd_textures::name4).
 #include "kamite/hd_textures.h"
