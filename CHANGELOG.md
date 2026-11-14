@@ -13,6 +13,7 @@ Newest first, one line per change; the code comments say how.
 - Controls: new PlayStation pad picture on the Button Mapping page.
 - Controls: Button Mapping edits the controller: A opens a drum of actions to swap onto the button, the left face button (twice) resets the controller layout, A (twice) on a HOT button clears its hotkey.
 - Options: RESTORE DEFAULTS also resets the controller's button mapping (keyboard bindings stay).
+- Menus: LB / RB in Options and LT / RT on the Techniques screen stay on their buttons whatever the button mapping.
 
 ## November 13, 2026
 

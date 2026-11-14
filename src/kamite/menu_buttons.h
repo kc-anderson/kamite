@@ -61,6 +61,10 @@ namespace kamite::menu_buttons
     // A pad hotkey's button (a ps2x::iop::PadButton bit, naming its place on the default layout) -> the PS2 bit the
     // controller's button at that place gives now: hotkeys stay on their physical button (K, Nov 13).
     uint16_t padBitAtPlace(uint16_t padBit);
+    // Our own menus' shoulder and trigger keys stay physical too (K, Nov 14: LB / RB switch the OPTIONS categories and LT
+    // / RT the Techniques styles wherever the mapping moved the PS2 L1 / R1 / L2 / R2): padBitAtPlace while the
+    // controller is in use, the bit itself while the keyboard is (as the places). Any thread.
+    uint16_t menuPadBit(uint16_t padBit);
     // The Button Mapping page (mapping_page.h): the PS2 input (prompts::Input, searched from `from` on) whose first
     // controller binding is the physical button that PS2 button `place` (0..15) has on the default layout; 0xFF: none.
     uint8_t inputOnPlace(const ps2_host_input::prompts::Snapshot &snapshot, uint8_t place, uint8_t from = 0);

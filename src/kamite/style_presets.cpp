@@ -1,4 +1,5 @@
 // Style presets, stage 1. See style_presets.h.
+#include "kamite/menu_buttons.h"
 #include "kamite/style_presets.h"
 #include "kamite/style_pose.h"
 #include "kamite/style_sfx.h"
@@ -715,7 +716,6 @@ namespace kamite::style_presets
                                              ps2x::iop::PadButton::Down, ps2x::iop::PadButton::Left};
         constexpr uint16_t kAllDpad = ps2x::iop::PadButton::Up | ps2x::iop::PadButton::Right | ps2x::iop::PadButton::Down |
                                       ps2x::iop::PadButton::Left;
-        constexpr uint16_t kTriggers = ps2x::iop::PadButton::L2 | ps2x::iop::PadButton::R2;
 
         uint16_t g_dpadWas = 0u, g_triggersWas = 0u;
 
@@ -728,11 +728,21 @@ namespace kamite::style_presets
         }
 
         // The Techniques screen: L2 / R2 are the styles' (no menu uses the triggers; K, Nov 7).
-        void hideTriggers(ps2x::iop::PadInputState &state)
+        // The buttons (ps2x::iop bits) kept from the game, with their pressure.
+        void hideTriggers(ps2x::iop::PadInputState &state, uint16_t bits)
         {
-            state.buttons = static_cast<uint16_t>(state.buttons & ~kTriggers);
-            state.pressure[static_cast<size_t>(ps2x::iop::PadPressure::L2)] = 0u;
-            state.pressure[static_cast<size_t>(ps2x::iop::PadPressure::R2)] = 0u;
+            using namespace ps2x::iop;
+            static constexpr std::pair<uint16_t, PadPressure> kPressure[] = {
+                {PadButton::Right, PadPressure::Right},       {PadButton::Left, PadPressure::Left},
+                {PadButton::Up, PadPressure::Up},             {PadButton::Down, PadPressure::Down},
+                {PadButton::Triangle, PadPressure::Triangle}, {PadButton::Circle, PadPressure::Circle},
+                {PadButton::Cross, PadPressure::Cross},       {PadButton::Square, PadPressure::Square},
+                {PadButton::L1, PadPressure::L1},             {PadButton::R1, PadPressure::R1},
+                {PadButton::L2, PadPressure::L2},             {PadButton::R2, PadPressure::R2}};
+            state.buttons = static_cast<uint16_t>(state.buttons & ~bits);
+            for (const auto &[bit, pressure] : kPressure)
+                if (bits & bit)
+                    state.pressure[static_cast<size_t>(pressure)] = 0u;
         }
 
         // ---- the Techniques screen (Nov 7, K) ----
@@ -1459,7 +1469,10 @@ namespace kamite::style_presets
         const uint16_t dpad = static_cast<uint16_t>(state.buttons & kAllDpad);
         const uint16_t pressed = static_cast<uint16_t>(dpad & ~g_dpadWas);
         g_dpadWas = dpad;
-        const uint16_t triggers = static_cast<uint16_t>(state.buttons & kTriggers);
+        // LT / RT by their place (K, Nov 14): the PS2 bits on the physical triggers now, so a mapping that moved the PS2
+        // L2 onto A neither cycles styles from A nor hides A's confirm from the menu.
+        const uint16_t lt = menu_buttons::menuPadBit(ps2x::iop::PadButton::L2), rt = menu_buttons::menuPadBit(ps2x::iop::PadButton::R2);
+        const uint16_t triggers = static_cast<uint16_t>(state.buttons & (lt | rt));
         const uint16_t pulled = static_cast<uint16_t>(triggers & ~g_triggersWas);
         g_triggersWas = triggers;
         if (!g_enabled.load(std::memory_order_relaxed))
@@ -1468,11 +1481,11 @@ namespace kamite::style_presets
         if (moment == Techniques)
         {
             // L2 / R2: the previous / next style (None, S, E, X, Y, wrapping), kept from the game.
-            if (pulled & ps2x::iop::PadButton::R2)
+            if (pulled & rt)
                 g_request = 21;
-            else if (pulled & ps2x::iop::PadButton::L2)
+            else if (pulled & lt)
                 g_request = 22;
-            hideTriggers(state);
+            hideTriggers(state, lt | rt);
         }
         else if (moment == Play)
         {

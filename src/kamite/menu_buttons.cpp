@@ -656,6 +656,12 @@ namespace kamite::menu_buttons
         return padBit;
     }
 
+    uint16_t menuPadBit(uint16_t padBit)
+    {
+        const bool controller = g_controllerPlaces || bindings::lastDevice() != bindings::Device::Keys;
+        return controller ? padBitAtPlace(padBit) : padBit;
+    }
+
     uint8_t inputOnPlace(const bindings::Snapshot &snapshot, uint8_t place, uint8_t from)
     {
         if (place >= kButtons || snapshot.generation == 0u)

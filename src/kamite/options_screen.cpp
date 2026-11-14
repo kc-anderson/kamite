@@ -651,7 +651,8 @@ namespace kamite::options_screen
 
         // The pad's raw button word (GameWork +0x08, pressed this frame; libpad's bytes 2..3 inverted): L1 / R1.
         constexpr uint32_t kPadPressed = game::GameWork::address(game::GameWork::kPadBtn);
-        constexpr uint32_t kPadL1 = 0x0004u, kPadR1 = 0x0008u;
+        // The game's pad word holds the ps2x::iop::PadButton bits byte-swapped (0x04 L1, 0x08 R1, 0x80 square,
+        // 0x8000 d-pad left).
 
         settings::Tab tabOf(Action action)
         {
@@ -1558,9 +1559,14 @@ namespace kamite::options_screen
                 sound(rdram, ctx, runtime, kSeBack);
                 return;
             }
-            if (pad & (kPadL1 | kPadR1))
+            // LB / RB by their place (K, Nov 14: a mapping that moved the PS2 L1 onto A must not make A switch
+            // categories): the PS2 bits there now (ps2x::iop order), byte-swapped into the game's pad word.
+            const auto gameBit = [](uint16_t iop) { return static_cast<uint16_t>((iop >> 8) | (iop << 8)); };
+            const uint16_t lb = gameBit(menu_buttons::menuPadBit(ps2x::iop::PadButton::L1));
+            const uint16_t rb = gameBit(menu_buttons::menuPadBit(ps2x::iop::PadButton::R1));
+            if (pad & (lb | rb))
             {
-                const int step = (pad & kPadR1) ? 1 : -1;
+                const int step = (pad & rb) ? 1 : -1;
                 const int next = s.row + step;
                 if (next >= 0 && next < k.rowCount && isCategory(k.actions[next]))
                 {

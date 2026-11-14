@@ -730,8 +730,15 @@ namespace kamite::button_prompts
                                                                sheets::L3,    sheets::R3,     sheets::Start,  sheets::Select};
                         return labels.icon[input < 12u ? kSheetIcon[input] : fallback];
                     };
+                    // LB / RB by their place too (the OPTIONS categories; menu_buttons::menuPadBit).
+                    const bool pad = device == bindings::Device::Controller;
+                    const auto shoulder = [&](uint8_t place) {
+                        const uint8_t input = pad ? menu_buttons::inputOnPlace(bindings::snapshot(), place) : place;
+                        return input == 0xFFu ? place : input;
+                    };
                     g_menuArt = MenuArt{true, set, placed(places.south, sheets::Cross), placed(places.east, sheets::Circle),
-                                        placed(places.north, sheets::Triangle), labels.icon[sheets::L1], labels.icon[sheets::R1]};
+                                        placed(places.north, sheets::Triangle), placed(shoulder(4u), sheets::L1),
+                                        placed(shoulder(5u), sheets::R1)};
                 }
                 std::string summary = std::string(prompt_hd::setName(set)) + " prompts";
                 // Every set starts from the disc's art. PlayStation keeps it; the others get full-resolution images
